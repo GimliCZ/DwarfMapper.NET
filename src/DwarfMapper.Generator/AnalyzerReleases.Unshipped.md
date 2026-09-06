@@ -75,7 +75,7 @@ DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable me
 DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-payload generic
 DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
 DWARF069 | DwarfMapper | Error | MapConfigConflict
-DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-nullable target member
+DWARF070 | DwarfMapper | Warning | A nullable source is assigned to a non-nullable target member
 DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped
 DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)
 DWARF073 | DwarfMapper | Error | [MapProperty(StringFormat=)] is not applicable here

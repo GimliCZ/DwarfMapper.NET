@@ -354,13 +354,14 @@ namespace DwarfMapper.Generator.Pipeline
             // converter, SkipNullSourceMembers), so the diagnostic only fires when the null genuinely survives to
             // the destination. Ordered by target name to keep generator output deterministic.
             // SourceAccessExpression first: a Phase 5 extra parameter has no SourceName (it is not a member of
-            // the source type), and reporting an empty '{0}' would name nothing at all.
+            // the source type), and reporting an empty '{0}' would name nothing at all. It also decides WHICH
+            // noun the message uses, and so which remedies it offers — see NullSourceLabel.
             foreach (var m in result.Where(m => m.NullRefIntoNonNullable)
                          .OrderBy(m => m.TargetName, StringComparer.Ordinal))
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    m.SourceAccessExpression ?? m.SourceName));
+                    NullSourceLabel(m.SourceAccessExpression ?? m.SourceName, m.SourceAccessExpression is not null)));
 
             ReportUnguardedFlattenHops(flattenInfos, consumedFlattenRoots, location, diagnostics);
 
@@ -728,7 +729,7 @@ namespace DwarfMapper.Generator.Pipeline
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    a.SourceName));
+                    NullSourceLabel(a.SourceName)));
 
             ctorArgs = args.ToArray();
             return allOk;

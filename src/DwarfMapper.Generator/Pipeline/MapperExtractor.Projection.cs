@@ -1022,7 +1022,9 @@ namespace DwarfMapper.Generator.Pipeline
                 LocationInfo? location,
                 string srcExpr)
             {
-                var name = srcExpr.Substring(srcExpr.LastIndexOf('.') + 1).TrimStart('@');
+                // The LABEL, not the bare name, on both the dedup probe and the report — they must be the same
+                // string or the once-per-member guarantee this method exists for silently stops holding.
+                var name = NullSourceLabel(srcExpr.Substring(srcExpr.LastIndexOf('.') + 1).TrimStart('@'));
                 foreach (var d in diagnostics)
                     if (ReferenceEquals(d.Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
                         d.MessageArg == name &&

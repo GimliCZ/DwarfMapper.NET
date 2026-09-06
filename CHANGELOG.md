@@ -153,6 +153,19 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`DWARF070` no longer calls a mapping parameter a "member", and no longer offers it two remedies it cannot
+  use.** The diagnostic now fires for an extra mapping parameter as well as a source member, and its message
+  said `Source member '{0}'` for both while pointing at `[MapProperty(NullSubstitute = …)]` and
+  `[DwarfMapper(SkipNullSourceMembers = true)]` — source-member instruments that cannot reach a parameter. It
+  now names what it found (`Source member 'X'` or `Mapping parameter 'x'`) and labels each remedy with the
+  shape it applies to; `docs/diagnostics.md` carries a fix table for each. Title changed from *"Nullable source
+  member is assigned to a non-nullable target member"* to *"A nullable source is assigned to a non-nullable
+  target member"*. The id, severity and trigger are unchanged, so no suppression is affected.
+
+  Read together with the entry above: for a mapping parameter this warning is what a consumer gets **instead
+  of** the unsuppressible `CS8611`/`CS8604`/`CS8601`/`CS0266` that shape used to put inside their generated
+  file. It is the suppressible form of a signal they previously could not silence at all.
+
 - **A map method whose SOURCE parameter is declared nullable emitted a signature that contradicted it
   (`CS8611`).** `partial Dst Map(Src? s)` was implemented as `Map(global::T.Src s)` — the same dropped `?` as
   the extra parameter above, on the ordinary source parameter, and on update-into, async-stream and projection

@@ -591,18 +591,24 @@ The same destination member is configured more than once — by both an attribut
 ---
 
 ## dwarf070
-**Nullable source member is assigned to a non-nullable target member** · Warning
+**A nullable source is assigned to a non-nullable target member** · Warning
 
-The source member is a nullable reference (`string?`) but the destination member is not (`string`), so a null
-would be stored in a member whose type says it cannot be null. `NullStrategy` does **not** cover this: it
-governs nullable *value* types (`int?`) only, and a nullable *reference* source raw-assigns by design.
+Something that may be null is being written into a destination member whose type says it cannot be. That
+something is one of two things, and the message says which:
+
+* **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`).
+* **`Mapping parameter 'x'`** — an extra parameter on the map method
+  (`partial Dst Map(Src s, Child? inner)`), matched to the destination member by name.
+
+`NullStrategy` does **not** cover either: it governs nullable *value* types (`int?`) only, and a nullable
+*reference* source raw-assigns by design.
 
 Left alone, that raw assignment also made the **compiler** emit `CS8601` ("possible null reference assignment")
 from inside the *generated* file — a warning you cannot fix, in code you cannot edit, and a hard build break
 under `TreatWarningsAsErrors`. DwarfMapper now suppresses that `CS8601` and reports this instead, against your
-own DTO, where you can act on it.
+own source, where you can act on it.
 
-**Fix** — pick the one that matches your intent:
+**Fix, for a source MEMBER** — pick the one that matches your intent:
 
 | You want | Use |
 |---|---|
@@ -610,6 +616,21 @@ own DTO, where you can act on it.
 | the destination to keep its own default | `[DwarfMapper(SkipNullSourceMembers = true)]` |
 | null to be a legal value here | make the destination member nullable (`string?`) |
 | to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+**Fix, for a mapping PARAMETER.** The first two rows above do not apply — both are source-member
+instruments, and an extra parameter is not a member of the source type. Two remedies remain:
+
+| You want | Use |
+|---|---|
+| null to be a legal value here | make the destination member nullable (`ChildDto?`) |
+| the parameter never to be null | declare it non-nullable (`Child inner`) |
+| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+Whichever it is, the generated code is warning-free either way: the mapper emits the null-forgiving `!` so no
+`CS8601`/`CS8604` reaches a file you cannot edit, and reports this against your own source instead. Before
+round 29 a nullable mapping parameter got neither — it produced `CS8611`, `CS8604`, `CS8601` or `CS0266`
+inside the generated file, none of them suppressible. This warning replaces those: it is the *suppressible*
+form of the same signal.
 
 Only fires for a genuinely annotated source (`string?`) flowing into an annotated non-nullable target. Code in
 a `#nullable disable` context is *oblivious*, the compiler raises no `CS8601` there, and neither does this — a

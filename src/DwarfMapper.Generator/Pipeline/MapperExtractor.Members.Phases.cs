@@ -629,7 +629,8 @@ namespace DwarfMapper.Generator.Pipeline
                                 req.AllMethods,
                                 ep.Name,
                                 req.Location,
-                                acc.Diagnostics),
+                                acc.Diagnostics,
+                                isMappingParameter: true),
                             // Escaped for the same reason the signature fragment is: this string is emitted as
                             // C# (`Class = @class`), so a parameter the user spelled `@class` must keep its `@`.
                             // It is also what DWARF070 and the ThrowIfNull message name the parameter by, which

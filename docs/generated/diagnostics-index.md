@@ -73,7 +73,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF067` | Error | [GenerateWrapperMap] wrapper is not a single-payload generic |
 | `DWARF068` | Error | Unsupported MapConfig expression |
 | `DWARF069` | Error | Conflicting member configuration |
-| `DWARF070` | Warning | Nullable source member is assigned to a non-nullable target member |
+| `DWARF070` | Warning | A nullable source is assigned to a non-nullable target member |
 | `DWARF071` | Info | Source type has derived types whose members would be dropped |
 | `DWARF072` | Error | Member has a source match but auto-matching is disabled |
 | `DWARF073` | Error | [MapProperty(StringFormat=)] is not applicable here |

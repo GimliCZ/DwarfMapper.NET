@@ -1031,8 +1031,13 @@ namespace DwarfMapper.Generator.Diagnostics
 
         public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
             "DWARF070",
-            "Nullable source member is assigned to a non-nullable target member",
-            "Source member '{0}' is a nullable reference but the destination member is non-nullable, so a null " + "would be stored in a member whose type forbids it. Fix it in one of: [MapProperty(NullSubstitute = …)] " + "for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] to keep the destination default, " + "or make the destination member nullable.",
+            "A nullable source is assigned to a non-nullable target member",
+            // {0} is the whole noun phrase ("Source member 'X'" / "Mapping parameter 'x'"), not a bare name:
+            // round 29 task 2.7 taught this diagnostic to fire for a Phase 5 mapping PARAMETER as well as a
+            // source member, and a message that calls a parameter a "member" names the wrong kind of thing and
+            // offers two remedies ([MapProperty(NullSubstitute)], SkipNullSourceMembers) that cannot reach it.
+            // Built in one place - MapperExtractor.NullSourceLabel - so the two spellings cannot drift.
+            "{0} is a nullable reference but the destination member is non-nullable, so a null " + "would be stored in a member whose type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. Either way, dotnet_diagnostic.DWARF070.severity = none accepts the null " + "knowingly.",
             Category,
             DiagnosticSeverity.Warning,
             true,

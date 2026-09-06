@@ -1313,6 +1313,18 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>MemberMap.ConverterParamIsNonNullableRef</c>.
         ///     See docs/superpowers/specs/2026-07-25-nested-nullable-parameter.md.
         /// </summary>
+        /// <summary>
+        ///     How <c>DWARF070</c> names the thing that carries the null. The diagnostic's <c>{0}</c> is this
+        ///     whole phrase rather than a bare name, because the same descriptor now covers two kinds of thing:
+        ///     a member of the source type, and a Phase 5 mapping PARAMETER. Calling the second one a "member"
+        ///     is not a wording nit — it points the reader at <c>[MapProperty(NullSubstitute = …)]</c> and
+        ///     <c>SkipNullSourceMembers</c>, neither of which can reach a parameter.
+        /// </summary>
+        private static string NullSourceLabel(string name, bool isMappingParameter = false)
+        {
+            return (isMappingParameter ? "Mapping parameter '" : "Source member '") + name + "'";
+        }
+
         private static bool ForgiveNestedNullableArg(
             string? converterMethod,
             ITypeSymbol srcType,
@@ -1321,15 +1333,20 @@ namespace DwarfMapper.Generator.Pipeline
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             string sourceName,
             LocationInfo? location,
-            List<DiagnosticInfo> diagnostics)
+            List<DiagnosticInfo> diagnostics,
+            bool isMappingParameter = false)
         {
             var forgive = NullRefIntoNonNullableRef(srcType, tgtType) && ConverterParamIsNonNullableRef(converterMethod, autoCandidates, allMethods);
             if (forgive)
             {
+                // isMappingParameter defaults to false and five of the six callers take that default, which is
+                // CORRECT rather than convenient: every one of them resolves a member, an element, a dictionary
+                // value or a flatten leaf of the SOURCE TYPE. The extra-parameter phase is the only caller with
+                // anything else to report, and it passes true explicitly.
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    sourceName));
+                    NullSourceLabel(sourceName, isMappingParameter)));
             }
 
             return forgive;
