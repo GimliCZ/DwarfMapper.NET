@@ -626,7 +626,31 @@ namespace DwarfMapper.Generator.Pipeline
                 // What the COMPILER wrote is not behaviour the consumer chose. A record declares Equals,
                 // GetHashCode, ToString, PrintMembers, EqualityContract, <Clone>$ and Deconstruct without
                 // anyone typing them, and a rule that counted those would refuse every record ever written.
-                if (member.IsImplicitlyDeclared || member.IsStatic)
+                if (member.IsImplicitlyDeclared)
+                {
+                    continue;
+                }
+
+                // Asked BEFORE the static skip, and that ordering IS the rule: an operator is static, so the
+                // skip below hid this case entirely until round 29 T2.3 measured the rewrite. A record struct
+                // SYNTHESISES `==` and `!=`, and — unlike ToString, GetHashCode and Equals(T) — it does not
+                // stand aside for a hand-written one. It collides with it: CS0111, in the consumer's own file,
+                // as the direct result of following this diagnostic's advice.
+                //
+                // Refused whatever the operands are, rather than only for the exact (T, T) collision. A class
+                // that declares `==` has hand-written equality, and a record struct's synthesised member-wise
+                // equality would silently replace it — which is the change-of-meaning half of the same trade,
+                // and the half that does not announce itself with an error.
+                if (member is IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } op &&
+                    op.Name is "op_Equality" or "op_Inequality")
+                {
+                    var spelling = string.Equals(op.Name, "op_Equality", StringComparison.Ordinal) ? "==" : "!=";
+                    return Verdict.No(
+                        $"'{type.Name}' declares 'operator {spelling}', which a readonly record struct " +
+                        "synthesises and cannot have declared beside it (CS0111)");
+                }
+
+                if (member.IsStatic)
                 {
                     continue;
                 }
@@ -669,6 +693,17 @@ namespace DwarfMapper.Generator.Pipeline
                         when ConstructorRefusal(type, ctor) is { } refused:
                         return refused;
 
+                    // The one member of the "equality quartet" a record struct does NOT stand aside for.
+                    // Equals(T), GetHashCode() and ToString() are all replaceable by hand — measured, round 29
+                    // T2.3 — and `Equals(object)` is not: the synthesised override is always emitted, so a
+                    // hand-written one is CS0111. Handled here rather than inside IsBehaviour so the reason
+                    // names the collision instead of calling a consumer's equality override "a method".
+                    case IMethodSymbol { Name: "Equals", Parameters.Length: 1 } equals
+                        when equals.Parameters[0].Type.SpecialType == SpecialType.System_Object:
+                        return Verdict.No(
+                            $"'{type.Name}' declares 'Equals(object)', which a readonly record struct " +
+                            "synthesises and cannot have declared beside it (CS0111)");
+
                     case IMethodSymbol method when IsBehaviour(method):
                         return Verdict.No(
                             $"'{type.Name}' declares the method '{method.Name}'; a transfer model carries data only");
@@ -683,6 +718,14 @@ namespace DwarfMapper.Generator.Pipeline
         ///     event, which are judged on their own; the equality-and-printing quartet is what a
         ///     <c>readonly record struct</c> would synthesise anyway, and a record permits a hand-written one
         ///     in its place, so those survive the rewrite intact.
+        ///     <para>
+        ///         <b>With ONE exception, which is <see cref="BehaviourRefusal" />'s to make and not this
+        ///         predicate's:</b> <c>Equals(object)</c>. That sentence above was measured in round 29 T2.3 and
+        ///         held for <c>Equals(T)</c>, <c>GetHashCode()</c> and <c>ToString()</c> and failed for the
+        ///         fourth — the synthesised <c>override bool Equals(object?)</c> is emitted unconditionally, so
+        ///         a hand-written one is CS0111. This predicate still answers "not behaviour" for it, because
+        ///         it is not; the caller refuses it for the collision, with a reason that says so.
+        ///     </para>
         /// </summary>
         private static bool IsBehaviour(IMethodSymbol method)
         {

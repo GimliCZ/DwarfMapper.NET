@@ -2033,7 +2033,10 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
 - **The element type is already a struct**, or is not a class at all.
 - **Anything `TransferModelShape` refuses**, which is most types: a class that is derived from, is abstract,
   has a base class, is `static`, is generic, implements any interface other than `IEquatable<T>` of itself,
-  implements `IDisposable`, declares an event or a method beyond the record quartet, has a computed property,
+  implements `IDisposable`, declares an event or a method beyond the record quartet, declares
+  `Equals(object)`, `operator ==` or `operator !=` (a record struct synthesises those and a hand-written one
+  beside them is CS0111 — `Equals(T)`, `GetHashCode()` and `ToString()` it *does* stand aside for, and those
+  stay fine), has a computed property,
   has a constructor that does more than assign its parameters, looks like an EF entity (a `DbSet<T>` in this
   compilation, or a `[Key]`/`[Table]`/`[Column]`/`[ForeignKey]` attribute), holds no instance data, contains
   itself, or is declared in a referenced assembly rather than in your source. Each refusal is a case where the

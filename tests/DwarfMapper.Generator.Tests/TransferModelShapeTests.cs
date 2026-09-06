@@ -361,6 +361,53 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     <b>The advice must compile.</b> Round 29 T2.3 measured what a <c>readonly record struct</c>
+        ///     actually stands aside for and found the classifier's stated rule true of three of the four
+        ///     equality-and-printing members and false of the fourth. <c>Equals(T)</c>, <c>GetHashCode()</c> and
+        ///     <c>ToString()</c> may all be hand-written in a record struct; the synthesised
+        ///     <c>override bool Equals(object?)</c> is emitted unconditionally, so a hand-written one is CS0111
+        ///     — a compile error in the consumer's own file, produced by following <c>DWARF103</c>'s advice.
+        ///     <para>
+        ///         <c>operator ==</c> and <c>operator !=</c> are the same collision reached through a hole in
+        ///         the walk rather than a hole in the rule: they are STATIC, and the member loop's
+        ///         <c>IsStatic</c> skip meant no rule ever looked at them. The check now runs before that skip.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [InlineData(
+            "public override bool Equals(object o) => false; public override int GetHashCode() => Id;",
+            "Equals(object)")]
+        [InlineData(
+            "public static bool operator ==(Dto a, Dto b) => true; public static bool operator !=(Dto a, Dto b) => false;",
+            "operator ==")]
+        public void Refuses_a_member_a_record_struct_would_collide_with(string members, string expected)
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int Id { get; set; } " + members + " } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains(expected, verdict.Reason, StringComparison.Ordinal);
+            Assert.Contains("CS0111", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The other side of that measurement, so the refusal above cannot quietly widen into "any
+        ///     hand-written equality member". These three a record struct really does stand aside for, and each
+        ///     was compiled to confirm it rather than reasoned about.
+        /// </summary>
+        [Fact]
+        public void Eligible_for_the_three_equality_members_a_record_struct_stands_aside_for()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int Id { get; set; } " +
+                "public bool Equals(Dto o) => Id == o.Id; " +
+                "public override int GetHashCode() => Id; " +
+                "public override string ToString() => \"dto\"; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+        }
+
+        /// <summary>
         ///     Static members carry no per-instance state and no layout, so they do not disqualify anything —
         ///     a DTO with a <c>static Dto Empty</c> or a const is still nothing but data per instance.
         /// </summary>
