@@ -444,34 +444,66 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         ///         case of all and reads as a defect.
         ///     </para>
         ///     <para>
-        ///         <b>And every arm ends by saying what happens to code the action does not touch.</b> The
-        ///         rewrite leaves usages alone on purpose, but the consequence lands as CS1612/CS0037 in OTHER
-        ///         files, and Roslyn's preview shows one document's diff — so the title is the only place a
-        ///         consumer can be told before they click. Pinned on all three arms rather than one, because a
-        ///         warning present in the common case and missing from the nested ones is the shape a
-        ///         refactor produces.
+        ///         <b>Every arm LEADS with what happens to code the action does not touch.</b> The rewrite
+        ///         leaves usages alone on purpose, but the consequence lands as CS1612/CS0037 in OTHER files
+        ///         and Roslyn's preview shows one document's diff, so the title is the only place a consumer
+        ///         can be told before they click.
         ///     </para>
         /// </summary>
         [Fact]
-        public async Task The_title_names_the_type_counts_the_models_and_warns_about_call_sites()
+        public async Task The_title_warns_about_call_sites_then_names_the_type_and_counts_the_models()
         {
             var flat = Assert.Single(await _fixture.OfferAsync(Flat).ConfigureAwait(true));
             Assert.Equal(
-                "Convert 'OrderDto' to readonly record struct; call sites are not updated and may stop compiling",
+                "Convert to readonly record struct (may break call sites): 'OrderDto'",
                 flat.Title);
             Assert.Equal("DWARF103_ConvertToRecordStruct", flat.EquivalenceKey);
 
             var one = Assert.Single(await _fixture.OfferAsync(OneNested).ConfigureAwait(true));
             Assert.Equal(
-                "Convert 'OrderDto' (and 1 nested transfer model) to readonly record struct; " +
-                "call sites are not updated and may stop compiling",
+                "Convert to readonly record struct (may break call sites): 'OrderDto' + 1 nested transfer model",
                 one.Title);
 
             var two = Assert.Single(await _fixture.OfferAsync(TwoLevels).ConfigureAwait(true));
             Assert.Equal(
-                "Convert 'OrderDto' (and 2 nested transfer models) to readonly record struct; " +
-                "call sites are not updated and may stop compiling",
+                "Convert to readonly record struct (may break call sites): 'OrderDto' + 2 nested transfer models",
                 two.Title);
+        }
+
+        /// <summary>
+        ///     <b>And the consequence has to survive TRUNCATION, which is why it leads.</b> The warning first
+        ///     shipped appended to the END of the title, running to 129 characters — so a lightbulb list that
+        ///     cuts near 70 would have shown
+        ///     <c>Convert 'OrderDto' (and 2 nested transfer models) to readonly record struct; call si…</c>,
+        ///     which is strictly WORSE than no disclosure: it looks complete and reads as reassuring.
+        ///     <para>
+        ///         So the assertion is not "the title is short". It is that the warning is INTACT inside the
+        ///         first 70 characters of every arm, whatever the type is called and however many models
+        ///         travel with it — including a deliberately long name, because the identifiers are the part
+        ///         that may now be cut and that is the part the diagnostic underneath already prints.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public async Task The_call_site_warning_survives_a_truncated_title()
+        {
+            const string longName = """
+                                    using DwarfMapper;
+                                    using System.Collections.Generic;
+                                    namespace Demo;
+                                    public sealed class Order { public long Id { get; set; } }
+                                    public sealed class CustomerOrderLineItemProjectionDto { public long Id { get; set; } }
+                                    public class C { public List<Order> Rows { get; set; } }
+                                    public class D { public List<CustomerOrderLineItemProjectionDto> Rows { get; set; } }
+                                    [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                    """;
+
+            foreach (var source in new[] { Flat, OneNested, TwoLevels, longName })
+            {
+                var title = Assert.Single(await _fixture.OfferAsync(source).ConfigureAwait(true)).Title;
+                var visible = title.Length <= 70 ? title : title.Substring(0, 70);
+
+                Assert.Contains("may break call sites", visible, StringComparison.Ordinal);
+            }
         }
 
         /// <summary>

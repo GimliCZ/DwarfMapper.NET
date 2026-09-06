@@ -139,31 +139,42 @@ namespace DwarfMapper.CodeFixes
         }
 
         /// <summary>
-        ///     What a consumer is told the action will do to code it is not going to touch. Appended to every
-        ///     arm of <see cref="Title" />.
+        ///     The fixed HEAD of every title: what the action does, and what it will do to code it is not
+        ///     going to touch. The variable part — the type's name and how many models travel with it — comes
+        ///     after it.
         /// </summary>
         /// <remarks>
         ///     <para>
-        ///         <b>The title is the only place this can be said.</b> The rewrite deliberately leaves usages
-        ///         alone — that is the whole "loud over silent" bargain — but the consequence lands as
-        ///         CS1612/CS0037 in OTHER files, and Roslyn's preview shows the diff for one document. So a
-        ///         person who clicks "Convert 'X' to readonly record struct" and reads nothing else has been
-        ///         told a true thing that is not the whole thing, and finds out from the error list.
+        ///         <b>The title is the only place the consequence can be said.</b> The rewrite deliberately
+        ///         leaves usages alone — that is the whole "loud over silent" bargain — but the consequence
+        ///         lands as CS1612/CS0037 in OTHER files, and Roslyn's preview shows the diff for one
+        ///         document. A person who clicks "Convert 'X' to readonly record struct" and reads nothing
+        ///         else has been told a true thing that is not the whole thing, and finds out from the error
+        ///         list.
         ///     </para>
         ///     <para>
-        ///         Worded as "are not updated AND may stop compiling" rather than "may need updating", because
-        ///         the two facts are different and only one of them is guessable from the other: the fix
-        ///         declining to edit usages is a decision, and a build that stops is the consequence. "May"
-        ///         is honest — a usage that only reads members survives untouched.
+        ///         <b>And the ORDER is the point, not the length.</b> This warning first shipped appended to
+        ///         the end of the title, which ran to 129 characters and put the warning exactly where a
+        ///         lightbulb list truncates: <c>… to readonly record struct; call si…</c> is strictly WORSE
+        ///         than no disclosure, because it looks complete and reads as reassuring. Leading with the
+        ///         action and the consequence, and trailing with the identifiers, means the part that gets cut
+        ///         is the part the diagnostic underneath already names — and the consequence is intact by
+        ///         character 55, inside any plausible truncation.
+        ///     </para>
+        ///     <para>
+        ///         "May break" rather than "breaks": a usage that only reads members survives untouched, and
+        ///         this project does not overstate a consequence to make a point. The second fact — that the
+        ///         fix does not update those call sites, which is a decision rather than a consequence — no
+        ///         longer fits a truncation-proof head and lives in <c>docs/diagnostics.md</c> beside the
+        ///         hazards it belongs with.
         ///     </para>
         /// </remarks>
-        private const string CallSiteWarning = "; call sites are not updated and may stop compiling";
+        private const string TitleHead = "Convert to readonly record struct (may break call sites): ";
 
         /// <summary>
-        ///     The action's title. The plan's wording, with the parenthetical dropped when there is nothing to
-        ///     put in it and singularised when there is one — "and 0 nested transfer models" describes the
-        ///     commonest case of all and reads as a defect — and <see cref="CallSiteWarning" /> on the end of
-        ///     every arm.
+        ///     The action's title: <see cref="TitleHead" />, then the type and the count of models travelling
+        ///     with it — singularised at one and dropped at zero, because "+ 0 nested transfer models"
+        ///     describes the commonest case of all and reads as a defect.
         /// </summary>
         private static string Title(string targetId, int nestedCount)
         {
@@ -171,9 +182,9 @@ namespace DwarfMapper.CodeFixes
 
             return nestedCount switch
             {
-                0 => $"Convert '{name}' to readonly record struct{CallSiteWarning}",
-                1 => $"Convert '{name}' (and 1 nested transfer model) to readonly record struct{CallSiteWarning}",
-                _ => $"Convert '{name}' (and {nestedCount.ToString(CultureInfo.InvariantCulture)} nested transfer models) to readonly record struct{CallSiteWarning}"
+                0 => $"{TitleHead}'{name}'",
+                1 => $"{TitleHead}'{name}' + 1 nested transfer model",
+                _ => $"{TitleHead}'{name}' + {nestedCount.ToString(CultureInfo.InvariantCulture)} nested transfer models"
             };
         }
 

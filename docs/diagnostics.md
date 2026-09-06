@@ -1986,8 +1986,10 @@ public readonly record struct OrderDto(long Id, int Quantity);
 ```
 
 **Fix:** declare the element type as a `readonly record struct`. The IDE lightbulb offers
-*Convert 'X' (and N nested transfer models) to readonly record struct; call sites are not updated and may
-stop compiling*, which does it for you — **and does it to the nested models too**, because the size in the message counts any transfer model the type holds as
+*Convert to readonly record struct (may break call sites): 'X' + N nested transfer models*, which does it for
+you. **It does not update those call sites**, and that is deliberate rather than an omission — the warning
+leads the title because it is the half that must survive a truncated lightbulb entry, and the hazards below
+are the half that explains it — **and does it to the nested models too**, because the size in the message counts any transfer model the type holds as
 a struct as well; converting the element alone would leave you a smaller type than the one you were shown.
 The rewrite makes the declaration compile on its own (`set` becomes `init`, an instance field gains
 `readonly`, initialisers keep a constructor, and a member the nullable context left oblivious keeps its
