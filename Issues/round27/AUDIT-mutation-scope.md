@@ -26,10 +26,10 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | `DwarfMapper.Generator` | 71 | 7 | 31,935 | 2,289 | **7.2 %** | 95.7 % |
 | `DwarfMapper` (runtime) | 42 | 6 | 3,437 | 944 | **27.5 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
-| `DwarfMapper.CodeFixes` | 5 | 5 | 1,270 | 1,270 | **100 %** | 96.8 % |
+| `DwarfMapper.CodeFixes` | 5 | 4 | 1,270 | 711 | **56.0 %** | 96.8 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **137** | **23** | **39,857** | **5,160** | **12.9 %** | |
+| **all** | **137** | **22** | **39,857** | **4,601** | **11.5 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -48,13 +48,31 @@ pins files EXACTLY and shares to a percentage point, so 2,250 lines of round-29 
 generator's denominator (and 253 in `BlittableProof.cs`, inside the glob) without tripping it. The
 generator's share reads 7.3 % where it read 7.0 %, and the headline is unchanged at 12.0 %. Re-measured
 in full again 2026-09-06 (round 29, T2.3), which added the FIFTH code-fix provider,
-`ConvertToRecordStructCodeFixProvider.cs` (559 lines) — listed in `stryker-config.codefixes.json`'s `mutate`
-globs in the same commit that created it, which is what that config's hand-written file list is for, so
-`DwarfMapper.CodeFixes` stays at 100 % on 5 files rather than quietly becoming 56 %. The generator grew
-1,103 lines across the same task (the classifier's inlined-model collector and the DWARF103 report site's
+`ConvertToRecordStructCodeFixProvider.cs` (559 lines — the `DWARF103` transitive rewrite). The generator grew
+1,103 lines across the same task (the classifier's inlined-model collector and the `DWARF103` report site's
 diagnostic properties, 28 of them inside `BlittableProof.cs`'s glob); its share reads 7.2 % where it read
-7.3 %, and the headline moves to **12.9 %** — the first time this number has gone UP, and it went up because
-the leg that covers a whole assembly gained a file rather than because anything was mutated better.
+7.3 %.
+
+**`DwarfMapper.CodeFixes` drops from 100 % to 56 %, and that is the honest number rather than a regression
+nobody noticed.** T2.3 did add the new provider to `stryker-config.codefixes.json` and ran the leg
+(2026-09-06): **79.24 %** — 449 mutants created, 230 tested, 187 killed, 43 survived, 6 uncovered — which
+crashes that config's `break: 87`. Two facts from that run decided it was not a threshold to lower:
+
+- **26 of the 43 survivors are in the new file, and roughly half are provably equivalent** — three
+  `ConfigureAwait(false)` flips, the two `converted.Add` lines that add the same symbol for a non-generic
+  type, `Short`'s strip-the-`T:` branch which is a no-op for any namespaced id. Even a complete kill program
+  lands near **85 %**, *below* the current break: the raw ceiling has moved, and re-pinning it needs the
+  per-mutant case analysis `Issues/ledgers/codefixes-mutation-survivors.md` holds for the existing 23, not a
+  number chosen to fit.
+- **Stryker's safe mode removed every mutation in `Convert` and `ObliviousNestedMembers`** — the two methods
+  that perform the rewrite — because two mutants there hit CS0165 and CS1503. That run scored the new file
+  on its periphery and would have said almost nothing about the code that edits a consumer's source.
+
+So the file stays out of the leg until a task does the kill program properly, and the debt is recorded HERE,
+where this scan pins it exactly and it cannot rot. The headline falls to **11.5 %** from 12.0 % — the
+denominator grew by 559 lines of the most literally user-facing code in the repository, and the numerator did
+not move, which is precisely the shape of gap this audit was written to make visible rather than the kind it
+should be allowed to hide.
 
 **Round 27 made the generator's share worse, not better.** The seam stage added 6,659 lines across 13 new
 `Pipeline/` files — `MapperExtractor.Phases.cs` (3,398), `.Conversions.Arms.cs` (795),

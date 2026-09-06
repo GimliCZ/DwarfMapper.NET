@@ -68,6 +68,20 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                                          [DwarfMapper] public partial class M { public partial D Map(C c); }
                                          """;
 
+        /// <summary>One level of nesting — the fixture the singular title row needs.</summary>
+        private const string OneNested = """
+                                         #nullable enable
+                                         using DwarfMapper;
+                                         using System.Collections.Generic;
+                                         namespace Demo;
+                                         public sealed class Money { public long Units { get; set; } }
+                                         public sealed class Order { public long Id { get; set; } public Money Total { get; set; } = new Money(); }
+                                         public sealed class OrderDto { public long Id { get; set; } public Money Total { get; set; } = new Money(); }
+                                         public class C { public List<Order> Rows { get; set; } = new(); }
+                                         public class D { public List<OrderDto> Rows { get; set; } = new(); }
+                                         [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                         """;
+
         // ─── The rewrite ─────────────────────────────────────────────────────────
 
         /// <summary>
@@ -149,8 +163,9 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                                   using DwarfMapper;
                                   using System.Collections.Generic;
                                   namespace Demo;
+                                  public sealed class MoneySrc { public long Units { get; set; } }
                                   public sealed class Money { public long Units { get; set; } }
-                                  public sealed class Order { public long Id { get; set; } }
+                                  public sealed class Order { public long Id { get; set; } public MoneySrc Total { get; set; } }
                                   public sealed class OrderDto { public long Id { get; set; } public Money Total { get; set; } }
                                   public class C { public List<Order> Rows { get; set; } }
                                   public class D { public List<OrderDto> Rows { get; set; } }
@@ -171,6 +186,12 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
             Assert.NotNull(layout);
             Assert.Equal(printed, layout!.Value.Size);
+
+            // And the mapper the consumer is left with still generates. This is the post-fix path a real
+            // consumer walks and the one the other rows cannot reach: the element map now converts a CLASS
+            // ('MoneySrc') into a Nullable<struct> ('Money?'), where every fixture whose two sides share a
+            // nested type only ever exercises struct-to-struct identity.
+            GeneratorAssert.EmitsCompilableCode(fixedText);
         }
 
         /// <summary>
@@ -187,8 +208,9 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                                   using DwarfMapper;
                                   using System.Collections.Generic;
                                   namespace Demo;
+                                  public sealed class MoneySrc { public long Units { get; set; } }
                                   public sealed class Money { public long Units { get; set; } }
-                                  public sealed class Order { public long Id { get; set; } }
+                                  public sealed class Order { public long Id { get; set; } public MoneySrc? Total { get; set; } }
                                   public sealed class OrderDto { public long Id { get; set; } public Money? Total { get; set; } }
                                   public class C { public List<Order> Rows { get; set; } = new(); }
                                   public class D { public List<OrderDto> Rows { get; set; } = new(); }
@@ -200,6 +222,8 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
             Assert.Contains("public Money? Total { get; init; }", fixedText, StringComparison.Ordinal);
             Assert.DoesNotContain("Money?? Total", fixedText, StringComparison.Ordinal);
             Assert.Contains("public readonly record struct Money", fixedText, StringComparison.Ordinal);
+
+            GeneratorAssert.EmitsCompilableCode(fixedText, NullableContextOptions.Enable);
         }
 
         // ─── The bands and the shapes that would not compile ─────────────────────
@@ -220,7 +244,8 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                            using DwarfMapper;
                            using System.Collections.Generic;
                            namespace Demo;
-                           public sealed class Order { public long Id { get; set; } }
+                           public sealed class Order { {{longs}} }
+                           /// <summary>Nine longs.</summary>
                            public sealed class OrderDto { {{longs}} }
                            public class C { public List<Order> Rows { get; set; } }
                            public class D { public List<OrderDto> Rows { get; set; } }
@@ -232,6 +257,12 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
             Assert.Contains("72 bytes as a struct, over the 64-byte line", fixedText, StringComparison.Ordinal);
             Assert.Contains("by 'in'", fixedText, StringComparison.Ordinal);
             Assert.Contains("public readonly record struct OrderDto", fixedText, StringComparison.Ordinal);
+
+            // The doc comment above it survives, once, and the note lands after it rather than between the
+            // comment and the type it documents.
+            Assert.Equal(1, CountOccurrences(fixedText, "Nine longs."));
+
+            GeneratorAssert.EmitsCompilableCode(fixedText);
         }
 
         /// <summary>
@@ -399,6 +430,142 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
             Assert.Contains("public readonly long Id;", fixedText, StringComparison.Ordinal);
             Assert.DoesNotContain("readonly readonly", fixedText, StringComparison.Ordinal);
+        }
+
+        // ─── What the lightbulb says, and where the note goes ───────────────
+
+        /// <summary>
+        ///     The action's title and its equivalence key, pinned as exact strings. A title is the whole of
+        ///     what a consumer sees before accepting a rewrite of their own type, and a blanked or wrongly
+        ///     counted one is not a crash — it is a lightbulb entry that misdescribes what is about to happen.
+        ///     <para>
+        ///         The count is the plan's wording at two or more; at one it is singularised and at zero the
+        ///         parenthetical is dropped, because "(and 0 nested transfer models)" describes the commonest
+        ///         case of all and reads as a defect.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public async Task The_title_names_the_type_and_counts_the_models_it_carries()
+        {
+            var flat = Assert.Single(await _fixture.OfferAsync(Flat).ConfigureAwait(true));
+            Assert.Equal("Convert 'OrderDto' to readonly record struct", flat.Title);
+            Assert.Equal("DWARF103_ConvertToRecordStruct", flat.EquivalenceKey);
+
+            var one = Assert.Single(await _fixture.OfferAsync(OneNested).ConfigureAwait(true));
+            Assert.Equal(
+                "Convert 'OrderDto' (and 1 nested transfer model) to readonly record struct",
+                one.Title);
+
+            var two = Assert.Single(await _fixture.OfferAsync(TwoLevels).ConfigureAwait(true));
+            Assert.Equal(
+                "Convert 'OrderDto' (and 2 nested transfer models) to readonly record struct",
+                two.Title);
+        }
+
+        /// <summary>
+        ///     Exactly 64 bytes gets NO note. The line is "over 64", which is where <c>DWARF103</c> itself
+        ///     starts advising <c>in</c> — a 64-byte struct still beat its class by value in the measurement
+        ///     (26.4 ns against 29.9 ns), so a note there would be advice against the numbers.
+        /// </summary>
+        [Fact]
+        public async Task A_type_of_exactly_sixty_four_bytes_gets_no_note()
+        {
+            var longs = string.Join(
+                " ",
+                Enumerable.Range(0, 8).Select(i => $"public long L{i} {{ get; set; }}"));
+
+            var source = $$"""
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public sealed class Order { {{longs}} }
+                           public sealed class OrderDto { {{longs}} }
+                           public class C { public List<Order> Rows { get; set; } }
+                           public class D { public List<OrderDto> Rows { get; set; } }
+                           [DwarfMapper] public partial class M { public partial D Map(C c); }
+                           """;
+
+            var fixedText = await ApplyAsync(source).ConfigureAwait(true);
+
+            Assert.Contains("public readonly record struct OrderDto", fixedText, StringComparison.Ordinal);
+            Assert.DoesNotContain("64-byte line", fixedText, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The note goes on the ROOT and on nothing else. A nested model's own size is not what the
+        ///     diagnostic measured, so printing the root's byte count above it would attribute a number to a
+        ///     type it was never about.
+        /// </summary>
+        [Fact]
+        public async Task The_in_note_goes_on_the_root_and_not_on_a_nested_model()
+        {
+            var longs = string.Join(
+                " ",
+                Enumerable.Range(0, 8).Select(i => $"public long L{i} {{ get; set; }}"));
+
+            var source = $$"""
+                           #nullable enable
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public sealed class Money { public long Units { get; set; } }
+                           public sealed class Order { {{longs}} public Money Total { get; set; } = new Money(); }
+                           public sealed class OrderDto { {{longs}} public Money Total { get; set; } = new Money(); }
+                           public class C { public List<Order> Rows { get; set; } = new(); }
+                           public class D { public List<OrderDto> Rows { get; set; } = new(); }
+                           [DwarfMapper] public partial class M { public partial D Map(C c); }
+                           """;
+
+            var fixedText = await ApplyAsync(source).ConfigureAwait(true);
+
+            Assert.Equal(1, CountOccurrences(fixedText, "over the 64-byte line"));
+            Assert.Contains("72 bytes as a struct", fixedText, StringComparison.Ordinal);
+
+            // 'Money' is declared above 'OrderDto' in the source and neither declaration moves, so the note
+            // sitting between them is the note sitting on the root.
+            var note = fixedText.IndexOf("over the 64-byte line", StringComparison.Ordinal);
+            var root = fixedText.IndexOf("record struct OrderDto", StringComparison.Ordinal);
+            var nested = fixedText.IndexOf("record struct Money", StringComparison.Ordinal);
+            Assert.True(note < root, "the note is not above the type it describes");
+            Assert.True(nested < note, "the note landed above the nested model instead of the root");
+        }
+
+        /// <summary>
+        ///     The oblivious <c>?</c> reaches a FIELD as well as an auto-property. The classifier accepts a
+        ///     public data field, and a fix that handled only properties would leave that member a
+        ///     non-nullable struct field — the exact meaning change, and the exact under-count, the property
+        ///     path exists to prevent.
+        /// </summary>
+        [Fact]
+        public async Task An_oblivious_nested_field_keeps_its_nullability_and_its_size()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  using System.Collections.Generic;
+                                  namespace Demo;
+                                  public sealed class MoneySrc { public long Units; }
+                                  public sealed class Money { public long Units; }
+                                  public sealed class Order { public long Id; public MoneySrc Total; }
+                                  public sealed class OrderDto { public long Id; public Money Total; }
+                                  public class C { public List<Order> Rows { get; set; } }
+                                  public class D { public List<OrderDto> Rows { get; set; } }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+
+            var (diagnostics, _) = GeneratorTestHarness.Run(source);
+            var printed = int.Parse(
+                diagnostics.Single(d => d.Id == "DWARF103").Properties["TransferModelSize"]!,
+                CultureInfo.InvariantCulture);
+
+            var fixedText = await ApplyAsync(source).ConfigureAwait(true);
+
+            Assert.Contains("public readonly Money? Total;", fixedText, StringComparison.Ordinal);
+
+            var compilation = GeneratorTestHarness.BuildCompilation("ObliviousFieldAsm", fixedText);
+            var layout = LayoutHygiene.Measure(compilation.GetTypeByMetadataName("Demo.OrderDto")!);
+
+            Assert.NotNull(layout);
+            Assert.Equal(printed, layout!.Value.Size);
         }
 
         // ─── Harness ─────────────────────────────────────────────────────────────

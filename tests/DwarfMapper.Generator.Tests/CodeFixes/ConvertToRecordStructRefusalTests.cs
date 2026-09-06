@@ -93,6 +93,40 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     An EMPTY handle is the same refusal as an absent one, and a separate row because it is a
+        ///     separate branch: the guard is <c>!TryGetValue(...) || IsNullOrEmpty(...)</c>, and a fix that
+        ///     dropped the second half would offer an action whose target resolves to nothing.
+        /// </summary>
+        [Fact]
+        public async Task A_diagnostic_with_an_empty_handle_offers_nothing()
+        {
+            var actions = await OfferSyntheticAsync(
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", string.Empty))
+                .ConfigureAwait(true);
+
+            Assert.Empty(actions);
+        }
+
+        /// <summary>
+        ///     An empty NESTED list means "no nested models", not "one model with an empty name". The
+        ///     generator writes the property only when there is something in it, so this is the shape a
+        ///     hand-built or older diagnostic takes — and reading it as a single blank handle would abort a
+        ///     rewrite that is perfectly fine to make.
+        /// </summary>
+        [Fact]
+        public async Task An_empty_nested_list_still_converts_the_root()
+        {
+            var text = await ApplySyntheticAsync(
+                    _fixture.Document(Reported),
+                    ImmutableDictionary<string, string?>.Empty
+                        .Add("TransferModelId", "T:Demo.Money")
+                        .Add("NestedTransferModelIds", string.Empty))
+                .ConfigureAwait(true);
+
+            Assert.Contains("readonly record struct Money", text, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     <b>An unresolvable nested handle takes the whole rewrite down.</b> Half a transitive conversion
         ///     is the one outcome worse than none: the root becomes a struct whose nested members are still
         ///     references, so the consumer ends up with a type SMALLER than the byte count the diagnostic
