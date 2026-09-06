@@ -345,6 +345,10 @@ namespace DwarfMapper.Generator.Pipeline
                     "(" + access + ".HasValue ? (" + tgtFq + ")" + Call(access + ".Value") + " : null)",
                 NullHandling.NullableProjectRef =>
                     "(" + access + " is null ? null : (" + tgtFq + ")" + Call(access + forgive) + ")",
+                // See CollectionConverter.ElementExpr: the destination's annotation forbids the preserved null,
+                // so the null arm is forgiven rather than leaving CS8601 in the consumer's generated file.
+                NullHandling.NullableProjectRefForgiving =>
+                    "(" + access + " is null ? null! : (" + tgtFq + ")" + Call(access + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(access +
                                                  " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")"),
                 NullHandling.ValueOrDefault => Call(access + ".GetValueOrDefault()"),

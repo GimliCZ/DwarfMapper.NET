@@ -141,6 +141,51 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                 [DwarfMapper] public partial class M { public partial B Map(A a); }
                                                 """, "DwarfGenerator");
 
+            // Round 29 task 2.6. The manifest moved ZERO rows for the payload-edge null-guard fix, and that was
+            // the hole rather than the reassurance: no case in it routed a nested REFERENCE member through a map
+            // method the USER declared — every nested edge here resolves to a synthesized __DwarfMap_Obj_ helper,
+            // which has null-guarded internally since it was written. The three arms of that decision are what
+            // these two cases pin. NestedViaDeclaredMap carries all three at once: Inner (nullable -> nullable,
+            // lifted), Strict (nullable -> non-nullable, the DWARF070 arm, left forgiven and NOT lifted) and Plain
+            // (non-nullable both ways, lifted with the forgiving null arm).
+            yield return ("NestedViaDeclaredMap", """
+                                                  #nullable enable
+                                                  using DwarfMapper;
+                                                  namespace Demo;
+                                                  public class Child { public int V { get; set; } }
+                                                  public class ChildDto { public int V { get; set; } }
+                                                  public class A { public Child? Inner { get; set; } public Child? Strict { get; set; } public Child Plain { get; set; } = new(); }
+                                                  public class B { public ChildDto? Inner { get; set; } public ChildDto Strict { get; set; } = new(); public ChildDto Plain { get; set; } = new(); }
+                                                  [DwarfMapper] public partial class M { public partial B Map(A a); public partial ChildDto ToDto(Child c); }
+                                                  """, "DwarfGenerator");
+
+            // [GenerateWrapperMap] itself was unpinned too, in both payload spellings — the nullable one that used
+            // to emit CS8604 into the consumer's file and the non-nullable one that used to throw at run time.
+            yield return ("WrapperMapPayloadEdge", """
+                                                   #nullable enable
+                                                   using DwarfMapper;
+                                                   namespace Demo;
+                                                   public class Child { public int V { get; set; } }
+                                                   public class ChildDto { public int V { get; set; } }
+                                                   public sealed class Result<T> where T : class
+                                                   {
+                                                       public Result(T? value, string? error) { Value = value; Error = error; }
+                                                       public T? Value { get; }
+                                                       public string? Error { get; }
+                                                   }
+                                                   public sealed class Outcome<T> where T : class
+                                                   {
+                                                       public Outcome(T value, string? error) { Value = value; Error = error; }
+                                                       public T Value { get; }
+                                                       public string? Error { get; }
+                                                   }
+                                                   [DwarfMapper]
+                                                   [GenerateWrapperMap(typeof(Result<>))]
+                                                   [GenerateWrapperMap(typeof(Outcome<>))]
+                                                   [GenerateMap<Child, ChildDto>]
+                                                   public partial class M { public partial ChildDto ToDto(Child c); }
+                                                   """, "DwarfGenerator");
+
             yield return ("EnumByName", """
                                         using DwarfMapper;
                                         namespace Demo;

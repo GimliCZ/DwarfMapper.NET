@@ -427,6 +427,143 @@ namespace DwarfMapper.Generator.Tests
                 "[MapTo] Child?[] / Child? member: " + string.Join("\n  ", warnings.Select(w => w.Id + " " + w.GetMessage(CultureInfo.InvariantCulture))));
         }
 
+        // ── 4. the payload edge of a USER-DECLARED map method (CS8604) ─────────────────────────────────────
+        // Round 29 task 2.6, found by the representative corpus. A nested edge whose converter is a method the
+        // USER declared — which is what [GenerateWrapperMap] produces for every payload, because it expands over
+        // exactly the pairs already declared as maps — got neither the null-forgiving '!' (that path is gated on a
+        // NON-nullable destination, via ForgiveNestedNullableArg/DWARF070) nor the null-preserving lift (that one
+        // only ever fired for a Nullable<U> VALUE destination). Nullable reference in, nullable reference out fell
+        // between the two and was emitted bare: CS8604 in the consumer's .g.cs. Not wrapper-specific — the first
+        // case below has no wrapper in it at all.
+
+        private const string NullableNestedMemberViaDeclaredMap = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child? Inner { get; set; } }
+                public class Dst { public ChildDto? Inner { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s); public partial ChildDto ToDto(Child c); }
+            }
+            """;
+
+        private const string NullableElementViaDeclaredMap = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child?> Items { get; set; } = new(); }
+                public class Dst { public List<ChildDto?> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s); public partial ChildDto ToDto(Child c); }
+            }
+            """;
+
+        private const string NullableWrapperPayload = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public sealed class Result<T> where T : class
+                {
+                    public Result(T? value, string? error) { Value = value; Error = error; }
+                    public T? Value { get; }
+                    public string? Error { get; }
+                }
+                [DwarfMapper]
+                [GenerateWrapperMap(typeof(Result<>))]
+                [GenerateMap<Child, ChildDto>]
+                public partial class M { public partial ChildDto ToDto(Child c); }
+            }
+            """;
+
+        private const string NonNullableWrapperPayload = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public sealed class Result<T> where T : class
+                {
+                    public Result(T value, string? error) { Value = value; Error = error; }
+                    public T Value { get; }
+                    public string? Error { get; }
+                    public static Result<T> Fail(string error) => new Result<T>(default!, error);
+                }
+                [DwarfMapper]
+                [GenerateWrapperMap(typeof(Result<>))]
+                [GenerateMap<Child, ChildDto>]
+                public partial class M { public partial ChildDto ToDto(Child c); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_nested_member_through_a_declared_map_emits_no_CS8604()
+        {
+            AssertWarningFree(NullableNestedMemberViaDeclaredMap, "Child? Inner -> ChildDto? Inner via the user's own ToDto");
+        }
+
+        [Fact]
+        public void Nullable_collection_element_through_a_declared_map_emits_no_CS8604()
+        {
+            AssertWarningFree(NullableElementViaDeclaredMap, "List<Child?> -> List<ChildDto?> via the user's own ToDto");
+        }
+
+        [Fact]
+        public void Nullable_wrapper_payload_emits_no_CS8604()
+        {
+            AssertWarningFree(NullableWrapperPayload, "[GenerateWrapperMap] Result<T> with a nullable payload");
+        }
+
+        [Fact]
+        public void Non_nullable_wrapper_payload_emits_no_warning_either()
+        {
+            // The other dominant Result<T> spelling. It never warned — it threw at run time instead — so this is
+            // the guard that the fix for that arm did not trade a silent throw for a loud compiler warning.
+            AssertWarningFree(NonNullableWrapperPayload, "[GenerateWrapperMap] Result<T> with a non-nullable payload");
+        }
+
+        [Fact]
+        public void The_nullable_payload_edge_preserves_null_rather_than_forcing_it_through_the_map()
+        {
+            var generated = GeneratorAssert.CompilesClean(NullableWrapperPayload, NullableContextOptions.Enable);
+            Assert.Contains("src.Value is null ? null : ToDto(src.Value)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_non_nullable_payload_edge_preserves_null_with_the_forgiving_arm()
+        {
+            // Both annotations claim the payload cannot be null; `Fail` stores default! and makes one of them
+            // false. The lift is the same, and the `!` is what keeps CS8601 out of a file the consumer cannot edit.
+            var generated = GeneratorAssert.CompilesClean(NonNullableWrapperPayload, NullableContextOptions.Enable);
+            Assert.Contains("src.Value is null ? null! : ToDto(src.Value)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_nullable_source_into_a_non_nullable_target_still_forgives_the_argument_and_reports_DWARF070()
+        {
+            // The third arm, deliberately NOT lifted: the destination cannot hold the null and DWARF070 already
+            // names that against the user's own DTO. Silently lifting it here would swallow the one case the
+            // mapper is supposed to be loud about, so this pins the pre-existing emission byte for byte.
+            const string source = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public class Child { public int V { get; set; } }
+                    public class ChildDto { public int V { get; set; } }
+                    public class Src { public Child? Inner { get; set; } }
+                    public class Dst { public ChildDto Inner { get; set; } = new(); }
+                    [DwarfMapper] public partial class M { public partial Dst Map(Src s); public partial ChildDto ToDto(Child c); }
+                }
+                """;
+            var run = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+            Assert.Contains("Inner = ToDto(s.Inner!)", run.GeneratedSource, StringComparison.Ordinal);
+            Assert.Contains(run.Diagnostics, d => d.Id == "DWARF070");
+        }
+
         [Fact]
         public void Enum_without_obsolete_members_emits_no_pragma()
         {

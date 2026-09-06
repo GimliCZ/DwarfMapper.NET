@@ -153,21 +153,48 @@ namespace CleanCorpus
             var mapped = new OrderReadMappers().ToResult(source);
 
             Assert.Null(mapped.Error);
-            Assert.Equal(HandWritten.ToResponse(source.Value).Reference, mapped.Value.Reference);
+            Assert.Equal(HandWritten.ToResponse(source.Value!).Reference, mapped.Value!.Reference);
         }
 
         [Fact]
-        public void The_failure_arm_of_that_envelope_throws_rather_than_mapping()
+        public void The_failure_arm_of_that_envelope_maps_to_a_failure_rather_than_throwing()
         {
-            // FINDING, pinned so it cannot regress silently. The synthesized wrapper map maps the payload
-            // UNCONDITIONALLY — `value: ToResponse(source.Value)` — and the generated payload map opens with
-            // ArgumentNullException.ThrowIfNull. A Result<T> whose failure arm carries no payload therefore
-            // cannot be mapped at all, and nothing says so at build time. See the report, §3.5: the nullable
-            // spelling of the same type (`T? Value`) emits CS8604 into the consumer's .g.cs instead, which is
-            // worse because a consumer cannot suppress it. No [DwarfMapper] option changes either.
+            // Task 2.5's finding, task 2.6's fix, pinned from the other side. The payload edge used to be
+            // converted UNCONDITIONALLY — `value: ToResponse(source.Value)` — into a map method that opens with
+            // ArgumentNullException.ThrowIfNull, so an envelope whose whole purpose is "no payload, here is why"
+            // could not be mapped at all. The edge now carries the same null guard the synthesized object helper
+            // has always had: null in, null out, error preserved.
             var failed = Result<OrderEntity>.Fail("order not found");
 
-            Assert.Throws<ArgumentNullException>(() => new OrderReadMappers().ToResult(failed));
+            var mapped = new OrderReadMappers().ToResult(failed);
+
+            Assert.Null(mapped.Value);
+            Assert.Equal("order not found", mapped.Error);
+        }
+
+        [Fact]
+        public void The_other_dominant_envelope_spelling_maps_its_failure_arm_too()
+        {
+            // Outcome<T> declares its payload NON-nullable and parks default! in it on the failure arm — the
+            // Ardalis.Result spelling. The annotation says the payload cannot be null and the value is null
+            // anyway, which is why the guard has to be a runtime one rather than an annotation-driven lift.
+            var failed = Outcome<OrderEntity>.Fail("order not found");
+
+            var mapped = new OrderReadMappers().ToOutcome(failed);
+
+            Assert.Null(mapped.Value);
+            Assert.Equal("order not found", mapped.Error);
+        }
+
+        [Fact]
+        public void The_success_arm_of_the_non_nullable_envelope_still_maps_its_payload()
+        {
+            var source = Outcome<OrderEntity>.Ok(AnOrder());
+
+            var mapped = new OrderReadMappers().ToOutcome(source);
+
+            Assert.Null(mapped.Error);
+            Assert.Equal(HandWritten.ToResponse(source.Value).Reference, mapped.Value.Reference);
         }
 
         [Fact]

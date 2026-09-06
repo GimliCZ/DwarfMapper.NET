@@ -16,12 +16,20 @@ namespace CleanCorpus.Ordering.Mapping
 
     /// <summary>
     ///     Entity to API response — the dominant map in .NET line-of-business code — and the envelopes the
-    ///     endpoints wrap it in. <c>Result&lt;T&gt;</c> and <c>ApiResponse&lt;T&gt;</c> carry a single payload,
-    ///     so one <c>[GenerateWrapperMap]</c> each covers every pair on the class; <c>PagedResult&lt;T&gt;</c>
-    ///     holds a collection instead, which is not a single payload, so its instantiation is declared by hand.
+    ///     endpoints wrap it in. <c>Result&lt;T&gt;</c>, <c>Outcome&lt;T&gt;</c> and <c>ApiResponse&lt;T&gt;</c>
+    ///     carry a single payload, so one <c>[GenerateWrapperMap]</c> each covers every pair on the class;
+    ///     <c>PagedResult&lt;T&gt;</c> holds a collection instead, which is not a single payload, so its
+    ///     instantiation is declared by hand.
+    ///     <para>
+    ///         <c>Result&lt;T&gt;</c> and <c>Outcome&lt;T&gt;</c> are the two dominant spellings of the same
+    ///         envelope — nullable payload, and non-nullable payload with a <c>default!</c> failure arm. Both are
+    ///         here on purpose: they are the two faces of the payload-edge defect fixed in task 2.6, and each maps
+    ///         its failure arm without throwing and without a diagnostic in the consumer's generated file.
+    ///     </para>
     /// </summary>
     [DwarfMapper(AllowNonPublic = true)]
     [GenerateWrapperMap(typeof(Result<>))]
+    [GenerateWrapperMap(typeof(Outcome<>))]
     [GenerateWrapperMap(typeof(ApiResponse<>))]
     [GenerateMap<PagedResult<OrderEntity>, PagedResult<OrderResponse>>]
     public partial class OrderReadMappers
@@ -39,6 +47,8 @@ namespace CleanCorpus.Ordering.Mapping
         public partial OrderSummaryResponse ToSummary(OrderEntity source);
 
         public partial Result<OrderResponse> ToResult(Result<OrderEntity> source);
+
+        public partial Outcome<OrderResponse> ToOutcome(Outcome<OrderEntity> source);
 
         public partial ApiResponse<OrderResponse> ToEnvelope(ApiResponse<OrderEntity> source);
     }

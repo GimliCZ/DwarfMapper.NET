@@ -153,6 +153,40 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A nested member mapped through one of your OWN map methods ignored the mapper's null policy: `CS8604` in
+  the consumer's generated file, or an `ArgumentNullException` at run time.** When a nested edge resolves to a
+  *synthesized* helper the engine emits `if (s is null) return null!;` — null in, null out, and it has done so
+  since that helper was written. When the SAME edge resolves to a map method you declared yourself, the call
+  site got neither that guard nor anything in its place: the null-forgiving `!` is gated on a **non-nullable
+  destination** (the `DWARF070` path), and the null-preserving lift only ever fired for a `Nullable<U>` **value**
+  destination. A nullable reference into a nullable reference fell between the two and was emitted bare —
+  **`CS8604` inside a `.g.cs`**, where no consumer `#pragma`, `NoWarn` or editorconfig reaches it and
+  `TreatWarningsAsErrors` turns it into a build failure with no remedy on their side. With both ends declared
+  non-nullable, it compiled and threw instead, out of the callee's own `ArgumentNullException.ThrowIfNull`.
+  Whether a null survived a nested edge therefore depended on which of the two converters the resolver happened
+  to pick, which is not a fact any user can predict from the types.
+
+  The decision is now made once, where the user-declared converter is chosen, so a member, a collection element,
+  a dictionary value and a flatten leaf all get the same answer:
+  - **destination can hold null** → `x is null ? null : Conv(x)`. No `CS8604`, and the null is preserved.
+  - **destination cannot, and the source is not nullable-annotated either** → `x is null ? null! : Conv(x)`. Both
+    annotations claim the value cannot be null; the shape that makes one of them false is the ubiquitous
+    `Result<T>`/`Outcome<T>` whose `Fail` parks `default!` in the payload, and **mapping a failed result must not
+    throw**. The `!` is what keeps `CS8601` out of a file the consumer cannot edit.
+  - **destination cannot, and the source IS nullable-annotated** → unchanged, deliberately. That is the shape
+    **`DWARF070`** already names against your own DTO, and silently lifting it would swallow the one case the
+    mapper is supposed to be loud about.
+
+  A null-tolerant converter (one you declared with a nullable parameter) is untouched and keeps receiving the
+  null it was written to accept.
+
+  `[GenerateWrapperMap]` is where this bites hardest — it expands over exactly the pairs already declared as
+  map methods, so an envelope's payload edge is almost always a user-declared converter — but it is not a
+  wrapper-specific bug and the fix is not a wrapper-specific policy: a plain `Child? Inner` → `ChildDto? Inner`
+  beside your own `ChildDto ToDto(Child)` reproduced it with no wrapper anywhere. Found by the representative
+  corpus added in round 29 task 2.5. The golden manifest moved **0 existing cases** — no case in it routed a
+  nested reference through a declared map, which was the hole rather than the reassurance; two feature cases
+  now pin all three arms. (round 29, task 2.6)
 - **Every array member with a nullable element carried an unsuppressible `CS8629` into the consumer's build.**
   The array→array fast path indexes with a single length-bounded counter so the JIT can elide both bounds
   checks, and it built that loop by substituting `src[__i]` textually into the shared per-element expression.

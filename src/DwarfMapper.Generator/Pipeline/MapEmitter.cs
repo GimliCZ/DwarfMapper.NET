@@ -1400,7 +1400,10 @@ namespace DwarfMapper.Generator.Pipeline
             //   value source     src.X.HasValue ? Conv(src.X.Value) : null
             //   reference source src.X is null ? null : Conv(src.X)
             // C# 9+ target-typed conditional unifies U (from Conv) and null into the destination's U?.
-            if (member.NullHandling is NullHandling.NullableProject or NullHandling.NullableProjectRef)
+            //
+            // NullableProjectRefForgiving is the same reference-source lift where the DESTINATION'S annotation
+            // forbids the null — `null!` instead of `null`, because the plain form is CS8601 inside the .g.cs.
+            if (member.NullHandling is NullHandling.NullableProject or NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving)
             {
                 var srcExpr = paramName + "." + member.EmitSourceName;
                 if (member.ConverterMethod is null)
@@ -1413,9 +1416,10 @@ namespace DwarfMapper.Generator.Pipeline
                 // A recursion-capable converter takes (value, ctx, depth) — the ternary must thread them too,
                 // exactly as the non-lifting converter paths below do.
                 var extraArgs = member.ConverterNeedsDepthCtx ? ", " + ctxVarName + ", " + depthArg : "";
-                if (member.NullHandling == NullHandling.NullableProjectRef)
+                if (member.NullHandling is NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving)
                 {
-                    sb.Append(srcExpr).Append(" is null ? null : ")
+                    sb.Append(srcExpr)
+                        .Append(member.NullHandling == NullHandling.NullableProjectRefForgiving ? " is null ? null! : " : " is null ? null : ")
                         .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(extraArgs).Append(')');
                 }
                 else

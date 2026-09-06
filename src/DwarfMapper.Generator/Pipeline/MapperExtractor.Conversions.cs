@@ -228,6 +228,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (found is not null && !PrefersSynthesizedObjectMap(req, found))
             {
                 converterMethod = found;
+                nullHandling = UserConverterNullGuard(req, found);
                 return true;
             }
             // A found name that PrefersSynthesizedObjectMap claims falls through to the auto-nest arm, which
@@ -1229,6 +1230,76 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
             return false;
+        }
+
+        /// <summary>
+        ///     The null handling a <b>user-declared</b> converter's call site needs, asked once where that converter
+        ///     is chosen so that every edge which routes through <c>TryResolveConversion</c> — a member, a collection
+        ///     element, a dictionary value, a flatten leaf — gets the same answer.
+        ///     <para>
+        ///         WHY THIS EXISTS. A synthesized nested mapper opens with <c>if (s is null) return null!;</c>: null in,
+        ///         null out. A USER-declared map method that the auto-candidate arm adopts for the same edge opens with
+        ///         <c>ArgumentNullException.ThrowIfNull(source)</c> — it is also a public entry point, and that guard is
+        ///         its own contract. Whether a nested edge preserved a null or threw therefore depended on which of the
+        ///         two the resolver happened to pick, which is not a fact any user can predict from the types. Worse,
+        ///         the call site got the null-forgiving <c>!</c> only through <see cref="ForgiveNestedNullableArg" />,
+        ///         which requires <see cref="NullRefIntoNonNullableRef" /> — a NON-nullable destination — while the
+        ///         null-preserving lift (<see cref="NullHandling.NullableProjectRef" />) was only ever reached for a
+        ///         <c>Nullable&lt;U&gt;</c> VALUE destination. A nullable reference into a nullable reference fell
+        ///         between the two and was emitted bare: <c>CS8604</c> inside the consumer's <c>.g.cs</c>, where no
+        ///         <c>#pragma</c>, <c>NoWarn</c> or <c>.editorconfig</c> reaches it.
+        ///     </para>
+        ///     <para>
+        ///         Three arms, and the third is deliberately NOT one:
+        ///         <list type="bullet">
+        ///             <item>
+        ///                 <description>
+        ///                     Destination can hold null (nullable-annotated reference) →
+        ///                     <see cref="NullHandling.NullableProjectRef" />: <c>x is null ? null : Conv(x)</c>.
+        ///                 </description>
+        ///             </item>
+        ///             <item>
+        ///                 <description>
+        ///                     Destination cannot, and the SOURCE is not nullable-annotated either →
+        ///                     <see cref="NullHandling.NullableProjectRefForgiving" />. Both annotations claim the value
+        ///                     cannot be null; a <c>Result&lt;T&gt;</c> whose <c>Fail</c> stores <c>default!</c> makes one
+        ///                     of them false at run time, and mapping a failed result must not throw. Same lift, with the
+        ///                     <c>!</c> that keeps CS8601 out of the generated file.
+        ///                 </description>
+        ///             </item>
+        ///             <item>
+        ///                 <description>
+        ///                     Destination cannot, and the source IS nullable-annotated → <see cref="NullHandling.None" />,
+        ///                     UNCHANGED. That is the shape <c>DWARF070</c> already names against the user's own DTO, and
+        ///                     <see cref="ForgiveNestedNullableArg" /> already forgives the argument. Silently lifting it
+        ///                     here would swallow the one case the mapper is supposed to be loud about.
+        ///                 </description>
+        ///             </item>
+        ///         </list>
+        ///     </para>
+        ///     <para>
+        ///         Gated on the converter's parameter being a NON-nullable reference: a user converter declared to accept
+        ///         null was written to handle it, and keeps receiving the null it asked for. Value-type sources and
+        ///         destinations are excluded — a value source is never null, and a non-nullable value destination cannot
+        ///         express the lifted null at all (those pairs are already answered by the <c>Nullable&lt;&gt;</c> arms
+        ///         further up the chain).
+        ///     </para>
+        /// </summary>
+        private static NullHandling UserConverterNullGuard(ConversionRequest req, string converter)
+        {
+            if (!req.SrcType.IsReferenceType || !req.TgtType.IsReferenceType || !ConverterParamIsNonNullableRef(converter, req.AutoCandidates, req.AllMethods))
+            {
+                return NullHandling.None;
+            }
+
+            if (req.TgtType.NullableAnnotation == NullableAnnotation.Annotated)
+            {
+                return NullHandling.NullableProjectRef;
+            }
+
+            return req.SrcType.NullableAnnotation == NullableAnnotation.Annotated
+                ? NullHandling.None
+                : NullHandling.NullableProjectRefForgiving;
         }
 
         /// <summary>

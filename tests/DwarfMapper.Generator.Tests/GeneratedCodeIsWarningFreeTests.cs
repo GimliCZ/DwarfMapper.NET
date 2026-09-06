@@ -218,6 +218,70 @@ namespace DwarfMapper.Generator.Tests
                                       }
                                       """
             ];
+
+            // [GenerateWrapperMap] — the payload edge, in both dominant Result<T> spellings. Round 29 task 2.6:
+            // the nullable one put an unsuppressible CS8604 in the consumer's .g.cs, the non-nullable one threw at
+            // run time, and neither the schemas nor this list had ever declared a wrapper at all.
+            yield return
+            [
+                "WrapperMapPayload", """
+                                     using DwarfMapper;
+                                     namespace Demo;
+                                     public sealed class Child { public int V { get; set; } }
+                                     public sealed class ChildDto { public int V { get; set; } }
+                                     public sealed class Result<T> where T : class
+                                     {
+                                         public Result(T? value, string? error) { Value = value; Error = error; }
+                                         public T? Value { get; }
+                                         public string? Error { get; }
+                                     }
+                                     public sealed class Outcome<T> where T : class
+                                     {
+                                         public Outcome(T value, string? error) { Value = value; Error = error; }
+                                         public T Value { get; }
+                                         public string? Error { get; }
+                                     }
+                                     [DwarfMapper]
+                                     [GenerateWrapperMap(typeof(Result<>))]
+                                     [GenerateWrapperMap(typeof(Outcome<>))]
+                                     [GenerateMap<Child, ChildDto>]
+                                     public partial class M { public partial ChildDto ToDto(Child c); }
+                                     """
+            ];
+
+            // The same null-guard decision without a wrapper anywhere: a nested member, a nested collection
+            // element and a dictionary value, each routed through a map method the USER declared rather than
+            // through a synthesized helper. That is the actual defect surface — the wrapper only makes it common.
+            yield return
+            [
+                "NestedViaDeclaredMap", """
+                                        using System.Collections.Generic;
+                                        using DwarfMapper;
+                                        namespace Demo;
+                                        public sealed class Child { public int V { get; set; } }
+                                        public sealed class ChildDto { public int V { get; set; } }
+                                        public sealed class Src
+                                        {
+                                            public Child? Inner { get; set; }
+                                            public Child Plain { get; set; } = new();
+                                            public List<Child?> Items { get; set; } = new();
+                                            public Dictionary<string, Child?> Map { get; set; } = new();
+                                        }
+                                        public sealed class Dst
+                                        {
+                                            public ChildDto? Inner { get; set; }
+                                            public ChildDto Plain { get; set; } = new();
+                                            public List<ChildDto?> Items { get; set; } = new();
+                                            public Dictionary<string, ChildDto?> Map { get; set; } = new();
+                                        }
+                                        [DwarfMapper]
+                                        public partial class M
+                                        {
+                                            public partial Dst Convert(Src s);
+                                            public partial ChildDto ToDto(Child c);
+                                        }
+                                        """
+            ];
         }
 
         [Theory]

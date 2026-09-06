@@ -114,6 +114,15 @@ namespace CleanCorpus.Ordering.Contracts
     ///     The application layer's return type — a payload or a reason it is absent. Immutable, constructed
     ///     only through <see cref="Ok" /> or <see cref="Fail" />, which is how this type is written wherever
     ///     it appears.
+    ///     <para>
+    ///         This is the <b>nullable</b> spelling of the payload (<c>T? Value</c>, <c>Fail</c> passing
+    ///         <see langword="null" />) — the one that says out loud what the failure arm actually holds. It is
+    ///         the shape that found task 2.6's defect: the payload edge used to be converted unconditionally, so
+    ///         a nullable payload put an unsuppressible <c>CS8604</c> in the consumer's generated file. Task 2.5
+    ///         shipped the other spelling to keep the branch green and flagged the trim as the one thing to
+    ///         second-guess; both are back, permanently, because a corpus trimmed until it passes is the silence
+    ///         this round exists to remove. <see cref="Outcome{T}" /> is the other spelling.
+    ///     </para>
     /// </summary>
     public sealed class Result<T>
         where T : class
@@ -125,14 +134,14 @@ namespace CleanCorpus.Ordering.Contracts
         ///     compile-time version of the reflective bypass another mapper would have taken silently, and it
         ///     is the same trade <c>Member</c> makes in the first corpus in this directory.
         /// </summary>
-        internal Result(T value, string? error)
+        internal Result(T? value, string? error)
         {
             Value = value;
             Error = error;
         }
 
-        /// <summary>Meaningful only on the success arm; <see cref="Fail" /> leaves it at its default.</summary>
-        public T Value { get; }
+        /// <summary>Meaningful only on the success arm; <see cref="Fail" /> carries no payload at all.</summary>
+        public T? Value { get; }
 
         public string? Error { get; }
 
@@ -143,7 +152,43 @@ namespace CleanCorpus.Ordering.Contracts
 
         public static Result<T> Fail(string error)
         {
-            return new Result<T>(default!, error);
+            return new Result<T>(null, error);
+        }
+    }
+
+    /// <summary>
+    ///     The same envelope in its other dominant spelling: the payload is declared <b>non-nullable</b> and the
+    ///     failure arm parks <c>default!</c> in it, which is how <c>Ardalis.Result</c> and the types written
+    ///     after it read. The annotation is a promise the failure arm breaks, so a mapper that trusts it and
+    ///     hands the payload to a null-refusing map method throws on every failed outcome — with nothing said at
+    ///     build time, because from the compiler's point of view neither end can be null.
+    ///     <para>
+    ///         Both spellings are in the corpus because both are common, and the two of them are the whole of
+    ///         task 2.6's defect seen from either side. Neither may be trimmed to keep a build green.
+    ///     </para>
+    /// </summary>
+    public sealed class Outcome<T>
+        where T : class
+    {
+        internal Outcome(T value, string? error)
+        {
+            Value = value;
+            Error = error;
+        }
+
+        /// <summary>Meaningful only on the success arm; <see cref="Fail" /> leaves it at its default.</summary>
+        public T Value { get; }
+
+        public string? Error { get; }
+
+        public static Outcome<T> Ok(T value)
+        {
+            return new Outcome<T>(value, null);
+        }
+
+        public static Outcome<T> Fail(string error)
+        {
+            return new Outcome<T>(default!, error);
         }
     }
 

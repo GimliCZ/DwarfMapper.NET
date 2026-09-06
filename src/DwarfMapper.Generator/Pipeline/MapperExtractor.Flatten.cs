@@ -699,6 +699,13 @@ namespace DwarfMapper.Generator.Pipeline
                             .Append(conv).Append('(').Append(access).Append(')');
                         return;
 
+                    // Same lift, null-forgiven: the destination member's annotation forbids the preserved null,
+                    // and the plain form would be CS8601 inside the generated file.
+                    case NullHandling.NullableProjectRefForgiving:
+                        sb.Append(access).Append(" is null ? null! : ")
+                            .Append(conv).Append('(').Append(access).Append(')');
+                        return;
+
                     case NullHandling.ThrowIfNull:
                         sb.Append(conv).Append('(').Append(access)
                             .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")

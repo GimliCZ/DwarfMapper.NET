@@ -1313,7 +1313,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         internal static bool ElementExprReadsItemTwice(NullHandling nh)
         {
-            return nh is NullHandling.NullableProject or NullHandling.NullableProjectRef;
+            return nh is NullHandling.NullableProject or NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving;
         }
 
         /// <summary>
@@ -1399,6 +1399,10 @@ namespace DwarfMapper.Generator.Pipeline
                     "(" + item + ".HasValue ? (" + elemFq + ")" + Call(item + ".Value") + " : null)",
                 NullHandling.NullableProjectRef =>
                     "(" + item + " is null ? null : (" + elemFq + ")" + Call(item + forgive) + ")",
+                // The destination element's annotation forbids the null this arm preserves, so the null arm is
+                // null-forgiven — otherwise CS8601/CS8604 lands inside the generated file. Same lift otherwise.
+                NullHandling.NullableProjectRefForgiving =>
+                    "(" + item + " is null ? null! : (" + elemFq + ")" + Call(item + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(item +
                                                  " ?? throw new global::System.InvalidOperationException(" + nullMessageExpr + ")"),
                 NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),
