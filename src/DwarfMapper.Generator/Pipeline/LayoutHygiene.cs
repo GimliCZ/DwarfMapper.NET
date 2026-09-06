@@ -383,6 +383,19 @@ namespace DwarfMapper.Generator.Pipeline
         ///         targets. <c>DateTimeOffset</c>, <c>DateOnly</c> and <c>TimeOnly</c> cleared all three clauses;
         ///         <c>Half</c>, <c>Int128</c> and <c>UInt128</c> were measured and left out on clause 1.
         ///     </para>
+        ///     <para>
+        ///         <b>Why <c>TimeOnly</c> stays despite zero corpus evidence.</b> <c>T0.3c</c>'s report named it
+        ///         the entry to challenge if clause 1 is read strictly — the corpus that motivated this table
+        ///         contains no <c>TimeOnly</c> field. That count is not the deciding fact; the two failure modes
+        ///         it could produce are not symmetric. Omitting the entry does not make the generator SILENT
+        ///         about <c>TimeOnly</c> — it makes the generator refuse every ENCLOSING type that carries one,
+        ///         which is precisely the cascade this table exists to remove. Keeping the entry risks bounded
+        ///         wrong advice, and that risk is caught the day it is wrong by <c>BclLayoutFactsTests</c>;
+        ///         removing the entry reintroduces, for this one type, the defect the table was built to fix,
+        ///         and nothing catches that regression because a refusal is not wrong output — it is silence.
+        ///         Inclusion is the recoverable failure; omission is not. That asymmetry, not the corpus count,
+        ///         is why the entry stays.
+        ///     </para>
         /// </summary>
         private static (int Size, int Align)? FixedLayoutBclSize(ITypeSymbol type)
         {
