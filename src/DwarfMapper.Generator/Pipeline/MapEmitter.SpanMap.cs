@@ -99,7 +99,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // Round 29 T2.9: the user-declared-converter half of the forgiveness decision, resolved at
                     // the span endpoint's own resolution site (MapperExtractor.Phases) and carried here on the
                     // element MemberMap, exactly as SourceIsNullableRef is.
-                    elem?.ConverterParamIsNonNullableRef ?? false))
+                    elem?.ConverterParamIsNonNullableRef ?? false,
+                    elem?.ConverterReturnIsNullableRef ?? false))
                 .AppendLine(";");
 
             if (needsLocal)

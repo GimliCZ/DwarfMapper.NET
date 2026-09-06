@@ -453,6 +453,53 @@ namespace DwarfMapper.Generator.Tests
                                          }
                                          """
             ];
+
+            // Round 29 T2.9, the RETURN half of the same family. A converter DECLARED to hand back a nullable
+            // reference, into destinations that forbid null: a member, a collection element, a dictionary value,
+            // a constructor parameter, a span element and an async-stream element. MemberMap carried the
+            // ARGUMENT side only, so the member arm emitted `Inner = s.Inner is null ? null! : ToDto(s.Inner)` —
+            // the null arm forgiven and the call not — and each edge produced its own CS8600/CS8601/CS8603/CS8604
+            // inside the consumer's .g.cs. `Free` is the guard on the other side: a NULLABLE destination holds
+            // the returned null legitimately and must gain no suppression at all.
+            yield return
+            [
+                "NullableReturnConverter", """
+                                           using System;
+                                           using System.Collections.Generic;
+                                           using DwarfMapper;
+                                           namespace Demo;
+                                           public sealed class Child { public int V { get; set; } }
+                                           public sealed class ChildDto { public int V { get; set; } }
+                                           public sealed class Src
+                                           {
+                                               public Child Inner { get; set; } = new();
+                                               public Child Free { get; set; } = new();
+                                               public List<Child> Items { get; set; } = new();
+                                               public Dictionary<string, Child> Lookup { get; set; } = new();
+                                           }
+                                           public sealed class Dst
+                                           {
+                                               public ChildDto Inner { get; set; } = new();
+                                               public ChildDto? Free { get; set; }
+                                               public List<ChildDto> Items { get; set; } = new();
+                                               public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                           }
+                                           public sealed class Boxed
+                                           {
+                                               public Boxed(ChildDto inner) { Inner = inner; }
+                                               public ChildDto Inner { get; }
+                                           }
+                                           [DwarfMapper]
+                                           public partial class M
+                                           {
+                                               public partial Dst Map(Src s);
+                                               public partial Boxed Box(Src s);
+                                               public partial void Copy(ReadOnlySpan<Child> src, Span<ChildDto> dst);
+                                               public partial IAsyncEnumerable<ChildDto> Stream(IAsyncEnumerable<Child> c);
+                                               public partial ChildDto? ToDto(Child c);
+                                           }
+                                           """
+            ];
         }
 
         [Theory]

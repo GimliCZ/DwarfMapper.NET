@@ -138,6 +138,12 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // false for a method the user declared, and no synthesized helper is ever spelled `ToDto`.
                     // The dictionary value in the same case proves the twin builder answers identically.
                     "ElementViaDeclaredMap", "ToDto(__item!)"
+                },
+                {
+                    // The CALL's result forgiven, which nothing before task 2.9 could emit: the '!' after the
+                    // closing paren exists only on the return-side arm, and the `Free` member in the same case
+                    // (a nullable destination) proves it is not sprayed on every call.
+                    "NullableReturnConverter", "Strict = a.Strict is null ? null! : ToDto(a.Strict)!"
                 }
             };
         }

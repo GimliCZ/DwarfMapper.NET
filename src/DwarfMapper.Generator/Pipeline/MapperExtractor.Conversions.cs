@@ -1368,6 +1368,105 @@ namespace DwarfMapper.Generator.Pipeline
             };
         }
 
+        /// <summary>
+        ///     How <c>DWARF107</c> names the destination the converter's nullable return is written into — the
+        ///     mirror of <see cref="NullSourceLabel" />, and here rather than at the call sites for the same
+        ///     reason: the two diagnostics describe the same edges from opposite ends and must not end up naming
+        ///     the same edge differently.
+        /// </summary>
+        private static string NullTargetLabel(string name, NullSourceKind kind = NullSourceKind.SourceMember)
+        {
+            return kind switch
+            {
+                NullSourceKind.CollectionElement => "the element type of '" + name + "'",
+                NullSourceKind.DictionaryValue => "the value type of '" + name + "'",
+                _ => "destination member '" + name + "'"
+            };
+        }
+
+        /// <summary>
+        ///     True when <paramref name="converterMethod" /> resolves to a USER-declared map/converter method whose
+        ///     RETURN is a nullable-annotated reference type. The mirror of
+        ///     <see cref="ConverterParamIsNonNullableRef" />, reading the third element of the same tuples, and the
+        ///     fact <c>MemberMap</c> was missing entirely: it carried the argument side and nothing at all for the
+        ///     result side, so <c>partial ChildDto? ToDto(Child c)</c> feeding a non-nullable <c>ChildDto Inner</c>
+        ///     emitted <c>Inner = s.Inner is null ? null! : ToDto(s.Inner)</c> — the null ARM forgiven and the
+        ///     CALL not, which is CS8601 in the consumer's .g.cs (round 29 task 2.8 concern 1).
+        /// </summary>
+        private static bool ConverterReturnIsNullableRef(
+            string? converterMethod,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+        {
+            if (converterMethod is null)
+            {
+                return false;
+            }
+
+            static bool IsNullableRefReturn(ITypeSymbol r)
+            {
+                return r.IsReferenceType && r.NullableAnnotation == NullableAnnotation.Annotated;
+            }
+
+            foreach (var m in autoCandidates)
+                if (string.Equals(m.Name, converterMethod, StringComparison.Ordinal) && IsNullableRefReturn(m.ReturnType))
+                {
+                    return true;
+                }
+
+            foreach (var m in allMethods)
+                if (string.Equals(m.Name, converterMethod, StringComparison.Ordinal) && IsNullableRefReturn(m.ReturnType))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     The RETURN-side twin of <see cref="ForgiveNestedNullableArg" />, and coupled the same way: does the
+        ///     converter's result need the null-forgiving <c>!</c>, AND — decided here so no site can forgive
+        ///     without signalling — does it warrant <c>DWARF107</c>?
+        ///     <para>
+        ///         Gated on the DESTINATION being a non-nullable-annotated reference, exactly as
+        ///         <see cref="NullRefIntoNonNullableRef" /> gates its own half. A nullable destination holds the
+        ///         returned null legitimately and needs neither the <c>!</c> nor the warning; a <c>!</c> where none
+        ///         is owed is noise in a file the reader cannot edit. The SOURCE is deliberately not consulted —
+        ///         that is the whole distinction from DWARF070, and the shape that proves it is a wholly
+        ///         non-nullable pair (<c>Child Inner</c> -> <c>ChildDto Inner</c>) whose converter returns
+        ///         <c>ChildDto?</c>: nothing on the source side is nullable and CS8601 is emitted anyway.
+        ///     </para>
+        ///     <para>
+        ///         Annotation-strict on the destination for the reason recorded on
+        ///         <see cref="NullRefIntoNonNullableRef" />: an oblivious destination is code that opted out of
+        ///         nullable analysis, the compiler says nothing there, and neither does this.
+        ///     </para>
+        /// </summary>
+        private static bool ForgiveConverterNullableReturn(
+            string? converterMethod,
+            ITypeSymbol tgtType,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            string targetName,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics,
+            NullSourceKind kind = NullSourceKind.SourceMember)
+        {
+            var forgive = tgtType.IsReferenceType &&
+                          tgtType.NullableAnnotation == NullableAnnotation.NotAnnotated &&
+                          ConverterReturnIsNullableRef(converterMethod, autoCandidates, allMethods);
+            if (forgive)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ConverterNullableReturnToNonNullableTarget,
+                    location,
+                    converterMethod!,
+                    MessageArg2: NullTargetLabel(targetName, kind)));
+            }
+
+            return forgive;
+        }
+
         private static bool ForgiveNestedNullableArg(
             string? converterMethod,
             ITypeSymbol srcType,

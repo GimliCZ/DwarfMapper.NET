@@ -53,6 +53,23 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF107` (Warning) — a converter you declared returns a nullable reference, and its result is stored
+  where null is forbidden.** `partial ChildDto? ToDto(Child c)` feeding a non-nullable `ChildDto Inner`,
+  `List<ChildDto>`, `Dictionary<string, ChildDto>`, constructor parameter, span element or async-stream
+  element used to put `CS8600`/`CS8601`/`CS8603`/`CS8604` inside the generated file, where no consumer
+  `#pragma` reaches. The call is now null-forgiven and this reports the trade instead: with the suppression in
+  place a null returned at run time is *stored* rather than refused. **Remedy:** declare the converter to
+  return a non-nullable reference if it never returns null, or make the destination nullable if it can;
+  `dotnet_diagnostic.DWARF107.severity = none` accepts the stored null knowingly.
+
+  **A separate id from `DWARF070` on purpose, and its suppression does not cover this.** DWARF070 opens
+  *"{0} is a nullable reference"*, and this shape fires on pairs where nothing on the source side is nullable
+  at all — there is no noun phrase that would make that sentence true. The remedies are disjoint (every
+  DWARF070 remedy is about the value going *in*), and suppressing DWARF070 was a decision to accept nullable
+  *sources*, not a converter that hands back null. It is also the more dangerous half: a forgiven *argument*
+  still throws inside the callee's own `ArgumentNullException.ThrowIfNull`, while a forgiven *result* is
+  silently stored.
+
 - **`DWARF103` (Info) — a mapped collection builds one class element per item, and that element type could be
   a `readonly record struct`.** Reported at the MAPPING SITE, never on the type: the allocation is paid once
   per element, and a type-level rule would fire on every DTO in a solution. The message names the pair, what

@@ -472,6 +472,17 @@ namespace DwarfMapper.Generator.Pipeline
                         NullRefIntoNonNullable: nullSubLit is null && IsDirectNullRefAssign(conv, nullH, srcMatch, tgtType),
                         // Same nested nullable→non-nullable forgiveness as the auto-match path; skipped when
                         // NullSubstitute already handled the null.
+                        // Round 29 T2.9, on every converter-bearing member site: the converter's own RETURN
+                        // annotation. Skipped when NullSubstitute already coalesced the null away, for the same
+                        // reason the argument half is.
+                        ConverterReturnIsNullableRef: nullSubLit is null &&
+                                                      ForgiveConverterNullableReturn(conv,
+                                                          tgtType,
+                                                          req.AutoCandidates,
+                                                          req.AllMethods,
+                                                          tgtName,
+                                                          req.Location,
+                                                          acc.Diagnostics),
                         ConverterParamIsNonNullableRef: nullSubLit is null &&
                                                         ForgiveNestedNullableArg(conv,
                                                             srcMatch,
@@ -622,6 +633,13 @@ namespace DwarfMapper.Generator.Pipeline
                             false, // !epNeedsCtx is in the guard above: an extra parameter never threads (ctx, depth).
                             SourceMayBeNullRef(ep.Type!),
                             NullRefIntoNonNullable: IsDirectNullRefAssign(epConv, epNull, ep.Type!, target.Type),
+                            ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(epConv,
+                                target.Type,
+                                req.AutoCandidates,
+                                req.AllMethods,
+                                target.Name,
+                                req.Location,
+                                acc.Diagnostics),
                             ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(epConv,
                                 ep.Type!,
                                 target.Type,
@@ -692,6 +710,13 @@ namespace DwarfMapper.Generator.Pipeline
                                 SourceMayBeNullRef(fm.LeafType),
                                 NullRefIntoNonNullable:
                                 IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type),
+                                ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(fconv,
+                                    target.Type,
+                                    req.AutoCandidates,
+                                    req.AllMethods,
+                                    target.Name,
+                                    req.Location,
+                                    acc.Diagnostics),
                                 ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(fconv,
                                     fm.LeafType,
                                     target.Type,
@@ -820,6 +845,14 @@ namespace DwarfMapper.Generator.Pipeline
                         needsCtx,
                         SourceMayBeNullRef(source.Type),
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
+                        ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(
+                            conv,
+                            target.Type,
+                            req.AutoCandidates,
+                            req.AllMethods,
+                            target.Name,
+                            req.Location,
+                            acc.Diagnostics),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(
                             conv,
                             source.Type,

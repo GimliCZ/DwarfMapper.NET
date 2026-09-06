@@ -1,4 +1,4 @@
-# DwarfMapper golden output manifest — 1010 cases.
+# DwarfMapper golden output manifest — 1011 cases.
 # One line per pinned case: <case-id> <sha256 of generated source + full diagnostics>.
 # Regenerate deliberately with DWARF_GOLDEN_UPDATE=1; never edit by hand.
 cmb:Cmb_FlagsEnum|DictStringKey|Identity 2f6b2e5f3a93af0aec3e501c66508a05181df6c73e76c8711e296674e5479305
@@ -957,6 +957,7 @@ feat:NestedViaDeclaredMap 8c17fcef2d864749a1502dd3957f4159187e1227e454a6e08ba9a2
 feat:NullStrategySetDefault 4dd30f1d40a5237da48f04009c2404a99895cd9aba21de1180a15df6b72448d1
 feat:NullStrategyThrow a54b1bff97b4010e2cbdc3d84d7784730b9fdc8aa413a56cfdc47c8a8f29b206
 feat:NullableExtraParameter be46d8e11a49af1f04dcd36aac0ed177ff34f5bcd7e17d69f842fb2a026e8fef
+feat:NullableReturnConverter bdab907f377445bcf2a1b9c893962a56d299c225678016cea729bd7ceec6fcdd
 feat:NullableReturnType 086a186a734a2630a267715de13bbf31ef83efcd4f38194b7b672d8630dcc0f8
 feat:NullableSourceParameter cd2cee3c950270e16f09ecf8aecac74ccdc72554f7cbd559ad258994c4b0771e
 feat:PreserveReferences 1242b8fe2d47df95ddb5ceb19111af09833bdb3f35fd223836a9cdca0bba117a

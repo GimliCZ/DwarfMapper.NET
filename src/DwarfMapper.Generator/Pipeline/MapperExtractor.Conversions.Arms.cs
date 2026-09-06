@@ -1230,6 +1230,16 @@ namespace DwarfMapper.Generator.Pipeline
                     req.Location,
                     diagnostics,
                     NullSourceKind.CollectionElement);
+                // The RETURN half of the same decision, reported as DWARF107 rather than DWARF070 because the
+                // source can be entirely non-nullable here and DWARF070's opening clause would be a lie.
+                var elemForgivesResult = ForgiveConverterNullableReturn(elemConv,
+                    tgtElem,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
 
                 converterMethod = CollectionConverter.Synthesize(synthesized,
                     req.SrcType,
@@ -1240,7 +1250,8 @@ namespace DwarfMapper.Generator.Pipeline
                     elemNull,
                     req.IsPreserve,
                     elemNeedsCtx,
-                    elemForgivesArg);
+                    elemForgivesArg,
+                    elemForgivesResult);
                 // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
                 // element is recursion-capable (Preserve, or None/SetNull self-referential element).
                 converterNeedsCtx = (req.IsPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
@@ -1267,6 +1278,7 @@ namespace DwarfMapper.Generator.Pipeline
                     var capShape = collShape;
                     var capNull = elemNull;
                     var capForgive = elemForgivesArg;
+                    var capForgiveResult = elemForgivesResult;
                     req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                         new[]
                         {
@@ -1281,7 +1293,8 @@ namespace DwarfMapper.Generator.Pipeline
                                 capShape,
                                 resolve(elemConv),
                                 capNull,
-                                capForgive));
+                                capForgive,
+                                capForgiveResult));
                 }
 
                 resolved = true;
@@ -1413,6 +1426,14 @@ namespace DwarfMapper.Generator.Pipeline
                     req.Location,
                     diagnostics,
                     NullSourceKind.DictionaryValue);
+                var valForgivesResult = ForgiveConverterNullableReturn(valConv,
+                    tgtVal,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.DictionaryValue);
 
                 converterMethod = DictionaryConverter.Synthesize(synthesized,
                     req.SrcType,
@@ -1428,7 +1449,8 @@ namespace DwarfMapper.Generator.Pipeline
                     req.IsPreserve,
                     keyNeedsCtx,
                     valNeedsCtx,
-                    valForgivesArg);
+                    valForgivesArg,
+                    valForgivesResult);
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
@@ -1473,6 +1495,7 @@ namespace DwarfMapper.Generator.Pipeline
                         var cValNull = valNull;
                         var cNullAsNull = dictEffectiveNullAsNull;
                         var cValForgive = valForgivesArg;
+                        var cValForgiveResult = valForgivesResult;
                         req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                             elems.ToArray(),
                             resolve =>
@@ -1515,7 +1538,8 @@ namespace DwarfMapper.Generator.Pipeline
                                     cValNull,
                                     nvCtx,
                                     cNullAsNull,
-                                    cValForgive);
+                                    cValForgive,
+                                    cValForgiveResult);
                             });
                     }
                 }

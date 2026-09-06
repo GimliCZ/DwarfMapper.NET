@@ -1029,6 +1029,50 @@ namespace DwarfMapper.Generator.Diagnostics
             true,
             helpLinkUri: HelpBase + "dwarf072");
 
+        /// <summary>
+        ///     A converter the user declared returns a nullable reference, and its result is being written where
+        ///     null is forbidden.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A SEPARATE id from <see cref="NullableRefSourceToNonNullableTarget" /> (DWARF070), and round 29
+        ///         task 2.9 minted it rather than adding a fifth noun to that message because DWARF070's FIRST
+        ///         CLAUSE cannot be made true of this shape. DWARF070 opens "{0} is a nullable reference"; here the
+        ///         source can be entirely non-nullable — <c>Child Inner</c> into <c>ChildDto Inner</c> through
+        ///         <c>partial ChildDto? ToDto(Child c)</c> emits CS8601 with nothing nullable on the source side at
+        ///         all. There is no noun phrase that would make the sentence honest.
+        ///     </para>
+        ///     <para>
+        ///         The remedies are disjoint too, which is the test the task was told to apply.
+        ///         <c>[MapProperty(NullSubstitute = …)]</c>, <c>SkipNullSourceMembers</c> and "declare the
+        ///         parameter non-nullable" are all about the value going IN; none of them touches a converter's
+        ///         RETURN. And the suppression differs in kind: a consumer who wrote
+        ///         <c>dotnet_diagnostic.DWARF070.severity = none</c> accepted nullable SOURCES knowingly, which is
+        ///         not the same decision as accepting a converter that can hand back null.
+        ///     </para>
+        ///     <para>
+        ///         It is also the more dangerous half of the family, and that is why it may not be silent. On the
+        ///         ARGUMENT side (DWARF070) the forgiven call still throws inside the callee's own
+        ///         <c>ArgumentNullException.ThrowIfNull</c> — loud, at the right place. On the RETURN side the
+        ///         forgiven result is STORED: a null lands in a member, element or constructor parameter whose type
+        ///         forbids it and nothing complains until something far away dereferences it. The <c>!</c> the
+        ///         emitter writes is what keeps CS8600/CS8601/CS8603/CS8604 out of a generated file the consumer
+        ///         cannot edit; this warning is the whole of what they get in exchange, so it says exactly what was
+        ///         traded.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ConverterNullableReturnToNonNullableTarget = new(
+            "DWARF107",
+            "A converter's nullable return is stored where null is forbidden",
+            // {0} is the converter's name, {1} the whole noun phrase for the destination it feeds - built by
+            // MapperExtractor.NullSourceLabel, the same place DWARF070's subject is built, so the two cannot
+            // drift into naming the same edge differently.
+            "'{0}' is declared to return a nullable reference, and its result is written into {1}, whose type " + "forbids null. The generated call is null-forgiven so no unsuppressible CS8600/CS8601/CS8603/CS8604 " + "reaches a file you cannot edit - which means a null returned at run time is STORED rather than " + "refused, and surfaces as a NullReferenceException somewhere else. Fix it by declaring '{0}' to return " + "a non-nullable reference if it never returns null, or by making the destination nullable if it can. " + "dotnet_diagnostic.DWARF107.severity = none accepts the stored null knowingly - note that " + "DWARF070's suppression does NOT cover this: that one is about a nullable value going IN.",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf107");
+
         public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
             "DWARF070",
             "A nullable source is assigned to a non-nullable target member",

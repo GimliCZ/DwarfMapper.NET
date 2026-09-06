@@ -124,7 +124,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool isPreserve = false,
             bool keyNeedsCtx = false,
             bool valNeedsCtx = false,
-            bool valConverterParamIsNonNullableRef = false)
+            bool valConverterParamIsNonNullableRef = false,
+            bool valConverterReturnIsNullableRef = false)
         {
             // Use nullable-aware format for key/value types so the generated dict type args match
             // the actual target type (e.g. Dictionary<string, List<int>?> not Dictionary<string, List<int>>).
@@ -169,7 +170,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef, valConverterReturnIsNullableRef);
             var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
             var ctxParams = threadCtx ? CtxDepthParams : "";
 
@@ -240,7 +241,8 @@ namespace DwarfMapper.Generator.Pipeline
             NullHandling valNull,
             bool valNeedsCtx,
             bool nullAsNull,
-            bool valConverterParamIsNonNullableRef = false)
+            bool valConverterParamIsNonNullableRef = false,
+            bool valConverterReturnIsNullableRef = false)
         {
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
@@ -253,7 +255,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef, valConverterReturnIsNullableRef);
 
             var w = new CodeWriter(1);
             using (w.Block("private " + retAnnot + " " + existingName + "(" + srcParam + " src" + CtxDepthParams + ")"))
@@ -325,7 +327,8 @@ namespace DwarfMapper.Generator.Pipeline
             string tgtFq,
             bool needsCtx = false,
             bool srcIsNullableRef = false,
-            bool converterParamIsNonNullableRef = false)
+            bool converterParamIsNonNullableRef = false,
+            bool converterReturnIsNullableRef = false)
         {
             if (conv is null)
             {
@@ -346,9 +349,13 @@ namespace DwarfMapper.Generator.Pipeline
             // for the full argument; the two builders answer this the same way on purpose.
             var forgive = srcIsNullableRef && (GeneratedNames.IsSynthesized(conv) || converterParamIsNonNullableRef) ? "!" : "";
 
+            // Round 29 T2.9, the RETURN half — see CollectionConverter.ElementExpr; the two builders answer it
+            // identically on purpose.
+            var resultBang = converterReturnIsNullableRef ? "!" : "";
+
             string Call(string arg)
             {
-                return conv + "(" + arg + extra + ")";
+                return conv + "(" + arg + extra + ")" + resultBang;
             }
 
             return nh switch

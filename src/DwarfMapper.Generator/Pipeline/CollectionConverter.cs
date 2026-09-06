@@ -282,7 +282,8 @@ namespace DwarfMapper.Generator.Pipeline
             NullHandling elemNull,
             bool isPreserve = false,
             bool elemNeedsCtx = false,
-            bool elemConverterParamIsNonNullableRef = false)
+            bool elemConverterParamIsNonNullableRef = false,
+            bool elemConverterReturnIsNullableRef = false)
         {
             // Use nullable-aware format for element type so emitted container types and Add() calls match
             // nullable element types (e.g. List<List<int>?> not List<List<int>>).
@@ -341,7 +342,8 @@ namespace DwarfMapper.Generator.Pipeline
                 elemFq,
                 elemNeedsCtx,
                 srcElemIsNullableRef,
-                elemConverterParamIsNonNullableRef: elemConverterParamIsNonNullableRef);
+                elemConverterParamIsNonNullableRef: elemConverterParamIsNonNullableRef,
+                elemConverterReturnIsNullableRef: elemConverterReturnIsNullableRef);
             var itemReadTwice = ElementExprReadsItemTwice(elemNull);
 
             // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
@@ -391,7 +393,8 @@ namespace DwarfMapper.Generator.Pipeline
             Shape shape,
             string ctxElementConverter,
             NullHandling elemNull,
-            bool elemConverterParamIsNonNullableRef = false)
+            bool elemConverterParamIsNonNullableRef = false,
+            bool elemConverterReturnIsNullableRef = false)
         {
             var elemFq = FqTypeArg(tgtElem);
             // A nullable-reference ELEMENT (`Child?[]`, `List<Child?>`) reaching a synthesized object helper: the
@@ -409,7 +412,8 @@ namespace DwarfMapper.Generator.Pipeline
                 elemFq,
                 true,
                 srcElemIsNullableRef,
-                elemConverterParamIsNonNullableRef: elemConverterParamIsNonNullableRef);
+                elemConverterParamIsNonNullableRef: elemConverterParamIsNonNullableRef,
+                elemConverterReturnIsNullableRef: elemConverterReturnIsNullableRef);
             // Threaded for uniformity with Synthesize, not because it can be observed here: this overload always
             // passes threadCtx: true, and the array fast path that consumes the flag requires !threadCtx.
             var itemReadTwice = ElementExprReadsItemTwice(elemNull);
@@ -1374,6 +1378,14 @@ namespace DwarfMapper.Generator.Pipeline
         ///     that is the only place with a semantic model to ask, and passed down rather than re-derived here
         ///     from the converter's NAME — which is exactly the <c>IsSynthesized</c> proxy this replaces.
         /// </param>
+        /// <param name="elemConverterReturnIsNullableRef">
+        ///     Round 29 T2.9, the RETURN half: true when <paramref name="conv" /> is a user-declared converter
+        ///     DECLARED to return a nullable reference while the destination element type is not, so the CALL'S
+        ///     RESULT is forgiven as well as (or instead of) its argument. Without it a
+        ///     <c>partial ChildDto? ToDto(Child c)</c> element converter emitted CS8600 on the cast and CS8604 on
+        ///     the <c>Add</c>. Resolved and REPORTED (DWARF107) at the same site as the argument half, because
+        ///     this forgiveness actually stores a null the destination's annotation forbids.
+        /// </param>
         internal static string ElementExpr(
             string item,
             string? conv,
@@ -1383,7 +1395,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool srcElemIsNullableRef = false,
             string ctxDepthArgs = ", ctx, depth + 1",
             string? indexExpr = null,
-            bool elemConverterParamIsNonNullableRef = false)
+            bool elemConverterParamIsNonNullableRef = false,
+            bool elemConverterReturnIsNullableRef = false)
         {
             var nullMessageExpr = indexExpr is null
                 ? "\"Collection element was null\""
@@ -1420,9 +1433,14 @@ namespace DwarfMapper.Generator.Pipeline
             // needsBang, deliberately — one rule, two spellings would be the next drift.
             var forgive = srcElemIsNullableRef && (GeneratedNames.IsSynthesized(conv) || elemConverterParamIsNonNullableRef) ? "!" : "";
 
+            // The result bang rides on Call so every arm below gets it — the lift's non-null arm, the
+            // ThrowIfNull unwrap and the bare call alike. `(T)Conv(x)!` parses as `(T)(Conv(x)!)`, which is what
+            // the cast on the lift arms needs.
+            var resultBang = elemConverterReturnIsNullableRef ? "!" : "";
+
             string Call(string arg)
             {
-                return conv + "(" + arg + extra + ")";
+                return conv + "(" + arg + extra + ")" + resultBang;
             }
 
             return nh switch

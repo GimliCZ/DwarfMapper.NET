@@ -2032,6 +2032,14 @@ namespace DwarfMapper.Generator.Pipeline
                         method.Name,
                         methodLocation,
                         acc.Diagnostics,
+                        NullSourceKind.CollectionElement),
+                    ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(asConv,
+                        asDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
                         NullSourceKind.CollectionElement));
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
@@ -2850,6 +2858,14 @@ namespace DwarfMapper.Generator.Pipeline
                     // coupled decision every other edge uses.
                     ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(spanConv,
                         spanSrcElem,
+                        spanDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement),
+                    ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(spanConv,
                         spanDstElem,
                         decls.MapperMethods,
                         decls.AllMethods,

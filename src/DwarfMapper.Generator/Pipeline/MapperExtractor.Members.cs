@@ -633,6 +633,16 @@ namespace DwarfMapper.Generator.Pipeline
                                 allMethods,
                                 explicitInfo.Source,
                                 location,
+                                diagnostics),
+                            // Round 29 T2.9: the converter's RETURN annotation, on the constructor-argument
+                            // path too — `new Dst(inner: ToDto(s.Inner))` is CS8604 when ToDto returns
+                            // ChildDto? and the parameter is ChildDto.
+                            ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(eConv,
+                                param.Type,
+                                autoCandidates,
+                                allMethods,
+                                param.Name,
+                                location,
                                 diagnostics)));
                         consumedParams.Add(param.Name);
                     }
@@ -713,6 +723,13 @@ namespace DwarfMapper.Generator.Pipeline
                             autoCandidates,
                             allMethods,
                             srcMember.Name,
+                            location,
+                            diagnostics),
+                        ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(conv,
+                            param.Type,
+                            autoCandidates,
+                            allMethods,
+                            param.Name,
                             location,
                             diagnostics)));
                     consumedParams.Add(param.Name);

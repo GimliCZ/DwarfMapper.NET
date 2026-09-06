@@ -2178,7 +2178,44 @@ diagnostic is for.
 
 **Why it does not fire more often.** A `[Reinterpret]` member with neither a conversion nor a directive in
 sight says nothing at all. This reports the conflict, not the attribute.
+
 ---
+
+## dwarf107
+**A converter's nullable return is stored where null is forbidden** · Warning
+
+A map or converter method you declared is typed to hand back a nullable reference — `partial ChildDto? ToDto(Child c)`
+— and DwarfMapper is writing its result somewhere that cannot hold null: a member, a collection element, a
+dictionary value, a constructor parameter, a span element or an async-stream element.
+
+The generated call is **null-forgiven** (`ToDto(s.Inner)!`), because the alternative is `CS8600`/`CS8601`/
+`CS8603`/`CS8604` inside a `.g.cs` you cannot edit and cannot suppress. That trade is the whole reason this
+warning exists: with the suppression in place, a null actually returned at run time is *stored* in a slot whose
+type says it cannot be, and surfaces as a `NullReferenceException` somewhere else entirely. You are told, here,
+at the mapping site.
+
+| You want | Use |
+|---|---|
+| the converter never to return null | declare it non-nullable (`partial ChildDto ToDto(Child c)`) |
+| null to be a legal value here | make the destination nullable (`ChildDto? Inner`, `List<ChildDto?>`, `Dictionary<string, ChildDto?>`) |
+| to accept the stored null knowingly | `dotnet_diagnostic.DWARF107.severity = none` |
+
+**Not the same as [`DWARF070`](#dwarf070), and its suppression does not cover this one.** DWARF070 is about a
+nullable value going *in* — a source member, a mapping parameter, a collection element. This is about a value
+coming back *out* of your converter, and it fires on pairs where nothing on the source side is nullable at all
+(`Child Inner` into `ChildDto Inner`). The remedies have nothing in common: `[MapProperty(NullSubstitute = …)]`,
+`[DwarfMapper(SkipNullSourceMembers = true)]` and "declare the parameter non-nullable" are all inbound
+instruments, and none of them touches a return type. Suppressing DWARF070 was a decision to accept nullable
+sources; it is not a decision to accept a converter that can hand back null, which is why the two are
+separately suppressible.
+
+It is also the louder-failing half in the wrong direction. When DWARF070 forgives an *argument*, the call still
+reaches the callee's own `ArgumentNullException.ThrowIfNull` and a real null throws at the right place. When
+this forgives a *result*, nothing throws — the null is stored. Same mechanism, opposite consequence, which is
+why it gets its own id rather than a fifth noun on DWARF070's message.
+
+Only fires for a genuinely annotated destination. A destination written in a `#nullable disable` context is
+*oblivious*, the compiler raises nothing there, and neither does this.
 
 ---
 

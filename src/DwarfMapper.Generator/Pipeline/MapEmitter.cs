@@ -882,7 +882,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // T2.9's user-declared-converter forgiveness, resolved at this endpoint's own resolution site
                     // and carried on the element MemberMap beside SourceIsNullableRef.
                     null,
-                    elem?.ConverterParamIsNonNullableRef ?? false));
+                    elem?.ConverterParamIsNonNullableRef ?? false,
+                    elem?.ConverterReturnIsNullableRef ?? false));
 
             sb.AppendLine(";");
             sb.Append(indent).AppendLine("}");
@@ -1458,17 +1459,23 @@ namespace DwarfMapper.Generator.Pipeline
                 // A recursion-capable converter takes (value, ctx, depth) — the ternary must thread them too,
                 // exactly as the non-lifting converter paths below do.
                 var extraArgs = member.ConverterNeedsDepthCtx ? ", " + ctxVarName + ", " + depthArg : "";
+                // Round 29 T2.9: the CALL's own result. The lift above forgives the null ARM when the
+                // destination's annotation forbids null; a converter DECLARED to return a nullable reference
+                // makes the other arm just as unassignable, and that half was missing — CS8601 on
+                // `Inner = s.Inner is null ? null! : ToDto(s.Inner)` for `partial ChildDto? ToDto(Child c)`.
+                // Never set unless DWARF107 was reported for the same edge (ForgiveConverterNullableReturn).
+                var resultBang = member.ConverterReturnIsNullableRef ? "!" : "";
                 if (member.NullHandling is NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving)
                 {
                     sb.Append(srcAccess)
                         .Append(member.NullHandling == NullHandling.NullableProjectRefForgiving ? " is null ? null! : " : " is null ? null : ")
-                        .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(extraArgs).Append(')');
+                        .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(extraArgs).Append(')').Append(resultBang);
                 }
                 else
                 {
                     sb.Append(srcAccess).Append(".HasValue ? ")
                         .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(".Value")
-                        .Append(extraArgs).Append(')').Append(" : null");
+                        .Append(extraArgs).Append(')').Append(resultBang).Append(" : null");
                 }
 
                 return;
@@ -1496,17 +1503,21 @@ namespace DwarfMapper.Generator.Pipeline
             // Wrap the inner access with the converter if present.
             if (member.ConverterMethod is not null)
             {
+                // Round 29 T2.9: see the lift above — a user-declared converter's NULLABLE RETURN needs the
+                // result null-forgiven wherever the destination's annotation forbids null, on every arm that
+                // writes the call, not only on the lift. Reported as DWARF107 by the same decision that sets it.
+                var callBang = member.ConverterReturnIsNullableRef ? "!" : "";
                 if (member.NullHandling != NullHandling.None)
                 {
                     // Both converter and null-handling: Conv(src.X ?? throw ...) or Conv(src.X.GetValueOrDefault())
                     if (member.ConverterNeedsDepthCtx)
                     {
                         sb.Append(member.ConverterMethod).Append('(').Append(innerAccess)
-                            .Append(", ").Append(ctxVarName).Append(", ").Append(depthArg).Append(')');
+                            .Append(", ").Append(ctxVarName).Append(", ").Append(depthArg).Append(')').Append(callBang);
                     }
                     else
                     {
-                        sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')');
+                        sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')').Append(callBang);
                     }
                 }
                 else
@@ -1537,13 +1548,13 @@ namespace DwarfMapper.Generator.Pipeline
                         sb.Append(member.ConverterMethod).Append('(')
                             .Append(srcAccess)
                             .Append(needsBang ? "!" : "").Append(", ")
-                            .Append(ctxVarName).Append(", ").Append(depthArg).Append(')');
+                            .Append(ctxVarName).Append(", ").Append(depthArg).Append(')').Append(callBang);
                     }
                     else
                     {
                         sb.Append(member.ConverterMethod).Append('(')
                             .Append(srcAccess)
-                            .Append(needsBang ? "!)" : ")");
+                            .Append(needsBang ? "!)" : ")").Append(callBang);
                     }
                 }
             }

@@ -1421,5 +1421,318 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal("ToDto(__item!)", AddedElementExpression(generated));
         }
+
+        // ── 6. a user-declared converter's NULLABLE RETURN, into a destination that forbids null ────────────
+        // Round 29 T2.9, the other half of the family and the more dangerous one. MemberMap carried
+        // ConverterParamIsNonNullableRef for the ARGUMENT side and nothing at all for the RESULT side, so
+        // `partial ChildDto? ToDto(Child c)` feeding a non-nullable `ChildDto Inner` emitted
+        // `Inner = s.Inner is null ? null! : ToDto(s.Inner)` — the null ARM forgiven, the CALL not: CS8601 in
+        // the consumer's .g.cs (task 2.8 concern 1). It reproduced on every edge that writes a converter call:
+        // member, collection element, dictionary value, span, async stream, constructor argument and the
+        // [FlattenGraph] leaf — CS8600 + CS8601, CS8600 + CS8603 or CS8604 depending on the arm.
+        //
+        // Reported as DWARF107 and NOT as DWARF070, because DWARF070 opens "{0} is a nullable reference" and
+        // here NOTHING on the source side is: `Child Inner` -> `ChildDto Inner` is non-nullable end to end and
+        // warns anyway. No noun phrase makes that sentence true, the remedies are disjoint, and a consumer who
+        // suppressed DWARF070 accepted nullable SOURCES — a different decision from accepting a converter that
+        // can hand back null.
+
+        private const string NullableReturnConverterIntoMember = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child Inner { get; set; } = new(); }
+                public class Dst { public ChildDto Inner { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoMemberFromNullableSource = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child? Inner { get; set; } }
+                public class Dst { public ChildDto Inner { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoElement = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child> Items { get; set; } = new(); }
+                public class Dst { public List<ChildDto> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoDictionaryValue = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Dictionary<string, Child> Lookup { get; set; } = new(); }
+                public class Dst { public Dictionary<string, ChildDto> Lookup { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoSpanElement = """
+            #nullable enable
+            using System;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial void Copy(ReadOnlySpan<Child> src, Span<ChildDto> dst);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoAsyncStreamElement = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial IAsyncEnumerable<ChildDto> Stream(IAsyncEnumerable<Child> s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoConstructorParameter = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child Inner { get; set; } = new(); }
+                public class Dst { public Dst(ChildDto inner) { Inner = inner; } public ChildDto Inner { get; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableReturnConverterIntoFlattenGraphLeaf = """
+            #nullable enable
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Leaf { public int V { get; set; } }
+            public class LeafDto { public int V { get; set; } }
+            public class Node    { public Leaf Payload { get; set; } = new(); public Node? Next { get; set; } }
+            public class NodeDto { public LeafDto Payload { get; set; } = new(); public NodeDto? Next { get; set; } }
+            public class Root    { public IReadOnlyList<Node> Entries { get; set; } = new List<Node>(); }
+            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Entries", "Nodes")]
+                public partial RootDto Map(Root r);
+                public partial LeafDto? ToDto(Leaf l);
+            }
+            """;
+
+        /// <summary>
+        ///     A HAND-WRITTEN converter that really can return null. The partial forms above are implemented by the
+        ///     generator and always return a `new`, so on their own they would let "the annotation is just
+        ///     over-declared" pass for an argument — this one proves the null is real and the report is owed.
+        /// </summary>
+        private const string HandWrittenNullableReturnConverter = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child Inner { get; set; } = new(); }
+                public class Dst { public ChildDto Inner { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public ChildDto? ToDto(Child c) => c.V < 0 ? null : new ChildDto { V = c.V };
+                }
+            }
+            """;
+
+        /// <summary>The NULLABLE-destination twin: the returned null is legal there, so nothing is forgiven.</summary>
+        private const string NullableReturnConverterIntoNullableMember = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child Inner { get; set; } = new(); }
+                public class Dst { public ChildDto? Inner { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private static string Dwarf107Message(string source)
+        {
+            var d = Assert.Single(GeneratorTestHarness.Run(source, NullableContextOptions.Enable)
+                .Diagnostics.Where(x => x.Id == "DWARF107"));
+            return d.GetMessage(CultureInfo.InvariantCulture);
+        }
+
+        [Theory]
+        [InlineData("member", nameof(NullableReturnConverterIntoMember))]
+        [InlineData("member, nullable source", nameof(NullableReturnConverterIntoMemberFromNullableSource))]
+        [InlineData("collection element", nameof(NullableReturnConverterIntoElement))]
+        [InlineData("dictionary value", nameof(NullableReturnConverterIntoDictionaryValue))]
+        [InlineData("span element", nameof(NullableReturnConverterIntoSpanElement))]
+        [InlineData("async stream element", nameof(NullableReturnConverterIntoAsyncStreamElement))]
+        [InlineData("constructor parameter", nameof(NullableReturnConverterIntoConstructorParameter))]
+        [InlineData("[FlattenGraph] leaf", nameof(NullableReturnConverterIntoFlattenGraphLeaf))]
+        [InlineData("hand-written converter", nameof(HandWrittenNullableReturnConverter))]
+        public void A_converters_nullable_return_emits_no_nullable_warning_at_any_edge(string label, string schemaField)
+        {
+            // RED on every row, with the diagnostic the arm happens to produce: CS8601 on a member and a
+            // [FlattenGraph] leaf, CS8600 + CS8604 on a collection element, CS8600 + CS8601 on a dictionary
+            // value and a span element, CS8600 + CS8603 on an async stream, CS8604 on a constructor parameter.
+            AssertWarningFree(Schema(schemaField), "nullable-return converter into a " + label);
+        }
+
+        [Theory]
+        [InlineData(nameof(NullableReturnConverterIntoMember), "destination member 'Inner'")]
+        [InlineData(nameof(NullableReturnConverterIntoElement), "the element type of 'Items'")]
+        [InlineData(nameof(NullableReturnConverterIntoDictionaryValue), "the value type of 'Lookup'")]
+        [InlineData(nameof(NullableReturnConverterIntoSpanElement), "the element type of 'Copy'")]
+        [InlineData(nameof(NullableReturnConverterIntoAsyncStreamElement), "the element type of 'Stream'")]
+        [InlineData(nameof(NullableReturnConverterIntoConstructorParameter), "destination member 'inner'")]
+        [InlineData(nameof(NullableReturnConverterIntoFlattenGraphLeaf), "destination member 'Payload'")]
+        [InlineData(nameof(HandWrittenNullableReturnConverter), "destination member 'Inner'")]
+        public void Every_edge_that_forgives_a_nullable_return_reports_DWARF107(string schemaField, string destination)
+        {
+            // The same coupling as DWARF070, and it matters MORE here. Forgiving an ARGUMENT only defers to the
+            // callee's own ArgumentNullException.ThrowIfNull, which is still loud at the right place; forgiving
+            // a RETURN actually STORES the null in a slot whose type forbids it, and nothing complains until
+            // something far away dereferences it. Every row RED before this task — no DWARF diagnostic at all.
+            var message = Dwarf107Message(Schema(schemaField));
+
+            Assert.Contains("'ToDto' is declared to return a nullable reference", message, StringComparison.Ordinal);
+            Assert.Contains(destination, message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void DWARF107_says_that_DWARF070s_suppression_does_not_cover_it()
+        {
+            // The reason this is a new id rather than a fifth noun on DWARF070: the suppressions are not
+            // interchangeable. Someone who wrote dotnet_diagnostic.DWARF070.severity = none accepted a nullable
+            // value going IN; that is not a decision to accept a converter handing back null, and a message
+            // that let them believe otherwise would be the quiet failure this whole family is about.
+            var message = Dwarf107Message(NullableReturnConverterIntoMember);
+
+            Assert.Contains("dotnet_diagnostic.DWARF107.severity = none", message, StringComparison.Ordinal);
+            Assert.Contains("DWARF070's suppression does NOT cover this", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_wholly_non_nullable_pair_still_warns_which_is_why_DWARF070_could_not_carry_it()
+        {
+            // The measurement behind the design decision, pinned so a later "simplify by folding 107 into 070"
+            // has to confront it: NOTHING on the source side of this mapper is nullable. `Child Inner` into
+            // `ChildDto Inner`. DWARF070's opening clause — "{0} is a nullable reference" — has no honest {0}
+            // here, and DWARF070 correctly does not fire.
+            var ids = DwarfIds(NullableReturnConverterIntoMember);
+
+            Assert.Contains("DWARF107", ids);
+            Assert.DoesNotContain("DWARF070", ids);
+        }
+
+        [Fact]
+        public void A_nullable_destination_member_accepts_the_returned_null_and_is_not_forgiven()
+        {
+            // Passes RED by design: the destination admits null, so the returned null is legal, no '!' is owed
+            // and no report is owed. Without this, "always forgive a nullable return" would pass the section.
+            AssertWarningFree(NullableReturnConverterIntoNullableMember, "ChildDto? ToDto into ChildDto? Inner");
+
+            var generated = GeneratorAssert.CompilesClean(NullableReturnConverterIntoNullableMember, NullableContextOptions.Enable);
+
+            Assert.Contains("Inner = s.Inner is null ? null : ToDto(s.Inner),", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("DWARF107", DwarfIds(NullableReturnConverterIntoNullableMember));
+        }
+
+        [Fact]
+        public void Both_arms_of_the_member_lift_are_forgiven_not_just_the_null_one()
+        {
+            // The exact text task 2.8 measured and left in place: `Inner = s.Inner is null ? null! : ToDto(s.Inner)`
+            // forgave the null ARM and left the CALL bare. Both halves now carry their own suppression, and the
+            // assertion is on the whole expression so neither can be dropped without failing.
+            var generated = GeneratorAssert.CompilesClean(NullableReturnConverterIntoMember, NullableContextOptions.Enable);
+
+            Assert.Contains("Inner = s.Inner is null ? null! : ToDto(s.Inner)!,", generated, StringComparison.Ordinal);
+
+            // And the OTHER member arm, where the two halves of the family meet on one assignment: a nullable
+            // source (DWARF070, the argument bang) through a nullable-return converter (DWARF107, the result
+            // bang). Two independent facts, two independent suppressions, two diagnostics.
+            var both = GeneratorAssert.CompilesClean(NullableReturnConverterIntoMemberFromNullableSource, NullableContextOptions.Enable);
+
+            Assert.Contains("Inner = ToDto(s.Inner!)!,", both, StringComparison.Ordinal);
+            Assert.Contains("DWARF070", DwarfIds(NullableReturnConverterIntoMemberFromNullableSource));
+            Assert.Contains("DWARF107", DwarfIds(NullableReturnConverterIntoMemberFromNullableSource));
+        }
+
+        [Fact]
+        public void The_element_builders_answer_the_nullable_return_identically()
+        {
+            // The anti-drift pair for this half: the collection element and the async stream must produce the
+            // same forgiven call, because they go through the one shared builder rather than two copies of it.
+            var collection = AddedElementExpression(
+                GeneratorAssert.CompilesClean(NullableReturnConverterIntoElement, NullableContextOptions.Enable));
+            var stream = YieldedElementExpression(
+                GeneratorAssert.CompilesClean(NullableReturnConverterIntoAsyncStreamElement, NullableContextOptions.Enable));
+
+            Assert.Equal("(__item is null ? null! : (global::T.ChildDto)ToDto(__item)!)", collection);
+            Assert.Equal(collection, stream);
+        }
     }
 }

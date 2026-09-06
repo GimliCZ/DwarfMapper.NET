@@ -306,7 +306,16 @@ namespace DwarfMapper.Generator.Pipeline
                     uNullH,
                     uNeedsCtx,
                     SourceMayBeNullRef(uSrc!),
-                    UnflattenIntermediateFqn: rootFqn));
+                    UnflattenIntermediateFqn: rootFqn,
+                    // Round 29 T2.9: the unflatten leaf writes its converter's result into a member of the
+                    // intermediate, and answers the RETURN question the same way every other member edge does.
+                    ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(uConv,
+                        leafType,
+                        autoCandidates,
+                        allMethods,
+                        tgtName,
+                        location,
+                        diagnostics)));
                 handledTargets.Add(rootName);
                 unflattenRoots.Add(rootName);
             }
@@ -676,9 +685,14 @@ namespace DwarfMapper.Generator.Pipeline
             string memberName,
             string? conv,
             NullHandling nh,
-            bool needsBang)
+            bool needsBang,
+            bool resultNeedsBang = false)
         {
             var access = paramName + "." + memberName;
+            // Round 29 T2.9: a user-declared converter DECLARED to return a nullable reference, feeding a DTO
+            // member that forbids null. Every arm below writes the call, so every arm carries the suppression;
+            // it is never true without DWARF107 having been reported for the same leaf.
+            var resultBang = resultNeedsBang ? "!" : "";
             if (conv is not null)
             {
                 // The null handling must reach the flat-node emitter too: a converter does NOT make it moot
@@ -691,33 +705,33 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     case NullHandling.NullableProject:
                         sb.Append(access).Append(".HasValue ? ")
-                            .Append(conv).Append('(').Append(access).Append(".Value) : null");
+                            .Append(conv).Append('(').Append(access).Append(".Value)").Append(resultBang).Append(" : null");
                         return;
 
                     case NullHandling.NullableProjectRef:
                         sb.Append(access).Append(" is null ? null : ")
-                            .Append(conv).Append('(').Append(access).Append(')');
+                            .Append(conv).Append('(').Append(access).Append(')').Append(resultBang);
                         return;
 
                     // Same lift, null-forgiven: the destination member's annotation forbids the preserved null,
                     // and the plain form would be CS8601 inside the generated file.
                     case NullHandling.NullableProjectRefForgiving:
                         sb.Append(access).Append(" is null ? null! : ")
-                            .Append(conv).Append('(').Append(access).Append(')');
+                            .Append(conv).Append('(').Append(access).Append(')').Append(resultBang);
                         return;
 
                     case NullHandling.ThrowIfNull:
                         sb.Append(conv).Append('(').Append(access)
                             .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
-                            .Append(memberName).Append("' was null\")").Append(')');
+                            .Append(memberName).Append("' was null\")").Append(')').Append(resultBang);
                         return;
 
                     case NullHandling.ValueOrDefault:
-                        sb.Append(conv).Append('(').Append(access).Append(".GetValueOrDefault())");
+                        sb.Append(conv).Append('(').Append(access).Append(".GetValueOrDefault())").Append(resultBang);
                         return;
                 }
 
-                sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')');
+                sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')').Append(resultBang);
             }
             else
             {
@@ -788,6 +802,30 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return GeneratedNames.IsSynthesized(conv) || (SourceMayBeNullRef(leafType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods));
+        }
+
+        /// <summary>
+        ///     The RETURN-side twin of <see cref="FlatLeafNeedsBang" />: whether the flat-node leaf's converter is
+        ///     declared to hand back a nullable reference the DTO member cannot hold. Reports DWARF107 when it
+        ///     does, through the one shared decision, so the [FlattenGraph] path cannot answer this differently
+        ///     from the member and element paths.
+        /// </summary>
+        private static bool FlatLeafResultNeedsBang(
+            string? conv,
+            ITypeSymbol dtoMemberType,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            string dtoMemberName,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
+        {
+            return ForgiveConverterNullableReturn(conv,
+                dtoMemberType,
+                autoCandidates,
+                allMethods,
+                dtoMemberName,
+                location,
+                diagnostics);
         }
     }
 }

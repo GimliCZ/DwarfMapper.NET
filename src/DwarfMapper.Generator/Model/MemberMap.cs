@@ -80,6 +80,21 @@ namespace DwarfMapper.Generator.Model
     ///     never forgiven — dropping a null it was written to accept. Set only for the user-declared converter path;
     ///     synthesized helpers keep flowing through <c>IsSynthesized</c>.
     /// </param>
+    /// <param name="ConverterReturnIsNullableRef">
+    ///     When <c>true</c>, <see cref="ConverterMethod" /> is a user-declared map/converter method whose RETURN is
+    ///     a nullable-annotated reference, and the destination this member writes into is NOT — so the call's
+    ///     result must be null-forgiven (<c>Conv(s.X)!</c>) or the C# compiler raises CS8600/CS8601/CS8603/CS8604
+    ///     from inside the generated file. The mirror of <see cref="ConverterParamIsNonNullableRef" />, which
+    ///     carried only the ARGUMENT side: <c>partial ChildDto? ToDto(Child c)</c> feeding a non-nullable
+    ///     <c>ChildDto Inner</c> emitted <c>Inner = s.Inner is null ? null! : ToDto(s.Inner)</c> — the null arm
+    ///     forgiven, the call not (round 29 task 2.8 concern 1, fixed by task 2.9).
+    ///     <para>
+    ///         Unlike the argument side, this forgiveness genuinely STORES a null in a slot whose type forbids it —
+    ///         the argument side only defers to the callee's own <c>ArgumentNullException.ThrowIfNull</c>. That is
+    ///         why it is never set without <c>DWARF107</c> being reported at the same moment, by the one decision
+    ///         in <c>MapperExtractor.ForgiveConverterNullableReturn</c>.
+    ///     </para>
+    /// </param>
     /// <param name="SourceAccessExpression">
     ///     When non-null, the member's value is read from this raw C# expression instead of
     ///     <c>param.Member</c> — and, unlike <see cref="ValueExpression" />, the converter and
@@ -118,7 +133,8 @@ namespace DwarfMapper.Generator.Model
         string? UpsertKeyMember = null,
         string? UpsertKeyTypeFqn = null,
         bool ConverterParamIsNonNullableRef = false,
-        string? SourceAccessExpression = null) : IEquatable<MemberMap>
+        string? SourceAccessExpression = null,
+        bool ConverterReturnIsNullableRef = false) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

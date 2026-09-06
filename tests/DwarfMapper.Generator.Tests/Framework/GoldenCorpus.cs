@@ -315,6 +315,40 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                    }
                                                    """, "DwarfGenerator");
 
+            // Round 29 task 2.9, the RETURN half. Nothing in the corpus had ever declared a converter that
+            // returns a nullable reference — which is why the manifest moved zero EMISSION rows for the fix, and
+            // why that silence is the hole rather than the reassurance. Strict is the forgiven member arm, Free
+            // the nullable destination that must gain nothing, and the collection and dictionary members prove
+            // the two element builders answer it the same way the member emitter does.
+            yield return ("NullableReturnConverter", """
+                                                     #nullable enable
+                                                     using System.Collections.Generic;
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public class Child { public int V { get; set; } }
+                                                     public class ChildDto { public int V { get; set; } }
+                                                     public class A
+                                                     {
+                                                         public Child Strict { get; set; } = new();
+                                                         public Child Free { get; set; } = new();
+                                                         public List<Child> Items { get; set; } = new();
+                                                         public Dictionary<string, Child> Lookup { get; set; } = new();
+                                                     }
+                                                     public class B
+                                                     {
+                                                         public ChildDto Strict { get; set; } = new();
+                                                         public ChildDto? Free { get; set; }
+                                                         public List<ChildDto> Items { get; set; } = new();
+                                                         public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                                     }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         public partial B Map(A a);
+                                                         public partial ChildDto? ToDto(Child c);
+                                                     }
+                                                     """, "DwarfGenerator");
+
             yield return ("EnumByName", """
                                         using DwarfMapper;
                                         namespace Demo;
