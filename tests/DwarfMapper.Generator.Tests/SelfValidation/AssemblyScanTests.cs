@@ -43,12 +43,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "DWARF006",
             "DWARF019", // retired; superseded by DWARF028 (ProjectionNotTranslatable)
             "DWARF029",
-            // DWARF102-105: held by the round-29 plan for tasks still to land, so DWARF106 was allocated out
-            // of order rather than renumbering work already specified against those ids. Each entry leaves
+            // DWARF102/104/105: held by the round-29 plan for tasks still to land, so DWARF106 was allocated
+            // out of order rather than renumbering work already specified against those ids. Each entry leaves
             // when its task claims it; this block must only SHRINK. DWARF101 left it in round 29 T0.3
-            // (LayoutHygiene / struct padding), which is what the block is for.
+            // (LayoutHygiene / struct padding) and DWARF103 in T2.2 (the transfer-model hint at the mapping
+            // site), which is what the block is for.
             "DWARF102",
-            "DWARF103",
             "DWARF104",
             "DWARF105"
         };

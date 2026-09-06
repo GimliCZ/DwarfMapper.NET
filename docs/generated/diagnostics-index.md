@@ -105,6 +105,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF099` | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations |
 | `DWARF100` | Info | Array or span pair narrowly missed the blittable fast path |
 | `DWARF101` | Info | Struct layout pads more than a quarter of its size |
+| `DWARF103` | Info | Collection element could be a struct |
 | `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive |
 
-98 diagnostics.
+99 diagnostics.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -547,6 +548,257 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     The transfer-model facts for one compilation — which types are derived from, and which are EF
+        ///     entities — gathered ONCE and handed to <see cref="TransferModelShape.Classify(INamedTypeSymbol, Compilation, TransferModelShape.CompilationFacts)" />
+        ///     so the predicate stays pure.
+        /// </summary>
+        /// <remarks>
+        ///     The brief for <c>T2.2</c> says "compute them once per compilation and pass them in", and this is
+        ///     the shape of that in a chain whose entry point (<c>TryResolveConversion</c>) is called once per
+        ///     MEMBER from a dozen sites: gathering at the entry point would sweep the assembly per member, and
+        ///     threading the facts down from every caller would put a parameter nobody else reads through all of
+        ///     them. Keyed by a <see cref="ConditionalWeakTable{TKey,TValue}" />, exactly as
+        ///     <c>BaseTypesByCompilation</c> is a few files over and for the same reason: the entry (and the
+        ///     symbols it holds) dies with the compilation, where a static dictionary in a long-lived generator
+        ///     host would pin symbols from every compilation it ever saw.
+        ///     <para>
+        ///         Called LAST in the gate below, after every cheap question has already been answered, so a
+        ///         compilation with no candidate pair in it never pays for the sweep at all.
+        ///     </para>
+        /// </remarks>
+        private static readonly ConditionalWeakTable<Compilation, TransferModelShape.CompilationFacts>
+            TransferModelFactsByCompilation = new();
+
+        private static TransferModelShape.CompilationFacts TransferModelFacts(Compilation compilation)
+        {
+            return TransferModelFactsByCompilation.GetValue(compilation,
+                static c => TransferModelShape.CompilationFacts.Gather(c));
+        }
+
+        /// <summary>
+        ///     Reports <c>DWARF103</c> when a mapped collection builds one CLASS element per item and that
+        ///     element type is transfer-model shaped — i.e. it could be a <c>readonly record struct</c>, which
+        ///     would make the whole collection one allocation instead of one per element.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>The site.</b> After the element pair has RESOLVED, and before the collection helper is
+        ///         synthesized. Resolution is what tells this apart from every neighbouring shape without
+        ///         re-deriving anything: <paramref name="elemConv" /> names what will actually build each
+        ///         element. The blit branches above cannot swallow it — every one of them requires an unmanaged
+        ///         struct pair, and this speaks only about classes — and the element recursion below has already
+        ///         reported its own refusals, so a pair that got here is a pair that maps.
+        ///     </para>
+        ///     <para>
+        ///         <b>"This generator builds the element" is the whole gate</b>, and the obvious rule — the one
+        ///         the blit gate above uses, "no user-declared conversion for the element pair" — is wrong here.
+        ///         The shape the research measured is <c>partial List&lt;OrderDto&gt; Map(List&lt;Order&gt;)</c>
+        ///         beside <c>partial OrderDto Map(Order)</c>, whose element resolves to that SIBLING PARTIAL
+        ///         METHOD; it counts as a user conversion to the blit gate (the blit would be bypassing a call)
+        ///         and it is this generator's own emitted body here. So the question asked is which of the two
+        ///         it is: a synthesized object map, or an auto-candidate whose signature IS this element pair —
+        ///         and <c>AutoCandidates</c> holds partial DEFINITIONS only (<c>CollectMapperMethods</c>) plus
+        ///         the <c>[GenerateMap&lt;S,T&gt;]</c> pairs, so everything in it is a body the generator
+        ///         writes. A hand-written converter, a conversion operator's shim and an identity copy (nothing
+        ///         is allocated per element at all) are none of those, and are silent.
+        ///     </para>
+        ///     <para>
+        ///         <b>Three refusals the classifier cannot make</b>, because they are about the REPORT rather
+        ///         than the shape. A pair-scoped directive or hook is honoured through the same
+        ///         <c>NestedMappingRegistry.PairCustomization</c> the blit gate reads: an <c>[AfterMap]</c> that
+        ///         mutates the target is a compile error or a lost write once the target is a value type, which
+        ///         is the silent semantic change this project refuses. Preserve and SetNull are refused because
+        ///         reference identity is the point of those modes and a value type has none. And a DTO another
+        ///         generator emitted is refused for <see cref="ReportPaddedElementStruct" />'s reason: the
+        ///         consumer cannot rewrite a declaration they did not write.
+        ///     </para>
+        ///     <para>
+        ///         <b>Once per element PAIR</b>, through the same message-text dedupe as <c>DWARF101</c> — the
+        ///         message names the pair, its size and its remedy and nothing about the member it was reached
+        ///         through, so a second member mapping the same pair produces an identical string and drops. The
+        ///         sink is the mapper class's own diagnostic list, so "once" is once per mapper class. The
+        ///         location is the MAPPING site rather than the type: the cost is paid where the collection is,
+        ///         a type-level rule would fire on every DTO in a solution, and that is the trade the research
+        ///         made explicitly. <c>MemberName</c> is left off for <see cref="ReportPaddedElementStruct" />'s
+        ///         reason too — the remedy edits the type, and whichever member reached it first is an accident
+        ///         of declaration order.
+        ///     </para>
+        /// </remarks>
+        private static void ReportTransferModelElement(
+            ConversionRequest req,
+            List<DiagnosticInfo> diagnostics,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            string? elemConv)
+        {
+            // Reference identity is the point of these two modes: Preserve rebuilds the source's topology and
+            // SetNull writes null into a back-edge. A value type has no identity to preserve and no field that
+            // can hold that null, so the suggestion would undo what the mapper was configured for.
+            if (req.IsPreserve || req.IsSetNull)
+            {
+                return;
+            }
+
+            // Class → class. The classifier refuses a value-type target on its own, so only the SOURCE side is
+            // asked here — "one allocation per element" is a claim about what the source loop produces.
+            if (srcElem.TypeKind != TypeKind.Class || tgtElem is not INamedTypeSymbol { TypeKind: TypeKind.Class } target)
+            {
+                return;
+            }
+
+            if (!ElementIsBuiltByGeneratedCode(req, srcElem, tgtElem, elemConv))
+            {
+                return;
+            }
+
+            // A directive or hook declared for this pair survives the rewrite only by accident: a [BeforeMap]/
+            // [AfterMap] taking the target by value writes into a copy once the target is a struct. Asked
+            // through the registry's own rule, so this and the blit gate cannot disagree about what customizes
+            // a pair.
+            if (req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true)
+            {
+                return;
+            }
+
+            foreach (var declaration in target.DeclaringSyntaxReferences)
+                if (GeneratedSourceExtensions.IsGeneratorAuthored(declaration.SyntaxTree))
+                {
+                    return;
+                }
+
+            var verdict = TransferModelShape.Classify(target, req.Compilation, TransferModelFacts(req.Compilation));
+            if (!verdict.IsShaped)
+            {
+                return;
+            }
+
+            var message = TransferModelElementMessage(srcElem, target, verdict);
+
+            foreach (var reported in diagnostics)
+                if (ReferenceEquals(reported.Descriptor, DiagnosticDescriptors.CollectionElementCouldBeAStruct) &&
+                    string.Equals(reported.MessageArg, message, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionElementCouldBeAStruct,
+                req.Location,
+                message));
+        }
+
+        /// <summary>
+        ///     True when the ELEMENTS of this collection are constructed by a body this generator emits — the
+        ///     one fact that makes "one allocation per element" both true and ours to remove.
+        /// </summary>
+        /// <remarks>
+        ///     <c>null</c> is an identity copy: the references are copied and no element is allocated, so the
+        ///     message's claim would be false. A synthesized object map is ours by construction. Anything else
+        ///     synthesized (a conversion operator's shim, an enum or numeric helper) is not an object map and
+        ///     does not build a transfer model. What is left is a name from the mapper, and only an
+        ///     <c>AutoCandidates</c> entry MATCHING THIS ELEMENT PAIR qualifies: that list is the partial
+        ///     definitions plus the <c>[GenerateMap&lt;S,T&gt;]</c> pairs, every one of which this generator
+        ///     writes the body of. A hand-written <c>OrderDto Convert(Order)</c> lives in <c>AllMethods</c>
+        ///     instead and owns its own construction.
+        /// </remarks>
+        private static bool ElementIsBuiltByGeneratedCode(
+            ConversionRequest req,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            string? elemConv)
+        {
+            if (elemConv is null)
+            {
+                return false;
+            }
+
+            if (GeneratedNames.IsAnySynthesized(elemConv))
+            {
+                return GeneratedNames.IsObjectMap(elemConv);
+            }
+
+            foreach (var candidate in req.AutoCandidates)
+                if (string.Equals(candidate.Name, elemConv, StringComparison.Ordinal) &&
+                    SymbolEqualityComparer.Default.Equals(candidate.ParamType, srcElem) &&
+                    SymbolEqualityComparer.Default.Equals(candidate.ReturnType, tgtElem))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     Builds <c>DWARF103</c>'s message: the pair, what the rewrite buys, the would-be struct's size,
+        ///     and — only where the verdict earns them — the <c>in</c> advice and the scope of the derived-type
+        ///     check.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>Every number here is worded to the evidence behind it.</b>
+        ///         <see cref="TransferModelShape.Verdict.SizeIsUpperBound" /> means a member was costed as an
+        ///         8-byte reference, which is its x64 width and twice its x86 one, so the size is an
+        ///         OVER-estimate and is printed as "at most". The bound only ever over-counts, so the advice
+        ///         cannot become wrong on a narrower platform — but printing an estimate as a measurement would
+        ///         be a false claim about the consumer's machine, which is the defect that flag exists to
+        ///         prevent.
+        ///     </para>
+        ///     <para>
+        ///         The nested clause is not decoration either: the classifier counts a nested transfer model
+        ///         INLINE, because the code fix rewrites it too. Convert the root alone and the member stays a
+        ///         reference and the size is smaller. "With any transfer model it holds a struct too" is what
+        ///         makes the number true of the rewrite it is advising, in the cases where the type has one and
+        ///         (vacuously) in the cases where it does not.
+        ///     </para>
+        ///     <para>
+        ///         <c>SuggestIn</c> is a BAND flag and is false on <c>TooLarge</c>, so the advice is asked for as
+        ///         <c>TooLarge || SuggestIn</c>; reading the flag alone would drop it for exactly the types that
+        ///         need it most. And the derivation clause states the SCOPE of the sweep rather than its
+        ///         conclusion. That is deliberate: the flag does not propagate out of a nested model, and it
+        ///         reads false for an <c>internal</c> type that an <c>InternalsVisibleTo</c> grant lets a friend
+        ///         assembly derive from. A message that claimed derivation had been ruled out would be wrong in
+        ///         both of those; this one never claims it at all, and says what was actually walked where the
+        ///         gap is widest.
+        ///     </para>
+        /// </remarks>
+        private static string TransferModelElementMessage(
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            TransferModelShape.Verdict verdict)
+        {
+            // WITHOUT the annotation. A `List<OrderDto?>` element arrives here as `OrderDto?`, and the message
+            // names a type the consumer is being asked to REDECLARE — "declare 'OrderDto?' as a readonly record
+            // struct" names no declaration that exists. It also matters to the dedupe: `List<OrderDto>` and
+            // `List<OrderDto?>` on one mapper are one type and must be one report, not two.
+            var source = srcElem.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString();
+            var target = tgtElem.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString();
+            var size = verdict.Size.ToString(CultureInfo.InvariantCulture);
+
+            var sizeText = verdict.SizeIsUpperBound
+                ? $"at most {size} bytes, a reference member counted at 8 bytes, its x64 width,"
+                : $"{size} bytes,";
+
+            var message =
+                $"'{source}' → '{target}' allocates one '{target}' per element, and '{target}' is " +
+                "transfer-model shaped: declared as a readonly record struct — with any transfer model it " +
+                $"holds a struct too — it is {sizeText} and the collection becomes one allocation instead of " +
+                $"one per element; with '{source}' a struct as well, the pair takes the block copy.";
+
+            if (verdict.Kind == TransferModelShape.Outcome.TooLarge || verdict.SuggestIn)
+            {
+                message += $" At {size} bytes pass it by 'in' rather than by value.";
+            }
+
+            if (verdict.DerivationCheckedWithinAssemblyOnly)
+            {
+                message += $" The check that nothing derives from '{target}' covered this assembly only, since " +
+                           $"'{target}' is public and not sealed — a project referencing this one can still " +
+                           "derive from it.";
+            }
+
+            return message;
+        }
+
+        /// <summary>
         ///     Collections: element-wise conversion, including the in-place and context-threading shapes.
         /// </summary>
         /// <returns>
@@ -759,6 +1011,13 @@ namespace DwarfMapper.Generator.Pipeline
                     resolved = false; // element diagnostic already reported by the recursive call
                     return true;
                 }
+
+                // ── The element could be a struct (round 29, T2.2) ──────────────────────────────────────────
+                // Reported HERE, after the element pair resolved and before the collection helper is built:
+                // elemConv is what names the body that will construct each element, which is the one fact that
+                // makes "one allocation per element" ours to remove rather than the caller's. Above this the
+                // pair has not been resolved yet; below it the helper is already synthesized.
+                ReportTransferModelElement(req, diagnostics, srcElem, tgtElem, elemConv);
 
                 // #100: a nullable-annotated REFERENCE element whose target element is non-nullable needs the
                 // same per-element null handling as a nullable VALUE element (int?→int). SymbolEqualityComparer

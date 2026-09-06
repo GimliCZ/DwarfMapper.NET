@@ -1942,6 +1942,80 @@ the line you edit — and it is reported once per type however many members reac
 - **Padding that lives inside a nested struct.** It is charged to the type that declares those fields, never
   to the one that contains it — reordering the outer fields could not recover it.
 ---
+## dwarf103
+**Collection element could be a struct** · Info
+
+Your mapping is **correct, and so is your class**. This is an allocation hint: the collection being mapped
+builds one `TargetDto` object per element, and `TargetDto` carries nothing but data — declared as a
+`readonly record struct` it would live *inside* the array, so the whole collection is one allocation instead
+of one per element. With the source element a struct as well, the pair takes the block copy.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+public sealed class OrderDto                      // DWARF103 — 16 bytes as a struct
+{
+    public long Id { get; set; }
+    public int Quantity { get; set; }
+}
+
+// the remedy the message names — and the hint goes quiet
+public readonly record struct OrderDto(long Id, int Quantity);
+```
+
+**Fix:** declare the element type as a `readonly record struct`. **Read the hazards first** — unlike the
+other performance hints, this one asks for a change of *meaning*:
+
+- A struct has **no reference identity**. Two elements that were the same object become two copies.
+- A struct **cannot be `null`**. `OrderDto?` becomes `Nullable<OrderDto>`, and `== null` stops compiling.
+- A struct **cannot be mutated through an indexer**: `list[i].Quantity = 5` is CS1612.
+- `default` replaces `null` as the "no value" state, and a constructor is not run for it.
+
+Every one of those is a **compile error**, not a silent change, which is why the suggestion is worth making
+at all — and why the diagnostic is informational. Ignoring it is a legitimate answer.
+
+- **What it buys.** Measured on a four-class DTO tree decomposed into nested structs
+  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): **0.30×** the time at 1,000 elements and
+  **0.09×** at 100,000, with memory 184 → 64 KB and 18.4 → 6.4 MB. A single flat DTO is a smaller win
+  (2.2× at 1k, 9–12× at ≥100k, −43 % memory). Your numbers depend on your types; the message states the
+  mechanism, and these are the measurements behind it.
+- **The size in the message is the would-be struct's**, not the class object's, and it is stated as a bound
+  ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
+  number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
+  because that is the rewrite being suggested.
+- **Over 32 bytes it asks you to pass it by `in`.** Past 64 it asks more insistently: a value that large is
+  copied at every call, and `in` is what stops that.
+- **"The derived-type check covered this assembly only."** When the type is `public` and not `sealed`, the
+  sweep that looked for subclasses saw *this* compilation. A project that references yours can still derive
+  from it, and a struct cannot be a base type — so that is yours to confirm, and the message says so rather
+  than implying it was settled.
+
+**When it stays quiet**, which is nearly always:
+
+- **The element type is already a struct**, or is not a class at all.
+- **Anything `TransferModelShape` refuses**, which is most types: a class that is derived from, is abstract,
+  has a base class, is `static`, is generic, implements any interface other than `IEquatable<T>` of itself,
+  implements `IDisposable`, declares an event or a method beyond the record quartet, has a computed property,
+  has a constructor that does more than assign its parameters, looks like an EF entity (a `DbSet<T>` in this
+  compilation, or a `[Key]`/`[Table]`/`[Column]`/`[ForeignKey]` attribute), holds no instance data, contains
+  itself, or is declared in a referenced assembly rather than in your source. Each refusal is a case where the
+  rewrite would break something you rely on.
+- **The elements are not built by this generator.** A hand-written converter, or a user-defined conversion
+  operator, owns the construction of every element — the suggestion would be asking you to change code the
+  generator does not write. A collection copied element-for-element with no conversion at all
+  (`List<Dto>` → `List<Dto>`) copies *references*: nothing is allocated per element, so there is nothing to
+  remove.
+- **The pair carries a directive or a hook.** A `[BeforeMap]`/`[AfterMap]` matching the pair, or a pair-scoped
+  `[MapProperty<S,T>]`/`[MapIgnore<T>]`/`[MapValue<T>]`, is honoured by the element helper — and a hook that
+  writes into a value-type target writes into a copy. Silence is the cheap side of that trade.
+- **`ReferenceHandling = Preserve` or `OnCycle = SetNull`.** Both are about reference identity: one rebuilds
+  the source's topology, the other writes `null` into a back-edge. A value type has neither.
+- **A transfer model mapped as a scalar member.** It is allocated once, not once per element. The claim here
+  is about collections, which is why this is reported at the mapping site and not on the type — a type-level
+  rule would fire on every DTO in your solution.
+- **A DTO another generator emitted.** You cannot reorder or rewrite a declaration inside a `.g.cs`, and you
+  cannot suppress a diagnostic raised in one either.
+- **Once per element pair per mapper**, however many members map that pair.
+---
 ## dwarf106
 **[Reinterpret] takes the block copy instead of a declared conversion or directive** · Info
 

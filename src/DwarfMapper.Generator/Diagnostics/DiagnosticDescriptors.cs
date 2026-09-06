@@ -1797,6 +1797,60 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf101");
 
         /// <summary>
+        ///     <c>DWARF103</c> — a mapped collection builds one class element per item, and that element type is
+        ///     TRANSFER-MODEL SHAPED: declared as a <c>readonly record struct</c> the whole collection would be
+        ///     one allocation instead of one per element.
+        ///     <para>
+        ///         <b>Informational, and it must stay that way.</b> The mapping is correct, the class is correct,
+        ///         and the change it suggests is a SEMANTIC one — a value type has no identity, no
+        ///         <c>null</c>, and no in-place mutation through an indexer. A warning would turn that judgement
+        ///         call into a build failure under <c>TreatWarningsAsErrors</c>, which is the trap
+        ///         <c>DWARF070</c> taught this project once already.
+        ///     </para>
+        ///     <para>
+        ///         Reported at the MAPPING SITE, never on the type. A type-level rule would fire on every DTO in
+        ///         a solution; the collection is where the cost is actually paid, because the element is
+        ///         allocated once per item. Once per element PAIR per mapper class, through the same
+        ///         message-text dedupe <c>DWARF101</c> uses: the message names the pair and nothing about the
+        ///         member it was reached through, so a second member mapping the same pair adds no information.
+        ///     </para>
+        ///     <para>
+        ///         <b>The shape is <see cref="Pipeline.TransferModelShape" />'s to decide, and it refuses far
+        ///         more than it accepts</b> — a type that is derived from, disposed, subscribed to, tracked by
+        ///         an ORM, or built by a constructor that validates is never named. The site adds three refusals
+        ///         the classifier cannot make, because they are about the REPORT rather than the shape: the
+        ///         elements must be built by code this generator emits (a hand-written converter owns its own
+        ///         construction), the pair must carry no directive or hook a struct target would silently drop,
+        ///         and the mapper must not be in Preserve or SetNull mode, where reference identity is the point
+        ///         of the mapping. A DTO another generator emitted is refused for
+        ///         <see cref="StructLayoutPadding" />'s reason: the consumer cannot rewrite a declaration they
+        ///         did not write. Round 29, <c>T2.2</c>.
+        ///     </para>
+        ///     <para>
+        ///         The size in the message is the WOULD-BE struct's, and it is worded as a bound whenever a
+        ///         reference member was costed at its x64 width. Over 32 bytes the message adds the <c>in</c>
+        ///         advice; for a public unsealed type it says that the derived-type sweep covered this assembly
+        ///         only, because a consuming project can still subclass it and nothing here can see that.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor CollectionElementCouldBeAStruct = new(
+            "DWARF103",
+            "Collection element could be a struct",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "A collection of class elements allocates one object per item, and the destination element type " +
+            "here carries nothing but data: declared as a readonly record struct it would live inside the " +
+            "array, making the whole collection one allocation instead of N, and a struct on both sides of the " +
+            "pair takes the block copy. The change is a real change of meaning, which is why this is a hint " +
+            "rather than a warning — a struct has no reference identity, cannot be null, and cannot be mutated " +
+            "through an indexer, so every usage that relied on those becomes a compile error rather than a " +
+            "silent behaviour change. Ignoring it is a legitimate answer. The size printed is the would-be " +
+            "struct's, stated as a bound when a reference member was counted at its widest.",
+            HelpBase + "dwarf103");
+
+        /// <summary>
         ///     <c>[Reinterpret]</c> on a member took the block copy, and by doing so did NOT call a conversion
         ///     the element pair would otherwise have resolved to — a user-declared method on the mapper, or a
         ///     user-defined conversion operator between the element types.

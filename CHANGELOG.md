@@ -53,6 +53,40 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF103` (Info) — a mapped collection builds one class element per item, and that element type could be
+  a `readonly record struct`.** Reported at the MAPPING SITE, never on the type: the allocation is paid once
+  per element, and a type-level rule would fire on every DTO in a solution. The message names the pair, what
+  the rewrite buys ("the collection becomes one allocation instead of one per element; with the source
+  element a struct as well, the pair takes the block copy") and the size of the would-be struct. **Remedy:**
+  declare the element type as a `readonly record struct`.
+
+  **Read the hazards before taking it.** Unlike the other performance hints this one asks for a change of
+  *meaning*: a struct has no reference identity, cannot be `null`, and cannot be mutated through an indexer
+  (`list[i].X = v` is CS1612). Every one of those surfaces as a **compile error** rather than a silent
+  behaviour change, which is the whole reason the suggestion is safe to make — and why it is informational.
+  Ignoring it is a legitimate answer. Measured on a four-class DTO tree decomposed into nested structs
+  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): 0.30× the time at 1,000 elements and 0.09× at
+  100,000; a single flat DTO is 2.2× / 9–12× with −43 % memory.
+
+  **The size is honest about what it is.** It is the WOULD-BE struct's size, counting any transfer model the
+  type holds as a struct too (that is the rewrite being advised), and it is printed as a bound — "at most N
+  bytes" — whenever a member is a reference, since a reference is 8 bytes on x64 and 4 on x86 and the number
+  can only be an over-estimate. Over 32 bytes the message adds the `in` advice. For a `public` unsealed type
+  it states the SCOPE of the derived-type sweep rather than its conclusion: it covered this assembly, and a
+  referencing project can still derive from a type this one never sees.
+
+  **It is deliberately hard to trigger.** The shape rules are `TransferModelShape`'s and refuse far more than
+  they accept — anything derived from, abstract, generic, `static`, disposable, event-declaring,
+  interface-implementing (bar `IEquatable<T>` of itself), ORM-tracked, validated in its constructor, or
+  declared in a referenced assembly. On top of those the report itself refuses four more: the elements must be
+  built by code this generator emits (a hand-written converter or a conversion operator owns its own
+  construction; an identity copy allocates nothing per element), the pair must carry no directive or hook a
+  value-type target would silently drop, the mapper must not be in `Preserve` or `SetNull` mode where
+  reference identity is the point, and a DTO another source generator emitted is never named — you cannot
+  rewrite a declaration inside a `.g.cs`, nor suppress a diagnostic raised in one. Reported once per element
+  pair per mapper. Over the 938-case combinatorial corpus it fires on 5, every one a `List<record>` of a
+  positional data record — which is the shape it exists for.
+
 - **`DWARF101` (Info) — a transfer-model struct spends a quarter or more of its bytes on padding, and the
   message names the field order that packs it.** Reported for the element types of a mapped collection, where
   the waste is paid once per item: `{bool; long; byte; double; short}` is 40 bytes, 20 of them padding, and
