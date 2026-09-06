@@ -744,6 +744,34 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("'inner'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
+        // -- 6. an extra parameter named after a C# keyword did not PARSE (CS1001 and 26 more) --------------
+        // Round 29 task 2.7 fix round 1. Both the signature fragment and the value expression were built from
+        // the raw ISymbol.Name, which Roslyn hands over WITHOUT the `@` — the escape is syntax, not part of the
+        // name. `Map(Src s, int @class)` therefore emitted `int class` and `Class = class`, and the consumer's
+        // .g.cs stopped being C# at all: a 27-diagnostic parse cascade ending in CS0111/CS0756 against their
+        // own partial. Identifiers already existed for exactly this (a DTO member called @class, R18-29); the
+        // extra-parameter path was simply never routed through it.
+
+        private const string KeywordNamedExtraParam = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public int Class { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s, int @class); }
+            }
+            """;
+
+        [Fact]
+        public void Keyword_named_extra_parameter_still_produces_parsable_code()
+        {
+            AssertWarningFree(KeywordNamedExtraParam, "Map(Src s, int @class)");
+
+            var generated = GeneratorAssert.CompilesClean(KeywordNamedExtraParam, NullableContextOptions.Enable);
+            Assert.Contains("Map(global::T.Src s, int @class)", generated, StringComparison.Ordinal);
+            Assert.Contains("Class = @class", generated, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Enum_without_obsolete_members_emits_no_pragma()
         {

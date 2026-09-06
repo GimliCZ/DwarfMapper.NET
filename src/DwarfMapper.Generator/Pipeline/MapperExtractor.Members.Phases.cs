@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -629,7 +630,11 @@ namespace DwarfMapper.Generator.Pipeline
                                 ep.Name,
                                 req.Location,
                                 acc.Diagnostics),
-                            SourceAccessExpression: ep.Name));
+                            // Escaped for the same reason the signature fragment is: this string is emitted as
+                            // C# (`Class = @class`), so a parameter the user spelled `@class` must keep its `@`.
+                            // It is also what DWARF070 and the ThrowIfNull message name the parameter by, which
+                            // is why they read '@class' rather than 'class' for that (rare) spelling.
+                            SourceAccessExpression: Identifiers.Escape(ep.Name)));
                         acc.HandledTargets.Add(target.Name);
                         acc.ConsumedExtraParams.Add(ep.Name);
                         continue;

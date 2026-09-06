@@ -153,6 +153,14 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **An extra mapping parameter named after a C# keyword produced a generated file that did not parse.** Both
+  the emitted signature and the value expression were built from the raw symbol name, which Roslyn hands over
+  without the `@` — the escape is syntax, not part of the name — so `partial Dst Map(Src s, int @class)` was
+  implemented as `Map(… s, int class)` with `Class = class`. The consumer's `.g.cs` then stopped being C# at
+  all: a parse cascade ending in `CS0111`/`CS0756` against their own partial declaration. The parameter
+  identifier is now escaped wherever it is written as code, exactly as a destination member called `@class`
+  already was.
+
 - **An extra mapping parameter declared nullable broke the consumer's build twice over: `CS8611` on the
   generated signature, and `CS8604` / `CS8601` / `CS0266` in its body.** A parameter after the source on a map
   method (`partial Dst Map(Src s, Child? inner)`) is matched to a destination member by name. Two things were

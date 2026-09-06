@@ -1347,7 +1347,12 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 var ep = method.Parameters[pi];
                 extraParams.Add((ep.Name, ep.Type));
-                extraParamSig.Add(ep.Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat) + " " + ep.Name);
+                // Identifiers.Escape, not the raw ISymbol.Name: Roslyn hands over `class` for a parameter the
+                // user wrote as `@class`, and the fragment is written straight into the emitted signature —
+                // `int class`, which is not C#. The consumer's .g.cs then fails to PARSE (a 27-diagnostic
+                // CS1001/CS1026/CS1519 cascade, ending in CS0111 and CS0756 against the partial), which is the
+                // same unfixable-file failure class as the CS8611 above, only louder.
+                extraParamSig.Add(ep.Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat) + " " + Identifiers.Escape(ep.Name));
             }
 
             // Read methodAutoNest early — needed by both Plan 21 (derived dispatch) and the normal path.
