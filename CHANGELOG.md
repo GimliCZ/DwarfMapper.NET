@@ -57,7 +57,8 @@ so a version with no section here ships with no notes.
   a `readonly record struct`.** Reported at the MAPPING SITE, never on the type: the allocation is paid once
   per element, and a type-level rule would fire on every DTO in a solution. The message names the pair, what
   the rewrite buys ("the collection becomes one allocation instead of one per element") and the size of the
-  would-be struct. **Remedy:** declare the element type as a `readonly record struct`.
+  would-be struct. **Remedy:** declare the element type as a `readonly record struct` — or take the code fix
+  below, which does it for you.
 
   **Read the hazards before taking it.** Unlike the other performance hints this one asks for a change of
   *meaning*: a struct has no reference identity, cannot be `null`, and cannot be mutated through an indexer
@@ -96,9 +97,28 @@ so a version with no section here ships with no notes.
   construction; an identity copy allocates nothing per element), the pair must carry no directive or hook a
   value-type target would silently drop, the mapper must not be in `Preserve` or `SetNull` mode where
   reference identity is the point, and a DTO another source generator emitted is never named — you cannot
-  rewrite a declaration inside a `.g.cs`, nor suppress a diagnostic raised in one. Reported once per element
-  pair per mapper. Over the 938-case combinatorial corpus it fires on 5, every one a `List<record>` of a
-  positional data record — which is the shape it exists for.
+  rewrite a declaration inside a `.g.cs`, nor suppress a diagnostic raised in one — and neither is a transfer
+  model the element HOLDS, because the size in the message counts that model inline and the fix cannot rewrite
+  it either. The shape rules also refuse a class declaring `Equals(object)`, `operator ==` or `operator !=`: a
+  record struct synthesises those and does not stand aside for a hand-written one, so following the advice
+  would have been CS0111. (`Equals(T)`, `GetHashCode()` and `ToString()` it does stand aside for, and those are
+  still fine.) Reported once per element pair per mapper. Over the 938-case combinatorial corpus it fires on 5,
+  every one a `List<record>` of a positional data record — which is the shape it exists for.
+
+- **Code fix for `DWARF103`: *Convert 'X' (and N nested transfer models) to readonly record struct*.** One
+  action, one solution change: it rewrites the element type's declaration — every `partial` half of it, in
+  whichever file it lives — and the declarations of every transfer model that type INLINES, transitively.
+  **The transitivity is not a convenience.** The size `DWARF103` prints counts a nested transfer model at the
+  nested struct's own size rather than at pointer width, so converting the element alone would leave you a
+  type smaller than the number you were shown; if any part of the set cannot be rewritten, the fix changes
+  nothing at all. The rewrite makes the declaration compile on its own — `set` becomes `init` (CS8341), an
+  instance field gains `readonly` (CS8340), a type that keeps member initialisers gains a constructor
+  (CS8983), and a nested member the nullable context left *oblivious* is emitted as `Inner?`, which preserves
+  both the null it could legally hold and the size the diagnostic measured for it. It deliberately leaves
+  your USAGES alone: a `null` check, an aliasing assignment and `list[i].X = v` are meant to become compile
+  errors, loud over silent, which is the bargain the hazards above describe. Its targets travel in the
+  diagnostic's property bag as `DocumentationCommentId`s rather than being read out of the message text, so
+  rewording the message cannot silently stop the lightbulb appearing.
 
 - **`DWARF101` (Info) — a transfer-model struct spends a quarter or more of its bytes on padding, and the
   message names the field order that packs it.** Reported for the element types of a mapped collection, where

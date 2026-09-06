@@ -81,7 +81,8 @@ rule, without giving up the guarantees you *do* want:
    map even if you silence its id.
 2. **One-click resolutions.** The common completeness diagnostics carry code fixes: `DWARF001` → *Add
    [MapIgnore]*, `DWARF072` → *Map it* / *Ignore it*, `DWARF052` → *scaffold the inverse*. Adopt member by
-   member from the IDE lightbulb rather than hand-editing attributes.
+   member from the IDE lightbulb rather than hand-editing attributes. `DWARF103` carries one too — it
+   rewrites a transfer model, and every model it holds, into `readonly record struct`s in one step.
 3. **Tighten as you go.** Escalate a suggestion to a build error once a module is clean
    (`dotnet_diagnostic.DWARF038.severity = error` for strict, Mapperly-style conversions;
    `[DwarfMapper(RequiredMapping = Both)]` to also flag unused source members), or reach for the
@@ -1984,8 +1985,14 @@ public sealed class OrderDto                      // DWARF103 — 16 bytes as a 
 public readonly record struct OrderDto(long Id, int Quantity);
 ```
 
-**Fix:** declare the element type as a `readonly record struct`. **Read the hazards first** — unlike the
-other performance hints, this one asks for a change of *meaning*:
+**Fix:** declare the element type as a `readonly record struct`. The IDE lightbulb offers
+*Convert 'X' (and N nested transfer models) to readonly record struct*, which does it for you — **and does
+it to the nested models too**, because the size in the message counts any transfer model the type holds as
+a struct as well; converting the element alone would leave you a smaller type than the one you were shown.
+The rewrite makes the declaration compile on its own (`set` becomes `init`, an instance field gains
+`readonly`, initialisers keep a constructor, and a member the nullable context left oblivious keeps its
+`?`). It deliberately does **not** touch your usages — that is the point of the hazards below. **Read them
+first** — unlike the other performance hints, this one asks for a change of *meaning*:
 
 - A struct has **no reference identity**. Two elements that were the same object become two copies.
 - A struct **cannot be `null`**. `OrderDto?` becomes `Nullable<OrderDto>`, and `== null` stops compiling.

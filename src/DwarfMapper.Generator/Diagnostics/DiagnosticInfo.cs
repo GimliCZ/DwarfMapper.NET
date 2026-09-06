@@ -58,7 +58,13 @@ namespace DwarfMapper.Generator.Diagnostics
         // converted alongside the root. A fix that rewrote the root alone would retroactively falsify a number
         // already in front of the consumer, which is why they travel together and are applied as one change.
         // A plain string, like MemberName and SourcePair, so the record stays value-equatable for the cache.
-        string? NestedTransferModelIds = null)
+        string? NestedTransferModelIds = null,
+        // The would-be struct's size in bytes, invariant-formatted. Only DWARF103 sets it, and the code fix
+        // reads it for exactly one decision: whether the type it just wrote is over the 64-byte line and so
+        // earns a `consider passing it by 'in'` note. Handed over rather than parsed back out of the message
+        // for ruling 1's reason — the message prints this number, and a fix reading it there would break the
+        // day the wording moves, silently.
+        string? TransferModelSize = null)
     {
         /// <summary>Property bag key under which <see cref="MemberName" /> reaches a CodeFixProvider.</summary>
         public const string MemberPropertyKey = "Member";
@@ -76,6 +82,9 @@ namespace DwarfMapper.Generator.Diagnostics
         ///     conservative one: the fix converts the root only.
         /// </summary>
         public const string NestedTransferModelIdsPropertyKey = "NestedTransferModelIds";
+
+        /// <summary>Property bag key under which <see cref="TransferModelSize" /> reaches a CodeFixProvider.</summary>
+        public const string TransferModelSizePropertyKey = "TransferModelSize";
 
         public bool IsError => (SeverityOverride ?? Descriptor.DefaultSeverity) == DiagnosticSeverity.Error;
 
@@ -101,6 +110,11 @@ namespace DwarfMapper.Generator.Diagnostics
             if (NestedTransferModelIds is not null)
             {
                 properties = properties.Add(NestedTransferModelIdsPropertyKey, NestedTransferModelIds);
+            }
+
+            if (TransferModelSize is not null)
+            {
+                properties = properties.Add(TransferModelSizePropertyKey, TransferModelSize);
             }
 
             if (properties.Count == 0)

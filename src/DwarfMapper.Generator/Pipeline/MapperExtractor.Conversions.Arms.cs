@@ -746,7 +746,8 @@ namespace DwarfMapper.Generator.Pipeline
                 TransferModelId: target.OriginalDefinition.GetDocumentationCommentId(),
                 NestedTransferModelIds: nestedIds.Count == 0
                     ? null
-                    : string.Join("|", nestedIds)));
+                    : string.Join("|", nestedIds),
+                TransferModelSize: verdict.Size.ToString(CultureInfo.InvariantCulture)));
         }
 
         /// <summary>
