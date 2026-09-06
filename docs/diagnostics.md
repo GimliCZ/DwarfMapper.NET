@@ -1985,12 +1985,14 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
   number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
   because that is the rewrite being suggested.
-- **Over 32 bytes it asks you to pass it by `in`**, in one wording for every size above that line — a 72-byte
-  type gets the same sentence a 40-byte one does. (Internally 64 bytes is a second band, but it changes only
-  whether the classifier calls the type "too large to copy by value", not what you are told to do about it: a
-  value that large is copied at every call, and `in` is what stops that either way.) When the size is a bound,
-  so is the comparison — 40 bytes of references is 20 on a 32-bit runtime, under the threshold — so the clause
-  says so and advises `in` regardless, which costs nothing on the smaller reading.
+- **Three size bands, and only the top one asks you to pass it by `in`.** At or under **32 bytes** the size
+  is not remarked on. Between **32 and 64** the size is printed and nothing else — a struct that size still
+  wins by value, measured: 26.4 ns against the class's 29.9 ns at 64 bytes, so adding an indirection there
+  would be advice against the numbers. **Over 64 bytes** the copy is what dominates, and the message says to
+  pass it by `in`. The diagnostic itself fires on *shape*, in every band; the bands govern only what is said
+  about size. When the size is a bound, so is the comparison — 72 bytes of references is 36 on a 32-bit
+  runtime, under the limit — so the clause says so and advises `in` either way, which costs nothing on the
+  smaller reading.
 - **The block copy is mentioned only where it is possible AND earned.** Two conditions, both required: the
   *source* element must be transfer-model shaped in its own right (otherwise the sentence would be advising
   that an entity, or a type with behaviour, become a struct — on no evidence, since only the target is

@@ -9,8 +9,13 @@
 //       IT IS THE FLAG'S TRAP THAT MAKES THIS ROW LOAD-BEARING. `Verdict.SuggestIn` is a BAND flag, true
 //       between 32 and 64 bytes and FALSE on TooLarge, so a report reading it alone would print the `in`
 //       advice for a 40-byte model and omit it for a 72-byte one — dropping it for exactly the types that
-//       need it most. The site reads `Kind == TooLarge || SuggestIn`, and this file is what fails if anyone
-//       simplifies that back to the flag.
+//       need it most. The site reads `Kind == TooLarge`, which is the OTHER half of that trap: reading
+//       `TooLarge || SuggestIn` advises `in` at 40 bytes too, and the measurement does not support it (a
+//       64-byte struct still beat its class by value, 26.4 ns against 29.9 ns). The spec tiers the bands
+//       ≤32 B silent, 32-64 B Info, >64 B suggest `in`, and the project owner ruled that tiering reasonable
+//       (Issues/round29/RESEARCH-hardware-mode.md section 9, ruling (b)). This file fails if the top band
+//       ever loses the advice; its middle-band sibling in TransferModelDiagnosticTests fails if the middle
+//       band gains it.
 //
 //       THE BLOCK-COPY CLAUSE IS ABSENT HERE, deliberately: `OversizedSource` holds a string, and
 //       BlittableProof requires BOTH element types to be unmanaged, so the pair can never blit whatever the
@@ -23,7 +28,7 @@
 // EXPECT: DWARF103
 // EXPECT-MESSAGE DWARF103: 'Demo.OversizedSource' → 'Demo.OversizedDto' allocates one 'Demo.OversizedDto' per element
 // EXPECT-MESSAGE DWARF103: it is 72 bytes, and the collection becomes one allocation instead of one per element
-// EXPECT-MESSAGE DWARF103: At 72 bytes it is over the 32-byte threshold for copying by value, so pass it by 'in'
+// EXPECT-MESSAGE DWARF103: At 72 bytes it is over the 64-byte limit for copying by value, so pass it by 'in'
 
 using System.Collections.Generic;
 using DwarfMapper;

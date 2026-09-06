@@ -167,11 +167,19 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
-        ///     Between 32 and 64 bytes the struct is still worth having and is too big to copy by value at every
-        ///     call, so the message adds the <c>in</c> advice. Five <c>long</c>s is 40 bytes.
+        ///     The MIDDLE band, 32 to 64 bytes: reported, its size printed, and told nothing about <c>in</c>.
+        ///     Five <c>long</c>s is 40 bytes.
+        ///     <para>
+        ///         Fix round 3. This shipped advising <c>in</c> here, on a reading of the classifier's own
+        ///         (since corrected) doc comments; the spec tiers the bands ≤32 B silent, 32–64 B Info,
+        ///         &gt;64 B suggest <c>in</c>, and the project owner ruled that tiering reasonable
+        ///         (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §9, ruling (b)). The measurement is why: a
+        ///         64-byte struct still beat its class BY VALUE, 26.4 ns against 29.9 ns, so telling a consumer
+        ///         to add an indirection at 40 bytes is advice against the numbers.
+        ///     </para>
         /// </summary>
         [Fact]
-        public void A_target_over_the_value_copy_threshold_is_told_to_pass_it_by_in()
+        public void A_target_in_the_middle_band_prints_its_size_and_says_nothing_about_in()
         {
             var one = Assert.Single(Run("""
                                         using DwarfMapper;
@@ -184,19 +192,23 @@ namespace DwarfMapper.Generator.Tests
                                         [DwarfMapper] public partial class M { public partial D Map(C c); }
                                         """));
 
-            Assert.EndsWith(
-                " At 40 bytes it is over the 32-byte threshold for copying by value, so pass it by 'in'.",
-                Message(one),
-                StringComparison.Ordinal);
+            Assert.Contains("it is 40 bytes", Message(one), StringComparison.Ordinal);
+            Assert.DoesNotContain("'in'", Message(one), StringComparison.Ordinal);
         }
 
         /// <summary>
-        ///     Past 64 bytes the classifier answers <c>TooLarge</c> and clears <c>SuggestIn</c> — the flag is a
-        ///     BAND, not a ceiling — so a report that read <c>SuggestIn</c> alone would drop the advice for
-        ///     exactly the types that need it most. Nine <c>long</c>s is 72 bytes.
+        ///     The TOP band, past 64 bytes: the one band that advises <c>in</c>, and it names the 64-byte limit
+        ///     that put it there rather than the 32-byte line that merely started the reporting. Nine
+        ///     <c>long</c>s is 72 bytes.
+        ///     <para>
+        ///         <c>SuggestIn</c> is false here — it is a BAND flag, not a ceiling — so a report reading that
+        ///         flag alone would advise <c>in</c> at 40 bytes and stay silent at 72, which is backwards. The
+        ///         answer is <c>Kind == TooLarge</c>, and this test and its middle-band sibling pin the two
+        ///         halves of it.
+        ///     </para>
         /// </summary>
         [Fact]
-        public void A_target_past_the_upper_threshold_still_gets_the_in_advice()
+        public void A_target_past_the_upper_limit_is_told_to_pass_it_by_in()
         {
             var one = Assert.Single(Run("""
                                         using DwarfMapper;
@@ -210,7 +222,7 @@ namespace DwarfMapper.Generator.Tests
                                         """));
 
             Assert.EndsWith(
-                " At 72 bytes it is over the 32-byte threshold for copying by value, so pass it by 'in'.",
+                " At 72 bytes it is over the 64-byte limit for copying by value, so pass it by 'in'.",
                 Message(one),
                 StringComparison.Ordinal);
         }
@@ -402,9 +414,11 @@ namespace DwarfMapper.Generator.Tests
         /// <summary>
         ///     A size that is a BOUND stays a bound in the <c>in</c> advice too. Round 29 T2.2 review,
         ///     important 4: the message hedged the size in one clause and reprinted it as a bare fact in the
-        ///     next ("at most 40 bytes …" then "At 40 bytes pass it by 'in'"). No fixture crossed both branches,
-        ///     so nothing caught it. Five strings is 40 bytes on x64 and 20 on x86 — over the threshold on the
-        ///     bound, possibly under it in reality, and worth passing by <c>in</c> either way.
+        ///     next ("at most 72 bytes …" then "At 72 bytes pass it by 'in'"). No fixture crossed both branches,
+        ///     so nothing caught it. Nine strings is 72 bytes on x64 and 36 on x86 — over the limit on the
+        ///     bound, under it in reality, and worth passing by <c>in</c> either way. (Fix round 3 moved this
+        ///     fixture from five strings to nine: at 40 bytes it is in the middle band, which no longer carries
+        ///     the clause this test is about.)
         /// </summary>
         [Fact]
         public void A_bounded_size_stays_a_bound_in_the_in_advice()
@@ -413,15 +427,15 @@ namespace DwarfMapper.Generator.Tests
                                         using DwarfMapper;
                                         using System.Collections.Generic;
                                         namespace Demo;
-                                        public sealed class Wide { public string A { get; set; } public string B { get; set; } public string C1 { get; set; } public string D1 { get; set; } public string E { get; set; } }
-                                        public sealed class WideDto { public string A { get; set; } public string B { get; set; } public string C1 { get; set; } public string D1 { get; set; } public string E { get; set; } }
+                                        public sealed class Wide { public string A { get; set; } public string B { get; set; } public string C1 { get; set; } public string D1 { get; set; } public string E { get; set; } public string F { get; set; } public string G { get; set; } public string H { get; set; } public string I { get; set; } }
+                                        public sealed class WideDto { public string A { get; set; } public string B { get; set; } public string C1 { get; set; } public string D1 { get; set; } public string E { get; set; } public string F { get; set; } public string G { get; set; } public string H { get; set; } public string I { get; set; } }
                                         public class C { public List<Wide> Rows { get; set; } }
                                         public class D { public List<WideDto> Rows { get; set; } }
                                         [DwarfMapper] public partial class M { public partial D Map(C c); }
                                         """));
 
             Assert.EndsWith(
-                " At most 40 bytes — over the 32-byte threshold for copying by value unless a 32-bit runtime " +
+                " At most 72 bytes — over the 64-byte limit for copying by value unless a 32-bit runtime " +
                 "narrows it below, and worth passing by 'in' either way.",
                 Message(one),
                 StringComparison.Ordinal);
@@ -531,6 +545,39 @@ namespace DwarfMapper.Generator.Tests
 
             var generated = Assert.Single(RunAcross(mapper, source, "Order.g.cs"));
             Assert.DoesNotContain("block copy", Message(generated), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The SOURCE-ONLY caveat arm: a sealed target beside a <c>public</c> unsealed source that the
+        ///     message names. Fix round 3, item 1 — folding the two caveats into one sentence made this arm
+        ///     newly reachable, and only the both-named arm was pinned. The round before this one was entirely
+        ///     about not leaving a conjunct unlocked; leaving a new arm unlocked would be the same omission
+        ///     wearing a different hat.
+        /// </summary>
+        [Fact]
+        public void A_public_unsealed_source_earns_the_caveat_alone_when_the_target_is_sealed()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public class Order { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public sealed class OrderDto { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.EndsWith(
+                " The check that nothing derives from 'Demo.Order' covered this assembly only, since " +
+                "'Demo.Order' is public and not sealed — a project referencing this one can still derive from " +
+                "it.",
+                Message(one),
+                StringComparison.Ordinal);
+
+            // The target is sealed, so it must not be dragged into the sentence.
+            Assert.DoesNotContain("'Demo.OrderDto' or", Message(one), StringComparison.Ordinal);
+            Assert.DoesNotContain("both are", Message(one), StringComparison.Ordinal);
         }
 
         /// <summary>

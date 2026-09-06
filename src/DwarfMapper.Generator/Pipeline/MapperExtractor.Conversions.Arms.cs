@@ -688,8 +688,13 @@ namespace DwarfMapper.Generator.Pipeline
             // A source from a referenced assembly needs no check here: the classifier refuses a symbol with no
             // DeclaringSyntaxReferences outright, so it is never IsShaped.
             var source = (INamedTypeSymbol)srcElem;
-            var sourceVerdict = IsGeneratorAuthored(source)
-                ? TransferModelShape.Verdict.No($"'{source.Name}' is declared in generated source")
+            // NULL, not a fabricated refusal: "there is no verdict for the source" is what this means, and a
+            // Verdict.No would have had to invent a reason string nothing on this path ever prints. The first
+            // attempt at that used `default`, which is a trap worth recording — Outcome.Eligible is the enum's
+            // zero, so `default(Verdict)` reports IsShaped TRUE and the clause came straight back. The
+            // regression test caught it; the nullable makes the state unrepresentable instead.
+            TransferModelShape.Verdict? sourceVerdict = IsGeneratorAuthored(source)
+                ? null
                 : TransferModelShape.Classify(source, req.Compilation, facts);
 
             var message = TransferModelElementMessage(source, target, verdict, sourceVerdict);
@@ -786,12 +791,21 @@ namespace DwarfMapper.Generator.Pipeline
         ///         (vacuously) in the cases where it does not.
         ///     </para>
         ///     <para>
-        ///         <c>SuggestIn</c> is a BAND flag and is false on <c>TooLarge</c>, so the advice is asked for as
-        ///         <c>TooLarge || SuggestIn</c>; reading the flag alone would drop it for exactly the types that
-        ///         need it most. It reprints the size, so it reprints the HEDGE with it (T2.2 review, important
-        ///         4): the message used to say "at most 40 bytes" in one clause and "At 40 bytes" in the next,
-        ///         and the threshold comparison is provisional in the same way the number is — 40 bytes of
-        ///         references is 20 on a 32-bit runtime, which is under the limit. The advice survives that
+        ///         <b>The <c>in</c> advice belongs to ONE band, and getting that wrong is easy in both
+        ///         directions.</b> Reading <c>SuggestIn</c> alone would advise it at 40 bytes and NOT at 72,
+        ///         which is backwards; reading <c>TooLarge || SuggestIn</c> — what this shipped with until fix
+        ///         round 3 — advises it at 40 bytes as well, which the measurement does not support: a 64-byte
+        ///         struct still beat its class by value (26.4 ns vs 29.9 ns). The spec tiers the bands ≤32 B
+        ///         silent, 32–64 B Info, &gt;64 B suggest <c>in</c>, the project owner ruled that tiering
+        ///         reasonable (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §9, ruling (b)), and the answer
+        ///         is <c>Kind == TooLarge</c> on its own. The middle band's whole report is the size, printed
+        ///         in every band.
+        ///     </para>
+        ///     <para>
+        ///         The clause reprints the size, so it reprints the HEDGE with it (T2.2 review, important 4):
+        ///         the message used to say "at most 72 bytes" in one clause and "At 72 bytes" in the next, and
+        ///         the threshold comparison is provisional in the same way the number is — 72 bytes of
+        ///         references is 36 on a 32-bit runtime, which is under the limit. The advice survives that
         ///         either way (passing a smaller struct by <c>in</c> costs nothing), and the clause says so
         ///         rather than pretending the comparison was settled.
         ///     </para>
@@ -827,7 +841,7 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol srcElem,
             ITypeSymbol tgtElem,
             TransferModelShape.Verdict verdict,
-            TransferModelShape.Verdict sourceVerdict)
+            TransferModelShape.Verdict? sourceVerdict)
         {
             // WITHOUT the annotation. A `List<OrderDto?>` element arrives here as `OrderDto?`, and the message
             // names a type the consumer is being asked to REDECLARE — "declare 'OrderDto?' as a readonly record
@@ -852,9 +866,8 @@ namespace DwarfMapper.Generator.Pipeline
             // blit, whatever else is true of it. The flag propagates out of a nested model (TryMeasureMember
             // hands nested.SizeIsUpperBound straight back), so it covers the whole inlined graph and not just
             // the top level.
-            var namesTheSource = sourceVerdict.IsShaped &&
-                                 !verdict.SizeIsUpperBound &&
-                                 !sourceVerdict.SizeIsUpperBound;
+            var namesTheSource = sourceVerdict is { IsShaped: true, SizeIsUpperBound: false } &&
+                                 !verdict.SizeIsUpperBound;
 
             if (namesTheSource)
             {
@@ -863,31 +876,34 @@ namespace DwarfMapper.Generator.Pipeline
                            "block copy instead of the element loop.";
             }
 
-            if (verdict.Kind == TransferModelShape.Outcome.TooLarge || verdict.SuggestIn)
+            // TooLarge ALONE, not `TooLarge || SuggestIn` (fix round 3). The spec tiers the bands — ≤32 B
+            // silent, 32–64 B Info, >64 B suggest `in` — and the project owner ruled that tiering reasonable
+            // (Issues/round29/RESEARCH-hardware-mode.md §9, ruling (b)). The measurement under it is that a
+            // 64-byte struct still beat its class BY VALUE (26.4 ns vs 29.9 ns, 240 B), so `in` in the middle
+            // band would be advising an indirection the numbers do not ask for. The middle band's report is
+            // the size, which is printed above in every band.
+            if (verdict.Kind == TransferModelShape.Outcome.TooLarge)
             {
-                var limit = TransferModelShape.SilentSizeLimit.ToString(CultureInfo.InvariantCulture);
+                var limit = TransferModelShape.SuggestInSizeLimit.ToString(CultureInfo.InvariantCulture);
                 message += verdict.SizeIsUpperBound
-                    ? $" At most {size} bytes — over the {limit}-byte threshold for copying by value unless a " +
+                    ? $" At most {size} bytes — over the {limit}-byte limit for copying by value unless a " +
                       "32-bit runtime narrows it below, and worth passing by 'in' either way."
-                    : $" At {size} bytes it is over the {limit}-byte threshold for copying by value, so pass " +
-                      "it by 'in'.";
+                    : $" At {size} bytes it is over the {limit}-byte limit for copying by value, so pass it " +
+                      "by 'in'.";
             }
 
             // ONE caveat covering whichever of the two types earned it. The source earns it on exactly the
             // evidence the target does — the sweep walked this assembly, and a consuming project can subclass
             // either — and only when the message named it in the first place; adding a second sentence instead
             // would say the same thing twice about a pair that is usually public on both sides (fix round 2).
-            var caveated = verdict.DerivationCheckedWithinAssemblyOnly
-                ? namesTheSource && sourceVerdict.DerivationCheckedWithinAssemblyOnly
-                    ? $"'{target}' or '{source}'"
-                    : $"'{target}'"
-                : namesTheSource && sourceVerdict.DerivationCheckedWithinAssemblyOnly
-                    ? $"'{source}'"
-                    : null;
+            var caveatTarget = verdict.DerivationCheckedWithinAssemblyOnly;
+            var caveatSource = namesTheSource && sourceVerdict is { DerivationCheckedWithinAssemblyOnly: true };
 
-            if (caveated is not null)
+            if (caveatTarget || caveatSource)
             {
-                var both = caveated.Contains(" or ");
+                var both = caveatTarget && caveatSource;
+                var caveated = both ? $"'{target}' or '{source}'" : caveatTarget ? $"'{target}'" : $"'{source}'";
+
                 message += $" The check that nothing derives from {caveated} covered this assembly only, since " +
                            (both ? "both are" : $"{caveated} is") + " public and not sealed — a project " +
                            "referencing this one can still derive from " + (both ? "them." : "it.");

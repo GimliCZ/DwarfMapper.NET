@@ -51,7 +51,9 @@ namespace DwarfMapper.Generator.Pipeline
         private const int MaxDepth = 16;
 
         /// <summary>
-        ///     Bytes at or under which a struct transfer model is silent; above it, pass it by <c>in</c>.
+        ///     Bytes at or under which a struct transfer model's SIZE is not worth remarking on. Above it the
+        ///     size is printed; only above <see cref="SuggestInSizeLimit" /> is <c>in</c> advised. (The
+        ///     diagnostic itself fires on SHAPE, not on size, in every band.)
         ///     <para>
         ///         Assembly-visible so <c>DWARF103</c>'s message can PRINT the threshold it applied rather than
         ///         restate it as a literal. A second copy of 32 in the diagnostic would be free to drift from
@@ -61,8 +63,13 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         internal const int SilentSizeLimit = 32;
 
-        /// <summary>Bytes above which the struct is reported <see cref="Outcome.TooLarge" /> to copy by value.</summary>
-        private const int SuggestInSizeLimit = 64;
+        /// <summary>
+        ///     Bytes above which the struct is reported <see cref="Outcome.TooLarge" /> to copy by value — and
+        ///     the ONLY band in which <c>DWARF103</c> advises <c>in</c>. Assembly-visible for the same reason
+        ///     <see cref="SilentSizeLimit" /> is: the message prints the threshold it applied rather than a
+        ///     literal that could drift from it.
+        /// </summary>
+        internal const int SuggestInSizeLimit = 64;
 
         /// <summary>What <see cref="Classify(INamedTypeSymbol, Compilation)" /> concluded.</summary>
         public enum Outcome
@@ -72,7 +79,18 @@ namespace DwarfMapper.Generator.Pipeline
 
             /// <summary>
             ///     Transfer-model shaped, but over <see cref="SuggestInSizeLimit" /> bytes — still a struct
-            ///     worth having, and still one a caller should be told to pass by <c>in</c>.
+            ///     worth having, and THE band in which a caller is told to pass it by <c>in</c>.
+            ///     <para>
+            ///         Round 29 T2.2 fix round 3 corrected this sentence, which used to read "and still one a
+            ///         caller should be told to pass by <c>in</c>" beside a <see cref="Verdict.SuggestIn" />
+            ///         documented the same way — so both bands appeared to warrant the advice and
+            ///         <c>DWARF103</c> gave it in both. The spec tiers them (≤32 B silent, 32–64 B Info, &gt;64 B
+            ///         suggest <c>in</c>), the project owner ruled that tiering reasonable
+            ///         (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §9, ruling (b)), and the measurement
+            ///         behind it is that a 64-byte struct still beat its class by value (26.4 ns vs 29.9 ns).
+            ///         Advising <c>in</c> at 40 bytes would be advising an indirection the numbers do not ask
+            ///         for.
+            ///     </para>
             /// </summary>
             TooLarge,
 
@@ -91,8 +109,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <see cref="Outcome.NotEligible" />, where no size was proven — never a size to print.
         /// </param>
         /// <param name="SuggestIn">
-        ///     True between <see cref="SilentSizeLimit" /> and <see cref="SuggestInSizeLimit" /> bytes: still
-        ///     eligible, but big enough that a caller should pass it by <c>in</c>.
+        ///     True between <see cref="SilentSizeLimit" /> and <see cref="SuggestInSizeLimit" /> bytes: the
+        ///     spec's MIDDLE band, where the type is reported and its size printed but no <c>in</c> is advised.
+        ///     <para>
+        ///         The name is older than the rule and is now misleading, which is why this says so rather than
+        ///         renaming a field T2.3 also reads: the <c>in</c> advice belongs to
+        ///         <see cref="Outcome.TooLarge" /> alone (see its remarks). What this flag marks is the band
+        ///         where the by-value copy has started to cost something without yet outweighing the class —
+        ///         the measured crossover is around 40 bytes and a 64-byte struct still wins — so the honest
+        ///         report there is the size and nothing more.
+        ///     </para>
         /// </param>
         /// <param name="SizeIsUpperBound">
         ///     True when a member was counted as an 8-byte reference field. The real struct is that size on

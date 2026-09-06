@@ -81,7 +81,10 @@ so a version with no section here ships with no notes.
   **The size is honest about what it is.** It is the WOULD-BE struct's size, counting any transfer model the
   type holds as a struct too (that is the rewrite being advised), and it is printed as a bound — "at most N
   bytes" — whenever a member is a reference, since a reference is 8 bytes on x64 and 4 on x86 and the number
-  can only be an over-estimate. Over 32 bytes the message adds the `in` advice. For a `public` unsealed type
+  can only be an over-estimate. Over **64** bytes — and only there — the message adds the `in` advice: between
+  32 and 64 it prints the size and stops, because a struct that size still beat its class by value in the
+  measurement (26.4 ns against 29.9 ns), so an indirection is not what the numbers ask for. For a `public`
+  unsealed type
   it states the SCOPE of the derived-type sweep rather than its conclusion: it covered this assembly, and a
   referencing project can still derive from a type this one never sees.
 
