@@ -1452,6 +1452,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<DiagnosticInfo> diagnostics,
             NullSourceKind kind = NullSourceKind.SourceMember)
         {
+            if (converterMethod is null)
+            {
+                return false;
+            }
+
             var forgive = tgtType.IsReferenceType &&
                           tgtType.NullableAnnotation == NullableAnnotation.NotAnnotated &&
                           ConverterReturnIsNullableRef(converterMethod, autoCandidates, allMethods);
@@ -1460,7 +1465,7 @@ namespace DwarfMapper.Generator.Pipeline
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.ConverterNullableReturnToNonNullableTarget,
                     location,
-                    converterMethod!,
+                    converterMethod,
                     MessageArg2: NullTargetLabel(targetName, kind)));
             }
 

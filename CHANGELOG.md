@@ -223,7 +223,7 @@ so a version with no section here ships with no notes.
   rather than by either reported shape. `DictionaryConverter`'s key expression was built with every
   nullability argument at its default, so the key edge answered none of the questions the value edge answers;
   it now asks all three. And `Name = n.Name!` for a nullable leaf into a non-nullable flat-node DTO member —
-  the shape the round-24 audit added the `!` for — now reports `DWARF070` naming the member. Neither emitted
+  the shape audit R7 added the `!` for (`4190ace`, 2026-07-25) — now reports `DWARF070` naming the member. Neither emitted
   text changes for the leaf; only the signal is added. **No remedy needed** for the key fix; the leaf's new
   warning is answered by the `DWARF070` table in `docs/diagnostics.md`.
 
@@ -235,8 +235,8 @@ so a version with no section here ships with no notes.
   source-member instruments and cannot reach an element type; the remedies that can are making the destination
   *element* type nullable (`List<ChildDto?>`) or declaring the converter's parameter nullable
   (`ChildDto ToDto(Child? c)`, which then keeps receiving the null un-forgiven). The `[FlattenGraph]` leaf had
-  been null-forgiving in silence since the round-24 audit; its emitted text is unchanged and only the signal
-  is added. Its id, severity and trigger for the existing member and mapping-parameter subjects are unchanged,
+  been null-forgiving in silence since audit R7 (`4190ace`, 2026-07-25); its emitted text is unchanged and
+  only the signal is added. Its id, severity and trigger for the existing member and mapping-parameter subjects are unchanged,
   so no existing suppression is affected — but a build that treats `DWARF070` as an error and maps a nullable
   element through a declared converter will now see it. **Remedy:** the table in `docs/diagnostics.md`, or
   `dotnet_diagnostic.DWARF070.severity = none` to accept the null knowingly.

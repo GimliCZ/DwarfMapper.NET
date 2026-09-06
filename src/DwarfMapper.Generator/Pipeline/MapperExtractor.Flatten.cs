@@ -791,7 +791,8 @@ namespace DwarfMapper.Generator.Pipeline
             if (conv is null)
             {
                 // Round 29 T2.9 audit: the DIRECT-assign arm forgave and said nothing too — `Name = n.Name!`
-                // for a `string?` leaf into a non-nullable DTO member, since audit R7 introduced the '!'.
+                // for a `string?` leaf into a non-nullable DTO member, since audit R7 (4190ace, 2026-07-25)
+                // introduced the '!'.
                 // Same shape, same gate and same report as the member path's own raw-assign
                 // (MemberMap.NullRefIntoNonNullable / MapperExtractor.Members' DWARF070 loop).
                 if (NullRefIntoNonNullableRef(leafType, dtoMemberType))

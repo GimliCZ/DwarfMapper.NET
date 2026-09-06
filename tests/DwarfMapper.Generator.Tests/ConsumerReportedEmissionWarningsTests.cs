@@ -1,7 +1,6 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
-using System.Reflection;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -1322,15 +1321,33 @@ namespace DwarfMapper.Generator.Tests
 
         /// <summary>
         ///     Resolves a schema constant by name, so an [InlineData] row can name one instead of repeating the
-        ///     whole mapper. Attribute arguments must be compile-time constants and a <c>const string</c> field
-        ///     would be inlined into the attribute anyway — this keeps the seven schemas readable as a group.
+        ///     whole mapper. A switch over <c>nameof</c> rather than a reflective <c>GetField</c>: both arms of
+        ///     every case are then compile-time-checked and refactor-safe, and renaming a schema breaks the
+        ///     build instead of failing one theory row at run time.
         /// </summary>
         private static string Schema(string fieldName)
         {
-            var field = typeof(ConsumerReportedEmissionWarningsTests)
-                .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
-            Assert.NotNull(field);
-            return (string)field!.GetValue(null)!;
+            return fieldName switch
+            {
+                nameof(ElementViaDeclaredMapList) => ElementViaDeclaredMapList,
+                nameof(ElementViaDeclaredMapArray) => ElementViaDeclaredMapArray,
+                nameof(ValueViaDeclaredMapDictionary) => ValueViaDeclaredMapDictionary,
+                nameof(ElementViaDeclaredMapSpan) => ElementViaDeclaredMapSpan,
+                nameof(ElementViaDeclaredMapAsyncStream) => ElementViaDeclaredMapAsyncStream,
+                nameof(ElementViaDeclaredMapConstructorArgument) => ElementViaDeclaredMapConstructorArgument,
+                nameof(ElementViaDeclaredMapUpdateInto) => ElementViaDeclaredMapUpdateInto,
+                nameof(FlattenGraphLeafViaDeclaredMap) => FlattenGraphLeafViaDeclaredMap,
+                nameof(NullableReturnConverterIntoMember) => NullableReturnConverterIntoMember,
+                nameof(NullableReturnConverterIntoMemberFromNullableSource) => NullableReturnConverterIntoMemberFromNullableSource,
+                nameof(NullableReturnConverterIntoElement) => NullableReturnConverterIntoElement,
+                nameof(NullableReturnConverterIntoDictionaryValue) => NullableReturnConverterIntoDictionaryValue,
+                nameof(NullableReturnConverterIntoSpanElement) => NullableReturnConverterIntoSpanElement,
+                nameof(NullableReturnConverterIntoAsyncStreamElement) => NullableReturnConverterIntoAsyncStreamElement,
+                nameof(NullableReturnConverterIntoConstructorParameter) => NullableReturnConverterIntoConstructorParameter,
+                nameof(NullableReturnConverterIntoFlattenGraphLeaf) => NullableReturnConverterIntoFlattenGraphLeaf,
+                nameof(HandWrittenNullableReturnConverter) => HandWrittenNullableReturnConverter,
+                _ => throw new ArgumentOutOfRangeException(nameof(fieldName), fieldName, "no such schema")
+            };
         }
 
         [Theory]
@@ -1360,9 +1377,10 @@ namespace DwarfMapper.Generator.Tests
         {
             // The coupling the whole family turns on: no site may forgive a null without also signalling it.
             // Silencing CS8604 with a '!' and saying nothing trades an unsuppressible compiler diagnostic for a
-            // silent wrong value, which is the wrong direction for this project. Each row was RED before this
-            // task: six of the seven emitted no DWARF diagnostic at all, and the [FlattenGraph] leaf had been
-            // forgiving in silence since audit R7.
+            // silent wrong value, which is the wrong direction for this project. Every row was RED before this
+            // task: none of the seven emitted DWARF070 (three emitted DWARF103, which is a struct-DTO
+            // suggestion about the same pair and says nothing about the null), and the [FlattenGraph] leaf had
+            // been forgiving in silence since audit R7.
             var message = Dwarf070Message(Schema(schemaField));
 
             Assert.Contains(subject, message, StringComparison.Ordinal);
@@ -1792,6 +1810,46 @@ namespace DwarfMapper.Generator.Tests
 
             var message = Dwarf107Message(DictionaryKeyViaNullableReturnConverter);
             Assert.Contains("the element type of 'Counts'", message, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The key's ARGUMENT side. <c>IReadOnlyDictionary</c> rather than <c>Dictionary</c> deliberately:
+        ///     <c>Dictionary&lt;TKey, TValue&gt;</c> constrains <c>TKey</c> to <c>notnull</c>, so a nullable key
+        ///     would be CS8714 in the CONSUMER'S OWN source and the shape could never be reduced to a generated-
+        ///     code question. <c>SourceKeyIsNullableRef</c> reads the <c>IEnumerable&lt;KeyValuePair&lt;K, V&gt;&gt;</c>
+        ///     the source implements, so every admitted dictionary shape answers it the same way.
+        /// </summary>
+        private const string DictionaryKeyViaNullableSource = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public IReadOnlyDictionary<Child?, int> Counts { get; set; } = new Dictionary<Child?, int>(); }
+                public class Dst { public Dictionary<ChildDto, int> Counts { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        [Fact]
+        public void A_nullable_dictionary_key_through_a_declared_converter_is_forgiven_and_reported()
+        {
+            // The ARGUMENT half of the key edge, measured rather than inferred from "it is the same call path
+            // as the value". RED: CS8604 on parameter 'c' in 'ChildDto M.ToDto(Child c)', and no DWARF070.
+            AssertWarningFree(DictionaryKeyViaNullableSource, "IReadOnlyDictionary<Child?, int> key -> ChildDto");
+
+            var generated = GeneratorAssert.CompilesClean(DictionaryKeyViaNullableSource, NullableContextOptions.Enable);
+            Assert.Contains("__r[ToDto(__kv.Key!)]", generated, StringComparison.Ordinal);
+
+            Assert.Contains("The source element mapped into 'Counts'",
+                Dwarf070Message(DictionaryKeyViaNullableSource),
+                StringComparison.Ordinal);
         }
 
         [Fact]
