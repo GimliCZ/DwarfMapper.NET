@@ -93,6 +93,10 @@ so a version with no section here ships with no notes.
     a negative finding: both arrays were alive in both arms. The README's *Transfer models as structs*
     section carries the same tables in short form.
 
+  The same round also closed the nullability edges those emitters exposed — **`DWARF107`** and the
+  **`DWARF070`** extension to element, dictionary-value and `[FlattenGraph]`-leaf edges — recorded in their
+  own entries above and under *Fixed*.
+
 - **`DWARF103` (Info) — a mapped collection builds one class element per item, and that element type could be
   a `readonly record struct`.** Reported at the MAPPING SITE, never on the type: the allocation is paid once
   per element, and a type-level rule would fire on every DTO in a solution. The message names the pair, what

@@ -25,7 +25,7 @@ Raw output: [`Issues/round29/plan-results.md`](../Issues/round29/plan-results.md
 those; a figure that could not be traced to one has been deleted rather than rounded into place.
 
 **Three iterations is not enough to publish an absolute number, and we are not publishing one.** The error
-bars are wide enough that on several rows the reported error is larger than the mean:
+bars are wide enough that on several rows the reported error approaches or exceeds the mean:
 
 | Row | Mean | Error | File |
 |---|---:|---:|---|
@@ -35,7 +35,8 @@ bars are wide enough that on several rows the reported error is larger than the 
 | `Tree_Classes_FieldCopy`, N = 100,000 | 20.0 ms | 18.7 ms | `plan-results.md` |
 
 **The ratios are the stable part**, because both arms of a comparison run in the same process against the
-same noise. At N = 100,000 the compared (non-baseline) rows report a `RatioSD` of **0.00–0.08**; a baseline's
+same noise. At N = 100,000 the compared (non-baseline) rows report a `RatioSD` of **0.00–0.11** (the 0.11 is
+`SpanCopy_Auto` in `plan4-results.md`; every row quoted on this page is at 0.08 or below), and a baseline's
 own self-ratio reaches 0.13 (`A_MapToClasses_ThenConsume`). At N = 1,000 the spread is much worse and reaches
 **0.26** (`Mixed_ColumnTranspose`), which is one reason the small-N rows are not used to decide anything here.
 
@@ -207,7 +208,11 @@ claim this repository has already withdrawn.
 
 - **A headline ratio that was platform-specific and described a competitor rather than this mapper.** It was
   measured on Windows and did not hold on Linux, and the effect it described belonged to the other library's
-  implementation. It is not repeated anywhere in the docs and must not be reintroduced.
+  implementation rather than to ours. The row was removed rather than corrected, so there is nothing left in
+  the docs to link to — what remains is the practice it produced: every comparison row in
+  [`COMPARISON.md`](COMPARISON.md) now states its OS, runtime and job in a footnote (`‡`, `†`), and the two
+  re-measured rows say plainly that the rest are from an earlier run and should be reproduced locally. The
+  number itself is not repeated here and must not be reintroduced.
 - **"DwarfMapper is 3.98× slower than Mapperly on enums."** That was a benchmark artifact: the four libraries
   default to *different* enum strategies (name-matching vs value-casting), so the row compared a name switch
   against a raw cast and published the difference as a deficiency. Measured like-for-like the gap is gone.

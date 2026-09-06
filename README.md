@@ -879,8 +879,9 @@ order that packs such a struct.
 
 **Read the methodology before the numbers, because it is short and it bounds them.** BenchmarkDotNet 0.14.0, AMD Ryzen
 5 5600, Windows 10, .NET 10.0.11, `Job=short` with **3 iterations** — one machine, one OS, x64. At that iteration count
-the *absolute* error bars are wide (on several rows the reported error exceeds the mean), while the *ratios* are stable
-(`RatioSD` 0.00–0.08 on the compared rows at N = 100,000). **Treat the order of magnitude as the finding and the
+the *absolute* error bars are wide (on several rows the reported error approaches or exceeds the mean), while the
+*ratios* are stable (`RatioSD` 0.00–0.08 on the rows quoted here, 0.11 at worst across the study, at N = 100,000).
+**Treat the order of magnitude as the finding and the
 precise percentage as noise.** Raw output in [`Issues/round29/`](Issues/round29/); the full caveats, including what
 these probes are *not*, are in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
