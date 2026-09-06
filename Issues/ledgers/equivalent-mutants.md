@@ -105,13 +105,23 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 338 | 84.32 % (2026-08-27, round-27 battery) | 16 | 0 | 0 | 95.26 % |
+| generator | `stryker-config.json` | 409 | 87.04 % (2026-09-06, round-29 Phase 2 gate) | 16 | 0 | 0 | 96.08 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
 | pipeline | `stryker-config.pipeline.json` | 239 | 76.99 % (2026-08-27, first measurement) | 0 | 0 | 0 | 100.00 % |
 
-Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
+**Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
+84.32 % → 87.04 %, and `break`/`low` moved 84 → 87 in `stryker-config.json` in the same commit, which is
+what R1↔R3 requires and what forced this row to move with it. **Only the denominator moved.** The 16 proven
+rows below are untouched — no mutant was re-adjudicated, retired or newly proved by this run, so the
+`rawCeiling` is fresh arithmetic over a stale adjudication and should be read as a bound, not as a claim
+that 393 mutants are killable today. The 41 survivors and 12 uncovered mutants of the 2026-09-06 run
+(BlittableProof 36 + 5, ConstructorSelector 4 + 7, EquatableArray 1) have **not** been dispositioned here;
+that is the next kill program's work, and `break` must not move again before it happens.
+
+Fuller arithmetic, carried from the research and updated by P5 (context, not gates — the figures below
+predate the 2026-09-06 denominator refresh above and are kept for their reasoning, not their totals): the generator leg's
 *realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
 mutants T3 judged dead-code-question (BlittableProof L30's short-circuited conjunct, ConstructorSelector
 L281/L285) plus the L88 flag question cap the currently killable set at the 3 named real holes
@@ -153,14 +163,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
   "legs": {
     "generator": {
       "config": "stryker-config.json",
-      "scoreable": 338,
-      "measuredRawScore": 84.32,
-      "measuredOn": "2026-08-27",
+      "scoreable": 409,
+      "measuredRawScore": 87.04,
+      "measuredOn": "2026-09-06",
       "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 95.26,
-      "rawCeilingFormula": "(338 - 16) / 338 — the denominator is still the 2026-08-27 run; the sort comparator's own mutants leave it at the next re-measure (see 'Rows retired on 2026-09-01')"
+      "rawCeiling": 96.08,
+      "rawCeilingFormula": "(409 - 16) / 409 — denominator refreshed from the round-29 Phase 2 gate run (StrykerOutput/2026-09-06.21-10-32, 356 killed of 409 scoreable), which is also the run that moved break 84 -> 87. The 16 proven rows are UNCHANGED: this re-measure moved the denominator, not the adjudication, and no row was added, retired or re-proved here — re-adjudication needs its own case analysis (invariant R3)."
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",

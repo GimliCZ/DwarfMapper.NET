@@ -561,7 +561,14 @@ try {
         # and CI already allows this leg 200 minutes for the same reason. A fuse exists to catch a leg
         # that will never finish -- sized so tightly that a busy machine trips it, it only teaches people
         # to distrust it.
-        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 60
+        #
+        # 90, not 60, since 2026-09-06 (round-29 Phase 2 gate). The mutant population grew 258 -> 391 during
+        # the round-28 audit and the leg's measured wall-clock went with it: 51 minutes at 391 mutants on a
+        # quiet 12-core machine (stryker-config.json, RE-MEASURED 2026-09-02). A 60-minute fuse leaves nine
+        # minutes of headroom on a QUIET box and none at all on a busy one, which is the exact failure the
+        # paragraph above was written about. The re-measurement that justifies this number is in the same
+        # commit as the change, per invariant R1.
+        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 90
         if ($legExit) { throw "mutation score below break threshold (generator)" }
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
