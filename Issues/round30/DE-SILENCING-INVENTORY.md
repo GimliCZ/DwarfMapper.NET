@@ -47,6 +47,32 @@ Rule to adopt (round 30): a `RatchetInvariantScanTests` check that every `<NoWar
 - `DeclaredDivergences` (13/76): each is a known behavioural inconsistency between endpoints. The round-20 plan left A4–A11 fixing them; whatever remains after round 29 is round-30 material — a divergence is a place where the user gets different behaviour for the same directive with no diagnostic saying so.
 - ReSharper naming headers (25 test files): consolidate into `.editorconfig` `dotnet_naming_rule` exemptions for test methods, or a single `[assembly:]`-level Rider suppression, so 25 identical headers become one reasoned place.
 
+## Priority 1b — an undeclared second language runtime in the build (raised by the owner, 2026-09-06)
+
+This is not a silenced warning, but it is the same class of finding: something the build depends on that
+nothing declares. A consumer auditing this toolchain — the CRA framing the round works under — would not
+expect a C# compiler plugin's gates to require Python, and nothing tells them.
+
+Measured, not asserted:
+- **Five committed `scripts/*.py`**: `extracted-reach.py`, `seam-reach.py`, `repro-pack-check.py`,
+  `verify-extraction-bodies.py`, `verify-extraction-sites.py`.
+- **Three direct `python3` invocations in `.github/workflows/ci.yml`** (lines ~228, ~612, ~890), one of them
+  running `repro-pack-check.py` — so the reproducible-build gate itself does not pass without Python.
+- **Five `scripts/*.ps1` call into a `.py`**, and two of them (`extracted-reach`, `seam-reach`) exist as a
+  `.ps1`/`.py` PAIR where the shell script is a thin wrapper. Two implementations of one job are free to
+  drift, which is the DRY half of the mandate.
+
+Nothing here is broken today. The questions for the round are: (1) is the dependency declared anywhere a
+consumer or a CI maintainer would look — README, CONTRIBUTING, a tool-versions manifest — and if not, declare
+it; (2) can the five scripts move to PowerShell (already required: nine `.ps1`, `shell: pwsh` in CI) or to C#
+(.NET 10 file-based apps run a single `.cs` with no project, and the SDK is required regardless), removing the
+runtime rather than documenting it; (3) collapse the two `.ps1`/`.py` pairs to one implementation either way.
+
+Precedent already set: `.claude/hooks/Strip-RedundantCd.ps1` was ported from Python to PowerShell in `a3f309d`
+for exactly this reason. That one was easy — it is Claude Code tooling on a latency-sensitive path with no
+project code depending on it. The `scripts/` five are load-bearing for CI and need their gates re-run after any
+port, so this is a round-30 task, not a drive-by.
+
 ## Not defects (recorded so nobody re-inventories them)
 
 - The 9 `[ExcludeFromCodeCoverage]` on compile-time-only attributes (round-22 §2.2), the `codecov.yml` ignore of non-shipping trees, the `SurfaceFixtures.cs`-scoped editorconfig (reflection-read fields), the `SurfaceMatrix` category (run in its own CI step, not dropped), the one `// Stryker disable all` (pinned), the `DWARF_FUZZ_FULL` gate.
