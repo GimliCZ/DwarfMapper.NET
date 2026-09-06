@@ -1734,5 +1734,78 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal("(__item is null ? null! : (global::T.ChildDto)ToDto(__item)!)", collection);
             Assert.Equal(collection, stream);
         }
+
+        // ── 7. the two sites the requirement-4 audit found, which neither named defect would have reached ──
+        // The audit enumerated every emitted `!` in the generator (a literal in generator source is the only
+        // way one can reach a .g.cs) and crossed that list with every IsSynthesized call, every ElementExpr /
+        // Expr caller and every MemberMap construction. Two survivors:
+        //
+        //  * The dictionary KEY. DictionaryConverter.Expr was called for the key with EVERY nullability
+        //    argument at its default — no source-annotation fact, no argument forgiveness, no result
+        //    forgiveness — so a key routed through a declared converter answered none of the questions the
+        //    value edge answers. Probed against 298deb3 and against the two commits above: CS8600 + CS8604 in
+        //    all three, i.e. pre-existing and NOT closed by either named fix.
+        //  * The [FlattenGraph] DIRECT-assign leaf. `Name = n.Name!` for a `string?` leaf into a non-nullable
+        //    DTO member has been forgiving in silence since audit R7 introduced the `!`. The converter arm of
+        //    the same method was fixed one commit ago; this is its other half.
+
+        private const string DictionaryKeyViaNullableReturnConverter = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Dictionary<Child, int> Counts { get; set; } = new(); }
+                public class Dst { public Dictionary<ChildDto, int> Counts { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto? ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string FlattenGraphDirectAssignNullableLeaf = """
+            #nullable enable
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Node    { public string? Name { get; set; } public Node? Next { get; set; } }
+            public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
+            public class Root    { public IReadOnlyList<Node> Entries { get; set; } = new List<Node>(); }
+            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Entries", "Nodes")]
+                public partial RootDto Map(Root r);
+            }
+            """;
+
+        [Fact]
+        public void A_dictionary_key_through_a_declared_converter_emits_no_nullable_warning()
+        {
+            // RED: CS8600 on the cast and CS8604 on `Dictionary<ChildDto, int>.this[ChildDto key]`.
+            AssertWarningFree(DictionaryKeyViaNullableReturnConverter, "Dictionary<Child, int> key -> ChildDto");
+
+            var message = Dwarf107Message(DictionaryKeyViaNullableReturnConverter);
+            Assert.Contains("the element type of 'Counts'", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_flatten_graph_direct_assign_leaf_reports_the_null_it_forgives()
+        {
+            // The emitted text does not move — `Name = n.Name!` is what audit R7 put there and what keeps
+            // CS8601 out of the .g.cs. What was missing is the other half of the coupling: the consumer was
+            // never told which member the forgiven null lands in. RED: no DWARF diagnostic at all.
+            var message = Dwarf070Message(FlattenGraphDirectAssignNullableLeaf);
+
+            Assert.Contains("Source member 'Name'", message, StringComparison.Ordinal);
+
+            var generated = GeneratorAssert.CompilesClean(FlattenGraphDirectAssignNullableLeaf, NullableContextOptions.Enable);
+            Assert.Contains("Name = n.Name!,", generated, StringComparison.Ordinal);
+        }
     }
 }

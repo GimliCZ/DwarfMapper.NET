@@ -1435,6 +1435,26 @@ namespace DwarfMapper.Generator.Pipeline
                     diagnostics,
                     NullSourceKind.DictionaryValue);
 
+                // The KEY edge, asked exactly as the value edge is. It was silent on both halves until round
+                // 29 T2.9's audit found it: a dictionary key is an element edge like any other.
+                var keyForgivesArg = ForgiveNestedNullableArg(keyConv,
+                    srcKey,
+                    tgtKey,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+                var keyForgivesResult = ForgiveConverterNullableReturn(keyConv,
+                    tgtKey,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+
                 converterMethod = DictionaryConverter.Synthesize(synthesized,
                     req.SrcType,
                     tgtKey,
@@ -1450,7 +1470,9 @@ namespace DwarfMapper.Generator.Pipeline
                     keyNeedsCtx,
                     valNeedsCtx,
                     valForgivesArg,
-                    valForgivesResult);
+                    valForgivesResult,
+                    keyForgivesArg,
+                    keyForgivesResult);
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
@@ -1496,6 +1518,8 @@ namespace DwarfMapper.Generator.Pipeline
                         var cNullAsNull = dictEffectiveNullAsNull;
                         var cValForgive = valForgivesArg;
                         var cValForgiveResult = valForgivesResult;
+                        var cKeyForgive = keyForgivesArg;
+                        var cKeyForgiveResult = keyForgivesResult;
                         req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                             elems.ToArray(),
                             resolve =>
@@ -1539,7 +1563,9 @@ namespace DwarfMapper.Generator.Pipeline
                                     nvCtx,
                                     cNullAsNull,
                                     cValForgive,
-                                    cValForgiveResult);
+                                    cValForgiveResult,
+                                    cKeyForgive,
+                                    cKeyForgiveResult);
                             });
                     }
                 }

@@ -125,13 +125,16 @@ namespace DwarfMapper.Generator.Pipeline
             bool keyNeedsCtx = false,
             bool valNeedsCtx = false,
             bool valConverterParamIsNonNullableRef = false,
-            bool valConverterReturnIsNullableRef = false)
+            bool valConverterReturnIsNullableRef = false,
+            bool keyConverterParamIsNonNullableRef = false,
+            bool keyConverterReturnIsNullableRef = false)
         {
             // Use nullable-aware format for key/value types so the generated dict type args match
             // the actual target type (e.g. Dictionary<string, List<int>?> not Dictionary<string, List<int>>).
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
             var srcValIsNullableRef = SourceValueIsNullableRef(srcType);
+            var srcKeyIsNullableRef = SourceKeyIsNullableRef(srcType);
             var nullTag = nullAsNull ? "_nn" : "";
 
             var isMutableDict = targetKind != DictTargetKind.ImmutableDictionary && targetKind != DictTargetKind.IImmutableDictionary;
@@ -169,7 +172,10 @@ namespace DwarfMapper.Generator.Pipeline
             // then adds ? for the outer — avoids CS8620 when source has nullable value/element types.
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
-            var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
+            // Round 29 T2.9: the key edge asks the same three questions the value edge asks. It used to ask
+            // none of them — every nullability argument was left at its default — so a key routed through a
+            // declared converter was emitted with neither the argument nor the result forgiven.
+            var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx, srcKeyIsNullableRef, keyConverterParamIsNonNullableRef, keyConverterReturnIsNullableRef);
             var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef, valConverterReturnIsNullableRef);
             var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
             var ctxParams = threadCtx ? CtxDepthParams : "";
@@ -242,11 +248,14 @@ namespace DwarfMapper.Generator.Pipeline
             bool valNeedsCtx,
             bool nullAsNull,
             bool valConverterParamIsNonNullableRef = false,
-            bool valConverterReturnIsNullableRef = false)
+            bool valConverterReturnIsNullableRef = false,
+            bool keyConverterParamIsNonNullableRef = false,
+            bool keyConverterReturnIsNullableRef = false)
         {
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
             var srcValIsNullableRef = SourceValueIsNullableRef(srcType);
+            var srcKeyIsNullableRef = SourceKeyIsNullableRef(srcType);
             var isImmutable = targetKind == DictTargetKind.ImmutableDictionary || targetKind == DictTargetKind.IImmutableDictionary;
             var retTypeFq = isImmutable
                 ? "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">"
@@ -254,7 +263,10 @@ namespace DwarfMapper.Generator.Pipeline
 
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
-            var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
+            // Round 29 T2.9: the key edge asks the same three questions the value edge asks. It used to ask
+            // none of them — every nullability argument was left at its default — so a key routed through a
+            // declared converter was emitted with neither the argument nor the result forgiven.
+            var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx, srcKeyIsNullableRef, keyConverterParamIsNonNullableRef, keyConverterReturnIsNullableRef);
             var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef, valConverterReturnIsNullableRef);
 
             var w = new CodeWriter(1);
@@ -307,6 +319,25 @@ namespace DwarfMapper.Generator.Pipeline
         ///     source shape (concrete, interface, read-only) answers the same way. Drives the per-value null-forgiving
         ///     in <see cref="Expr" />, the dictionary twin of CollectionConverter's nullable-element rule.
         /// </summary>
+        /// <summary>
+        ///     Whether the source dictionary's KEY type is a nullable reference — the twin of
+        ///     <see cref="SourceValueIsNullableRef" />, which round 29 T2.9's audit found did not exist. The key
+        ///     expression was built with every nullability argument left at its default, so a key edge answered
+        ///     none of the questions the value edge answers: <c>Dictionary&lt;Child, int&gt;</c> to
+        ///     <c>Dictionary&lt;ChildDto, int&gt;</c> through a declared <c>ChildDto? ToDto(Child)</c> was CS8600
+        ///     on the cast and CS8604 on the indexer, inside the consumer's .g.cs.
+        /// </summary>
+        private static bool SourceKeyIsNullableRef(ITypeSymbol srcType)
+        {
+            var key = srcType.AllInterfaces.Prepend(srcType)
+                .OfType<INamedTypeSymbol>()
+                .Where(n => n.IsGenericType && n.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+                .Select(n => n.TypeArguments[0] as INamedTypeSymbol)
+                .FirstOrDefault(kv => kv is { Name: "KeyValuePair", TypeArguments.Length: 2 })
+                ?.TypeArguments[0];
+            return key is { IsReferenceType: true, NullableAnnotation: NullableAnnotation.Annotated };
+        }
+
         private static bool SourceValueIsNullableRef(ITypeSymbol srcType)
         {
             // Every admitted dictionary source implements the interface, so the lookup always answers; a

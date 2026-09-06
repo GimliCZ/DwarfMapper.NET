@@ -790,7 +790,20 @@ namespace DwarfMapper.Generator.Pipeline
         {
             if (conv is null)
             {
-                return NullRefIntoNonNullableRef(leafType, dtoMemberType);
+                // Round 29 T2.9 audit: the DIRECT-assign arm forgave and said nothing too — `Name = n.Name!`
+                // for a `string?` leaf into a non-nullable DTO member, since audit R7 introduced the '!'.
+                // Same shape, same gate and same report as the member path's own raw-assign
+                // (MemberMap.NullRefIntoNonNullable / MapperExtractor.Members' DWARF070 loop).
+                if (NullRefIntoNonNullableRef(leafType, dtoMemberType))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
+                        location,
+                        NullSourceLabel(leafName)));
+                    return true;
+                }
+
+                return false;
             }
 
             if (NullRefIntoNonNullableRef(leafType, dtoMemberType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods))

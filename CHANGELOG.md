@@ -218,6 +218,15 @@ so a version with no section here ships with no notes.
   unchanged: a genuine null still throws inside the callee's own `ArgumentNullException.ThrowIfNull`, exactly
   as it does on the member path.
 
+- **A dictionary KEY routed through a converter you declared emitted `CS8600`/`CS8604`, and the
+  `[FlattenGraph]` direct-assign leaf forgave a null without saying so.** Found by the completeness audit
+  rather than by either reported shape. `DictionaryConverter`'s key expression was built with every
+  nullability argument at its default, so the key edge answered none of the questions the value edge answers;
+  it now asks all three. And `Name = n.Name!` for a nullable leaf into a non-nullable flat-node DTO member —
+  the shape the round-24 audit added the `!` for — now reports `DWARF070` naming the member. Neither emitted
+  text changes for the leaf; only the signal is added. **No remedy needed** for the key fix; the leaf's new
+  warning is answered by the `DWARF070` table in `docs/diagnostics.md`.
+
 - **Every element edge that forgives such a null now reports `DWARF070`, and so does the `[FlattenGraph]`
   leaf.** Forgiving a null and saying nothing trades an unsuppressible compiler warning for a *silent* wrong
   value, which is the wrong direction. `DWARF070`'s message gained a third and fourth subject — `The source

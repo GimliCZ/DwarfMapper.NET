@@ -333,6 +333,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                          public Child Free { get; set; } = new();
                                                          public List<Child> Items { get; set; } = new();
                                                          public Dictionary<string, Child> Lookup { get; set; } = new();
+                                                         public Dictionary<Child, int> Counts { get; set; } = new();
                                                      }
                                                      public class B
                                                      {
@@ -340,6 +341,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                          public ChildDto? Free { get; set; }
                                                          public List<ChildDto> Items { get; set; } = new();
                                                          public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                                         public Dictionary<ChildDto, int> Counts { get; set; } = new();
                                                      }
                                                      [DwarfMapper]
                                                      public partial class M
