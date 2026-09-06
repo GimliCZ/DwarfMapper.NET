@@ -73,6 +73,17 @@ namespace CleanCorpus.Ordering.Contracts
         public decimal DiscountPercent { get; set; }
     }
 
+    /// <summary>
+    ///     One thing wrong with a request, as the validator reports it before the framework's own type is
+    ///     built.
+    /// </summary>
+    public sealed class ValidationFailure
+    {
+        public string ErrorMessage { get; set; } = "";
+
+        public List<string> MemberNames { get; set; } = [];
+    }
+
     public sealed class CreatePromotionRequest
     {
         public string Code { get; set; } = "";
@@ -82,17 +93,58 @@ namespace CleanCorpus.Ordering.Contracts
         public DateTimeOffset? ExpiresAt { get; set; }
     }
 
+    /// <summary>
+    ///     The promotion as it goes back out. The hop that closes request → entity → response over the one
+    ///     type in this corpus whose constructor refuses an invalid value.
+    /// </summary>
+    public sealed class PromotionResponse
+    {
+        public string Code { get; init; } = "";
+
+        public decimal PercentOff { get; init; }
+
+        public DateTimeOffset? ExpiresAt { get; init; }
+    }
+
     // ── Envelopes ────────────────────────────────────────────────────────────────────────────────────────────
     // Three of them, because applications accumulate three of them: one for the application layer's own
     // success-or-failure, one for the HTTP body, and one for a page of results.
 
-    /// <summary>The application layer's return type — a payload or a reason it is absent.</summary>
+    /// <summary>
+    ///     The application layer's return type — a payload or a reason it is absent. Immutable, constructed
+    ///     only through <see cref="Ok" /> or <see cref="Fail" />, which is how this type is written wherever
+    ///     it appears.
+    /// </summary>
     public sealed class Result<T>
         where T : class
     {
-        public T Value { get; set; } = default!;
+        /// <summary>
+        ///     <b>internal</b>, not private, and that is this corpus's one accessibility concession. Written
+        ///     private — which is how the type is normally written — the pair is <c>DWARF026</c>: the mapper
+        ///     generates ordinary C# and a private constructor is genuinely unreachable. Widening it is the
+        ///     compile-time version of the reflective bypass another mapper would have taken silently, and it
+        ///     is the same trade <c>Member</c> makes in the first corpus in this directory.
+        /// </summary>
+        internal Result(T value, string? error)
+        {
+            Value = value;
+            Error = error;
+        }
 
-        public string? Error { get; set; }
+        /// <summary>Meaningful only on the success arm; <see cref="Fail" /> leaves it at its default.</summary>
+        public T Value { get; }
+
+        public string? Error { get; }
+
+        public static Result<T> Ok(T value)
+        {
+            return new Result<T>(value, null);
+        }
+
+        public static Result<T> Fail(string error)
+        {
+            return new Result<T>(default!, error);
+        }
     }
 
     /// <summary>The HTTP body every endpoint on this API returns.</summary>

@@ -4,6 +4,7 @@ using CleanCorpus.Ordering;
 using CleanCorpus.Ordering.Contracts;
 using CleanCorpus.Ordering.Legacy;
 using CleanCorpus.Ordering.Mapping;
+using System.ComponentModel.DataAnnotations;
 using CleanCorpus.Ordering.Persistence;
 using CleanCorpus.Ordering.Presentation;
 
@@ -147,16 +148,26 @@ namespace CleanCorpus
         [Fact]
         public void A_single_payload_envelope_maps_from_one_wrapper_declaration()
         {
-            var source = new Result<OrderEntity>
-            {
-                Value = AnOrder(),
-                Error = null
-            };
+            var source = Result<OrderEntity>.Ok(AnOrder());
 
             var mapped = new OrderReadMappers().ToResult(source);
 
             Assert.Null(mapped.Error);
             Assert.Equal(HandWritten.ToResponse(source.Value).Reference, mapped.Value.Reference);
+        }
+
+        [Fact]
+        public void The_failure_arm_of_that_envelope_throws_rather_than_mapping()
+        {
+            // FINDING, pinned so it cannot regress silently. The synthesized wrapper map maps the payload
+            // UNCONDITIONALLY — `value: ToResponse(source.Value)` — and the generated payload map opens with
+            // ArgumentNullException.ThrowIfNull. A Result<T> whose failure arm carries no payload therefore
+            // cannot be mapped at all, and nothing says so at build time. See the report, §3.5: the nullable
+            // spelling of the same type (`T? Value`) emits CS8604 into the consumer's .g.cs instead, which is
+            // worse because a consumer cannot suppress it. No [DwarfMapper] option changes either.
+            var failed = Result<OrderEntity>.Fail("order not found");
+
+            Assert.Throws<ArgumentNullException>(() => new OrderReadMappers().ToResult(failed));
         }
 
         [Fact]
@@ -408,6 +419,94 @@ namespace CleanCorpus
             Assert.Equal(2, views.Count);
             Assert.Equal(49.00m, views[0].LineTotal);
             Assert.Null(typeof(InvoiceLineView).GetProperty(nameof(InvoiceLineView.LineTotal))!.SetMethod);
+        }
+
+        [Fact]
+        public void The_reference_data_sync_copies_the_feed_row_including_the_key_it_owns()
+        {
+            var row = new TaxRateFeedRow
+            {
+                Id = 4,
+                Code = "GB-STD",
+                Description = "Standard rate",
+                Percent = 20m
+            };
+
+            var expected = HandWritten.ToTaxRate(row);
+            var actual = Assert.Single(new ReferenceDataMappers().ToEntities([row]));
+
+            Assert.Equal(expected.Id, actual.Id);
+            Assert.Equal(expected.Code, actual.Code);
+            Assert.Equal(expected.Description, actual.Description);
+            Assert.Equal(expected.Percent, actual.Percent);
+        }
+
+        [Fact]
+        public void A_target_with_a_plain_event_and_no_interface_is_mapped_and_still_raises_it()
+        {
+            var watches = new PresentationMappers().ToWatches([
+                new PriceWatchRequest
+                {
+                    Sku = "AXE-1",
+                    Threshold = 20.00m
+                }
+            ]);
+
+            var watch = Assert.Single(watches);
+            Assert.Equal("AXE-1", watch.Sku);
+            Assert.Equal(20.00m, watch.Threshold);
+
+            decimal? seen = null;
+            watch.Breached += (_, e) => seen = e.Price;
+            watch.Observe(24.50m);
+            Assert.Null(seen);
+            watch.Observe(18.75m);
+            Assert.Equal(18.75m, seen);
+        }
+
+        [Fact]
+        public void The_validator_answer_is_built_in_the_frameworks_own_type()
+        {
+            var results = new OrderWriteMappers().ToValidationResults([
+                new ValidationFailure
+                {
+                    ErrorMessage = "Quantity must be greater than zero.",
+                    MemberNames = ["Lines[0].Quantity"]
+                }
+            ]);
+
+            var result = Assert.Single(results);
+            Assert.Equal("Quantity must be greater than zero.", result.ErrorMessage);
+            Assert.Equal("Lines[0].Quantity", Assert.Single(result.MemberNames));
+        }
+
+        [Fact]
+        public void The_promotion_hop_closes_request_entity_response_over_the_validating_type()
+        {
+            var entity = Assert.Single(new PromotionMappers().ToEntities([
+                new CreatePromotionRequest
+                {
+                    Code = "SPRING10",
+                    PercentOff = 10m,
+                    ExpiresAt = Placed.AddDays(30)
+                }
+            ]));
+
+            var expected = HandWritten.ToPromotionResponse(entity);
+            var actual = new PromotionMappers().ToResponse(entity);
+
+            Assert.Equal(expected.Code, actual.Code);
+            Assert.Equal(expected.PercentOff, actual.PercentOff);
+            Assert.Equal(expected.ExpiresAt, actual.ExpiresAt);
+
+            // The middle type is the one carrying the invariant, and it still refuses an invalid value.
+            Assert.Throws<ArgumentException>(() => new PromotionMappers().ToEntities([
+                new CreatePromotionRequest
+                {
+                    Code = "   ",
+                    PercentOff = 10m
+                }
+            ]));
         }
 
         // ── Fixtures ────────────────────────────────────────────────────────────────────────────────────────

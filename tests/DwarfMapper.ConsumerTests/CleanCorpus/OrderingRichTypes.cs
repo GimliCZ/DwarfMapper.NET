@@ -53,6 +53,39 @@ namespace CleanCorpus.Ordering.Presentation
         public event PropertyChangedEventHandler? PropertyChanged;
     }
 
+    public sealed class PriceWatchRequest
+    {
+        public string Sku { get; set; } = "";
+
+        public decimal Threshold { get; set; }
+    }
+
+    public sealed class PriceBreachedEventArgs(decimal price) : EventArgs
+    {
+        public decimal Price { get; } = price;
+    }
+
+    /// <summary>
+    ///     A standing price watch. It raises an event when the threshold is crossed and implements no
+    ///     interface to do it — a plain <c>event</c> is all a subscriber needs.
+    /// </summary>
+    public sealed class PriceWatch
+    {
+        public string Sku { get; set; } = "";
+
+        public decimal Threshold { get; set; }
+
+        public event EventHandler<PriceBreachedEventArgs>? Breached;
+
+        public void Observe(decimal price)
+        {
+            if (price <= Threshold)
+            {
+                Breached?.Invoke(this, new PriceBreachedEventArgs(price));
+            }
+        }
+    }
+
     public sealed class EmailNotificationRequest
     {
         public string To { get; set; } = "";

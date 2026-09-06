@@ -160,6 +160,34 @@ namespace CleanCorpus.Ordering.Persistence
         public DateTimeOffset? ExpiresAt { get; set; }
     }
 
+    /// <summary>
+    ///     Reference data synced from the tax provider's feed and keyed by the provider's own identifier, so
+    ///     the sync writes the key rather than the database. No <c>[Table]</c>: the convention name is right.
+    /// </summary>
+    public sealed class TaxRateEntity
+    {
+        [Key]
+        public int Id { get; set; }
+
+        public string Code { get; set; } = "";
+
+        public string Description { get; set; } = "";
+
+        public decimal Percent { get; set; }
+    }
+
+    /// <summary>One row of that feed, as the provider sends it.</summary>
+    public sealed class TaxRateFeedRow
+    {
+        public int Id { get; set; }
+
+        public string Code { get; set; } = "";
+
+        public string Description { get; set; } = "";
+
+        public decimal Percent { get; set; }
+    }
+
     /// <summary>The shape a reporting query projects into: three columns, no key, no tracking.</summary>
     public sealed class OrderTotalsRow
     {

@@ -53,7 +53,22 @@ if (-not (Test-Path $target)) {
     throw "No such project or directory: $target"
 }
 
-Write-Host "Building $Project ($Configuration, detailed, no-incremental) …" -ForegroundColor Cyan
+# PROVENANCE, printed before the counts and never separable from them. A density figure is a statement about
+# a GENERATOR, not about a corpus: the same corpus reported 4 and then 7 within one afternoon because another
+# task was editing the classifier's layout table. A number quoted without the revision it was measured against
+# is not evidence, so the script emits the revision itself rather than trusting whoever pastes the table.
+$head = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
+$dirty = @(& git -C $repoRoot status --porcelain -- src 2>$null | Where-Object { $_ })
+
+Write-Output ("Generator revision: {0}{1}" -f $head, $(if ($dirty) { ' + UNCOMMITTED src/ changes' } else { ' (src/ clean)' }))
+foreach ($change in $dirty) {
+    Write-Output "  $change"
+}
+if ($dirty) {
+    Write-Output "  Counts below describe THIS working tree, not $head. Re-measure on a clean tree before quoting them."
+}
+
+Write-Output "Building $Project ($Configuration, detailed, no-incremental) …"
 
 $log = & dotnet build $target -c $Configuration --no-incremental -v:detailed 2>&1 | Out-String
 $exitCode = $LASTEXITCODE
@@ -94,9 +109,9 @@ $reports = $rows | Sort-Object Id, File, Line, Column, Message -Unique
 
 $byId = $reports | Group-Object Id | Sort-Object Name
 
-Write-Host ''
-Write-Host "| Id | Severity | Reports | Sites | Messages |"
-Write-Host "|---|---|---:|---:|---:|"
+Write-Output ''
+Write-Output "| Id | Severity | Reports | Sites | Messages |"
+Write-Output "|---|---|---:|---:|---:|"
 
 foreach ($group in $byId) {
     # An unlocated report has no line to be distinct at, so its message stands in for its position — two of
@@ -107,27 +122,27 @@ foreach ($group in $byId) {
         } | Sort-Object -Unique).Count
     $messages = ($group.Group.Message | Sort-Object -Unique).Count
     $severity = ($group.Group.Severity | Sort-Object -Unique) -join '/'
-    Write-Host ("| {0} | {1} | {2} | {3} | {4} |" -f $group.Name, $severity, $group.Count, $sites, $messages)
+    Write-Output ("| {0} | {1} | {2} | {3} | {4} |" -f $group.Name, $severity, $group.Count, $sites, $messages)
 }
 
 if ($byId.Count -eq 0) {
-    Write-Host "| (none) | | 0 | 0 | 0 |"
+    Write-Output "| (none) | | 0 | 0 | 0 |"
 }
 
 if ($Detail) {
     foreach ($group in $byId) {
-        Write-Host ''
-        Write-Host "### $($group.Name)" -ForegroundColor Cyan
+        Write-Output ''
+        Write-Output "### $($group.Name)"
         foreach ($report in ($group.Group | Sort-Object File, Line, Column)) {
             $relative = $report.File.Replace($repoRoot, '').TrimStart('\', '/')
-            Write-Host ("  {0}({1},{2})" -f $relative, $report.Line, $report.Column)
-            Write-Host ("    {0}" -f $report.Message) -ForegroundColor DarkGray
+            Write-Output ("  {0}({1},{2})" -f $relative, $report.Line, $report.Column)
+            Write-Output ("    {0}" -f $report.Message)
         }
     }
 }
 
-Write-Host ''
-Write-Host ("Build exit code: {0}" -f $exitCode)
+Write-Output ''
+Write-Output ("Build exit code: {0}" -f $exitCode)
 
 if ($exitCode -ne 0) {
     throw "The build failed; the counts above cover only what it reached before stopping."

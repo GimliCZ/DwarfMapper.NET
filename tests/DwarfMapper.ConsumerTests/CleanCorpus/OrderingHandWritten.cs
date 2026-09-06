@@ -161,6 +161,27 @@ namespace CleanCorpus.Ordering
             };
         }
 
+        public static TaxRateEntity ToTaxRate(TaxRateFeedRow source)
+        {
+            return new TaxRateEntity
+            {
+                Id = source.Id,
+                Code = source.Code,
+                Description = source.Description,
+                Percent = source.Percent
+            };
+        }
+
+        public static PromotionResponse ToPromotionResponse(PromotionEntity source)
+        {
+            return new PromotionResponse
+            {
+                Code = source.Code,
+                PercentOff = source.PercentOff,
+                ExpiresAt = source.ExpiresAt
+            };
+        }
+
         /// <summary>
         ///     Every member of a settlement row as text, so a thirty-member comparison is one assertion that
         ///     names the member it fails on rather than thirty that do not.

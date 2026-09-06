@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.ComponentModel.DataAnnotations;
 using CleanCorpus.Ordering.Contracts;
 using CleanCorpus.Ordering.Legacy;
 using CleanCorpus.Ordering.Persistence;
@@ -19,7 +20,7 @@ namespace CleanCorpus.Ordering.Mapping
     ///     so one <c>[GenerateWrapperMap]</c> each covers every pair on the class; <c>PagedResult&lt;T&gt;</c>
     ///     holds a collection instead, which is not a single payload, so its instantiation is declared by hand.
     /// </summary>
-    [DwarfMapper]
+    [DwarfMapper(AllowNonPublic = true)]
     [GenerateWrapperMap(typeof(Result<>))]
     [GenerateWrapperMap(typeof(ApiResponse<>))]
     [GenerateMap<PagedResult<OrderEntity>, PagedResult<OrderResponse>>]
@@ -60,6 +61,13 @@ namespace CleanCorpus.Ordering.Mapping
         [MapIgnore(nameof(OrderEntity.DispatchedAt))]
         [MapIgnore(nameof(OrderEntity.RowVersion))]
         public partial OrderEntity ToEntity(PlaceOrderRequest source);
+
+        /// <summary>
+        ///     The validator's answer, handed to the framework in the framework's own type. That type is
+        ///     declared in a referenced assembly rather than in this project — the ordinary case of mapping
+        ///     into something you did not write.
+        /// </summary>
+        public partial List<ValidationResult> ToValidationResults(IReadOnlyList<ValidationFailure> source);
     }
 
     /// <summary>
@@ -72,6 +80,19 @@ namespace CleanCorpus.Ordering.Mapping
     public partial class PromotionMappers
     {
         public partial List<PromotionEntity> ToEntities(IReadOnlyList<CreatePromotionRequest> source);
+
+        /// <summary>The hop back out, closing request → entity → response over the validating type.</summary>
+        public partial PromotionResponse ToResponse(PromotionEntity source);
+    }
+
+    /// <summary>
+    ///     The nightly tax-rate sync. The feed owns the key, so the whole row copies across by name and
+    ///     nothing is configured — the shape where a mapper costs one declaration and nothing else.
+    /// </summary>
+    [DwarfMapper]
+    public partial class ReferenceDataMappers
+    {
+        public partial List<TaxRateEntity> ToEntities(IReadOnlyList<TaxRateFeedRow> source);
     }
 
     /// <summary>
@@ -139,6 +160,8 @@ namespace CleanCorpus.Ordering.Mapping
         public partial List<OrderRowViewModel> ToRows(List<OrderResponse> source);
 
         public partial List<OutboundEmail> ToOutbound(List<EmailNotificationRequest> source);
+
+        public partial List<PriceWatch> ToWatches(List<PriceWatchRequest> source);
     }
 
     /// <summary>
