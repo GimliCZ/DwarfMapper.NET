@@ -531,9 +531,39 @@ function Assert-NoMutatedProductBinaries {
 # `-Nightly` included, can see this red. A local pack + Assert-PackageSizeWithinCeiling under -Nightly would
 # close that hole; it is the one gate the script does not mirror.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-06 (round-29 Phase 2 gate, task 2.10), at commit f216f33, SDK 10.0.101, Release,
+# -p:EnablePackageValidation=false, CI=true, both environments packing the SAME tree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  316,155 B -> floor(316155/1024) = 308 KB   (was 282)
+#            DwarfMapper.Testing...nupkg    51,032 B -> floor( 51032/1024) =  49 KB   (was  47)
+#   ubuntu   DwarfMapper.1.0.2-rc.1.nupkg  315,638 B -> 308 KB   (the gate's own environment: a
+#            DwarfMapper.Testing...nupkg    50,840 B ->  49 KB    mcr.microsoft.com/dotnet/sdk:10.0.101
+#                                                                 container, locked restore, from a clean
+#                                                                 `git worktree add` of the same commit)
+# The two platforms agree on the KB this time — they straddled the boundary at the round-28 measurement —
+# so the "larger measurement" rule and the "same tree green wherever the gate runs" rule pick the same
+# number: 308 and 49. Headroom to the first red byte (309 KB = 316,416 B): 261 B on Windows, 778 B on
+# ubuntu. For DwarfMapper.Testing (50 KB = 51,200 B): 168 B and 360 B.
+#
+# WHERE THE ~27 KB WENT, entry by entry (deflated bytes, the rc7 pack of 2026-09-02 -> this tree; raw sizes
+# in the same order). Measured by diffing the two .nupkg central directories, not estimated:
+#   analyzers/.../DwarfMapper.Generator.dll   192,441 -> 211,433   (raw 583,680 -> 639,488)  +18,992
+#   analyzers/.../DwarfMapper.CodeFixes.dll    11,192 ->  17,230   (raw  24,576 ->  36,864)   +6,038
+#   README.md                                  25,328 ->  27,595   (raw  74,568 ->  80,105)   +2,267
+#   lib/net10.0/DwarfMapper.dll                18,079 ->  18,063   (raw unchanged at 42,496)     -16
+#   DwarfMapper.nuspec                            761 ->     773                                  +12
+#   (total 287,591 -> 314,885 deflated = +27,294; the .psmdcp part is NuGet's random name, not payload)
+# The Generator growth is round 29's pipeline work — TransferModelShape/LayoutHygiene, DWARF101, DWARF103,
+# DWARF106, DWARF107, the DWARF070 extension and roughly sixteen fixed emission sites. The CodeFixes growth
+# is one new provider, ConvertToRecordStructCodeFixProvider. The README growth is the transfer-model-struct
+# sections and the regenerated quality badges. SAME FIVE ENTRIES AS BEFORE: no new dependency, no new
+# resource, nothing newly shipping that should not — none of the class this gate exists to catch — so this
+# is a raise with its reason, not a finding against the package. DwarfMapper.xml is byte-identical to rc7's
+# and no longer appears in the delta at all.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 282
-    'DwarfMapper.Testing' = 47
+    'DwarfMapper'         = 308
+    'DwarfMapper.Testing' = 49
 }
 
 function Assert-PackageSizeWithinCeiling {
