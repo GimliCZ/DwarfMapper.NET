@@ -131,6 +131,13 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // element cast is what the shared CollectionConverter.ElementExpr writes and what the
                     // hand-written `yield return Conv(__item)` could not produce at all.
                     "AsyncStreamNullableElement", "yield return (__item is null ? null : (global::Demo.ChildDto?)ToDto(__item))"
+                },
+                {
+                    // The COLLECTION element forgiving a user-declared converter's argument. `ToDto(__item!)`
+                    // could not be emitted before task 2.9 at all: the '!' was gated on IsSynthesized, which is
+                    // false for a method the user declared, and no synthesized helper is ever spelled `ToDto`.
+                    // The dictionary value in the same case proves the twin builder answers identically.
+                    "ElementViaDeclaredMap", "ToDto(__item!)"
                 }
             };
         }

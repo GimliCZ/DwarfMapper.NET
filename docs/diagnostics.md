@@ -594,12 +594,17 @@ The same destination member is configured more than once — by both an attribut
 ## dwarf070
 **A nullable source is assigned to a non-nullable target member** · Warning
 
-Something that may be null is being written into a destination member whose type says it cannot be. That
-something is one of two things, and the message says which:
+Something that may be null is being written into a destination slot whose type says it cannot hold one. That
+something is one of four things, and the message says which:
 
 * **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`).
 * **`Mapping parameter 'x'`** — an extra parameter on the map method
   (`partial Dst Map(Src s, Child? inner)`), matched to the destination member by name.
+* **`The source element mapped into 'Items'`** — a nullable reference *element* of a mapped collection, array,
+  span or async stream (`List<Child?>` into `List<ChildDto>`). The name is the destination member, or the
+  method for a span / async-stream endpoint, because that is what locates the edge.
+* **`The source value mapped into 'Lookup'`** — the same thing for a dictionary *value*
+  (`Dictionary<string, Child?>` into `Dictionary<string, ChildDto>`).
 
 `NullStrategy` does **not** cover either: it governs nullable *value* types (`int?`) only, and a nullable
 *reference* source raw-assigns by design.
@@ -626,6 +631,22 @@ instruments, and an extra parameter is not a member of the source type. Two reme
 | null to be a legal value here | make the destination member nullable (`ChildDto?`) |
 | the parameter never to be null | declare it non-nullable (`Child inner`) |
 | to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+**Fix, for a collection ELEMENT or a dictionary VALUE.** The two source-member instruments do not reach these
+either — the null is in the *element* type, not in the member — and the destination member being non-nullable
+is not what this is about:
+
+| You want | Use |
+|---|---|
+| null to be a legal element here | make the destination *element* type nullable (`List<ChildDto?>`, `ChildDto?[]`, `Dictionary<string, ChildDto?>`) |
+| the converter to handle the null itself | declare its parameter nullable (`ChildDto ToDto(Child? c)`) — it then keeps receiving the null, un-forgiven |
+| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+Round 29 (task 2.9) is when the element edges started reporting this. Before it they were the *silent* half of
+the same defect: a nullable element reaching a map method you declared was emitted bare, so the compiler
+raised `CS8604` inside the generated file (unsuppressible), and a nullable element reaching a `[FlattenGraph]`
+leaf was null-forgiven with nothing said at all. Both now forgive **and** report, on one shared decision, so
+the `!` and this warning cannot diverge between one edge and the next.
 
 Whichever it is, the generated code is warning-free either way: the mapper emits the null-forgiving `!` so no
 `CS8601`/`CS8604` reaches a file you cannot edit, and reports this against your own source instead. Before

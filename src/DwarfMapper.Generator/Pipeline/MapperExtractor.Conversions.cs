@@ -1314,15 +1314,58 @@ namespace DwarfMapper.Generator.Pipeline
         ///     See docs/superpowers/specs/2026-07-25-nested-nullable-parameter.md.
         /// </summary>
         /// <summary>
-        ///     How <c>DWARF070</c> names the thing that carries the null. The diagnostic's <c>{0}</c> is this
-        ///     whole phrase rather than a bare name, because the same descriptor now covers two kinds of thing:
-        ///     a member of the source type, and a Phase 5 mapping PARAMETER. Calling the second one a "member"
-        ///     is not a wording nit — it points the reader at <c>[MapProperty(NullSubstitute = …)]</c> and
-        ///     <c>SkipNullSourceMembers</c>, neither of which can reach a parameter.
+        ///     What kind of thing carries the null that <c>DWARF070</c> is about. The diagnostic's remedies are
+        ///     not the same for all of them, which is the whole reason this is an enum rather than a name:
+        ///     <c>[MapProperty(NullSubstitute = …)]</c> and <c>SkipNullSourceMembers</c> reach a source MEMBER
+        ///     and nothing else, so naming a mapping parameter or a collection element a "member" points the
+        ///     reader at two levers that cannot touch their shape.
         /// </summary>
-        private static string NullSourceLabel(string name, bool isMappingParameter = false)
+        private enum NullSourceKind
         {
-            return (isMappingParameter ? "Mapping parameter '" : "Source member '") + name + "'";
+            /// <summary>A member of the source type — the original and still the common case.</summary>
+            SourceMember = 0,
+
+            /// <summary>A Phase 5 mapping PARAMETER (round 29 task 2.7).</summary>
+            MappingParameter = 1,
+
+            /// <summary>
+            ///     One ELEMENT of a mapped collection, span or async stream (round 29 task 2.9). The null is in
+            ///     the source element type (<c>List&lt;Child?&gt;</c>); the destination that cannot hold it is the
+            ///     destination ELEMENT type, not the member.
+            /// </summary>
+            CollectionElement = 2,
+
+            /// <summary>
+            ///     One VALUE of a mapped dictionary (round 29 task 2.9). Same shape as
+            ///     <see cref="CollectionElement" />, named separately because a reader hunting
+            ///     <c>Dictionary&lt;string, Child?&gt;</c> is not looking for the word "element".
+            /// </summary>
+            DictionaryValue = 3
+        }
+
+        /// <summary>
+        ///     How <c>DWARF070</c> names the thing that carries the null. The diagnostic's <c>{0}</c> is this
+        ///     whole phrase rather than a bare name, because the same descriptor now covers four kinds of thing:
+        ///     a member of the source type, a Phase 5 mapping PARAMETER, a collection/span/stream ELEMENT and a
+        ///     dictionary VALUE. Calling any of the last three a "member" is not a wording nit — it points the
+        ///     reader at <c>[MapProperty(NullSubstitute = …)]</c> and <c>SkipNullSourceMembers</c>, none of which
+        ///     can reach them.
+        ///     <para>
+        ///         The element and value spellings name the DESTINATION member the edge feeds rather than a source
+        ///         member: at a collection or dictionary arm the only name in scope is
+        ///         <c>ConversionRequest.TargetName</c>, and for a span/async-stream endpoint the destination is a
+        ///         parameter or the return type, not a member at all — so the method's name is what locates it.
+        ///     </para>
+        /// </summary>
+        private static string NullSourceLabel(string name, NullSourceKind kind = NullSourceKind.SourceMember)
+        {
+            return kind switch
+            {
+                NullSourceKind.MappingParameter => "Mapping parameter '" + name + "'",
+                NullSourceKind.CollectionElement => "The source element mapped into '" + name + "'",
+                NullSourceKind.DictionaryValue => "The source value mapped into '" + name + "'",
+                _ => "Source member '" + name + "'"
+            };
         }
 
         private static bool ForgiveNestedNullableArg(
@@ -1334,19 +1377,20 @@ namespace DwarfMapper.Generator.Pipeline
             string sourceName,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            bool isMappingParameter = false)
+            NullSourceKind kind = NullSourceKind.SourceMember)
         {
             var forgive = NullRefIntoNonNullableRef(srcType, tgtType) && ConverterParamIsNonNullableRef(converterMethod, autoCandidates, allMethods);
             if (forgive)
             {
-                // isMappingParameter defaults to false and five of the six callers take that default, which is
-                // CORRECT rather than convenient: every one of them resolves a member, an element, a dictionary
-                // value or a flatten leaf of the SOURCE TYPE. The extra-parameter phase is the only caller with
-                // anything else to report, and it passes true explicitly.
+                // kind defaults to SourceMember and the member/flatten/constructor-argument callers take that
+                // default, which is CORRECT rather than convenient: every one of them resolves a member, a
+                // flatten leaf or a constructor argument of the SOURCE TYPE. The extra-parameter phase and the
+                // four element edges (collection, dictionary value, span, async stream) each pass their own kind
+                // explicitly, because their remedy is not the source-member one.
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    NullSourceLabel(sourceName, isMappingParameter)));
+                    NullSourceLabel(sourceName, kind)));
             }
 
             return forgive;

@@ -361,7 +361,8 @@ namespace DwarfMapper.Generator.Pipeline
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    NullSourceLabel(m.SourceAccessExpression ?? m.SourceName, m.SourceAccessExpression is not null)));
+                    NullSourceLabel(m.SourceAccessExpression ?? m.SourceName,
+                        m.SourceAccessExpression is not null ? NullSourceKind.MappingParameter : NullSourceKind.SourceMember)));
 
             ReportUnguardedFlattenHops(flattenInfos, consumedFlattenRoots, location, diagnostics);
 

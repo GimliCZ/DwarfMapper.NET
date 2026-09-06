@@ -877,7 +877,12 @@ namespace DwarfMapper.Generator.Pipeline
                     method.AsyncStreamTargetElementFullName,
                     elem?.ConverterNeedsDepthCtx ?? false,
                     elem?.SourceIsNullableRef ?? false,
-                    ", __dwarf_ctx, 0"));
+                    ", __dwarf_ctx, 0",
+                    // No index expression (an `await foreach` has no counter); the trailing argument is round 29
+                    // T2.9's user-declared-converter forgiveness, resolved at this endpoint's own resolution site
+                    // and carried on the element MemberMap beside SourceIsNullableRef.
+                    null,
+                    elem?.ConverterParamIsNonNullableRef ?? false));
 
             sb.AppendLine(";");
             sb.Append(indent).AppendLine("}");

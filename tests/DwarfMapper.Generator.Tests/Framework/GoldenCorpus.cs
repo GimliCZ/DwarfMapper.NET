@@ -276,6 +276,45 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                        }
                                                        """, "DwarfGenerator");
 
+            // Round 29 task 2.9 — the element edge reached through a map method the USER declared. The three
+            // cases above pin the MEMBER path's three arms and the async stream's two; none of them routes a
+            // nullable ELEMENT through a declared converter, which is exactly the arm CollectionConverter's own
+            // IsSynthesized proxy answered for and got wrong. `#nullable enable` again, and for the same reason:
+            // under Disable the element annotation is Oblivious, the forgiveness is unreachable and this case
+            // would be byte-identical to a pre-fix run. Strict is the forgiven arm, Lifted the arm that must NOT
+            // move, and Tolerant the null-accepting converter that must keep its null.
+            yield return ("ElementViaDeclaredMap", """
+                                                   #nullable enable
+                                                   using System.Collections.Generic;
+                                                   using DwarfMapper;
+                                                   namespace Demo;
+                                                   public class Child { public int V { get; set; } }
+                                                   public class ChildDto { public int V { get; set; } }
+                                                   public class Loose { public int V { get; set; } }
+                                                   public class LooseDto { public int V { get; set; } }
+                                                   public class A
+                                                   {
+                                                       public List<Child?> Strict { get; set; } = new();
+                                                       public Dictionary<string, Child?> Lookup { get; set; } = new();
+                                                       public List<Child?> Lifted { get; set; } = new();
+                                                       public List<Loose?> Tolerant { get; set; } = new();
+                                                   }
+                                                   public class B
+                                                   {
+                                                       public List<ChildDto> Strict { get; set; } = new();
+                                                       public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                                       public List<ChildDto?> Lifted { get; set; } = new();
+                                                       public List<LooseDto> Tolerant { get; set; } = new();
+                                                   }
+                                                   [DwarfMapper]
+                                                   public partial class M
+                                                   {
+                                                       public partial B Map(A a);
+                                                       public partial ChildDto ToDto(Child c);
+                                                       public LooseDto ToLoose(Loose? l) => new LooseDto { V = l?.V ?? 0 };
+                                                   }
+                                                   """, "DwarfGenerator");
+
             yield return ("EnumByName", """
                                         using DwarfMapper;
                                         namespace Demo;

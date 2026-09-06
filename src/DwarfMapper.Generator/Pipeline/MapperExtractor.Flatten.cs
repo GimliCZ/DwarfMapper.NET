@@ -752,17 +752,42 @@ namespace DwarfMapper.Generator.Pipeline
         ///     non-nullable ref parameter (CS8604) — recovering, via <see cref="ConverterParamIsNonNullableRef" />,
         ///     the fact the bare <c>IsSynthesized</c> proxy discarded. A null-tolerant user converter (nullable
         ///     parameter) is not forgiven and keeps its null.
+        ///     <para>
+        ///         Round 29 T2.9: the user-declared arm FORGAVE and said nothing, which is the one thing the
+        ///         coupling contract on <see cref="ForgiveNestedNullableArg" /> forbids — a null the DTO member's
+        ///         annotation forbids was silenced inside a <c>__DwarfMap_FlatNode_*</c> helper with no signal
+        ///         anywhere. DWARF070 is reported here, on the same annotation-strict gate every other edge uses
+        ///         (<see cref="NullRefIntoNonNullableRef" />), so the EMITTED text is unchanged and only the
+        ///         signal is added. The <c>IsSynthesized</c> arm keeps its long-standing silence deliberately: that
+        ///         helper is null-TOLERANT (<c>if (s is null) return null!;</c>), so the null is preserved rather
+        ///         than smuggled past a converter that would reject it — the class-wide exception recorded by
+        ///         T2.6/T2.7/T2.8 and carried into this task's report rather than changed underneath it.
+        ///     </para>
         /// </summary>
         private static bool FlatLeafNeedsBang(
             string? conv,
             ITypeSymbol leafType,
             ITypeSymbol dtoMemberType,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            string leafName,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
         {
-            return conv is null
-                ? NullRefIntoNonNullableRef(leafType, dtoMemberType)
-                : GeneratedNames.IsSynthesized(conv) || (SourceMayBeNullRef(leafType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods));
+            if (conv is null)
+            {
+                return NullRefIntoNonNullableRef(leafType, dtoMemberType);
+            }
+
+            if (NullRefIntoNonNullableRef(leafType, dtoMemberType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
+                    location,
+                    NullSourceLabel(leafName)));
+            }
+
+            return GeneratedNames.IsSynthesized(conv) || (SourceMayBeNullRef(leafType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods));
         }
     }
 }

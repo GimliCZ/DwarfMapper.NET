@@ -2019,7 +2019,20 @@ namespace DwarfMapper.Generator.Pipeline
                     asConv,
                     asNull,
                     asNeedsCtx,
-                    SourceIsNullableRef: asSrcElemIsNullableRef);
+                    SourceIsNullableRef: asSrcElemIsNullableRef,
+                    // Round 29 T2.9: the '!' above is only reached for a SYNTHESIZED element helper. A map
+                    // method the USER declared has an equally non-nullable parameter and was left un-forgiven —
+                    // CS8604 per element in the consumer's .g.cs. Same coupled call the member and collection
+                    // paths make, so the forgiveness and DWARF070 cannot diverge between the two.
+                    ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(asConv,
+                        asSrcElem,
+                        asDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement));
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
@@ -2830,7 +2843,20 @@ namespace DwarfMapper.Generator.Pipeline
                     spanConv,
                     spanNull,
                     spanNeedsCtx,
-                    SourceIsNullableRef: spanSrcElemIsNullableRef);
+                    SourceIsNullableRef: spanSrcElemIsNullableRef,
+                    // Round 29 T2.9, exactly as the async-stream endpoint one screen up: IsSynthesized is blind
+                    // to a user-declared element map, so ReadOnlySpan<Child?> -> Span<ChildDto> through a
+                    // declared ToDto emitted a bare, un-forgiven call. Forgiven and reported through the one
+                    // coupled decision every other edge uses.
+                    ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(spanConv,
+                        spanSrcElem,
+                        spanDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement));
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the

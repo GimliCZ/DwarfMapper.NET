@@ -375,12 +375,13 @@ namespace DwarfMapper.Generator.Tests
             // destination element forgives into the SYNTHESIZED helper's own null guard, while a nullable one
             // reached through a USER-DECLARED converter lifts the null instead (null in, null out).
             //
-            // The third combination — a user-declared converter into a NON-nullable destination element — is
-            // deliberately absent: it is CS8604 on every element edge, the collection path included, because
-            // ElementExpr's forgiveness is keyed on IsSynthesized and is blind to a user-declared converter's
-            // non-nullable parameter the way the MEMBER path was before task 2.7 taught it
-            // ConverterParamIsNonNullableRef. Pre-existing, wider than the async stream, and recorded rather
-            // than folded in here.
+            // The third combination — a user-declared converter into a NON-nullable destination element — was
+            // deliberately absent when this case was written, because it was CS8604 on every element edge, the
+            // collection path included: ElementExpr's forgiveness was keyed on IsSynthesized and blind to a
+            // user-declared converter's non-nullable parameter the way the MEMBER path was before task 2.7
+            // taught it ConverterParamIsNonNullableRef. Task 2.9 closed that on all six element edges at once;
+            // it has its own case (ElementViaDeclaredMap) below rather than being folded in here, so this one
+            // keeps pinning the two arms it was written for.
             yield return
             [
                 "AsyncStreamNullableElement", """
@@ -399,6 +400,58 @@ namespace DwarfMapper.Generator.Tests
                                                  public partial ChildDto ToDto(Child c);
                                              }
                                              """
+            ];
+
+            // Round 29 T2.9 — the shape the case above deliberately left out, on every edge that reaches the
+            // shared element expression at once. A nullable-annotated REFERENCE element flowing through a map
+            // method the USER declared, into a destination element the annotation says cannot hold null:
+            // `ToDto(__item)` bare, CS8604 in the consumer's .g.cs, on the list, the array, the dictionary
+            // value, the span, the async stream and the constructor-bound collection. The mapper also carries
+            // the two shapes that must NOT move — a nullable destination element (lifted, not forgiven) and a
+            // null-TOLERANT converter (left alone) — so "forgive everything" cannot pass this case either.
+            yield return
+            [
+                "ElementViaDeclaredMap", """
+                                         using System;
+                                         using System.Collections.Generic;
+                                         using DwarfMapper;
+                                         namespace Demo;
+                                         public sealed class Child { public int V { get; set; } }
+                                         public sealed class ChildDto { public int V { get; set; } }
+                                         public sealed class Loose { public int V { get; set; } }
+                                         public sealed class LooseDto { public int V { get; set; } }
+                                         public sealed class Src
+                                         {
+                                             public List<Child?> Items { get; set; } = new();
+                                             public Child?[] Slots { get; set; } = new Child?[2];
+                                             public Dictionary<string, Child?> Lookup { get; set; } = new();
+                                             public List<Child?> Lifted { get; set; } = new();
+                                             public List<Loose?> Tolerant { get; set; } = new();
+                                         }
+                                         public sealed class Dst
+                                         {
+                                             public List<ChildDto> Items { get; set; } = new();
+                                             public ChildDto[] Slots { get; set; } = new ChildDto[2];
+                                             public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                             public List<ChildDto?> Lifted { get; set; } = new();
+                                             public List<LooseDto> Tolerant { get; set; } = new();
+                                         }
+                                         public sealed class Boxed
+                                         {
+                                             public Boxed(List<ChildDto> items) { Items = items; }
+                                             public List<ChildDto> Items { get; }
+                                         }
+                                         [DwarfMapper]
+                                         public partial class M
+                                         {
+                                             public partial Dst Map(Src s);
+                                             public partial Boxed Box(Src s);
+                                             public partial void Copy(ReadOnlySpan<Child?> src, Span<ChildDto> dst);
+                                             public partial IAsyncEnumerable<ChildDto> Stream(IAsyncEnumerable<Child?> c);
+                                             public partial ChildDto ToDto(Child c);
+                                             public LooseDto ToLoose(Loose? l) => new LooseDto { V = l?.V ?? 0 };
+                                         }
+                                         """
             ];
         }
 

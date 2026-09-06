@@ -190,6 +190,36 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A collection element, dictionary value, span element, async-stream element or constructor-bound collection
+  that flowed through a map method YOU declared emitted `CS8604` inside the generated file.** `List<Child?>`
+  into `List<ChildDto>` beside your own `partial ChildDto ToDto(Child c)` produced `ToDto(__item)` with the
+  element left un-forgiven — a warning you cannot suppress, in code you cannot edit, and a build break under
+  `TreatWarningsAsErrors`. The member path stopped doing this in round 29 task 2.7; every element edge kept its
+  own `IsSynthesized` test, which recognises the mapper's *synthesized* helpers and is blind to a converter you
+  wrote, so all six edges carried the original defect. They now read the same coupled decision the member path
+  reads. **No remedy needed** — nothing that compiled before stops compiling, and the runtime behaviour is
+  unchanged: a genuine null still throws inside the callee's own `ArgumentNullException.ThrowIfNull`, exactly
+  as it does on the member path.
+
+- **Every element edge that forgives such a null now reports `DWARF070`, and so does the `[FlattenGraph]`
+  leaf.** Forgiving a null and saying nothing trades an unsuppressible compiler warning for a *silent* wrong
+  value, which is the wrong direction. `DWARF070`'s message gained a third and fourth subject — `The source
+  element mapped into 'Items'` and `The source value mapped into 'Lookup'` — and an element-specific remedy
+  clause, because `[MapProperty(NullSubstitute = …)]` and `[DwarfMapper(SkipNullSourceMembers = true)]` are
+  source-member instruments and cannot reach an element type; the remedies that can are making the destination
+  *element* type nullable (`List<ChildDto?>`) or declaring the converter's parameter nullable
+  (`ChildDto ToDto(Child? c)`, which then keeps receiving the null un-forgiven). The `[FlattenGraph]` leaf had
+  been null-forgiving in silence since the round-24 audit; its emitted text is unchanged and only the signal
+  is added. Its id, severity and trigger for the existing member and mapping-parameter subjects are unchanged,
+  so no existing suppression is affected — but a build that treats `DWARF070` as an error and maps a nullable
+  element through a declared converter will now see it. **Remedy:** the table in `docs/diagnostics.md`, or
+  `dotnet_diagnostic.DWARF070.severity = none` to accept the null knowingly.
+
+  The first clause of the message also changed from *"but the destination member is non-nullable, so a null
+  would be stored in a member whose type forbids it"* to *"but its destination is non-nullable, so a null
+  would be stored where the type forbids it"* — for an element the destination is the element type, not the
+  member, and the old wording named the wrong thing.
+
 - **`DWARF070` no longer calls a mapping parameter a "member", and no longer offers it two remedies it cannot
   use.** The diagnostic now fires for an extra mapping parameter as well as a source member, and its message
   said `Source member '{0}'` for both while pointing at `[MapProperty(NullSubstitute = …)]` and

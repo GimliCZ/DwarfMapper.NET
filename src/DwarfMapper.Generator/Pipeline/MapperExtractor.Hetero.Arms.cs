@@ -213,7 +213,7 @@ namespace DwarfMapper.Generator.Pipeline
                             leaf.Name,
                             leafConv,
                             leafNull,
-                            FlatLeafNeedsBang(leafConv, leaf.Type, dtoMemberType, req.AutoCandidates, req.AllMethods));
+                            FlatLeafNeedsBang(leafConv, leaf.Type, dtoMemberType, req.AutoCandidates, req.AllMethods, leaf.Name, req.Location, acc.Diagnostics));
                         sbArm.AppendLine(",");
                     }
 

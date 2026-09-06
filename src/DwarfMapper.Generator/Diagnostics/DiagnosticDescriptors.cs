@@ -1032,12 +1032,14 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
             "DWARF070",
             "A nullable source is assigned to a non-nullable target member",
-            // {0} is the whole noun phrase ("Source member 'X'" / "Mapping parameter 'x'"), not a bare name:
-            // round 29 task 2.7 taught this diagnostic to fire for a Phase 5 mapping PARAMETER as well as a
-            // source member, and a message that calls a parameter a "member" names the wrong kind of thing and
-            // offers two remedies ([MapProperty(NullSubstitute)], SkipNullSourceMembers) that cannot reach it.
-            // Built in one place - MapperExtractor.NullSourceLabel - so the two spellings cannot drift.
-            "{0} is a nullable reference but the destination member is non-nullable, so a null " + "would be stored in a member whose type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. Either way, dotnet_diagnostic.DWARF070.severity = none accepts the null " + "knowingly.",
+            // {0} is the whole noun phrase ("Source member 'X'" / "Mapping parameter 'x'" / "The source element
+            // mapped into 'Items'" / "The source value mapped into 'Lookup'"), not a bare name: round 29 task
+            // 2.7 taught this diagnostic to fire for a Phase 5 mapping PARAMETER as well as a source member,
+            // and task 2.9 added the four element edges (collection, dictionary value, span, async stream). A
+            // message that calls any of them a "member" names the wrong kind of thing and offers two remedies
+            // ([MapProperty(NullSubstitute)], SkipNullSourceMembers) that cannot reach it. Built in one place -
+            // MapperExtractor.NullSourceLabel - so the four spellings cannot drift.
+            "{0} is a nullable reference but its destination is non-nullable, so a null " + "would be stored where the type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. For a collection ELEMENT or a dictionary VALUE neither attribute reaches " + "it either — the null is in the element type, not the member: make the destination element type " + "nullable (List<T?>, T?[], Dictionary<K, V?>), or declare the converter's parameter nullable. Either " + "way, dotnet_diagnostic.DWARF070.severity = none accepts the null knowingly.",
             Category,
             DiagnosticSeverity.Warning,
             true,

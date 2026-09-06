@@ -1,6 +1,7 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using System.Reflection;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -1111,6 +1112,314 @@ namespace DwarfMapper.Generator.Tests
             var generated = GeneratorAssert.CompilesClean(AsyncStreamNonNullableElement, NullableContextOptions.Enable);
 
             Assert.Equal("__DwarfMap_Obj_global__T_Src_global__T_Dst_025B94CC(__item)", YieldedElementExpression(generated));
+        }
+
+        // ── 5. a USER-DECLARED converter on an element edge, into a NON-nullable destination element ────────
+        // Round 29 T2.9. 6fa7308 centralised the null decision for a user-declared converter at
+        // TryResolveConversion and reported that member, element, dictionary value, flatten leaf and
+        // constructor argument all read it. The DECISION they do read; the FORGIVENESS they did not.
+        // CollectionConverter.ElementExpr and DictionaryConverter.Expr each kept their own
+        // `srcElemIsNullableRef && GeneratedNames.IsSynthesized(conv)` — the very proxy 6fa7308 identified as
+        // blind to a map method the user declared — so `List<Child?>` -> `List<ChildDto>` beside a declared
+        // `ToDto` emitted `ToDto(__item)` bare: CS8604 inside the consumer's .g.cs, on EVERY element edge
+        // (list, array, dictionary value, span, async stream, constructor argument, update-into) at once.
+        //
+        // Each shape below failed RED with the same message — "Possible null reference argument for parameter
+        // 'c' in 'ChildDto M.ToDto(Child c)'" — and each is the smallest mapper that reaches its edge.
+
+        private const string ElementViaDeclaredMapList = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child?> Items { get; set; } = new(); }
+                public class Dst { public List<ChildDto> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string ElementViaDeclaredMapArray = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child?[] Items { get; set; } = new Child?[2]; }
+                public class Dst { public ChildDto[] Items { get; set; } = new ChildDto[2]; }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string ValueViaDeclaredMapDictionary = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Dictionary<string, Child?> Lookup { get; set; } = new(); }
+                public class Dst { public Dictionary<string, ChildDto> Lookup { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string ElementViaDeclaredMapSpan = """
+            #nullable enable
+            using System;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial void Copy(ReadOnlySpan<Child?> src, Span<ChildDto> dst);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string ElementViaDeclaredMapAsyncStream = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial IAsyncEnumerable<ChildDto> Stream(IAsyncEnumerable<Child?> s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string ElementViaDeclaredMapConstructorArgument = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child?> Items { get; set; } = new(); }
+                public class Dst { public Dst(List<ChildDto> items) { Items = items; } public List<ChildDto> Items { get; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string ElementViaDeclaredMapUpdateInto = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child?> Items { get; set; } = new(); }
+                public class Dst { public List<ChildDto> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial void Update(Src s, Dst d);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        /// <summary>The null-TOLERANT twin: the converter asked for the null, so it must keep receiving it.</summary>
+        private const string ElementViaNullTolerantDeclaredMap = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child?> Items { get; set; } = new(); }
+                public class Dst { public List<ChildDto> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public ChildDto ToDto(Child? c) => new ChildDto { V = c?.V ?? 0 };
+                }
+            }
+            """;
+
+        /// <summary>The NULLABLE-destination twin: the null is legal there, so it is lifted, not forgiven.</summary>
+        private const string NullableDestinationElementViaDeclaredMap = """
+            #nullable enable
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public List<Child?> Items { get; set; } = new(); }
+                public class Dst { public List<ChildDto?> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        /// <summary>The [FlattenGraph] leaf, which forgave the same argument and reported nothing at all.</summary>
+        private const string FlattenGraphLeafViaDeclaredMap = """
+            #nullable enable
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Leaf { public int V { get; set; } }
+            public class LeafDto { public int V { get; set; } }
+            public class Node    { public Leaf? Payload { get; set; } public Node? Next { get; set; } }
+            public class NodeDto { public LeafDto Payload { get; set; } = new(); public NodeDto? Next { get; set; } }
+            public class Root    { public IReadOnlyList<Node> Entries { get; set; } = new List<Node>(); }
+            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Entries", "Nodes")]
+                public partial RootDto Map(Root r);
+                public partial LeafDto ToDto(Leaf l);
+            }
+            """;
+
+        private static string[] DwarfIds(string source)
+        {
+            return GeneratorTestHarness.Run(source, NullableContextOptions.Enable)
+                .Diagnostics.Select(d => d.Id).ToArray();
+        }
+
+        private static string Dwarf070Message(string source)
+        {
+            var d = Assert.Single(GeneratorTestHarness.Run(source, NullableContextOptions.Enable)
+                .Diagnostics.Where(x => x.Id == "DWARF070"));
+            return d.GetMessage(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        ///     Resolves a schema constant by name, so an [InlineData] row can name one instead of repeating the
+        ///     whole mapper. Attribute arguments must be compile-time constants and a <c>const string</c> field
+        ///     would be inlined into the attribute anyway — this keeps the seven schemas readable as a group.
+        /// </summary>
+        private static string Schema(string fieldName)
+        {
+            var field = typeof(ConsumerReportedEmissionWarningsTests)
+                .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(field);
+            return (string)field!.GetValue(null)!;
+        }
+
+        [Theory]
+        [InlineData("List<Child?> -> List<ChildDto>", nameof(ElementViaDeclaredMapList))]
+        [InlineData("Child?[] -> ChildDto[]", nameof(ElementViaDeclaredMapArray))]
+        [InlineData("Dictionary<string, Child?> value", nameof(ValueViaDeclaredMapDictionary))]
+        [InlineData("ReadOnlySpan<Child?> -> Span<ChildDto>", nameof(ElementViaDeclaredMapSpan))]
+        [InlineData("IAsyncEnumerable<Child?> -> IAsyncEnumerable<ChildDto>", nameof(ElementViaDeclaredMapAsyncStream))]
+        [InlineData("List<Child?> bound to a constructor parameter", nameof(ElementViaDeclaredMapConstructorArgument))]
+        [InlineData("List<Child?> through update-into", nameof(ElementViaDeclaredMapUpdateInto))]
+        public void An_element_edge_through_a_user_declared_converter_emits_no_CS8604(string label, string schemaField)
+        {
+            // RED on every row: CS8604 "Possible null reference argument for parameter 'c' in
+            // 'ChildDto M.ToDto(Child c)'", inside the consumer's .g.cs.
+            AssertWarningFree(Schema(schemaField), label);
+        }
+
+        [Theory]
+        [InlineData(nameof(ElementViaDeclaredMapList), "The source element mapped into 'Items'")]
+        [InlineData(nameof(ElementViaDeclaredMapArray), "The source element mapped into 'Items'")]
+        [InlineData(nameof(ValueViaDeclaredMapDictionary), "The source value mapped into 'Lookup'")]
+        [InlineData(nameof(ElementViaDeclaredMapSpan), "The source element mapped into 'Copy'")]
+        [InlineData(nameof(ElementViaDeclaredMapAsyncStream), "The source element mapped into 'Stream'")]
+        [InlineData(nameof(ElementViaDeclaredMapConstructorArgument), "The source element mapped into 'items'")]
+        [InlineData(nameof(FlattenGraphLeafViaDeclaredMap), "Source member 'Payload'")]
+        public void Every_element_edge_that_forgives_also_reports_DWARF070(string schemaField, string subject)
+        {
+            // The coupling the whole family turns on: no site may forgive a null without also signalling it.
+            // Silencing CS8604 with a '!' and saying nothing trades an unsuppressible compiler diagnostic for a
+            // silent wrong value, which is the wrong direction for this project. Each row was RED before this
+            // task: six of the seven emitted no DWARF diagnostic at all, and the [FlattenGraph] leaf had been
+            // forgiving in silence since audit R7.
+            var message = Dwarf070Message(Schema(schemaField));
+
+            Assert.Contains(subject, message, StringComparison.Ordinal);
+            Assert.Contains("its destination is non-nullable", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_element_remedy_is_named_and_is_not_the_source_member_one()
+        {
+            // [MapProperty(NullSubstitute = …)] and SkipNullSourceMembers are source-MEMBER instruments; neither
+            // reaches an element type. A message that offered only those would point the reader at two levers
+            // that cannot touch their code — the same defect task 2.7 fixed for the mapping-parameter spelling.
+            var message = Dwarf070Message(ElementViaDeclaredMapList);
+
+            Assert.Contains("For a collection ELEMENT or a dictionary VALUE neither attribute reaches it either",
+                message,
+                StringComparison.Ordinal);
+            Assert.Contains("make the destination element type nullable", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_null_tolerant_user_converter_on_the_element_path_is_neither_forgiven_nor_reported()
+        {
+            // Passes RED by design, and that is the point: without it, "forgive every user converter" would pass
+            // the rest of this section too. A converter declared `ToDto(Child? c)` was written to accept the
+            // null and keeps receiving it — no '!', no DWARF070.
+            AssertWarningFree(ElementViaNullTolerantDeclaredMap, "List<Child?> -> List<ChildDto> via ToDto(Child?)");
+
+            var generated = GeneratorAssert.CompilesClean(ElementViaNullTolerantDeclaredMap, NullableContextOptions.Enable);
+
+            Assert.Equal("ToDto(__item)", AddedElementExpression(generated));
+            Assert.DoesNotContain("DWARF070", DwarfIds(ElementViaNullTolerantDeclaredMap));
+        }
+
+        [Fact]
+        public void A_nullable_destination_element_lifts_the_null_instead_of_forgiving_it()
+        {
+            // The other guard, also passing RED by design: the destination element admits null, so the null is
+            // PRESERVED by the lift and there is nothing to forgive and nothing to report. This is what stops
+            // the fix from spraying a '!' onto every element edge — a '!' where none is needed is noise in a
+            // file the reader cannot edit.
+            AssertWarningFree(NullableDestinationElementViaDeclaredMap, "List<Child?> -> List<ChildDto?>");
+
+            var generated = GeneratorAssert.CompilesClean(NullableDestinationElementViaDeclaredMap, NullableContextOptions.Enable);
+
+            Assert.Equal("(__item is null ? null : (global::T.ChildDto?)ToDto(__item))", AddedElementExpression(generated));
+            Assert.DoesNotContain("DWARF070", DwarfIds(NullableDestinationElementViaDeclaredMap));
+        }
+
+        [Fact]
+        public void The_forgiven_element_argument_is_the_same_text_the_member_path_emits()
+        {
+            // The anti-drift assertion for this fix, in the same spirit as the async/collection agreement test
+            // above: the element edge must not grow a second spelling of the member path's `Conv(x!)`.
+            var generated = GeneratorAssert.CompilesClean(ElementViaDeclaredMapList, NullableContextOptions.Enable);
+
+            Assert.Equal("ToDto(__item!)", AddedElementExpression(generated));
         }
     }
 }

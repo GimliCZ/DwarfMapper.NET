@@ -95,7 +95,11 @@ namespace DwarfMapper.Generator.Pipeline
                     // Round 29 T0.2b review fix round 1: __i is always in scope in this inline loop (unlike
                     // several CollectionConverter target shapes, which is why this argument is opt-in), so a
                     // ThrowIfNull element here can always name which index was null.
-                    "__i"))
+                    "__i",
+                    // Round 29 T2.9: the user-declared-converter half of the forgiveness decision, resolved at
+                    // the span endpoint's own resolution site (MapperExtractor.Phases) and carried here on the
+                    // element MemberMap, exactly as SourceIsNullableRef is.
+                    elem?.ConverterParamIsNonNullableRef ?? false))
                 .AppendLine(";");
 
             if (needsLocal)

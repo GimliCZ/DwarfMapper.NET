@@ -1210,6 +1210,27 @@ namespace DwarfMapper.Generator.Pipeline
                         collEffectiveNullAsNull);
                 }
 
+                // Round 29 T2.9: the element edge asks the SAME coupled question the member path asks — does a
+                // nullable-annotated reference element flowing into a converter with a non-nullable parameter need
+                // the null-forgiving '!', and (coupled here so no site can forgive without also signalling) does
+                // it warrant DWARF070? 6fa7308 centralised the null DECISION at TryResolveConversion and reported
+                // that every edge read it; the forgiveness half never reached this one, so CollectionConverter's
+                // own IsSynthesized proxy kept answering for it and a declared `ToDto` was left un-forgiven.
+                // Asked HERE rather than inside CollectionConverter because only this side has the semantic model
+                // and the diagnostics sink; the helper is memoised by NAME, and this fact is a function of that
+                // name's key (srcElem, tgtElem and the mapper's method lists), so a reused helper cannot disagree
+                // with the one that built it — while the diagnostic is still raised once per MEMBER that reaches
+                // the pair, which is where a consumer needs it.
+                var elemForgivesArg = ForgiveNestedNullableArg(elemConv,
+                    srcElem,
+                    tgtElem,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+
                 converterMethod = CollectionConverter.Synthesize(synthesized,
                     req.SrcType,
                     srcElem,
@@ -1218,7 +1239,8 @@ namespace DwarfMapper.Generator.Pipeline
                     elemConv,
                     elemNull,
                     req.IsPreserve,
-                    elemNeedsCtx);
+                    elemNeedsCtx,
+                    elemForgivesArg);
                 // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
                 // element is recursion-capable (Preserve, or None/SetNull self-referential element).
                 converterNeedsCtx = (req.IsPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
@@ -1244,6 +1266,7 @@ namespace DwarfMapper.Generator.Pipeline
                     var capTgt = tgtElem;
                     var capShape = collShape;
                     var capNull = elemNull;
+                    var capForgive = elemForgivesArg;
                     req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                         new[]
                         {
@@ -1257,7 +1280,8 @@ namespace DwarfMapper.Generator.Pipeline
                                 capTgt,
                                 capShape,
                                 resolve(elemConv),
-                                capNull));
+                                capNull,
+                                capForgive));
                 }
 
                 resolved = true;
@@ -1375,6 +1399,21 @@ namespace DwarfMapper.Generator.Pipeline
                     }
                 }
 
+                // Round 29 T2.9, the dictionary twin of the collection arm above and asked for the same reason:
+                // the VALUE edge is an element edge, and DictionaryConverter.Expr was keying its forgiveness on
+                // the same blind IsSynthesized proxy. Only the value is asked — a nullable-annotated dictionary
+                // KEY is a separate (and currently unforgiven) shape, recorded in the task report rather than
+                // fixed blind here.
+                var valForgivesArg = ForgiveNestedNullableArg(valConv,
+                    srcVal,
+                    tgtVal,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.DictionaryValue);
+
                 converterMethod = DictionaryConverter.Synthesize(synthesized,
                     req.SrcType,
                     tgtKey,
@@ -1388,7 +1427,8 @@ namespace DwarfMapper.Generator.Pipeline
                     dictEffectiveNullAsNull,
                     req.IsPreserve,
                     keyNeedsCtx,
-                    valNeedsCtx);
+                    valNeedsCtx,
+                    valForgivesArg);
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
@@ -1432,6 +1472,7 @@ namespace DwarfMapper.Generator.Pipeline
                         var cValConv = valConv;
                         var cValNull = valNull;
                         var cNullAsNull = dictEffectiveNullAsNull;
+                        var cValForgive = valForgivesArg;
                         req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                             elems.ToArray(),
                             resolve =>
@@ -1473,7 +1514,8 @@ namespace DwarfMapper.Generator.Pipeline
                                     nv,
                                     cValNull,
                                     nvCtx,
-                                    cNullAsNull);
+                                    cNullAsNull,
+                                    cValForgive);
                             });
                     }
                 }

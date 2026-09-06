@@ -123,7 +123,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool nullAsNull = false,
             bool isPreserve = false,
             bool keyNeedsCtx = false,
-            bool valNeedsCtx = false)
+            bool valNeedsCtx = false,
+            bool valConverterParamIsNonNullableRef = false)
         {
             // Use nullable-aware format for key/value types so the generated dict type args match
             // the actual target type (e.g. Dictionary<string, List<int>?> not Dictionary<string, List<int>>).
@@ -168,7 +169,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef);
             var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
             var ctxParams = threadCtx ? CtxDepthParams : "";
 
@@ -238,7 +239,8 @@ namespace DwarfMapper.Generator.Pipeline
             string? valConverter,
             NullHandling valNull,
             bool valNeedsCtx,
-            bool nullAsNull)
+            bool nullAsNull,
+            bool valConverterParamIsNonNullableRef = false)
         {
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
@@ -251,7 +253,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef, valConverterParamIsNonNullableRef);
 
             var w = new CodeWriter(1);
             using (w.Block("private " + retAnnot + " " + existingName + "(" + srcParam + " src" + CtxDepthParams + ")"))
@@ -316,7 +318,14 @@ namespace DwarfMapper.Generator.Pipeline
             return value is { IsReferenceType: true, NullableAnnotation: NullableAnnotation.Annotated };
         }
 
-        private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false, bool srcIsNullableRef = false)
+        private static string Expr(
+            string access,
+            string? conv,
+            NullHandling nh,
+            string tgtFq,
+            bool needsCtx = false,
+            bool srcIsNullableRef = false,
+            bool converterParamIsNonNullableRef = false)
         {
             if (conv is null)
             {
@@ -330,9 +339,12 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var extra = needsCtx ? ", ctx, depth + 1" : "";
-            // Null-forgive a nullable-reference value into a synthesized helper's non-nullable parameter; the
-            // helper null-guards (null in, null out). See CollectionConverter.ElementExpr for the full argument.
-            var forgive = srcIsNullableRef && GeneratedNames.IsSynthesized(conv) ? "!" : "";
+            // Null-forgive a nullable-reference value into a converter whose parameter is non-nullable. Round 29
+            // T2.9: the second operand is the fact IsSynthesized alone could not see — a map method the USER
+            // declared has an equally non-nullable parameter and was left un-forgiven, which is CS8604 inside the
+            // consumer's .g.cs. Resolved at the dictionary arm and handed down. See CollectionConverter.ElementExpr
+            // for the full argument; the two builders answer this the same way on purpose.
+            var forgive = srcIsNullableRef && (GeneratedNames.IsSynthesized(conv) || converterParamIsNonNullableRef) ? "!" : "";
 
             string Call(string arg)
             {
