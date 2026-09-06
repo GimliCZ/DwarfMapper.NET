@@ -639,6 +639,34 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     <b>And the attributes that are NOT on the list, which is the half nothing pinned.</b>
+        ///     <c>docs/diagnostics.md</c> advertised <c>[Key]</c>/<c>[Table]</c>/<c>[Column]</c>/
+        ///     <c>[ForeignKey]</c> while this classifier matched <c>Key</c>, <c>Table</c> and <c>Owned</c> — it
+        ///     named two attributes the engine never checks and omitted one it does, so a consumer reading it
+        ///     would have expected their <c>[Column]</c>-annotated type to be refused and got silence. The
+        ///     documentation is now the code's list; these rows are what stops the two drifting apart again,
+        ///     because the theory above could only ever catch the overclaim by failing to exist.
+        ///     <para>
+        ///         The rows are ELIGIBLE on purpose. Neither attribute says the type is TRACKED: <c>[Column]</c>
+        ///         names a column and <c>[ForeignKey]</c> names a relationship, and both appear on plain
+        ///         mapping types. Broadening a refusal is the risky direction and this project's rule is to
+        ///         ship and then narrow on evidence — so if a later round finds <c>[ForeignKey]</c> strong
+        ///         enough to add, this row moves rather than being deleted, and the docs move with it.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [InlineData("Column")]
+        [InlineData("ForeignKey")]
+        public void Does_not_refuse_an_entity_attribute_it_never_matched(string attribute)
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class " + attribute + "Attribute : System.Attribute { } " +
+                "[" + attribute + "] public sealed class Dto { public int Id { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+        }
+
+        /// <summary>
         ///     The EF heuristic, usage half: a type that appears as <c>DbSet&lt;T&gt;</c> anywhere in the
         ///     compilation is an entity even with no attribute on it — the fluent API configures those. The
         ///     stand-in <c>DbSet&lt;T&gt;</c> is declared in the fixture rather than referenced, because the

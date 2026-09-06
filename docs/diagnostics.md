@@ -2045,9 +2045,11 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   beside them is CS0111 — `Equals(T)`, `GetHashCode()` and `ToString()` it *does* stand aside for, and those
   stay fine), has a computed property,
   has a constructor that does more than assign its parameters, looks like an EF entity (a `DbSet<T>` in this
-  compilation, or a `[Key]`/`[Table]`/`[Column]`/`[ForeignKey]` attribute), holds no instance data, contains
-  itself, or is declared in a referenced assembly rather than in your source. Each refusal is a case where the
-  rewrite would break something you rely on.
+  compilation, or a `[Key]`, `[Table]` or `[Owned]` attribute on the type or on any of its members — matched
+  by name, with or without the `Attribute` suffix, so it fires without this generator referencing EF Core at
+  all; `[Column]` and `[ForeignKey]` are **not** checked, because neither says the type is *tracked*), holds
+  no instance data, contains itself, or is declared in a referenced assembly rather than in your source. Each
+  refusal is a case where the rewrite would break something you rely on.
 - **The elements are not built by this generator.** A hand-written converter, or a user-defined conversion
   operator, owns the construction of every element — the suggestion would be asking you to change code the
   generator does not write. A collection copied element-for-element with no conversion at all
