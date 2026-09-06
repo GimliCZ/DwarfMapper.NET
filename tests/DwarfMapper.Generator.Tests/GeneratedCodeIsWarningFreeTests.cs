@@ -288,6 +288,12 @@ namespace DwarfMapper.Generator.Tests
             // null-handling decision, so once the '?' came back the body was CS8604 (converter argument), CS8601
             // (raw assign) and CS0266 (nullable value into a non-nullable value member — a compile ERROR that had
             // been there since Phase 5 was written). No schema declares an extra parameter at all.
+            //
+            // Widget/WidgetDto carry the arm the other six do not: a converter the generator SYNTHESIZED rather
+            // than one the user declared. It is the shape a consumer meets first (no ToDto on the class, the
+            // pair auto-nested), it goes through a different clause of the emitter's `needsBang` — IsSynthesized
+            // instead of ConverterParamIsNonNullableRef — and the helper it calls is null-tolerant, so it is
+            // forgiven WITHOUT DWARF070 where the declared converter is forgiven WITH it.
             yield return
             [
                 "NullableExtraParameter", """
@@ -295,6 +301,8 @@ namespace DwarfMapper.Generator.Tests
                                           namespace Demo;
                                           public sealed class Child { public int V { get; set; } }
                                           public sealed class ChildDto { public int V { get; set; } }
+                                          public sealed class Widget { public int V { get; set; } }
+                                          public sealed class WidgetDto { public int V { get; set; } }
                                           public sealed class Src { public int Id { get; set; } }
                                           public sealed class Dst
                                           {
@@ -305,11 +313,13 @@ namespace DwarfMapper.Generator.Tests
                                               public Child? Plain { get; set; }
                                               public int Count { get; set; }
                                               public long? Widened { get; set; }
+                                              public WidgetDto? Auto { get; set; }
+                                              public WidgetDto AutoStrict { get; set; } = new();
                                           }
                                           [DwarfMapper]
                                           public partial class M
                                           {
-                                              public partial Dst Map(Src s, Child? lifted, Child? forgiven, Child? raw, Child? plain, int? count, int? widened);
+                                              public partial Dst Map(Src s, Child? lifted, Child? forgiven, Child? raw, Child? plain, int? count, int? widened, Widget? auto, Widget? autoStrict);
                                               public partial ChildDto ToDto(Child c);
                                           }
                                           """

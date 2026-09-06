@@ -706,6 +706,34 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("Count = count ?? throw new global::System.InvalidOperationException(\"Mapping parameter 'count' was null\")", unwrapped, StringComparison.Ordinal);
         }
 
+        private const string NullableExtraParamViaSynthesizedMap = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public ChildDto? Auto { get; set; } public ChildDto AutoStrict { get; set; } = new(); }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s, Child? auto, Child? autoStrict); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_extra_parameter_through_a_synthesized_map_is_forgiven_without_DWARF070()
+        {
+            // The arm the other tests do not reach, and the one a consumer meets FIRST: no ToDto on the class,
+            // so the pair auto-nests to a __DwarfMap_Obj_ helper. That helper opens with
+            // `if (s is null) return null!;`, so the emitter forgives the argument through its IsSynthesized
+            // clause rather than ConverterParamIsNonNullableRef — null in, null out, and DWARF070 stays SILENT
+            // even for the non-nullable destination, because nothing here can store a null it forbids.
+            AssertWarningFree(NullableExtraParamViaSynthesizedMap, "Child? auto -> ChildDto?/ChildDto via an auto-nested helper");
+
+            var run = GeneratorTestHarness.Run(NullableExtraParamViaSynthesizedMap, NullableContextOptions.Enable);
+            Assert.Contains("(auto!)", run.GeneratedSource, StringComparison.Ordinal);
+            Assert.Contains("(autoStrict!)", run.GeneratedSource, StringComparison.Ordinal);
+            Assert.DoesNotContain(run.Diagnostics, d => d.Id == "DWARF070");
+        }
+
         [Fact]
         public void DWARF070_names_the_extra_parameter_rather_than_an_empty_string()
         {
