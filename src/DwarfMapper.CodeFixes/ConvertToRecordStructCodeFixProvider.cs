@@ -116,6 +116,11 @@ namespace DwarfMapper.CodeFixes
                         ? joined!.Split('|')
                         : [];
 
+                if (NamesAGenericType(targetId!) || Array.Exists(nested, NamesAGenericType))
+                {
+                    continue;
+                }
+
                 var size = diagnostic.Properties.TryGetValue(SizeKey, out var sizeText) &&
                            int.TryParse(sizeText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
                     ? parsed
@@ -170,6 +175,34 @@ namespace DwarfMapper.CodeFixes
                 1 => $"Convert '{name}' (and 1 nested transfer model) to readonly record struct{CallSiteWarning}",
                 _ => $"Convert '{name}' (and {nestedCount.ToString(CultureInfo.InvariantCulture)} nested transfer models) to readonly record struct{CallSiteWarning}"
             };
+        }
+
+        /// <summary>
+        ///     True when a <c>DocumentationCommentId</c> names a type with a type parameter in scope —
+        ///     <c>T:Demo.Box`1</c>, and equally <c>T:Demo.Outer`1.Inner</c>, whose <c>Inner</c> is generic in
+        ///     its container's parameter. The fix declines those, and the backtick is the whole test.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>Measured, not assumed.</b> <c>List&lt;Src&gt; → List&lt;Box&lt;int&gt;&gt;</c> reports
+        ///         <c>DWARF103</c> for <c>Demo.Box&lt;int&gt;</c> at 4 bytes, and the handle it carries is the
+        ///         DEFINITION, <c>T:Demo.Box`1</c> — because that is the only thing with a declaration to
+        ///         rewrite. Converting it turns <b>every instantiation</b> into a value type, including a
+        ///         <c>Box&lt;string&gt;</c> held somewhere else that the classifier never saw, no diagnostic
+        ///         ever named, and for which the printed 4 bytes is simply false. That type loses reference
+        ///         identity silently, which is the change this whole feature is built to refuse.
+        ///     </para>
+        ///     <para>
+        ///         Declining costs a consumer a lightbulb on a shape the corpus has never produced; the
+        ///         message's remedy is still there to apply by hand, where they can see which instantiations
+        ///         they are agreeing to. It is also read off the id STRING, so the refusal costs no
+        ///         compilation and happens before any action is offered — an unoffered fix is a non-event,
+        ///         where an offered one that quietly does the wrong thing is not.
+        ///     </para>
+        /// </remarks>
+        private static bool NamesAGenericType(string declarationId)
+        {
+            return declarationId.IndexOf('`') >= 0;
         }
 
         /// <summary>The type name inside a <c>DocumentationCommentId</c>: <c>T:Demo.OrderDto</c> gives <c>OrderDto</c>.</summary>

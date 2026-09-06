@@ -1991,8 +1991,11 @@ stop compiling*, which does it for you — **and does it to the nested models to
 a struct as well; converting the element alone would leave you a smaller type than the one you were shown.
 The rewrite makes the declaration compile on its own (`set` becomes `init`, an instance field gains
 `readonly`, initialisers keep a constructor, and a member the nullable context left oblivious keeps its
-`?`). It deliberately does **not** touch your usages — that is the point of the hazards below. **Read them
-first** — unlike the other performance hints, this one asks for a change of *meaning*:
+`?`). It deliberately does **not** touch your usages — that is the point of the hazards below — and it is
+**not offered on a generic type**: the only declaration there is to rewrite is `Box<T>`, so taking it would
+convert every instantiation, including ones no diagnostic ever named and whose size is not the one printed.
+The remedy is still yours to apply by hand there, where you can see what you are agreeing to. **Read the
+hazards first** — unlike the other performance hints, this one asks for a change of *meaning*:
 
 - A struct has **no reference identity**. Two elements that were the same object become two copies.
 - A struct **cannot be `null`**. `OrderDto?` becomes `Nullable<OrderDto>`, and `== null` stops compiling.

@@ -177,6 +177,65 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     <b>A GENERIC transfer model is reported and not offered a fix.</b> The shape is real:
+        ///     <c>List&lt;Src&gt; → List&lt;Box&lt;int&gt;&gt;</c> reports <c>DWARF103</c> for
+        ///     <c>Demo.Box&lt;int&gt;</c> at 4 bytes, and the handle it carries is the DEFINITION,
+        ///     <c>T:Demo.Box`1</c>, because that is the only thing with a declaration to rewrite.
+        ///     <para>
+        ///         Converting it would turn EVERY instantiation into a value type. The fixture holds a
+        ///         <c>Box&lt;string&gt;</c> that the classifier never saw, no diagnostic ever named and for
+        ///         which the printed 4 bytes is false — and it would lose reference identity silently, which is
+        ///         the change this feature exists to refuse. So the fix declines, on the id string, before any
+        ///         action is offered: an unoffered fix is a non-event, where an offered one that quietly does
+        ///         the wrong thing to a type nobody classified is not.
+        ///     </para>
+        ///     <para>
+        ///         The diagnostic still fires, and should: its size is correct for the instantiation it names,
+        ///         and applying the remedy by hand puts the consumer where they can see which instantiations
+        ///         they are agreeing to.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public async Task A_generic_transfer_model_is_reported_but_never_offered_the_fix()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  using System.Collections.Generic;
+                                  namespace Demo;
+                                  public sealed class Src { public int Value { get; set; } }
+                                  public sealed class Box<T> { public T Value { get; set; } }
+                                  public sealed class Holder { public Box<string> Text { get; set; } }
+                                  public class C { public List<Src> Rows { get; set; } }
+                                  public class D { public List<Box<int>> Rows { get; set; } }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+
+            // The diagnostic fires, and carries the DEFINITION's handle — the fact that makes the rewrite
+            // dangerous, asserted so the refusal below cannot pass for the wrong reason.
+            var reported = Assert.Single(GeneratorAssert.Reports(source, "DWARF103"));
+            Assert.Equal("T:Demo.Box`1", reported.Properties["TransferModelId"]);
+
+            Assert.Empty(await _fixture.OfferAsync(source).ConfigureAwait(true));
+        }
+
+        /// <summary>
+        ///     The same refusal when the generic is a NESTED model rather than the root: the root alone is
+        ///     rewritable, but converting it without the model it inlines is the one outcome worse than none.
+        /// </summary>
+        [Fact]
+        public async Task A_generic_nested_model_takes_the_whole_offer_down()
+        {
+            var actions = await ConvertToRecordStructFixture.OfferForAsync(
+                    _fixture.Document(Reported),
+                    Synthetic(ImmutableDictionary<string, string?>.Empty
+                        .Add("TransferModelId", "T:Demo.OrderDto")
+                        .Add("NestedTransferModelIds", "T:Demo.Box`1")))
+                .ConfigureAwait(true);
+
+            Assert.Empty(actions);
+        }
+
+        /// <summary>
         ///     No Fix All. Every action is already a whole-solution change over a transitive set, and the batch
         ///     fixer computes each one against the ORIGINAL solution — two roots sharing a nested model would
         ///     have one rewrite silently dropped. Pinned because <c>null</c> here is a decision, and a later

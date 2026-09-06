@@ -123,6 +123,14 @@ so a version with no section here ships with no notes.
   diagnostic's property bag as `DocumentationCommentId`s rather than being read out of the message text, so
   rewording the message cannot silently stop the lightbulb appearing.
 
+  **It is not offered on a GENERIC transfer model**, and that refusal was measured rather than assumed.
+  `List<Src>` → `List<Box<int>>` reports `DWARF103` for `Box<int>` at 4 bytes, and the only thing with a
+  declaration to rewrite is `Box<T>` — so taking the fix would turn *every* instantiation into a value type,
+  including a `Box<string>` held elsewhere that nothing classified, no diagnostic named, and for which the
+  printed 4 bytes is false. That type would lose reference identity silently, which is the change this whole
+  feature exists to refuse. The diagnostic still fires — its size is right for the instantiation it names, and
+  applying the remedy by hand puts you where you can see which instantiations you are agreeing to.
+
 - **`DWARF101` (Info) — a transfer-model struct spends a quarter or more of its bytes on padding, and the
   message names the field order that packs it.** Reported for the element types of a mapped collection, where
   the waste is paid once per item: `{bool; long; byte; double; short}` is 40 bytes, 20 of them padding, and
