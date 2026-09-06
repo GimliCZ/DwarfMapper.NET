@@ -177,7 +177,7 @@ namespace DwarfMapper.Generator.Pipeline
                     NoOrder);
             }
 
-            // The fixed-layout BCL types, asked for directly rather than as someone's field. Same contract as
+            // The known-layout BCL types, asked for directly rather than as someone's field. Same contract as
             // Nullable<T> above: a size and an alignment, and NO field order — their fields are the runtime's,
             // so there is no remedy to print and WastesAQuarter refuses them on the empty order alone.
             if (FixedLayoutBclSize(named) is { } bcl)
@@ -265,9 +265,10 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     One member's (size, alignment) — a primitive at its own width, an enum at its underlying
-        ///     primitive's, one of the four fixed-layout BCL structs at its documented layout, a nested struct
-        ///     at its measured size. <see langword="null" /> for anything whose width this generator may not
-        ///     claim, which the caller must treat as a refusal and never as zero.
+        ///     primitive's, one of the known-layout BCL structs at the size and alignment
+        ///     <see cref="FixedLayoutBclSize" /> states, a nested struct at its measured size.
+        ///     <see langword="null" /> for anything whose width this generator may not claim, which the caller
+        ///     must treat as a refusal and never as zero.
         /// </summary>
         public static (int Size, int Align)? MeasureMember(ITypeSymbol type)
         {
@@ -287,9 +288,11 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     One field's (size, alignment): a primitive at its own width, an enum at its underlying
-        ///     primitive's, a nested struct at its measured size and its own alignment.
+        ///     primitive's, a <see cref="FixedLayoutBclSize" /> entry at its stated layout, a nested struct at
+        ///     its measured size and its own alignment.
         ///     <see langword="null" /> for anything whose width this generator may not claim — a native-sized
-        ///     integer, a pointer, <c>decimal</c>, a type parameter, or a nested struct that refused.
+        ///     integer, a pointer, a metadata struct outside that table, a type parameter, or a nested struct
+        ///     that refused.
         /// </summary>
         private static (int Size, int Align)? MeasureMember(ITypeSymbol type, int depth)
         {
@@ -320,29 +323,65 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     The four BCL value types whose layout this generator is allowed to know, or <see langword="null" />
-        ///     for everything else.
+        ///     The BCL value types whose SIZE AND ALIGNMENT this generator is allowed to know, or
+        ///     <see langword="null" /> for everything else.
         ///     <para>
         ///         Every other metadata struct is refused, because its bytes are not knowable from symbols alone —
-        ///         and that refusal is the right default. These four are the exception on the same footing
-        ///         <c>Nullable&lt;T&gt;</c> already stood on: their layouts are fixed by the platform ABI and part
-        ///         of the types' contracts, not incidental to a particular build. Without them the refusal
-        ///         cascaded — a struct with a <c>Guid Id</c> could not be measured at all, and that is the
-        ///         commonest transfer model there is, so the diagnostic went quiet on precisely the types it
-        ///         exists for.
+        ///         and that refusal is the right default. These are the exception on the same footing
+        ///         <c>Nullable&lt;T&gt;</c> already stood on. Without them the refusal CASCADES, and the cascade
+        ///         is the damage: an unmeasurable member refuses the whole ENCLOSING type, so one
+        ///         <c>DateTimeOffset CreatedAt</c> makes an otherwise ordinary DTO invisible to both
+        ///         <c>DWARF101</c> and <c>DWARF103</c> — the diagnostics go quiet on precisely the types they
+        ///         exist for.
         ///     </para>
         ///     <para>
-        ///         A hard-coded table inside a generator is only honest if something executes it: every size and
-        ///         alignment here is asserted against the real runtime by
-        ///         <c>DwarfMapper.IntegrationTests.BclLayoutFactsTests</c>, which fails the build the day any of
-        ///         them moves. Note <c>Guid</c> is 16 bytes but 4-ALIGNED — it is {int, short, short, 8 bytes},
-        ///         not a 16-byte block — so a caller that assumed size and alignment agree would place every
-        ///         following field wrongly.
+        ///         <b>The bar for adding an entry</b>, so the next person extending this knows what qualifies.
+        ///         All three, never two:
+        ///     </para>
+        ///     <list type="number">
+        ///         <item>
+        ///             The type is COMMON in transfer models — a shape consumers actually write, not one that
+        ///             merely exists. The list is a maintenance promise per entry, and an entry nothing writes is
+        ///             a promise bought for nothing. (<c>System.Half</c> was measured at 2/2 and REJECTED on this
+        ///             clause alone in round 29 <c>T0.3c</c>: IEEE binary16 is a hard format contract, but no
+        ///             DTO in the corpus, or in this repository, carries one.)
+        ///         </item>
+        ///         <item>
+        ///             Its size and alignment follow from a field set that is part of the type's PUBLIC contract,
+        ///             not from an internal arrangement that happens to hold — <c>TimeSpan</c> and
+        ///             <c>TimeOnly</c> are their <c>Ticks</c>, <c>DateOnly</c> is its <c>DayNumber</c>,
+        ///             <c>Guid</c> is its documented 16 bytes.
+        ///         </item>
+        ///         <item>
+        ///             Both numbers are asserted against the running runtime by
+        ///             <c>DwarfMapper.IntegrationTests.BclLayoutFactsTests</c>. A hard-coded table inside a
+        ///             generator is only honest if something executes it; that file fails the build the day any
+        ///             row here moves, and a row with no runtime assertion is not allowed to exist.
+        ///         </item>
+        ///     </list>
+        ///     <para>
+        ///         <b>What is NOT promised is field ORDER</b>, and that is why <c>LayoutKind.Auto</c> costs
+        ///         nothing here. Each entry returns a size, an alignment and <see cref="NoOrder" /> — never a
+        ///         remedy — so <see cref="WastesAQuarter" /> refuses them on the empty order alone. Both
+        ///         <c>DateTime</c> and <c>DateTimeOffset</c> are declared <c>Auto</c>, so the runtime may arrange
+        ///         their fields as it likes; the two numbers this table states survive any arrangement of them,
+        ///         because alignment is the largest member's and the size is the payload rounded up to it.
+        ///         Measured in <c>T0.3c</c>: a <c>Sequential</c> consumer struct holding a <c>DateTimeOffset</c>
+        ///         is still laid out in declaration order, so <see cref="LayOut" />'s arithmetic — and the
+        ///         reordering remedy built on it — stays correct for the enclosing type.
         ///     </para>
         ///     <para>
-        ///         Deliberately NOT extended further. <c>DateTimeOffset</c> is {DateTime, short} and would be a
-        ///         defensible fifth, but each entry is a promise about another type's internals, and the list
-        ///         earns its keep only while every member is load-bearing for a shape consumers actually write.
+        ///         Note <c>Guid</c> is 16 bytes but 4-ALIGNED — it is {int, short, short, 8 bytes}, not a 16-byte
+        ///         block — so a caller that assumed size and alignment agree would place every following field
+        ///         wrongly.
+        ///     </para>
+        ///     <para>
+        ///         <b>History.</b> <c>T0.3b</c> stopped at four (<c>Guid</c>, <c>DateTime</c>, <c>TimeSpan</c>,
+        ///         <c>Decimal</c>) and recorded that <c>DateTimeOffset</c> "would be a defensible fifth". That
+        ///         reasoning was right and is not abandoned — <c>T0.3c</c> extended the table by it rather than
+        ///         around it, after the representative corpus showed the cascade silencing five of nine transfer
+        ///         targets. <c>DateTimeOffset</c>, <c>DateOnly</c> and <c>TimeOnly</c> cleared all three clauses;
+        ///         <c>Half</c>, <c>Int128</c> and <c>UInt128</c> were measured and left out on clause 1.
         ///     </para>
         /// </summary>
         private static (int Size, int Align)? FixedLayoutBclSize(ITypeSymbol type)
@@ -357,7 +396,10 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 "Guid" => (16, 4),
                 "DateTime" => (8, 8),
+                "DateTimeOffset" => (16, 8),
                 "TimeSpan" => (8, 8),
+                "TimeOnly" => (8, 8),
+                "DateOnly" => (4, 4),
                 "Decimal" => (16, 8),
                 _ => null
             };

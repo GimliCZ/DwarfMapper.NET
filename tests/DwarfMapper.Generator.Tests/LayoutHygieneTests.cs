@@ -173,22 +173,34 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
-        ///     The four BCL value types a real DTO is made of. Each is a metadata struct with no source
-        ///     declaration, so the sequential-layout gate refuses it and, before this, refused the whole
-        ///     enclosing struct with it — a DTO carrying a <c>Guid Id</c> could not be sized at all, which is
-        ///     most of them. Their layouts are runtime facts, fixed by the platform ABI and asserted against
-        ///     <c>Unsafe.SizeOf</c> in <see cref="BclLayoutFactsTests" />, so they are stated here on exactly the
+        ///     The BCL value types a real DTO is made of. Each is a metadata struct with no source declaration,
+        ///     so the sequential-layout gate refuses it and, before this, refused the whole enclosing struct with
+        ///     it — a DTO carrying a <c>Guid Id</c> could not be sized at all, which is most of them. Their
+        ///     layouts are runtime facts, asserted against <c>Unsafe.SizeOf</c> and an alignment probe in
+        ///     <c>DwarfMapper.IntegrationTests.BclLayoutFactsTests</c>, so they are stated here on exactly the
         ///     footing <c>Nullable&lt;T&gt;</c> already stood on: a documented layout this generator may rely on.
         ///     <para>
-        ///         Sizes and alignments (x64 and x86 alike): <c>Guid</c> 16/4 — four fields of int, short, short,
-        ///         then eight bytes, so it aligns to 4, not 16; <c>DateTime</c> 8/8 and <c>TimeSpan</c> 8/8, each
-        ///         one <c>ulong</c>/<c>long</c>; <c>decimal</c> 16/8, four <c>int</c>s but 8-aligned on x64.
+        ///         Sizes and alignments (x64 and x86 alike for the first four, measured on x64 for the rest):
+        ///         <c>Guid</c> 16/4 — four fields of int, short, short, then eight bytes, so it aligns to 4, not
+        ///         16; <c>DateTime</c> 8/8 and <c>TimeSpan</c> 8/8, each one <c>ulong</c>/<c>long</c>;
+        ///         <c>decimal</c> 16/8, four <c>int</c>s but 8-aligned on x64.
+        ///     </para>
+        ///     <para>
+        ///         The three added in round 29 <c>T0.3c</c>, after the representative corpus found the refusal
+        ///         cascading: <c>DateTimeOffset</c> 16/8 — a <c>DateTime</c> plus a minutes offset, so 8-aligned
+        ///         and rounded to 16; <c>TimeOnly</c> 8/8, one ticks <c>ulong</c>, exactly <c>TimeSpan</c>'s
+        ///         footing; <c>DateOnly</c> 4/4, one day-number <c>uint</c>, which is what its public
+        ///         <c>DayNumber</c> says it is. <c>Half</c> was measured (2/2) and deliberately left out — see
+        ///         the bar on <c>LayoutHygiene.FixedLayoutBclSize</c>, and the refusal it now pins below.
         ///     </para>
         /// </summary>
         [Theory]
         [InlineData("System.Guid", 16, 4)]
         [InlineData("System.DateTime", 8, 8)]
+        [InlineData("System.DateTimeOffset", 16, 8)]
         [InlineData("System.TimeSpan", 8, 8)]
+        [InlineData("System.TimeOnly", 8, 8)]
+        [InlineData("System.DateOnly", 4, 4)]
         [InlineData("System.Decimal", 16, 8)]
         public void Measure_sizes_the_fixed_layout_BCL_value_types(string metadataName, int size, int align)
         {
@@ -284,6 +296,187 @@ namespace DwarfMapper.Generator.Tests
                 "13 bytes of padding in 48 clears both the quarter rule and the 8-byte floor");
             // 8-aligned fields first, then the 4-aligned Guid, then the bytes — alignment order, not size order.
             Assert.Equal("When, Rate, Id, A, B, C", layout.PackedOrderText);
+        }
+
+        /// <summary>
+        ///     <b>The cascade, which is the defect round 29 <c>T0.3c</c> fixed.</b> An unmeasurable member
+        ///     refuses the ENCLOSING type outright, so before <c>DateTimeOffset</c> joined the table this whole
+        ///     struct was invisible — not measured and quietly not reported, but never measured at all, and with
+        ///     it the DTO pairs that carry it. One timestamp field silenced both <c>DWARF101</c> and
+        ///     <c>DWARF103</c> for the type around it, and <c>DateTimeOffset</c> is what
+        ///     <c>DateTimeOffset.UtcNow</c> returns and what most API contracts carry.
+        ///     <para>
+        ///         Verified against the runtime: <c>Unsafe.SizeOf</c> is 64, offsets 0 / 8 / 24 / 32 / 48 / 56 —
+        ///         which is the DECLARED order, so a <c>Sequential</c> struct holding an <c>Auto</c>-layout
+        ///         member is still laid out sequentially and the reordering remedy is real advice. A repack
+        ///         would have measured 48.
+        ///     </para>
+        ///     <para>
+        ///         Payload 1 + 16 + 1 + 16 + 1 + 8 = 43 in 64 bytes, so 21 wasted — over the 8-byte floor and
+        ///         over a quarter, hence reportable. The packed order is by ALIGNMENT descending and stable, so
+        ///         the two 16-byte timestamps lead in declaration order, then the 8-byte <c>double</c>, then the
+        ///         flags; packed it is 48 bytes.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_padded_DateTimeOffset_bearing_struct_is_now_reportable()
+        {
+            var layout = MeasureType(
+                """
+                using System;
+                namespace T
+                {
+                    public struct AuditRow
+                    {
+                        public byte Flag;
+                        public DateTimeOffset CreatedAt;
+                        public byte Kind;
+                        public DateTimeOffset UpdatedAt;
+                        public byte Extra;
+                        public double Rate;
+                    }
+                }
+                """,
+                "AuditRow");
+
+            Assert.Equal(64, layout.Size);
+            Assert.Equal(8, layout.Alignment);
+            Assert.Equal(21, layout.Padding);
+            Assert.Equal(48, layout.PackedSize);
+            Assert.True(LayoutHygiene.WastesAQuarter(layout),
+                "21 bytes of padding in 64 clears both the quarter rule and the 8-byte floor");
+            Assert.Equal("CreatedAt, UpdatedAt, Rate, Flag, Kind, Extra", layout.PackedOrderText);
+        }
+
+        /// <summary>
+        ///     The other half of the cascade fix, and the half that is easy to get wrong: being MEASURABLE is
+        ///     not the same as being reported. A tidy <c>DateTimeOffset</c>-bearing DTO now gets a number — it
+        ///     was refused before — and that number correctly keeps it quiet at 7 bytes of padding, under the
+        ///     floor. Verified against the runtime: <c>Unsafe.SizeOf</c> is 48.
+        /// </summary>
+        [Fact]
+        public void A_tidy_DateTimeOffset_bearing_struct_is_measured_and_stays_quiet()
+        {
+            var layout = MeasureType(
+                """
+                using System;
+                namespace T
+                {
+                    public struct PaymentDto
+                    {
+                        public Guid Id;
+                        public DateTimeOffset When;
+                        public byte Flag;
+                        public long Amount;
+                    }
+                }
+                """,
+                "PaymentDto");
+
+            Assert.Equal(48, layout.Size);
+            Assert.Equal(7, layout.Padding);
+            Assert.Equal("When, Amount, Id, Flag", layout.PackedOrderText);
+            Assert.False(LayoutHygiene.WastesAQuarter(layout));
+        }
+
+        /// <summary>
+        ///     <c>DateOnly</c> and <c>TimeOnly</c>, in the shape that actually carries them: a booking row. Both
+        ///     were unmeasurable for the same reason, and a struct mixing a 4-aligned <c>DateOnly</c> with
+        ///     8-aligned <c>TimeOnly</c>s is where their alignments earn their keep — get <c>DateOnly</c>'s
+        ///     alignment wrong and every following offset moves. Verified against the runtime:
+        ///     <c>Unsafe.SizeOf</c> is 40, payload 1 + 4 + 8 + 1 + 8 + 8 = 30, so 10 wasted — which is exactly a
+        ///     quarter of 40, the inclusive edge.
+        /// </summary>
+        [Fact]
+        public void A_padded_DateOnly_and_TimeOnly_bearing_struct_is_now_reportable()
+        {
+            var layout = MeasureType(
+                """
+                using System;
+                namespace T
+                {
+                    public struct BookingRow
+                    {
+                        public byte Confirmed;
+                        public DateOnly Day;
+                        public TimeOnly Start;
+                        public byte Room;
+                        public TimeOnly End;
+                        public double Price;
+                    }
+                }
+                """,
+                "BookingRow");
+
+            Assert.Equal(40, layout.Size);
+            Assert.Equal(8, layout.Alignment);
+            Assert.Equal(10, layout.Padding);
+            Assert.Equal(32, layout.PackedSize);
+            Assert.True(LayoutHygiene.WastesAQuarter(layout));
+            Assert.Equal("Start, End, Price, Day, Confirmed, Room", layout.PackedOrderText);
+        }
+
+        /// <summary>
+        ///     The OPTIONAL form, which is a distinct path — <c>MeasureStruct</c>'s <c>Nullable&lt;T&gt;</c> arm
+        ///     through <c>AsOptional</c>, not the table lookup — and so an easy half-fix to leave broken. It is
+        ///     not a corner: the corpus's <c>PromotionEntity.ExpiresAt</c> and <c>LastVerifiedAt</c> are
+        ///     <c>DateTimeOffset?</c>, and a nullable timestamp is at least as common as a bare one.
+        ///     <para>
+        ///         Verified against the runtime: <c>Nullable&lt;DateTimeOffset&gt;</c> is 24 bytes (a flag padded
+        ///         to 8, then 16), <c>Nullable&lt;DateOnly&gt;</c> is 8 and <c>Nullable&lt;TimeOnly&gt;</c> is
+        ///         16.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [InlineData("System.DateTimeOffset", 24, 8)]
+        [InlineData("System.DateOnly", 8, 4)]
+        [InlineData("System.TimeOnly", 16, 8)]
+        public void Measure_lays_out_an_optional_BCL_value_type(string metadataName, int size, int align)
+        {
+            var (compilation, _) = Compile("namespace T { public struct Unused { public int A; } }");
+            var nullable = compilation.GetTypeByMetadataName("System.Nullable`1")!
+                .Construct(compilation.GetTypeByMetadataName(metadataName)!);
+
+            var layout = LayoutHygiene.Measure(nullable);
+
+            Assert.NotNull(layout);
+            Assert.Equal(size, layout!.Value.Size);
+            Assert.Equal(align, layout.Value.Alignment);
+            Assert.Empty(layout.Value.PackedOrder);
+        }
+
+        /// <summary>
+        ///     And the same cascade through the optional form: a promotion row carrying two
+        ///     <c>DateTimeOffset?</c> timestamps was refused end to end before <c>T0.3c</c>, because the
+        ///     <c>Nullable&lt;T&gt;</c> arm refuses whenever its inner type does. Verified against the runtime:
+        ///     <c>Unsafe.SizeOf</c> is 80, payload 1 + 24 + 1 + 24 + 1 + 8 = 59, so 21 wasted; packed 64.
+        /// </summary>
+        [Fact]
+        public void A_padded_optional_DateTimeOffset_bearing_struct_is_now_reportable()
+        {
+            var layout = MeasureType(
+                """
+                using System;
+                namespace T
+                {
+                    public struct PromotionRow
+                    {
+                        public byte Active;
+                        public DateTimeOffset? ExpiresAt;
+                        public byte Tier;
+                        public DateTimeOffset? StartedAt;
+                        public byte Channel;
+                        public long Budget;
+                    }
+                }
+                """,
+                "PromotionRow");
+
+            Assert.Equal(80, layout.Size);
+            Assert.Equal(21, layout.Padding);
+            Assert.Equal(64, layout.PackedSize);
+            Assert.True(LayoutHygiene.WastesAQuarter(layout));
+            Assert.Equal("ExpiresAt, StartedAt, Budget, Active, Tier, Channel", layout.PackedOrderText);
         }
 
         /// <summary>
@@ -455,10 +648,15 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         [Theory]
         // A metadata struct: an absent [StructLayout] cannot be read as Sequential, and the consumer cannot
-        // reorder a type they do not declare. System.Guid used to stand here; it is now one of the four
-        // fixed-layout BCL types Measure is allowed to know (see Measure_sizes_the_fixed_layout_BCL_value_types),
-        // so the refusal is pinned with a metadata struct that carries no such promise.
-        [InlineData("Metadata", "namespace T { public struct Holder { public System.DateTimeOffset G; } }", "System.DateTimeOffset")]
+        // reorder a type they do not declare. System.Guid stood here first and System.DateTimeOffset after it;
+        // both are now known-layout BCL types Measure is allowed to size (see
+        // Measure_sizes_the_fixed_layout_BCL_value_types). System.Half is what pins the refusal now, and it is
+        // the RIGHT fixture rather than the next one to fall: T0.3c measured it at 2/2 and rejected it on the
+        // first clause of the bar — IEEE binary16 is a hard format contract, but no DTO in this repository or
+        // in the consumer corpus carries a Half, and an entry nothing writes is a maintenance promise bought
+        // for nothing. If a later round adds it, this row must move to another unwritten metadata struct — not
+        // be deleted, because the default for a metadata struct is still refusal.
+        [InlineData("Metadata", "namespace T { public struct Holder { public System.Half G; } }", "System.Half")]
         // Non-Sequential layout: the runtime is free to reorder.
         [InlineData("Auto",
             "using System.Runtime.InteropServices; namespace T { [StructLayout(LayoutKind.Auto)] public struct S { public byte A; public long B; } }",

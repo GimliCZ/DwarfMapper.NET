@@ -661,13 +661,23 @@ namespace DwarfMapper.Generator.Tests
         /// <summary>
         ///     A member this generator cannot size refuses the type, and does NOT default to zero — the rule
         ///     <c>LayoutHygiene</c> states for its own <see langword="null" />. <c>nint</c> is as wide as the
-        ///     platform, so any size computed from it would describe the build machine;
-        ///     <c>DateTimeOffset</c> is simply not on the four-entry fixed-layout list, and extending that list
-        ///     is a promise about another type's internals that belongs to its own task.
+        ///     platform, so any size computed from it would describe the build machine; <c>System.Half</c> is
+        ///     simply not on <c>LayoutHygiene.FixedLayoutBclSize</c>'s list, so its bytes are not knowable from
+        ///     symbols alone.
+        ///     <para>
+        ///         <c>System.DateTimeOffset</c> stood in the second row until round 29 <c>T0.3c</c>, when the
+        ///         representative corpus showed that this refusal CASCADES — one timestamp member made the whole
+        ///         DTO unmeasurable and silenced <c>DWARF103</c> on it — and the table gained it, along with
+        ///         <c>DateOnly</c> and <c>TimeOnly</c>. <c>Half</c> was measured in the same task and left out on
+        ///         the first clause of that table's bar: nothing writes a <c>Half</c> into a transfer model, and
+        ///         an entry nothing writes is a maintenance promise bought for nothing. It is the right fixture
+        ///         for this row rather than the next one to fall, and if a later round adds it, this row moves to
+        ///         another unwritten metadata struct instead of being deleted — refusal is still the default.
+        ///     </para>
         /// </summary>
         [Theory]
         [InlineData("nint")]
-        [InlineData("System.DateTimeOffset")]
+        [InlineData("System.Half")]
         public void Refuses_a_member_whose_bytes_cannot_be_proven(string memberType)
         {
             var verdict = ClassifyType(
@@ -676,6 +686,42 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
             Assert.Contains("Handle", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     <b>The other side of that refusal, and the one <c>DWARF103</c> actually rides on.</b> The rule
+        ///     above cascades: an unmeasurable member refuses the whole ENCLOSING type, so before round 29
+        ///     <c>T0.3c</c> one <c>DateTimeOffset CreatedAt</c> made an otherwise ordinary DTO
+        ///     <c>NotEligible</c> and <c>DWARF103</c> went silent on it. This is the regression test for that,
+        ///     and it belongs HERE rather than beside the <c>LayoutHygiene</c> cases: those measure a struct,
+        ///     and <c>DWARF103</c>'s question is about a CLASS — the would-be struct <c>Classify</c> sizes,
+        ///     which <c>LayoutHygiene.Measure</c> refuses outright and so cannot cover.
+        ///     <para>
+        ///         The nullable row is the one that would have been an easy half-fix. A <c>DateTimeOffset?</c>
+        ///         reaches the table by a different path — <c>TryMeasureMember</c> hands it to
+        ///         <c>LayoutHygiene.MeasureMember</c>, which recurses through the <c>Nullable&lt;T&gt;</c> arm
+        ///         and <c>AsOptional</c> rather than looking the type up directly — and nothing in the consumer
+        ///         corpus exercises it, because every corpus DTO carrying an optional timestamp is refused by an
+        ///         earlier rule anyway. So the corpus could not have caught this row, and only this test does.
+        ///     </para>
+        ///     <para>
+        ///         Sizes, so a failure reads as a layout change rather than a mystery: <c>{int, DateTimeOffset}</c>
+        ///         is 24 bytes, <c>{int, DateTimeOffset?}</c> 32, <c>{int, TimeOnly}</c> 16, <c>{int, DateOnly}</c>
+        ///         8 — all inside the 32-byte silent band, so all <c>Eligible</c>.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [InlineData("System.DateTimeOffset")]
+        [InlineData("System.DateTimeOffset?")]
+        [InlineData("System.TimeOnly")]
+        [InlineData("System.DateOnly")]
+        public void Accepts_a_member_whose_layout_the_table_knows(string memberType)
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int Id { get; set; } public " + memberType +
+                " Handle { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
         }
 
         /// <summary>
