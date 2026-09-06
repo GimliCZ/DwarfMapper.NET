@@ -29,12 +29,26 @@ $ErrorActionPreference = 'Stop'
 # checkout being moved or cloned elsewhere.
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
-# Commands that read and cannot modify. An ALLOWLIST, not a denylist of dangerous things: a tool nobody has
-# vetted should ask, rather than slip through for not being on a blocklist.
+# Tools with NO write or execute capability in ANY flag form. Deliberately shorter than "tools that usually
+# read", because a leading-word allowlist is not a proof: several obvious candidates were removed after a
+# review found each of them could write or execute --
+#   awk   `BEGIN{system("…")}` runs a shell, and `print > file` writes;
+#   sed   `-i`, `-Ei`, `--in-place` edit the file in place;
+#   find  `-exec`, `-ok`, `-delete`, `-fprint` execute or write;
+#   sort  `-o FILE` writes;
+#   uniq  takes an output file as its second positional argument;
+#   python (and any interpreter) runs a script file, which is arbitrary code.
+# Nothing goes back on this list without naming the flag set that makes it safe.
 $ReadOnlyTools = @(
-    'grep', 'egrep', 'fgrep', 'awk', 'sed', 'cat', 'head', 'tail', 'wc', 'ls', 'sort', 'uniq',
-    'cut', 'tr', 'diff', 'find', 'stat', 'basename', 'dirname', 'echo', 'printf'
+    'grep', 'egrep', 'fgrep', 'cat', 'head', 'tail', 'wc', 'ls',
+    'stat', 'basename', 'dirname', 'echo', 'printf', 'cut', 'tr', 'diff'
 )
+
+# Anything that chains, backgrounds, substitutes or redirects ends the analysis: past one of these, the
+# leading word of the command says nothing about what else runs. `;` matters most -- without it,
+# `cat a.txt; rm -rf x` reads as a `cat`. `|` is NOT here: it is the one separator this hook splits on and
+# validates stage by stage.
+$ForbiddenTokens = @(';', '&', '>', '<', '$(', '`', "`n", "`r")
 
 function ConvertTo-CanonicalPath {
     # Normalises the three spellings that reach this hook on Windows -- C:\Users\..., C:/Users/... and Git
@@ -48,34 +62,62 @@ function ConvertTo-CanonicalPath {
     return $p.TrimEnd('/').ToLowerInvariant()
 }
 
-function Test-UnderScratchRoot {
-    # Session directories live beneath the scratchpad ROOT, so the test is on the root: the session id
-    # changes every run and a rule naming one session's path would rot immediately.
-    param([string] $CanonicalPath)
-
-    $root = ConvertTo-CanonicalPath (Join-Path $env:LOCALAPPDATA 'Temp/claude')
-    if (-not $root) { return $false }
-    return $CanonicalPath -eq $root -or $CanonicalPath.StartsWith("$root/")
+function Get-ScratchRoot {
+    # Session directories live beneath the scratchpad ROOT, so every test is against the root: the session
+    # id changes each run and a rule naming one session's path would rot immediately.
+    return ConvertTo-CanonicalPath (Join-Path $env:LOCALAPPDATA 'Temp/claude')
 }
 
 function Test-ReadOnlyCommand {
-    # True only when every stage is a read-only tool and nothing writes, deletes or executes. Any
-    # redirection, backgrounding or command substitution disqualifies the whole command, as does a stage
-    # whose leading word is not on the allowlist.
-    param([string] $Command)
+    <#
+        True only when the command provably cannot modify anything AND cannot read outside the scratchpad.
 
-    foreach ($token in '>', '<', '$(', '`', '&', ';;') {
+        Four independent conditions, each closing a hole a review found in the first version of this hook:
+          1. No chaining, backgrounding, substitution or redirection (`$ForbiddenTokens`). Without this,
+             `cat a.txt; rm -rf x` was auto-approved on the strength of its leading word.
+          2. Every pipeline stage's leading word is on `$ReadOnlyTools`, which now contains only tools with
+             no write or execute flag in any form.
+          3. No argument escapes the scratchpad. The working directory is the scratchpad, so a RELATIVE path
+             is fine -- but `..` climbs out, and an ABSOLUTE path can name anything. Without this the hook
+             would have auto-approved `cd <scratch> && cat C:/proj/appsettings.json`, overriding the very
+             deny rule the user configured. A hook that launders a denied read is worse than no hook.
+          4. No `--` style long option that takes a file (`--output`, `--file`), for the same reason as (2):
+             a flag can turn a reader into a writer.
+    #>
+    param([string] $Command, [string] $ScratchRoot)
+
+    foreach ($token in $ForbiddenTokens) {
         if ($Command.Contains($token)) { return $false }
     }
+
     foreach ($stage in $Command.Split('|')) {
         $words = $stage.Trim() -split '\s+' | Where-Object { $_ }
-        if (-not $words) { return $false }
+        if (-not $words) { return $false }   # an empty stage means `||` or a trailing pipe
+
         $tool = [System.IO.Path]::GetFileName($words[0]).ToLowerInvariant()
         if ($ReadOnlyTools -notcontains $tool) { return $false }
-        $rest = @($words | Select-Object -Skip 1)
-        # `find -exec/-ok/-delete` executes or deletes; `sed -i` edits in place. None of those are reads.
-        if ($tool -eq 'find' -and ($rest | Where-Object { $_ -like '-exec*' -or $_ -eq '-delete' -or $_ -eq '-ok' })) { return $false }
-        if ($tool -eq 'sed' -and ($rest | Where-Object { $_ -eq '-i' -or $_ -like '-i.*' })) { return $false }
+
+        foreach ($word in @($words | Select-Object -Skip 1)) {
+            $arg = $word.Trim('"').Trim("'")
+            if (-not $arg) { continue }
+
+            if ($arg.StartsWith('-')) {
+                # A long option that names a file turns a reader into a writer.
+                if ($arg -match '^--(output|out-file|file|write)') { return $false }
+                continue
+            }
+
+            if ($arg.Contains('..')) { return $false }   # climbs out of the scratchpad
+
+            $canonical = ConvertTo-CanonicalPath $arg
+            if ($canonical) {
+                # An absolute path: allowed only if it stays inside the scratchpad tree.
+                if (-not $canonical.StartsWith("$ScratchRoot/") -and $canonical -ne $ScratchRoot) { return $false }
+            }
+            elseif ($arg.StartsWith('/')) {
+                return $false   # a POSIX-absolute path this hook cannot canonicalise
+            }
+        }
     }
     return $true
 }
@@ -113,7 +155,9 @@ try {
         exit 0
     }
 
-    if ($target -and (Test-UnderScratchRoot $target) -and (Test-ReadOnlyCommand $rest)) {
+    $scratchRoot = Get-ScratchRoot
+    $inScratch = $scratchRoot -and $target -and ($target -eq $scratchRoot -or $target.StartsWith("$scratchRoot/"))
+    if ($inScratch -and (Test-ReadOnlyCommand -Command $rest -ScratchRoot $scratchRoot)) {
         Write-HookDecision @{
             hookEventName            = 'PreToolUse'
             permissionDecision       = 'allow'
