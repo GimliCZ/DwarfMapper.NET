@@ -111,6 +111,13 @@ strongest result in the whole study and they are also the most constrained: a `r
 in a field, captured in a lambda, or held across an `await`, so it fits "map and immediately serialize or
 render" and nothing else. They are recorded as a candidate, not as a capability.
 
+> **§2b and §2c are conditional on those features staying unbuilt, and nothing enforces it.** Both sections
+> say "DwarfMapper does not emit this" — a true statement with a shelf life. If a later round ships DTO
+> views, the arena result shape, or dense enum-keyed collections, **the rows move up into §2a and these
+> paragraphs come out**; leaving them would understate the mapper rather than overstate it, which is the
+> milder failure but still a false page. There is no test that catches it, so whoever ships one of those
+> three owns this page in the same commit.
+
 ### 2d. The losers — measured, and the reason no SIMD path was built
 
 Same runs, same machine, same job. **Ratios above 1.00 are slower than the plain scalar loop they would
