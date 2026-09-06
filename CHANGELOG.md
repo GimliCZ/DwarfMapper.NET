@@ -213,9 +213,8 @@ so a version with no section here ships with no notes.
   generated ambient registration and the target of the `new T` the mapper writes, and a nullable annotation is
   illegal in both — annotating it in place trades `CS8611` for `CS8639` and `CS8628`.
 
-  One shape is improved but not yet clean, and was already broken before this release: a map over
-  `IAsyncEnumerable<S?>` now reports the real problem (its element conversion does not handle the null) instead
-  of a signature mismatch. Tracked separately. The nullable-RETURN half is fixed below.
+  Both shapes this entry once listed as "improved but not yet clean" are fixed below: the nullable RETURN and
+  the async-stream element edge whose real problem the signature fix had exposed.
 
 - **A map method declared to RETURN a nullable reference put unsuppressible warnings in three different
   generated files, and none of them were the same defect.** `partial List<Dst?> Many(List<Src> s)` was
@@ -237,6 +236,19 @@ so a version with no section here ships with no notes.
   **Consumer-visible consequence, by design:** `src.ToDst().Member` in your own code may now be `CS8602`,
   because the extension truthfully reports the nullability you declared. That warning is in *your* file, where
   a `#pragma` or an `.editorconfig` severity reaches it — unlike the `CS8603` it replaces.
+
+- **An async-stream map over `IAsyncEnumerable<S?>` applied no null handling to its elements (`CS8604`).** Every
+  other element edge — collections, dictionaries, span maps, members — routes its null decision through one
+  shared expression builder. This loop wrote `yield return Conv(__item)` by hand and read none of it, so a
+  possibly-null element was handed to a converter that cannot accept one. It now takes the same rule as the
+  equivalent `List<S?>` member, character for character (pinned by a test that compares the two): forgiven into
+  a null-guarding helper where the destination element cannot hold null, and LIFTED — null in, null out —
+  where it can.
+
+  **This is a hole closed, not a regression repaired.** The shape was already broken before this release: the
+  previous entry's signature fix turned its `CS8611` into this `CS8604`, one unsuppressible diagnostic for
+  another, and no working build can have regressed because every affected shape failed to compile clean either
+  way. A non-nullable async-stream map's emitted body is byte-identical to before (0 golden rows moved).
 
 - **An extra mapping parameter named after a C# keyword produced a generated file that did not parse.** Both
   the emitted signature and the value expression were built from the raw symbol name, which Roslyn hands over

@@ -254,6 +254,28 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                 }
                                                 """, "DwarfGenerator");
 
+            // Round 29 task 2.8, defect B — the async-stream element edge. `#nullable enable` again: under
+            // Disable the element annotation is Oblivious, the null decision is None, and the emitted loop is
+            // byte-identical to the hand-written one this replaced, so the manifest could not see the change.
+            // Both destination shapes, because they take different arms of the shared element expression.
+            yield return ("AsyncStreamNullableElement", """
+                                                       #nullable enable
+                                                       using System.Collections.Generic;
+                                                       using DwarfMapper;
+                                                       namespace Demo;
+                                                       public class A { public int Id { get; set; } }
+                                                       public class B { public int Id { get; set; } }
+                                                       public class Child { public int V { get; set; } }
+                                                       public class ChildDto { public int V { get; set; } }
+                                                       [DwarfMapper]
+                                                       public partial class M
+                                                       {
+                                                           public partial IAsyncEnumerable<B> Strict(IAsyncEnumerable<A?> a);
+                                                           public partial IAsyncEnumerable<ChildDto?> Lifted(IAsyncEnumerable<Child?> c);
+                                                           public partial ChildDto ToDto(Child c);
+                                                       }
+                                                       """, "DwarfGenerator");
+
             yield return ("EnumByName", """
                                         using DwarfMapper;
                                         namespace Demo;

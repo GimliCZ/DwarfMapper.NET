@@ -2006,12 +2006,20 @@ namespace DwarfMapper.Generator.Pipeline
                         (asSrcElem, asDstElem, methodLocation, ReadIgnoreSources(method).ToList()));
                 }
 
+                // Round 29 T2.8, mirroring the span map's own computation (T0.2b) one endpoint over: a
+                // nullable-annotated REFERENCE element (IAsyncEnumerable<C?>) reaching a synthesized object
+                // helper needs the null-forgiving '!' that helper's null-guard makes safe (null in, null out).
+                // Read by MapEmitter's async-stream loop through the shared CollectionConverter.ElementExpr.
+                var asSrcElemIsNullableRef = asSrcElem.IsReferenceType &&
+                                             asSrcElem.NullableAnnotation == NullableAnnotation.Annotated;
+
                 var asElemMember = new MemberMap(
                     "",
                     "",
                     asConv,
                     asNull,
-                    asNeedsCtx);
+                    asNeedsCtx,
+                    SourceIsNullableRef: asSrcElemIsNullableRef);
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
@@ -2046,7 +2054,8 @@ namespace DwarfMapper.Generator.Pipeline
                     Withheld: withheld,
                     ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     ReturnTypeSignature: DeclaredReturnSignature(method),
-                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method),
+                    AsyncStreamTargetElementFullName: asDstElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 return true;
             }
 

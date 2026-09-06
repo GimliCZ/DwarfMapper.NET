@@ -856,22 +856,28 @@ namespace DwarfMapper.Generator.Pipeline
 
             sb.AppendLine(")");
 
-            sb.Append(indent).Append("        yield return ");
-            if (elem?.ConverterMethod is null)
-                // Direct/implicit element conversion.
-            {
-                sb.Append("__item");
-            }
-            else
-            {
-                sb.Append(elem.ConverterMethod).Append("(__item");
-                if (elem.ConverterNeedsDepthCtx)
-                {
-                    sb.Append(", __dwarf_ctx, 0");
-                }
-
-                sb.Append(')');
-            }
+            // Round 29 T2.8: the per-element expression is the SAME rule every other element edge applies, asked
+            // of the one shared builder rather than hand-written here. This loop used to emit a bare
+            // `Conv(__item)` and read no null handling at all — the last element path that did — so an
+            // IAsyncEnumerable<S?> handed a possibly-null element to a helper that cannot take one: CS8604 in
+            // the consumer's .g.cs, which no #pragma of theirs reaches. It was MASKED until task 2.7 removed the
+            // CS8611 the signature was also emitting; the defect itself is as old as the endpoint.
+            //
+            // ", __dwarf_ctx, 0" replaces the shared helper's own "ctx, depth + 1" tail, exactly as the span
+            // map's inline loop does: the context local is the one EmitElementContext declared above, and a
+            // stream element is always a fresh depth-0 call. No index expression is passed — an `await foreach`
+            // has no counter, and inventing one to enrich a ThrowIfNull message would change the loop shape.
+            // __item is already a local, so ElementExprReadsItemTwice needs no extra binding here (that question
+            // is about callers whose item text is a re-evaluated indexer).
+            sb.Append(indent).Append("        yield return ")
+                .Append(CollectionConverter.ElementExpr(
+                    "__item",
+                    elem?.ConverterMethod,
+                    elem?.NullHandling ?? NullHandling.None,
+                    method.AsyncStreamTargetElementFullName,
+                    elem?.ConverterNeedsDepthCtx ?? false,
+                    elem?.SourceIsNullableRef ?? false,
+                    ", __dwarf_ctx, 0"));
 
             sb.AppendLine(";");
             sb.Append(indent).AppendLine("}");

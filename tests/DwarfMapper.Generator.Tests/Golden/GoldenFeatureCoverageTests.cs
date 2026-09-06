@@ -125,6 +125,12 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // produced by the annotation-stripping format that slot used before task 2.8; the `new
                     // global::Demo.B` in the same file proves the identity string kept its own spelling.
                     "NullableReturnType", "public partial global::System.Collections.Generic.List<global::Demo.B?> Many("
+                },
+                {
+                    // The async-stream element edge reading its null decision. The lift with the destination
+                    // element cast is what the shared CollectionConverter.ElementExpr writes and what the
+                    // hand-written `yield return Conv(__item)` could not produce at all.
+                    "AsyncStreamNullableElement", "yield return (__item is null ? null : (global::Demo.ChildDto?)ToDto(__item))"
                 }
             };
         }

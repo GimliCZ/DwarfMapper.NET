@@ -218,6 +218,15 @@ namespace DwarfMapper.Generator.Model
     ///     than sniffed out of <see cref="ReturnTypeSignature" />, because the question is about the TOP-LEVEL
     ///     annotation only — <c>List&lt;Dst?&gt;</c> is a non-null list and registers unchanged. Round 29 task 2.8.
     /// </param>
+    /// <param name="AsyncStreamTargetElementFullName">
+    ///     The destination ELEMENT type of an <see cref="IsAsyncStreamMap" /> method, annotations included — the
+    ///     cast the shared <c>CollectionConverter.ElementExpr</c> writes onto the non-null arm of a lifted
+    ///     element, so the conditional's type never depends on target-typing. The span map's own
+    ///     <see cref="SpanTargetElementFullName" /> is the same thing one endpoint over; this is a separate field
+    ///     rather than a reuse of <see cref="ElementTargetTypeFullName" /> because THAT string is a <c>new …</c>
+    ///     target in the projection body, where a nullable annotation is <c>CS8628</c>. Empty for every other
+    ///     method shape. Round 29 task 2.8.
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -260,5 +269,6 @@ namespace DwarfMapper.Generator.Model
         string? ParameterTypeSignature = null,
         string? ReturnTypeSignature = null,
         string? UpdateTargetTypeSignature = null,
-        bool ReturnIsNullableRef = false) : IEquatable<MapMethodModel>;
+        bool ReturnIsNullableRef = false,
+        string AsyncStreamTargetElementFullName = "") : IEquatable<MapMethodModel>;
 }

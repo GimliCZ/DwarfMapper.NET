@@ -1004,5 +1004,113 @@ namespace DwarfMapper.Generator.Tests
             var nullableReturn = GeneratorAssert.CompilesClean(NullableUpdateIntoReturn, NullableContextOptions.Enable);
             Assert.Contains("partial global::T.Dst? Update(global::T.Src s, global::T.Dst d)", nullableReturn, StringComparison.Ordinal);
         }
+
+        // -- 9. the async-stream element edge read no null handling at all ------------------------------------
+        // Round 29 task 2.8, defect B. Every other element edge routes its null decision through the single
+        // TryResolveConversion + CollectionConverter.ElementExpr pair that 6fa7308 centralised; this loop built
+        // `yield return Conv(__item)` by hand and applied none of it, so IAsyncEnumerable<S?> handed a
+        // possibly-null element to a helper that cannot take one — CS8604, in the consumer's .g.cs.
+        //
+        // Ledger, stated plainly: for the consumer this shape is NET-NEUTRAL as of the previous release. The
+        // CS8611 the signature used to emit was removed by task 2.7, which is what made this one visible; one
+        // unsuppressible diagnostic became another. No working build can regress here, because every affected
+        // shape already failed to compile clean. This closes a hole; it does not repair a regression.
+
+        private const string AsyncStreamNullableElement = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial IAsyncEnumerable<Dst> Stream(IAsyncEnumerable<Src?> s); }
+            }
+            """;
+
+        private const string AsyncStreamNullableElementBothSides = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Box { public List<Child?> Items { get; set; } = new(); }
+                public class BoxDto { public List<ChildDto?> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial IAsyncEnumerable<ChildDto?> Stream(IAsyncEnumerable<Child?> s);
+                    public partial BoxDto MapBox(Box b);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string AsyncStreamNonNullableElement = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial IAsyncEnumerable<Dst> Stream(IAsyncEnumerable<Src> s); }
+            }
+            """;
+
+        /// <summary>The text between <c>yield return </c> and the <c>;</c> that ends it.</summary>
+        private static string YieldedElementExpression(string generated)
+        {
+            var start = generated.IndexOf("yield return ", StringComparison.Ordinal);
+            Assert.True(start >= 0, "no `yield return` in the generated async iterator:\n" + generated);
+            start += "yield return ".Length;
+            return generated.Substring(start, generated.IndexOf(';', start) - start);
+        }
+
+        /// <summary>The text inside the collection helper's <c>__r.Add(…);</c>.</summary>
+        private static string AddedElementExpression(string generated)
+        {
+            const string marker = "__r.Add(";
+            var start = generated.IndexOf(marker, StringComparison.Ordinal);
+            Assert.True(start >= 0, "no `__r.Add(` in the generated collection helper:\n" + generated);
+            start += marker.Length;
+            return generated.Substring(start, generated.IndexOf(");", start, StringComparison.Ordinal) - start);
+        }
+
+        [Fact]
+        public void Nullable_async_stream_element_emits_no_CS8604()
+        {
+            // RED: CS8604 — `__DwarfMap_Obj_…(__item)` with __item declared IAsyncEnumerable<Src?>'s element.
+            AssertWarningFree(AsyncStreamNullableElement, "IAsyncEnumerable<Src?> -> IAsyncEnumerable<Dst>");
+
+            var generated = GeneratorAssert.CompilesClean(AsyncStreamNullableElement, NullableContextOptions.Enable);
+            Assert.Contains("(__item!)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_async_stream_element_is_answered_exactly_as_the_collection_element_is()
+        {
+            // The anti-drift test, and the reason the fix routes through the shared builder rather than adding a
+            // fifth hand-written copy of the null / null! / ! switch: the same element pair reached through an
+            // async stream and through a List<T> member must produce the SAME expression, character for
+            // character. Here that is the lift — the destination element admits null, so the null is preserved
+            // rather than forced through the converter — with the destination element type cast onto the
+            // non-null arm so the conditional's type never depends on target-typing.
+            AssertWarningFree(AsyncStreamNullableElementBothSides, "IAsyncEnumerable<Child?> + List<Child?>, one mapper");
+
+            var generated = GeneratorAssert.CompilesClean(AsyncStreamNullableElementBothSides, NullableContextOptions.Enable);
+
+            Assert.Equal(AddedElementExpression(generated), YieldedElementExpression(generated));
+            Assert.Equal("(__item is null ? null : (global::T.ChildDto?)ToDto(__item))", YieldedElementExpression(generated));
+        }
+
+        [Fact]
+        public void A_non_nullable_async_stream_element_keeps_the_expression_it_always_had()
+        {
+            // The guard on the other side: routing through the shared builder must not add null handling where
+            // none was owed, or every existing async-stream consumer's output moves. NullHandling.None with a
+            // non-nullable source element is the bare call, exactly as the hand-written loop wrote it.
+            var generated = GeneratorAssert.CompilesClean(AsyncStreamNonNullableElement, NullableContextOptions.Enable);
+
+            Assert.Equal("__DwarfMap_Obj_global__T_Src_global__T_Dst_025B94CC(__item)", YieldedElementExpression(generated));
+        }
     }
 }

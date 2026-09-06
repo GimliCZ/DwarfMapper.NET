@@ -367,6 +367,39 @@ namespace DwarfMapper.Generator.Tests
                                       }
                                       """
             ];
+
+            // The async-stream element edge, round 29 task 2.8. The one element path that never went through
+            // AppendValueExpression or CollectionConverter.ElementExpr: it built `yield return Conv(__item)` by
+            // hand and read no null handling, so a nullable element was CS8604 in the consumer's .g.cs. Two
+            // pairs, because they take different arms of the shared element expression — a non-nullable
+            // destination element forgives into the SYNTHESIZED helper's own null guard, while a nullable one
+            // reached through a USER-DECLARED converter lifts the null instead (null in, null out).
+            //
+            // The third combination — a user-declared converter into a NON-nullable destination element — is
+            // deliberately absent: it is CS8604 on every element edge, the collection path included, because
+            // ElementExpr's forgiveness is keyed on IsSynthesized and is blind to a user-declared converter's
+            // non-nullable parameter the way the MEMBER path was before task 2.7 taught it
+            // ConverterParamIsNonNullableRef. Pre-existing, wider than the async stream, and recorded rather
+            // than folded in here.
+            yield return
+            [
+                "AsyncStreamNullableElement", """
+                                             using System.Collections.Generic;
+                                             using DwarfMapper;
+                                             namespace Demo;
+                                             public sealed class Src { public int Id { get; set; } }
+                                             public sealed class Dst { public int Id { get; set; } }
+                                             public sealed class Child { public int V { get; set; } }
+                                             public sealed class ChildDto { public int V { get; set; } }
+                                             [DwarfMapper]
+                                             public partial class M
+                                             {
+                                                 public partial IAsyncEnumerable<Dst> Strict(IAsyncEnumerable<Src?> s);
+                                                 public partial IAsyncEnumerable<ChildDto?> Lifted(IAsyncEnumerable<Child?> c);
+                                                 public partial ChildDto ToDto(Child c);
+                                             }
+                                             """
+            ];
         }
 
         [Theory]
