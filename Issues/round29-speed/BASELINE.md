@@ -67,17 +67,28 @@ The other 765 cases total 14.8 s (p50 = 14 ms). It is a single `[Fact]` running 
 already parallel; the cost is per-compilation, roughly 27 ms of CPU each. Nothing about it is accidental — it is
 an exhaustive proof — but it is 40 % of the entire deep gate in one test case.
 
-**2. The gate's per-project times were mostly BUILD, not test execution.**
+**2. A project's reported duration inside the gate is several times its standalone duration — cause NOT yet
+established.**
 
-| Leg | In the gate | With the build shared (`--no-build`) |
+| Leg | Inside the gate's stage 1 | Standalone, `--no-build` |
 |---|---|---|
 | CompilerTests | 1 m 17 s | **7 s** |
 | IntegrationTests | 25 s | **4 s** |
 | Generator.Tests (deep) | 2 m 41 s | 2 m 00 s |
 
-Stage 1 of `housekeeping.ps1` runs `dotnet test` on the solution WITHOUT `--no-build`, so a full analyzers-on
-Release build is billed inside the suite legs. Building once up front and passing `--no-build` to the test
-invocations recovers most of that ≈ 1 m 30 s, changes nothing about what runs, and is the cheapest win available.
+Two candidate explanations, and this document must not pick one without evidence:
+
+- **CPU contention.** Stage 1 is `dotnet test DwarfMapper.NET.sln`, which runs the test ASSEMBLIES concurrently.
+  CompilerTests is 52 CPU-bound Roslyn compilations; running it beside 15,458 generator tests inflates its wall
+  clock without any extra work being done. If this is the cause, the per-assembly figures are an artefact and the
+  aggregate stage time is already near-optimal — nothing to win.
+- **Build billed into the leg.** Stage 1 does not pass `--no-build`, so a Release build is inside that
+  invocation. But the gate wrapper builds Debug and Release immediately before, so the build should already be
+  warm and this would account for little.
+
+The first is the more likely reading and would mean there is NO ~1 m 30 s to recover here. **Verify before acting:**
+time stage 1 as a whole with and without `--no-build` after an explicit build, and compare the AGGREGATE, not the
+per-assembly lines. An earlier draft of this file asserted the build explanation outright; that was unverified.
 
 Slowest individual tests outside the fuzz case: `SurfaceParityTests` contributes four tests at 25.2 s, 13.6 s,
 12.8 s and 9.9 s (866 tests, 102 s total), and `GoldenCorpusTests.Generated_output_matches_the_golden_manifest`
@@ -100,6 +111,36 @@ re-bound each referenced assembly's symbols. It now derives from a cached empty 
 Correctness unchanged: 7,386 fast-tier + 15,458 deep + 52 compiler + 880 integration, 0 failures.
 Conclusion: reference binding was NOT the dominant per-compilation cost. What remains is the generator run
 itself plus the full semantic bind of the generated output — which is the work the test exists to do.
+
+## Intervention 2 — per-thread generator driver reuse (TRIED, MEASURED SLOWER, REVERTED)
+
+Hypothesis: `RunAndGetCompilationErrors` builds two generator instances and a fresh `CSharpGeneratorDriver` per
+call — 262,144 times in the power-set fuzz — so a per-thread `[ThreadStatic]` driver, advanced by feeding back
+the driver each run returns, would both skip that construction and let an `IIncrementalGenerator`'s cached steps
+survive between two similar sources.
+
+| Leg | Intervention 1 | With driver reuse | Δ |
+|---|---|---|---|
+| Exhaustion (`DWARF_FUZZ_FULL=1`) | 580 s | **627 s** | **+8 % SLOWER** |
+| Generator.Tests (deep, 15,458) | 111 s | 107 s | −3.6 % |
+| Generator.Tests (fast, 7,386) | 73 s | 66 s | −9.6 % |
+| CompilerTests | 7 s | 7 s | — |
+
+Correctness was unaffected (0 failures everywhere), but the leg this targeted got **worse**, so it was reverted.
+
+Why, most likely: a `GeneratorDriver` carries its incremental state forward, and every one of the 262,144 fuzz
+sources is a DIFFERENT power-set combination. So each run re-keys the cache against a source that shares nothing
+useful with the previous one, and the driver accumulates state it can never reuse — paying for retention on top
+of the work. Driver construction was never the cost; it is dwarfed by the generator run plus the semantic bind.
+
+The smaller suites improved slightly, which is consistent: they have fewer, more similar sources per thread. The
+gain there does not justify carrying thread-static state through a harness used by `Parallel.For`, so the whole
+change was dropped rather than kept for the fast tier alone.
+
+**Recorded because a negative result is a result.** The next person to look at this file should not re-derive the
+same idea and spend another hour on it. What remains, per the cost model, is the irreducible work: ~27 ms of CPU
+per compilation, being the generator pipeline plus Roslyn's full semantic bind of the generated output — which is
+exactly what the test is for.
 
 ## Coverage floors measured in the same run (all PASS)
 
