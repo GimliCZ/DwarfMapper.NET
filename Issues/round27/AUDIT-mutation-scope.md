@@ -23,13 +23,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 70 | 7 | 28,582 | 2,008 | **7.0 %** | 94.5 % |
-| `DwarfMapper` (runtime) | 42 | 6 | 3,431 | 941 | **27.4 %** | 73.9 % |
+| `DwarfMapper.Generator` | 71 | 7 | 30,832 | 2,261 | **7.3 %** | 94.5 % |
+| `DwarfMapper` (runtime) | 42 | 6 | 3,437 | 944 | **27.5 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 4 | 4 | 711 | 711 | **100 %** | 96.2 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **135** | **22** | **35,939** | **4,317** | **12.0 %** | |
+| **all** | **136** | **22** | **38,195** | **4,573** | **12.0 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -40,7 +40,13 @@ branch introduced, found and fixed in the same task) — mutated lines move with
 gate's 1 pp tolerance of where they were. Bumped once more the same day (round 29, T0.3): `DWARF101`'s
 struct-layout measurement added `Pipeline/LayoutHygiene.cs` (273 lines, outside every `mutate` glob) and 25
 lines to `Pipeline/MapperExtractor.Conversions.Arms.cs`, so the denominator grew again and the generator's
-share reads 7.0 % where it read 7.1 %.
+share reads 7.0 % where it read 7.1 %. Re-measured in full 2026-09-06 (round 29, T2.1), which added
+`Pipeline/TransferModelShape.cs` (757 lines, outside every `mutate` glob) and 59 lines to
+`Pipeline/LayoutHygiene.cs`: every column above is the measurement as of that commit rather than an
+increment on the last one, because the line columns had drifted further than the file counts â€” the gate
+pins files EXACTLY and shares to a percentage point, so 2,250 lines of round-29 work had accumulated in the
+generator's denominator (and 253 in `BlittableProof.cs`, inside the glob) without tripping it. The
+generator's share reads 7.3 % where it read 7.0 %, and the headline is unchanged at 12.0 %.
 
 **Round 27 made the generator's share worse, not better.** The seam stage added 6,659 lines across 13 new
 `Pipeline/` files — `MapperExtractor.Phases.cs` (3,398), `.Conversions.Arms.cs` (795),

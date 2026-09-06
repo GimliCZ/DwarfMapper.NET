@@ -34,6 +34,18 @@ namespace DwarfMapper.Generator.Pipeline
     ///         The layout rules live in <see cref="BlittableProof" /> and are read from there rather than
     ///         restated here — one implementation of "what is this struct's layout", never two that can drift.
     ///     </para>
+    ///     <para>
+    ///         Three of the helpers below — <see cref="MeasureMember(ITypeSymbol)" />, <see cref="AsOptional" />
+    ///         and <see cref="LayOut" /> — are visible to the assembly rather than private, on the same footing
+    ///         and for the same reason <see cref="BlittableProof" /> opened five of its own to this file (round
+    ///         29, <c>T0.3</c>): <see cref="TransferModelShape" /> sizes the WOULD-BE struct of a class for the
+    ///         <c>≤32</c> / <c>≤64</c> byte thresholds, and <see cref="Measure" /> cannot answer that — it
+    ///         refuses everything that is not already an unmanaged struct in source, which every class is. So it
+    ///         supplies the members and this file does the arithmetic; a second copy of the alignment rules over
+    ///         there would be free to drift from these without a single test noticing. What lives in
+    ///         <see cref="TransferModelShape" /> is only the POLICY question this file has no answer to — what a
+    ///         reference field is worth — and that policy is why a verdict says whether its size is an estimate.
+    ///     </para>
     /// </summary>
     internal static class LayoutHygiene
     {
@@ -156,8 +168,13 @@ namespace DwarfMapper.Generator.Pipeline
                     return null;
                 }
 
-                var nullableSize = RoundUp(RoundUp(1, inner.Align) + inner.Size, inner.Align);
-                return new Layout(nullableSize, inner.Align, nullableSize - (1 + inner.Size), nullableSize, NoOrder);
+                var optional = AsOptional(inner);
+                return new Layout(
+                    optional.Size,
+                    optional.Align,
+                    optional.Size - (1 + inner.Size),
+                    optional.Size,
+                    NoOrder);
             }
 
             // The fixed-layout BCL types, asked for directly rather than as someone's field. Same contract as
@@ -205,6 +222,23 @@ namespace DwarfMapper.Generator.Pipeline
                 members.Add((field.AssociatedSymbol?.Name ?? field.Name, measured.Size, measured.Align));
             }
 
+            return LayOut(members);
+        }
+
+        /// <summary>
+        ///     Lays out <paramref name="members" /> — name, size and alignment, in DECLARATION order — as a
+        ///     Sequential struct and reports what it costs. The arithmetic every caller shares: a struct's
+        ///     alignment is its largest member's, each member sits at the next multiple of its own alignment,
+        ///     and the total rounds up to the struct's.
+        ///     <para>
+        ///         <see cref="Layout.PackedOrder" /> sorts by ALIGNMENT descending, not by size — the trap
+        ///         round 29 <c>T0.3b</c> wrote down, since a 16-byte 4-aligned <c>Guid</c> packs AFTER an
+        ///         8-byte <c>long</c>. The sort is stable, so ties keep the consumer's declaration order and the
+        ///         remedy reads as an edit of their file rather than a reshuffle they cannot account for.
+        ///     </para>
+        /// </summary>
+        public static Layout LayOut(IReadOnlyList<(string Name, int Size, int Align)> members)
+        {
             var alignment = 1;
             var payload = 0;
             foreach (var member in members)
@@ -219,9 +253,6 @@ namespace DwarfMapper.Generator.Pipeline
 
             var declaredSize = SizeOf(members, alignment);
 
-            // OrderByDescending is a STABLE sort, which is the whole rule for ties: two one-byte fields keep
-            // the order the consumer declared them in, so the remedy reads as an edit of their file rather
-            // than as a reshuffle they cannot account for.
             var packed = members.OrderByDescending(m => m.Align).ToList();
             var names = new List<string>(packed.Count);
             foreach (var member in packed)
@@ -230,6 +261,28 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return new Layout(declaredSize, alignment, declaredSize - payload, SizeOf(packed, alignment), names);
+        }
+
+        /// <summary>
+        ///     One member's (size, alignment) — a primitive at its own width, an enum at its underlying
+        ///     primitive's, one of the four fixed-layout BCL structs at its documented layout, a nested struct
+        ///     at its measured size. <see langword="null" /> for anything whose width this generator may not
+        ///     claim, which the caller must treat as a refusal and never as zero.
+        /// </summary>
+        public static (int Size, int Align)? MeasureMember(ITypeSymbol type)
+        {
+            return MeasureMember(type, 0);
+        }
+
+        /// <summary>
+        ///     What <paramref name="inner" /> costs once it is optional: <c>Nullable&lt;T&gt;</c> is
+        ///     <c>{bool hasValue; T value}</c>, so the flag is padded up to T's alignment and the whole rounds
+        ///     up to it again. Shared with the <c>Nullable&lt;T&gt;</c> arm of <see cref="MeasureStruct" /> so
+        ///     an optional NESTED transfer model and an optional field are costed by one rule.
+        /// </summary>
+        public static (int Size, int Align) AsOptional((int Size, int Align) inner)
+        {
+            return (RoundUp(RoundUp(1, inner.Align) + inner.Size, inner.Align), inner.Align);
         }
 
         /// <summary>
@@ -311,7 +364,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>Lays the members out in the order given and returns the struct size that results.</summary>
-        private static int SizeOf(List<(string Name, int Size, int Align)> members, int alignment)
+        private static int SizeOf(IReadOnlyList<(string Name, int Size, int Align)> members, int alignment)
         {
             var offset = 0;
             foreach (var member in members)
