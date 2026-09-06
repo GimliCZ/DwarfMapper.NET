@@ -105,7 +105,10 @@ so a version with no section here ships with no notes.
   still fine.) Reported once per element pair per mapper. Over the 938-case combinatorial corpus it fires on 5,
   every one a `List<record>` of a positional data record — which is the shape it exists for.
 
-- **Code fix for `DWARF103`: *Convert 'X' (and N nested transfer models) to readonly record struct*.** One
+- **Code fix for `DWARF103`: *Convert 'X' (and N nested transfer models) to readonly record struct; call
+  sites are not updated and may stop compiling*.** The second half of that title is not decoration: the
+  rewrite deliberately leaves your usages alone, the consequence lands as CS1612/CS0037 in OTHER files, and
+  Roslyn's preview shows one document — so the title is the only place you can be told before you click. One
   action, one solution change: it rewrites the element type's declaration — every `partial` half of it, in
   whichever file it lives — and the declarations of every transfer model that type INLINES, transitively.
   **The transitivity is not a convenience.** The size `DWARF103` prints counts a nested transfer model at the

@@ -134,9 +134,31 @@ namespace DwarfMapper.CodeFixes
         }
 
         /// <summary>
+        ///     What a consumer is told the action will do to code it is not going to touch. Appended to every
+        ///     arm of <see cref="Title" />.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>The title is the only place this can be said.</b> The rewrite deliberately leaves usages
+        ///         alone — that is the whole "loud over silent" bargain — but the consequence lands as
+        ///         CS1612/CS0037 in OTHER files, and Roslyn's preview shows the diff for one document. So a
+        ///         person who clicks "Convert 'X' to readonly record struct" and reads nothing else has been
+        ///         told a true thing that is not the whole thing, and finds out from the error list.
+        ///     </para>
+        ///     <para>
+        ///         Worded as "are not updated AND may stop compiling" rather than "may need updating", because
+        ///         the two facts are different and only one of them is guessable from the other: the fix
+        ///         declining to edit usages is a decision, and a build that stops is the consequence. "May"
+        ///         is honest — a usage that only reads members survives untouched.
+        ///     </para>
+        /// </remarks>
+        private const string CallSiteWarning = "; call sites are not updated and may stop compiling";
+
+        /// <summary>
         ///     The action's title. The plan's wording, with the parenthetical dropped when there is nothing to
         ///     put in it and singularised when there is one — "and 0 nested transfer models" describes the
-        ///     commonest case of all and reads as a defect.
+        ///     commonest case of all and reads as a defect — and <see cref="CallSiteWarning" /> on the end of
+        ///     every arm.
         /// </summary>
         private static string Title(string targetId, int nestedCount)
         {
@@ -144,9 +166,9 @@ namespace DwarfMapper.CodeFixes
 
             return nestedCount switch
             {
-                0 => $"Convert '{name}' to readonly record struct",
-                1 => $"Convert '{name}' (and 1 nested transfer model) to readonly record struct",
-                _ => $"Convert '{name}' (and {nestedCount.ToString(CultureInfo.InvariantCulture)} nested transfer models) to readonly record struct"
+                0 => $"Convert '{name}' to readonly record struct{CallSiteWarning}",
+                1 => $"Convert '{name}' (and 1 nested transfer model) to readonly record struct{CallSiteWarning}",
+                _ => $"Convert '{name}' (and {nestedCount.ToString(CultureInfo.InvariantCulture)} nested transfer models) to readonly record struct{CallSiteWarning}"
             };
         }
 

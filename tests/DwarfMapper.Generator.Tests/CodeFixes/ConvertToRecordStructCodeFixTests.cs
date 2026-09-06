@@ -443,22 +443,34 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         ///         parenthetical is dropped, because "(and 0 nested transfer models)" describes the commonest
         ///         case of all and reads as a defect.
         ///     </para>
+        ///     <para>
+        ///         <b>And every arm ends by saying what happens to code the action does not touch.</b> The
+        ///         rewrite leaves usages alone on purpose, but the consequence lands as CS1612/CS0037 in OTHER
+        ///         files, and Roslyn's preview shows one document's diff — so the title is the only place a
+        ///         consumer can be told before they click. Pinned on all three arms rather than one, because a
+        ///         warning present in the common case and missing from the nested ones is the shape a
+        ///         refactor produces.
+        ///     </para>
         /// </summary>
         [Fact]
-        public async Task The_title_names_the_type_and_counts_the_models_it_carries()
+        public async Task The_title_names_the_type_counts_the_models_and_warns_about_call_sites()
         {
             var flat = Assert.Single(await _fixture.OfferAsync(Flat).ConfigureAwait(true));
-            Assert.Equal("Convert 'OrderDto' to readonly record struct", flat.Title);
+            Assert.Equal(
+                "Convert 'OrderDto' to readonly record struct; call sites are not updated and may stop compiling",
+                flat.Title);
             Assert.Equal("DWARF103_ConvertToRecordStruct", flat.EquivalenceKey);
 
             var one = Assert.Single(await _fixture.OfferAsync(OneNested).ConfigureAwait(true));
             Assert.Equal(
-                "Convert 'OrderDto' (and 1 nested transfer model) to readonly record struct",
+                "Convert 'OrderDto' (and 1 nested transfer model) to readonly record struct; " +
+                "call sites are not updated and may stop compiling",
                 one.Title);
 
             var two = Assert.Single(await _fixture.OfferAsync(TwoLevels).ConfigureAwait(true));
             Assert.Equal(
-                "Convert 'OrderDto' (and 2 nested transfer models) to readonly record struct",
+                "Convert 'OrderDto' (and 2 nested transfer models) to readonly record struct; " +
+                "call sites are not updated and may stop compiling",
                 two.Title);
         }
 
