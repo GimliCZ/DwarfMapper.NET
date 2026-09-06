@@ -61,12 +61,17 @@ crashes that config's `break: 87`. Two facts from that run decided it was not a 
 - **26 of the 43 survivors are in the new file, and roughly half are provably equivalent** — three
   `ConfigureAwait(false)` flips, the two `converted.Add` lines that add the same symbol for a non-generic
   type, `Short`'s strip-the-`T:` branch which is a no-op for any namespaced id. Even a complete kill program
-  lands near **85 %**, *below* the current break: the raw ceiling has moved, and re-pinning it needs the
-  per-mutant case analysis `Issues/ledgers/codefixes-mutation-survivors.md` holds for the existing 23, not a
-  number chosen to fit.
+  over *the mutants that ran* lands near **85 %**, *below* the current break — and that figure is not itself
+  a ceiling, because the run's mutant set was truncated by the safe-mode removal in the next bullet. The raw
+  ceiling has moved either way, and re-pinning it needs the per-mutant case analysis
+  `Issues/ledgers/codefixes-mutation-survivors.md` holds for the existing 23, not a number chosen to fit.
 - **Stryker's safe mode removed every mutation in `Convert` and `ObliviousNestedMembers`** — the two methods
   that perform the rewrite — because two mutants there hit CS0165 and CS1503. That run scored the new file
   on its periphery and would have said almost nothing about the code that edits a consumer's source.
+
+The 43 survivors split 3 + 5 + 3 + 12 = 23 across the four existing providers and 26 in the new file; those
+23 are exactly the set that ledger already dispositions, so nothing in T2.3 moved them and the four-file
+leg's standing 87.01 % continues to describe it unchanged.
 
 So the file stays out of the leg until a task does the kill program properly, and the debt is recorded HERE,
 where this scan pins it exactly and it cannot rot. The headline falls to **11.5 %** from 12.0 % — the
