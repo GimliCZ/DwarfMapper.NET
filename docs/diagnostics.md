@@ -1960,7 +1960,8 @@ the line you edit — and it is reported once per type however many members reac
 - **What it buys.** Measured on this exact shape (`Issues/round29/RESEARCH-hardware-mode.md`, row **D. layout
   hygiene**): the packed pair blits in **0.57×–0.62×** the time of the padded one and allocates **0.60×** the
   memory. The saving is the same 40 % whether the pair takes the block copy or the element loop — it is the
-  array that got smaller.
+  array that got smaller. Three iterations on one machine, so the ratio is the finding and the absolute
+  times are not — see [`PERFORMANCE.md`](PERFORMANCE.md) for the error bars and the caveats.
 - **Reorder BOTH sides of a pair.** The block copy needs the two element types to be layout-identical, so
   packing only the destination breaks that and drops the pair back to the element loop — and `dwarf100` will
   not say so either, because two field lists that no longer line up positionally are an ordinary mapping
@@ -2016,17 +2017,25 @@ keeps its `?`.
 
 **It does not update your call sites**, which is why the title says so before it says anything else — that
 clause leads because it is the half that has to survive a truncated lightbulb entry. Leaving usages alone is
-deliberate rather than an omission: every way a struct differs from a class shows up there as a *compile
-error* rather than as a silent change, and that is what makes the suggestion safe to offer at all. **Read the
-hazards first** — unlike the other performance hints, this one asks for a change of *meaning*:
+deliberate rather than an omission: *most* of the ways a struct differs from a class show up there as a
+*compile error* rather than as a silent change, and that is what makes the suggestion worth offering at all.
+**Read the hazards first** — unlike the other performance hints, this one asks for a change of *meaning*, and
+the table says which halves the compiler catches for you and which it does not.
 
-- A struct has **no reference identity**. Two elements that were the same object become two copies.
-- A struct **cannot be `null`**. `OrderDto?` becomes `Nullable<OrderDto>`, and `== null` stops compiling.
-- A struct **cannot be mutated through an indexer**: `list[i].Quantity = 5` is CS1612.
-- `default` replaces `null` as the "no value" state, and a constructor is not run for it.
+| Hazard | What breaks | How you find out | What to do |
+|---|---|---|---|
+| **Aliasing is gone** | Two references to one object become **two independent copies**. A write through one is no longer visible through the other, and the two are no longer the same thing. | **Nothing tells you.** | This is the row to check by hand. Before taking the fix, find every place an element is stored twice, passed on and kept, or mutated after being handed somewhere — if any of them relied on sharing, do not convert the type. |
+| **`default` instead of `null`** | A struct has no null state. An absent element becomes a **zeroed struct whose constructor never ran**, not a missing one. | Compile error where `null` was written (`CS0037`/`CS0403`); **silent** where a slot was simply left unassigned. | Make the member `Nullable<T>` (`OrderDto?` → `Nullable<OrderDto>`) if "absent" is a state you rely on. |
+| **`Nullable<T>` boxes through `object`** | A `T?` that crosses an `object`, `dynamic` or non-generic-interface boundary **allocates** — the allocation the conversion just removed, back one per crossing. | Silent; it shows up as a performance regression, not an error. | Keep the optional inside typed code; do not funnel it through `object`-typed caches, `IList`, or a reflective serializer path. |
+| **`list[i].X = v` is `CS1612`** | The indexer returns a **copy**, so mutating an element in place cannot compile. | Compile error (`CS1612`). | Read-modify-write the whole element: `list[i] = list[i] with { X = v }`. |
+| **Value equality replaces reference equality** | `==`, `Equals` and anything built on them (`Contains`, `Distinct`, a `HashSet`/`Dictionary` keyed by the element) start comparing **fields** instead of identity, so two distinct-but-equal elements become one. | Silent. | **Usually this is the behaviour you wanted** — for a transfer model, value equality is the point, which is why it is a feature rather than a hazard. It is listed so it is not a surprise in a `HashSet` that used to keep duplicates. |
+| **System.Text.Json needs `[JsonConstructor]`** | A `readonly record struct` with a parameterized constructor deserializes with **every property silently defaulted** unless the constructor is marked (`dotnet/runtime` [#82929](https://github.com/dotnet/runtime/issues/82929), [#94443](https://github.com/dotnet/runtime/issues/94443)). | **Silent, at run time** — you get a fully-populated-looking object of zeros. | Put `[JsonConstructor]` on the primary constructor of any converted type you deserialize. |
+| **EF Core: complex types yes, entities and struct collections no** | EF 8+ maps a value type as a **complex type**, but not as an entity; collections of struct complex types are not supported, and `SqlQuery<T>` requires a reference type. | Error at the EF layer, at model build or query time. | Transfer models on the wire and in memory, yes; persistence models, no. The diagnostic already refuses an entity-shaped type (see *When it stays quiet*), so this is about types you convert by hand. |
 
-Every one of those is a **compile error**, not a silent change, which is why the suggestion is worth making
-at all — and why the diagnostic is informational. Ignoring it is a legitimate answer.
+So: `list[i].X = v` and a written `null` stop compiling, and that is the safety the fix is built on — but
+**aliasing, `Nullable<T>` boxing, value equality and JSON deserialization do not**. The aliasing row is the
+one that can change behaviour in complete silence, and it is the reason to read the usages rather than trust
+the build. The diagnostic is informational for the same reason: ignoring it is a legitimate answer.
 
 - **What it buys.** Measured on a four-class DTO tree decomposed into nested structs
   (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): **0.30× the time** at 1,000 elements — 3.3×
@@ -2035,6 +2044,11 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   ≈0.08–0.11× the time), with 43 % less memory. **Both figures are speed-ups where they say "faster" and
   time ratios where they say "the time"** — mixing the two is how a 2.2× win reads as a 2.2× loss. Your
   numbers depend on your types; the message states the mechanism, and these are the measurements behind it.
+  **Those runs are three iterations on one machine**, so the ratios are stable and the absolute times are
+  not — the order of magnitude is the finding, the precise percentage is not. Read
+  [`PERFORMANCE.md`](PERFORMANCE.md) before quoting any of them: it carries the error bars, what the code fix
+  delivers on its own against what needs both sides converted, and the ideas from the same study that
+  measured *slower*.
 - **The size in the message is the would-be struct's**, not the class object's, and it is stated as a bound
   ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
   number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
@@ -2061,7 +2075,10 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   than implying it was settled. It covers **whichever of the two types earned it**, in one sentence: if the
   message named your source element as well, and both are public and unsealed, both are named here.
 
-**When it stays quiet**, which is nearly always:
+**When it stays quiet**, which is nearly always. The code fix declines the same shapes from its own side, so
+the lightbulb can never offer a rewrite the diagnostic would not have suggested — the two refusals below that
+this round tightened (a **generic** transfer model in any form, and an **entity-shaped or behaviour-bearing**
+type, which was never eligible) are enforced in both places:
 
 - **The element type is already a struct**, or is not a class at all.
 - **The element type is GENERIC**, open or fully constructed, or is nested inside a generic. `Box<int>` has a

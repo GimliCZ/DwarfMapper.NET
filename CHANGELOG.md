@@ -70,6 +70,29 @@ so a version with no section here ships with no notes.
   still throws inside the callee's own `ArgumentNullException.ThrowIfNull`, while a forgiven *result* is
   silently stored.
 
+- **Transfer models as structs — one feature in four parts, documented as one.** `DWARF103` finds a mapped
+  collection whose element type could be a `readonly record struct` and prints the size you would get; the
+  code fix performs the rewrite transitively (the element type and every transfer model it inlines);
+  `DWARF101` names the field order that packs such a struct; and `DWARF106` reports the one place
+  `[Reinterpret]` overrides something you wrote. Each is detailed below. Two documents were added for the
+  feature as a whole:
+  - **[`docs/diagnostics.md`](docs/diagnostics.md#dwarf103) now carries a hazards table** for converting a
+    class to a `readonly record struct` — aliasing, `default` instead of `null`, `Nullable<T>` boxing through
+    `object`, `CS1612` on `list[i].X = v`, value equality, `[JsonConstructor]` for System.Text.Json, and EF
+    Core's complex-type-yes / entity-and-struct-collection-no rule — with the four the compiler **cannot**
+    catch marked as such. The earlier claim that every difference surfaces as a compile error was too strong
+    and has been scoped: aliasing in particular changes behaviour in silence, which is why the fix leaves
+    your call sites alone rather than why it is safe.
+  - **[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) is new: what the struct-DTO numbers mean, and what they do
+    not.** The measured wins, the measured **losers** in the same section (column transpose 1.82–2.93×
+    *slower*, byte-shuffle permutes slower or inside the noise, `TensorPrimitives` only below the cache, span
+    blit neutral above L2) — they are the reason no SIMD path was built — the `Job=short`/3-iteration error
+    bars beside the figures rather than under them, and an explicit split between what the code fix delivers,
+    what a change to your own types buys, and what was measured but **not built** (`readonly ref struct`
+    views, the shared-arena result shape). It also records that the GC-scan probe was a null instrument, not
+    a negative finding: both arrays were alive in both arms. The README's *Transfer models as structs*
+    section carries the same tables in short form.
+
 - **`DWARF103` (Info) — a mapped collection builds one class element per item, and that element type could be
   a `readonly record struct`.** Reported at the MAPPING SITE, never on the type: the allocation is paid once
   per element, and a type-level rule would fire on every DTO in a solution. The message names the pair, what

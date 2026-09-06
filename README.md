@@ -868,6 +868,65 @@ See [`docs/RELEASING.md`](docs/RELEASING.md) for step-by-step verification (fing
   `MemoryMarshal.Cast<TSrc, TDest>` (and `Vector.Widen` for primitive widening) — whole-array only, not member-run
   coalescing.
 
+### Transfer models as structs
+
+The largest speed-up available to a mapped collection is not in the copy — it is in **where the copy lands**. A
+collection of class elements allocates one heap object per element (allocation, zeroing, an object header, a write
+barrier, eventual Gen1/Gen2 promotion); the same collection of `readonly record struct` elements is **one** allocation.
+`DWARF103` finds the element types where that swap is safe, prints the size you would get, and the IDE lightbulb
+performs the rewrite — the element type and every transfer model it inlines, transitively. `DWARF101` names a field
+order that packs such a struct.
+
+**Read the methodology before the numbers, because it is short and it bounds them.** BenchmarkDotNet 0.14.0, AMD Ryzen
+5 5600, Windows 10, .NET 10.0.11, `Job=short` with **3 iterations** — one machine, one OS, x64. At that iteration count
+the *absolute* error bars are wide (on several rows the reported error exceeds the mean), while the *ratios* are stable
+(`RatioSD` 0.00–0.08 on the compared rows at N = 100,000). **Treat the order of magnitude as the finding and the
+precise percentage as noise.** Raw output in [`Issues/round29/`](Issues/round29/); the full caveats, including what
+these probes are *not*, are in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+**What the code fix delivers**, N = 100,000, ratios against the class-shaped baseline (lower is faster). The fix
+converts the *destination* type, which is the **gather** column; the **blit** column additionally needs the source to
+be structs, which is a change on the other side of the mapping that the fix does not make:
+
+| Shape | Baseline (classes) | Gather (target converted) | Blit (both sides) | Allocated | Source |
+|---|---:|---:|---:|---|---|
+| 4-class DTO tree → nested structs | 20.0 ms | **1.80 ms** (0.09x) | 0.92 ms (0.05x) | 18.4 → 6.4 MB (0.35x) | `plan-results.md`, `D_tree` |
+| DTO with an optional nested member | 14.6 ms | **1.59 ms** (0.11x) | 0.92 ms (0.06x) | 10.4 → 4.8 MB (0.46x) | `plan2-results.md`, `A_optional` |
+| 40-byte struct repacked to 24 (`DWARF101`) | 812 µs | — | **500 µs** (0.62x) | 4.0 → 2.4 MB (0.60x) | `plan2-results.md`, `D_layout` |
+
+At N = 1,000 the first two are 0.30x rather than 0.09x/0.11x: the win grows with N because what it removes is an
+allocation per element. Larger results still — a shared-arena result shape (0.17x) and `readonly ref struct` views over
+the source (0.04x, zero allocation) — were measured in the same study and **DwarfMapper does not emit either**; they
+are listed, with that caveat attached, in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md#2b-changes-to-your-own-types-that-dwarfmapper-does-not-make).
+
+**And what measured *slower*.** These are published here rather than in an appendix because they are the reason this
+round shipped two diagnostics and a code fix instead of a vectorized copy path — ratios above 1.00 are **slower** than
+the plain scalar loop they would have replaced:
+
+| Idea | N = 1,000 | N = 100,000 | Verdict |
+|---|---:|---:|---|
+| Column transpose, then SIMD, for mixed field widths | **2.93x slower** | **1.82x slower** | rejected |
+| 12-byte struct permuted by byte shuffle | **2.21x slower** | **1.35x slower** | rejected |
+| 16-byte struct permuted by one byte shuffle | 0.77x | 0.95x | inside the noise; not built |
+| `TensorPrimitives` widening | 0.60x | 0.97x | helps only while the buffer is cache-resident |
+| Span blit vs the element loop | 0.21x | 0.98x | real for small buffers, bandwidth-bound above L2 |
+| Span over a *class's* field block instead of converting it | 0.68x | 1.00x | ~1 ns/element, and silently wrong on an auto-layout class |
+| Dropping reference members to speed the GC scan | 1.04x | 1.13x | no gain measured — and the probe could not isolate the variable |
+
+Two results worth stating in prose, because both catch people out:
+
+- **A single `string` leaf in an otherwise blittable gather costs 33–55 %** — 1.55x at N = 1,000 and 1.33x at
+  N = 100,000, pairwise against the same struct holding an integer id (`plan2-results.md`, `C_gather`). A reference
+  field means a GC write barrier per element store and keeps the whole destination array GC-scannable.
+- **Removing reference members did not make the GC scan cheaper — and that experiment cannot prove it would not.**
+  The forced-collection probe reports 1.13x (the reference-free arm marginally *slower*), but both arrays were alive
+  in both arms, so it measured a full GC with the whole fixture live and isolated nothing. It is reported as a null
+  instrument rather than as a negative finding; see [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+Every hazard of converting a class to a `readonly record struct` — aliasing, `default` for `null`, `Nullable<T>`
+boxing, `CS1612`, value equality, `[JsonConstructor]`, EF Core — is tabulated under
+[`DWARF103`](docs/diagnostics.md#dwarf103), with the four that the compiler does **not** catch marked as such.
+
 ---
 
 ## Packages
