@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text;
 using DwarfMapper.Generator.Core;
@@ -58,6 +58,7 @@ namespace DwarfMapper.Generator.Pipeline
                     candidates.Add(new ExtCandidate(
                         method.ParameterTypeFullName,
                         method.ReturnTypeFullName,
+                        method.ReturnTypeSignature ?? method.ReturnTypeFullName,
                         extName,
                         mapperFullName,
                         method.MethodName,
@@ -120,7 +121,7 @@ namespace DwarfMapper.Generator.Pipeline
                 sb.Append("    /// <summary>Maps <c>").Append(c.SourceType).Append("</c> to <c>")
                     .Append(c.TargetType).Append("</c>.</summary>").Append('\n');
                 sb.Append("    ").Append(publicExtensions && c.SourceIsPublic && c.TargetIsPublic ? "public" : "internal")
-                    .Append(" static ").Append(c.TargetType).Append(' ').Append(c.ExtName)
+                    .Append(" static ").Append(c.TargetTypeSignature).Append(' ').Append(c.ExtName)
                     .Append("(this ").Append(c.SourceType).Append(" source)").Append('\n');
                 sb.Append("        => ").Append(FieldName(c.MapperFullName)).Append('.')
                     .Append(c.MapperMethod).Append("(source);").Append('\n');
@@ -194,12 +195,12 @@ namespace DwarfMapper.Generator.Pipeline
         public static (string? Source, IReadOnlyList<string> Unregisterable) EmitAmbientRegistration(
             IReadOnlyList<MapperClassModel> models)
         {
-            var regs = new List<(string Source, string Dest, string Field, string Method)>();
+            var regs = new List<(string Source, string Dest, string Field, string Method, bool MayReturnNull)>();
             var updateRegs = new List<(string Source, string Dest, string Field, string Method)>();
             var seenUpdatePairs = new HashSet<string>(StringComparer.Ordinal);
             var handWrittenRegs = new List<(string Source, string Dest, string Invoker, string Method)>();
             var seenHandWritten = new HashSet<string>(StringComparer.Ordinal);
-            var collectionRegs = new List<(string Source, string Dest, string Field, string Method, bool AsArray)>();
+            var collectionRegs = new List<(string Source, string Dest, string Field, string Method, bool AsArray, bool MayReturnNull)>();
             var seenCollectionPairs = new HashSet<string>(StringComparer.Ordinal);
             var fields = new SortedSet<string>(StringComparer.Ordinal);
             var unregisterable = new List<string>();
@@ -245,7 +246,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                     fields.Add(mapperFullName);
                     regs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName, FieldName(mapperFullName),
-                        method.MethodName));
+                        method.MethodName, method.ReturnIsNullableRef));
 
                     if (!model.RegisterCollectionShapes)
                     {
@@ -256,7 +257,7 @@ namespace DwarfMapper.Generator.Pipeline
                         if (seenCollectionPairs.Add(method.ParameterTypeFullName + " " + dest))
                         {
                             collectionRegs.Add((method.ParameterTypeFullName, dest, FieldName(mapperFullName),
-                                method.MethodName, asArray));
+                                method.MethodName, asArray, method.ReturnIsNullableRef));
                         }
                 }
 
@@ -352,7 +353,13 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var r in regs)
                 sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(")
                     .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
-                    .Append(r.Field).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s));")
+                    .Append(r.Field).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s)")
+                    // The registry's delegate type is the SHIPPED Func<object, object>, so a map the user declared
+                    // to return a nullable reference cannot satisfy it. Coalescing to a loud exception keeps the
+                    // registration (dropping it would silently delete a working consumer's ambient map) and names
+                    // the pair at the point of violation, instead of handing a null to a non-nullable delegate and
+                    // letting it surface as an NRE somewhere downstream. Round 29 task 2.8.
+                    .Append(RegistryNullGuard(r.Source, r.Dest, r.MayReturnNull)).Append(");")
                     .Append('\n');
 
             if (collectionRegs.Count > 0)
@@ -373,7 +380,8 @@ namespace DwarfMapper.Generator.Pipeline
                 sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(").Append(src)
                     .Append("), typeof(").Append(r.Dest).Append("), static __s => { var __r = new ").Append(listOf)
                     .Append("(); foreach (var __e in (").Append(src).Append(")__s) __r.Add(").Append(r.Field)
-                    .Append('.').Append(r.Method).Append("(__e)); return ")
+                    .Append('.').Append(r.Method).Append("(__e)")
+                    .Append(RegistryNullGuard(r.Source, ElementOf(r.Dest), r.MayReturnNull)).Append("); return ")
                     .Append(r.AsArray ? "__r.ToArray()" : "__r").Append("; });").Append('\n');
             }
 
@@ -507,6 +515,31 @@ namespace DwarfMapper.Generator.Pipeline
 
             var open = destinationShape.IndexOf('<');
             return destinationShape.Substring(open + 1, destinationShape.Length - open - 2);
+        }
+
+        /// <summary>
+        ///     The <c>?? throw …</c> tail an ambient registration needs when the map it forwards to was DECLARED
+        ///     with a nullable reference return, and the empty string otherwise (so every other registration stays
+        ///     byte-identical).
+        ///     <para>
+        ///         <c>DwarfMapperRegistry.Register</c> takes a <c>Func&lt;object, object&gt;</c> — non-nullable, and
+        ///         shipped public API — so a <c>Dst?</c>-returning map cannot honestly be registered. The three
+        ///         answers were: annotate nothing and keep emitting <c>CS8603</c>/<c>CS8604</c> into a <c>.g.cs</c>
+        ///         the consumer cannot suppress; drop the registration, which silently deletes an ambient map that
+        ///         works today for anyone not building with <c>TreatWarningsAsErrors</c>; or assert the contract at
+        ///         the boundary. This is the third. It cannot fire from a body the generator constructs (a create-map
+        ///         always returns a <c>new</c> instance), but a <c>[MapConstructor]</c> factory declared to return
+        ///         null reaches it, and then it names the pair instead of surfacing as an NRE two frames away.
+        ///     </para>
+        /// </summary>
+        private static string RegistryNullGuard(string source, string destination, bool mayReturnNull)
+        {
+            return mayReturnNull
+                ? " ?? throw new global::System.InvalidOperationException(\"DwarfMapper: the map '" + source +
+                  "' -> '" + destination + "' returned null, but its ambient registration resolves through " +
+                  "Func<object, object> and cannot carry a null. Declare the map's return type non-nullable, " +
+                  "or call the mapper directly.\")"
+                : "";
         }
 
         /// <summary>
@@ -678,6 +711,7 @@ namespace DwarfMapper.Generator.Pipeline
             public ExtCandidate(
                 string sourceType,
                 string targetType,
+                string targetTypeSignature,
                 string extName,
                 string mapperFullName,
                 string mapperMethod,
@@ -686,6 +720,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 SourceType = sourceType;
                 TargetType = targetType;
+                TargetTypeSignature = targetTypeSignature;
                 ExtName = extName;
                 MapperFullName = mapperFullName;
                 MapperMethod = mapperMethod;
@@ -695,7 +730,16 @@ namespace DwarfMapper.Generator.Pipeline
 
             public string SourceType { get; }
 
+            /// <summary>The pair's identity: the short name is taken from it, and it is what the two dedup keys compare.</summary>
             public string TargetType { get; }
+
+            /// <summary>
+            ///     <see cref="TargetType" /> as the forwarding method must DECLARE it — annotations included. The
+            ///     facade calls a method the user declared, and the compiler reads that DECLARATION, so a
+            ///     <c>partial Dst? Map(Src s)</c> forwarded by a <c>Dst</c>-returning extension is CS8603 inside
+            ///     <c>DwarfMapper.Extensions.g.cs</c>, where no consumer #pragma reaches. Round 29 task 2.8.
+            /// </summary>
+            public string TargetTypeSignature { get; }
 
             public string ExtName { get; }
 

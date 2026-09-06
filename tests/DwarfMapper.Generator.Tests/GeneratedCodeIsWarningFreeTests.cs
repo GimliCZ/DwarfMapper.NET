@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using DwarfMapper.Generator.Tests.Fuzzing;
@@ -342,6 +342,30 @@ namespace DwarfMapper.Generator.Tests
                                                public partial void Update(Src? s, Dst d);
                                            }
                                            """
+            ];
+
+            // The RETURN half, round 29 task 2.8. Three shapes on one mapper because they fail in three
+            // different files: the scalar `Dst?` is silent on the partial and lands CS8603/CS8604 in
+            // DwarfMapper.Extensions.g.cs and DwarfMapper.AmbientRegistration.g.cs, the generic `List<Dst?>` is
+            // CS8819 + CS8619 on the partial itself, and the update-into destination parameter — spelled from
+            // the same ReturnTypeFullName — is CS8611. No schema in this file had ever declared a nullable
+            // return, which is why the oracle ran clean over all of it.
+            yield return
+            [
+                "NullableReturnType", """
+                                      using System.Collections.Generic;
+                                      using DwarfMapper;
+                                      namespace Demo;
+                                      public sealed class Src { public int Id { get; set; } }
+                                      public sealed class Dst { public int Id { get; set; } }
+                                      [DwarfMapper]
+                                      public partial class M
+                                      {
+                                          public partial Dst? Map(Src s);
+                                          public partial List<Dst?> Many(List<Src> s);
+                                          public partial void Update(Src s, Dst? d);
+                                      }
+                                      """
             ];
         }
 

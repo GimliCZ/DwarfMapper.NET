@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using Microsoft.CodeAnalysis;
@@ -852,6 +852,157 @@ namespace DwarfMapper.Generator.Tests
                 """;
             var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
             Assert.DoesNotContain("CS0618", generated, StringComparison.Ordinal);
+        }
+
+        // -- 8. a nullable RETURN type, which is three different defects wearing one name ---------------------
+        // Round 29 task 2.8, defect A. Task 2.7 recorded this and deliberately did not fix it, because the
+        // obvious patch is measurably wrong: ReturnTypeFullName is the pair's identity (the `new` target, the
+        // typeof operand, the registry key), and annotating it in place trades CS8611 for CS8628. What the
+        // shapes below measure is that the defect is not one thing:
+        //
+        //   * a GENERIC nullable return (`List<Dst?>`) is CS8819 on the partial itself, plus CS8619 on the value
+        //     the collection helper returns — a signature defect, and the signature field answers it;
+        //   * a SCALAR nullable return (`Dst?`) is SILENT on the partial (a stricter return is always safe) and
+        //     lands 8 diagnostics in the two AGGREGATE files instead, which no signature field can reach;
+        //   * the update-into DESTINATION parameter is spelled from the same string, so `void Update(Src s,
+        //     Dst? d)` dropped its '?' the way task 2.7's source parameter did — CS8611, one parameter over.
+
+        private const string NullableScalarReturn = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst? Map(Src s); }
+            }
+            """;
+
+        private const string NullableGenericReturn = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial List<Dst?> Many(List<Src> s); }
+            }
+            """;
+
+        private const string NullableUpdateIntoTarget = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial void Update(Src s, Dst? d); }
+            }
+            """;
+
+        private const string NullableUpdateIntoTargetWithNonNullableReturn = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst Update(Src s, Dst? d); }
+            }
+            """;
+
+        private const string NullableUpdateIntoReturn = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int V { get; set; } }
+                public class Dst { public int V { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst? Update(Src s, Dst d); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_scalar_return_emits_no_CS8603_or_CS8604_in_the_aggregate_files()
+        {
+            // RED: 8 diagnostics, none of them in the mapper's own file — CS8603 in DwarfMapper.Extensions.g.cs
+            // (the facade declared `Dst ToDst(...)` while forwarding to a `Dst?`-returning map), CS8603 on the
+            // registry lambda, and one CS8604 for each of the six collection shapes' `List<Dst>.Add`.
+            AssertWarningFree(NullableScalarReturn, "partial Dst? Map(Src s)");
+        }
+
+        [Fact]
+        public void Nullable_scalar_return_is_declared_by_the_facade_and_asserted_by_the_registry()
+        {
+            // The two aggregates answer the same fact differently, because their type systems differ: the facade
+            // CAN express the nullability and does; the registry's delegate is the SHIPPED Func<object, object>
+            // and cannot, so it asserts the contract at the boundary rather than dropping the registration (which
+            // would silently delete an ambient map that works today for anyone not using TreatWarningsAsErrors).
+            var all = GeneratorTestHarness.RunAll(NullableScalarReturn, NullableContextOptions.Enable).GeneratedSource;
+
+            Assert.Contains("static global::T.Dst? ToDst(this global::T.Src source)", all, StringComparison.Ordinal);
+            Assert.Contains("Map((global::T.Src)__s) ?? throw new global::System.InvalidOperationException(", all, StringComparison.Ordinal);
+            Assert.Contains("Map(__e) ?? throw new global::System.InvalidOperationException(", all, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_non_nullable_return_registers_without_a_null_guard()
+        {
+            // The other half of the previous test: the guard is emitted for the declared shape ONLY, so no
+            // existing registration moves. Without this, "coalesce every registration" would pass the suite too.
+            var all = GeneratorTestHarness.RunAll(NullableSourceParameter, NullableContextOptions.Enable).GeneratedSource;
+
+            Assert.Contains("global::DwarfMapper.DwarfMapperRegistry.Register(", all, StringComparison.Ordinal);
+            Assert.DoesNotContain("?? throw", all, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_new_target_stays_annotation_free_when_the_return_slot_gains_an_annotation()
+        {
+            // The guard on the whole design, and the reason task 2.7 reverted the one-line patch: the emitter
+            // writes `new ReturnTypeFullName { … }` and the registry writes `typeof(ReturnTypeFullName)`, both of
+            // which are CS8628/CS8639 on a nullable reference type. This test PASSES RED by design — its job is
+            // to stay green — and fails the moment someone "simplifies" ReturnTypeSignature away.
+            var all = GeneratorTestHarness.RunAll(NullableScalarReturn, NullableContextOptions.Enable).GeneratedSource;
+
+            Assert.Contains("return new global::T.Dst", all, StringComparison.Ordinal);
+            Assert.DoesNotContain("new global::T.Dst?", all, StringComparison.Ordinal);
+            Assert.Contains("typeof(global::T.Dst)", all, StringComparison.Ordinal);
+            Assert.DoesNotContain("typeof(global::T.Dst?)", all, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Nullable_generic_return_keeps_its_element_annotation_in_the_emitted_signature()
+        {
+            // RED: CS8819 on the partial plus CS8619 on `return __DwarfMapColl_…(s)`, since the synthesized
+            // collection helper was already built for List<Dst?> while the emitted signature said List<Dst>.
+            AssertWarningFree(NullableGenericReturn, "partial List<Dst?> Many(List<Src> s)");
+
+            var generated = GeneratorAssert.CompilesClean(NullableGenericReturn, NullableContextOptions.Enable);
+            Assert.Contains("global::System.Collections.Generic.List<global::T.Dst?> Many(", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Nullable_update_into_target_parameter_keeps_its_annotation()
+        {
+            // RED: CS8611 on parameter 'd'. The update-into destination is spelled from ReturnTypeFullName, so
+            // task 2.7's ParameterTypeSignature — which covers parameter 0 only — could not reach it.
+            AssertWarningFree(NullableUpdateIntoTarget, "partial void Update(Src s, Dst? d)");
+
+            var generated = GeneratorAssert.CompilesClean(NullableUpdateIntoTarget, NullableContextOptions.Enable);
+            Assert.Contains("Update(global::T.Src s, global::T.Dst? d)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_update_into_return_and_target_slots_are_annotated_independently()
+        {
+            // The anti-fold test. Update-into declares the destination type twice, from two different symbols,
+            // and a user may annotate them independently. Writing ONE string into both slots turns the
+            // parameter's CS8611 into a CS8819 on the return, so this pins the mixed form both ways.
+            AssertWarningFree(NullableUpdateIntoTargetWithNonNullableReturn, "partial Dst Update(Src s, Dst? d)");
+            AssertWarningFree(NullableUpdateIntoReturn, "partial Dst? Update(Src s, Dst d)");
+
+            var mixed = GeneratorAssert.CompilesClean(NullableUpdateIntoTargetWithNonNullableReturn, NullableContextOptions.Enable);
+            Assert.Contains("partial global::T.Dst Update(global::T.Src s, global::T.Dst? d)", mixed, StringComparison.Ordinal);
+
+            var nullableReturn = GeneratorAssert.CompilesClean(NullableUpdateIntoReturn, NullableContextOptions.Enable);
+            Assert.Contains("partial global::T.Dst? Update(global::T.Src s, global::T.Dst d)", nullableReturn, StringComparison.Ordinal);
         }
     }
 }

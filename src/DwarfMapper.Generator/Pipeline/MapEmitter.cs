@@ -212,13 +212,20 @@ namespace DwarfMapper.Generator.Pipeline
             // two synthesized branches below deliberately do NOT read it — the generator writes and calls those
             // itself, and the nested helper's `if (s is null) return null!;` contract depends on its parameter
             // staying non-nullable-annotated.
+            //
+            // ReturnTypeSignature ?? ReturnTypeFullName is the same rule on the return slot (round 29 task 2.8).
+            // A SCALAR nullable return is silent here — a stricter return is always safe — but a GENERIC one is
+            // not: `partial List<Dst?> Many(…)` implemented as `List<Dst>` is CS8819, plus CS8619 on the value the
+            // collection helper hands back. The scalar case's diagnostics land in the AGGREGATE files instead, and
+            // AggregateEmitter answers them; both halves are needed, which is why annotating the FullName in place
+            // could never have been the fix (it produces CS8628 on the `new` this same emitter writes from it).
             if (method.IsPartial)
             {
                 // Public declared method — signature never changes (no ctx param for callers).
                 // [GenerateMap]-synthesized entries are emitted as a FULL method (no `partial` keyword),
                 // since the user never declared a partial to implement.
                 sb.Append(indent).Append(method.Accessibility).Append(method.EmitAsNonPartial ? " " : " partial ")
-                    .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+                    .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
                     .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(method.ParameterName);
                 foreach (var ep in method.ExtraParameters) sb.Append(", ").Append(ep); // Phase 5: extra params
                 sb.AppendLine(")");
@@ -795,8 +802,13 @@ namespace DwarfMapper.Generator.Pipeline
 
             var ct = method.AsyncCancellationParam;
 
+            // The return slot carries the declared annotation for the same reason the parameter does, and here it
+            // is load-bearing rather than cosmetic: an IAsyncEnumerable<Dst?> element that the loop below LIFTS
+            // (`__item is null ? null : Conv(__item)`) is CS8603 the moment the emitted signature says
+            // IAsyncEnumerable<Dst>. IAsyncEnumerable<out T> is covariant, so the mismatch itself is silent —
+            // which is exactly how the unlifted call hid it before round 29 task 2.8.
             sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
-                .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+                .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
                 .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src);
             if (ct is not null)
                 // [EnumeratorCancellation] is what links the parameter to the token a consumer passes to
@@ -903,12 +915,18 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var src = method.ParameterName;
             var dst = method.UpdateTargetParameterName;
-            var retType = method.UpdateReturnsVoid ? "void" : method.ReturnTypeFullName;
+            // Update-into declares the destination type TWICE — as the second parameter and, in the returning
+            // form, as the return — and the user may annotate them independently: `partial Dst Update(Src s,
+            // Dst? d)` is legal C#, and writing one string into both slots would trade the parameter's CS8611
+            // for a CS8819 on the return. Hence two fields, each fed by its own symbol. Annotating the parameter
+            // needs no follow-on forgiveness: the ThrowIfNull below is [NotNull]-annotated, so flow analysis
+            // treats `dst` as non-null for the whole body. Round 29 task 2.8.
+            var retType = method.UpdateReturnsVoid ? "void" : method.ReturnTypeSignature ?? method.ReturnTypeFullName;
 
             sb.Append(indent).Append(method.Accessibility).Append(" partial ").Append(retType).Append(' ')
                 .Append(method.MethodName).Append('(')
                 .Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
-                .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
+                .Append(method.UpdateTargetTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
 
             // Null guards (loud — mapping into/from null is a programming error). BCL throw-helper keeps

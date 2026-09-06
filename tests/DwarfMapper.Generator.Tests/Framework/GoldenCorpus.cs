@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using DwarfMapper.Generator.Tests.Fuzzing;
@@ -231,6 +231,28 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                          public partial void Update(A? a, B b);
                                                      }
                                                      """, "DwarfGenerator");
+
+            // Round 29 task 2.8 — the RETURN half. `#nullable enable` for the same reason again, and here it is
+            // load-bearing twice over: under Disable the emitted signature, the extension facade's return type
+            // and the registry's null guard are all identical to the unannotated case, so the manifest could
+            // never have caught this class of change. The scalar arm's diagnostics were not in the mapper file
+            // at all — they were in the two aggregates, which this case's hash does not cover; the marker in
+            // GoldenFeatureCoverageTests pins the mapper-file half, and the two standing oracles the rest.
+            yield return ("NullableReturnType", """
+                                                #nullable enable
+                                                using System.Collections.Generic;
+                                                using DwarfMapper;
+                                                namespace Demo;
+                                                public class A { public int Id { get; set; } }
+                                                public class B { public int Id { get; set; } }
+                                                [DwarfMapper]
+                                                public partial class M
+                                                {
+                                                    public partial B? Map(A a);
+                                                    public partial List<B?> Many(List<A> a);
+                                                    public partial void Update(A a, B? b);
+                                                }
+                                                """, "DwarfGenerator");
 
             yield return ("EnumByName", """
                                         using DwarfMapper;

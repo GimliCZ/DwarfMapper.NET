@@ -213,10 +213,30 @@ so a version with no section here ships with no notes.
   generated ambient registration and the target of the `new T` the mapper writes, and a nullable annotation is
   illegal in both — annotating it in place trades `CS8611` for `CS8639` and `CS8628`.
 
-  Two shapes are improved but not yet clean, and both were already broken before this release: a map over
+  One shape is improved but not yet clean, and was already broken before this release: a map over
   `IAsyncEnumerable<S?>` now reports the real problem (its element conversion does not handle the null) instead
-  of a signature mismatch, and a top-level collection conversion declared to RETURN a nullable element still
-  reports `CS8819` on the return type. Both are tracked separately.
+  of a signature mismatch. Tracked separately. The nullable-RETURN half is fixed below.
+
+- **A map method declared to RETURN a nullable reference put unsuppressible warnings in three different
+  generated files, and none of them were the same defect.** `partial List<Dst?> Many(List<Src> s)` was
+  implemented as `List<Dst>` — `CS8819` on the partial plus `CS8619` on the value its collection helper hands
+  back. `partial void Update(Src s, Dst? d)` dropped the `?` from the destination parameter (`CS8611`), which
+  is spelled from the same string. And `partial Dst? Map(Src s)` is *silent* on the partial — a stricter return
+  is always safe — while landing eight diagnostics in files the consumer never asked for: `CS8603` in
+  `DwarfMapper.Extensions.g.cs`, whose `Dst ToDst(this Src)` forwarded to a `Dst?`-returning map, and `CS8603`
+  plus six `CS8604` in `DwarfMapper.AmbientRegistration.g.cs`.
+
+  The signature half travels the same way the source parameter's annotation does — beside the canonical type
+  name, never on it, since that name is also the `new T` target and the `typeof(…)` operand. The two aggregates
+  answer the same fact differently, because their type systems differ: the extension facade CAN express the
+  nullability and now declares `Dst? ToDst(this Src)`, while the ambient registry's delegate is
+  `Func<object, object>` (shipped API, non-null) and cannot, so its registration coalesces to a loud
+  `InvalidOperationException` naming the pair. The registration is kept rather than dropped: dropping it would
+  silently delete an ambient map that works today for anyone not building with `TreatWarningsAsErrors`.
+
+  **Consumer-visible consequence, by design:** `src.ToDst().Member` in your own code may now be `CS8602`,
+  because the extension truthfully reports the nullability you declared. That warning is in *your* file, where
+  a `#pragma` or an `.editorconfig` severity reaches it — unlike the `CS8603` it replaces.
 
 - **An extra mapping parameter named after a C# keyword produced a generated file that did not parse.** Both
   the emitted signature and the value expression were built from the raw symbol name, which Roslyn hands over

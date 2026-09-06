@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Tests.Framework;
 using Microsoft.CodeAnalysis;
@@ -118,6 +118,13 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // cannot be produced by the annotation-stripping format that site used before, and the pair's
                     // typeof registration in the same run proves the OTHER string stayed unannotated.
                     "NullableSourceParameter", "Map(global::Demo.A? a)"
+                },
+                {
+                    // The '?' surviving into the RETURN slot of the user's partial. The generic form is the one
+                    // the compiler is loud about (CS8819 + CS8619), and `List<global::Demo.B?>` cannot be
+                    // produced by the annotation-stripping format that slot used before task 2.8; the `new
+                    // global::Demo.B` in the same file proves the identity string kept its own spelling.
+                    "NullableReturnType", "public partial global::System.Collections.Generic.List<global::Demo.B?> Many("
                 }
             };
         }

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Core;
@@ -1546,7 +1546,9 @@ namespace DwarfMapper.Generator.Pipeline
                     targetType.IsReferenceType,
                     DerivedTypeArms: EquatableArray.From(armModels),
                     Withheld: withheld,
-                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
+                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 // A dispatch method's arm resolution is not an unscoped-ignore consumer this walk can see,
                 // so the class-site DWARF095 verdict stands down for this class (see the flag's declaration).
                 classIgnoreLivenessBlinded = true;
@@ -1655,7 +1657,9 @@ namespace DwarfMapper.Generator.Pipeline
                     ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                     ReturnIsPublicType: IsEffectivelyPublic(targetType),
                     Withheld: withheld,
-                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
+                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 // A top-level collection map's element pair is acc.Synthesized (pair-scoped config only), so
                 // this method consumes no unscoped ignore this walk can see — class-site DWARF095 stands
                 // down for the class rather than guess (see the flag's declaration).
@@ -2040,7 +2044,9 @@ namespace DwarfMapper.Generator.Pipeline
                     ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType),
                     MaxDepth: policy.MaxDepth,
                     Withheld: withheld,
-                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
+                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 return true;
             }
 
@@ -2249,7 +2255,9 @@ namespace DwarfMapper.Generator.Pipeline
                     true,
                     projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     ProjectionMembers: EquatableArray.From(projMembers.ToArray()),
-                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
+                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 return true;
             }
 
@@ -2501,7 +2509,13 @@ namespace DwarfMapper.Generator.Pipeline
                     ParameterIsPublicType: IsEffectivelyPublic(updSrc),
                     ReturnIsPublicType: IsEffectivelyPublic(updTgt),
                     Withheld: withheld,
-                    ParameterTypeSignature: updSrc.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
+                    ParameterTypeSignature: updSrc.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    // Two independently-annotated slots from two different symbols: the returning form
+                    // `partial Dst Update(Src s, Dst? d)` annotates the parameter and not the return, so one
+                    // string written into both would trade the parameter's CS8611 for a CS8819 on the return.
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    UpdateTargetTypeSignature: updTgt.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 return true;
             }
 
@@ -2976,7 +2990,9 @@ namespace DwarfMapper.Generator.Pipeline
                 ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                 ReturnIsPublicType: IsEffectivelyPublic(targetType),
                 Withheld: withheld,
-                ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
+                ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                ReturnTypeSignature: DeclaredReturnSignature(method),
+                ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
             acc.PublicMethodLocs[acc.Methods.Count - 1] = methodLocation;
         }
 

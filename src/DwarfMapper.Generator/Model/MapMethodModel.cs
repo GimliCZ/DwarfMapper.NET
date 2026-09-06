@@ -180,6 +180,44 @@ namespace DwarfMapper.Generator.Model
     ///         <c>CS8628</c> ("cannot use a nullable reference type in object creation"). Round 29 task 2.7.
     ///     </para>
     /// </param>
+    /// <param name="ReturnTypeSignature">
+    ///     The RETURN half of <see cref="ParameterTypeSignature" />, and a separate field for exactly the same
+    ///     measured reason: <see cref="ReturnTypeFullName" /> is the pair's canonical identity — the target of the
+    ///     <c>new …()</c> the emitter writes, a cast target, the <c>typeof(…)</c> operand and registry key, a dedup
+    ///     key and diagnostic message text — so annotating it in place trades <c>CS8611</c> for <c>CS8628</c>
+    ///     ("cannot use a nullable reference type in object creation"). Task 2.7 applied that patch, probed it and
+    ///     reverted it; this field is what shipped instead. Null on every model whose signature the generator both
+    ///     writes and calls, which then falls back to <see cref="ReturnTypeFullName" />.
+    ///     <para>
+    ///         Read at the three branches that write a RETURN slot which must match a user's own declaration (the
+    ///         create-map partial, the async-stream iterator, the returning form of update-into) and by the
+    ///         extension facade, whose forwarding method has to declare the same nullability the map it calls
+    ///         does — otherwise <c>CS8603</c> lands in <c>DwarfMapper.Extensions.g.cs</c>. The generic case is
+    ///         where the compiler is loudest: <c>partial List&lt;Dst?&gt; Many(…)</c> implemented as
+    ///         <c>List&lt;Dst&gt;</c> is <c>CS8819</c> plus a <c>CS8619</c> on the returned helper value. A SCALAR
+    ///         nullable return is silent at the partial — a stricter return is safe — which is why the one-line
+    ///         "annotate the FullName" fix could never have worked for it: its diagnostics were never on the
+    ///         signature at all. Round 29 task 2.8.
+    ///     </para>
+    /// </param>
+    /// <param name="UpdateTargetTypeSignature">
+    ///     The same annotation-preserving spelling for the DESTINATION PARAMETER of an update-into
+    ///     (<c>void Update(S src, T dest)</c>), whose type <see cref="ReturnTypeFullName" /> also holds. It is a
+    ///     THIRD field rather than a reuse of <see cref="ReturnTypeSignature" /> because the returning form
+    ///     declares two independently-annotated positions from two different symbols: in
+    ///     <c>partial Dst Update(Src s, Dst? d)</c> the parameter is annotated and the return is not, and writing
+    ///     one string into both slots turns a <c>CS8611</c> on the parameter into a <c>CS8819</c> on the return.
+    ///     Null when the model is not an update-into. Round 29 task 2.8.
+    /// </param>
+    /// <param name="ReturnIsNullableRef">
+    ///     Whether the user DECLARED this map to return a nullable reference type. Read only by the ambient
+    ///     registration, whose delegate type is the shipped <c>Func&lt;object, object&gt;</c>: a map that may
+    ///     return null cannot satisfy that contract, so the emitted lambda coalesces to a loud
+    ///     <c>InvalidOperationException</c> naming the pair rather than smuggling a null into a non-nullable
+    ///     delegate (<c>CS8603</c>/<c>CS8604</c> in the consumer's <c>.g.cs</c> today). Modelled as a fact rather
+    ///     than sniffed out of <see cref="ReturnTypeSignature" />, because the question is about the TOP-LEVEL
+    ///     annotation only — <c>List&lt;Dst?&gt;</c> is a non-null list and registers unchanged. Round 29 task 2.8.
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -219,5 +257,8 @@ namespace DwarfMapper.Generator.Model
         bool ReturnIsPublicType = false,
         string? FactoryMethod = null,
         bool Withheld = false,
-        string? ParameterTypeSignature = null) : IEquatable<MapMethodModel>;
+        string? ParameterTypeSignature = null,
+        string? ReturnTypeSignature = null,
+        string? UpdateTargetTypeSignature = null,
+        bool ReturnIsNullableRef = false) : IEquatable<MapMethodModel>;
 }
