@@ -1948,7 +1948,8 @@ the line you edit — and it is reported once per type however many members reac
 Your mapping is **correct, and so is your class**. This is an allocation hint: the collection being mapped
 builds one `TargetDto` object per element, and `TargetDto` carries nothing but data — declared as a
 `readonly record struct` it would live *inside* the array, so the whole collection is one allocation instead
-of one per element. With the source element a struct as well, the pair takes the block copy.
+of one per element. Where the *source* element is transfer-model shaped too and neither type holds a
+reference, it adds that the pair could take the block copy as structs.
 
 <!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
 ```csharp
@@ -1985,7 +1986,17 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
   because that is the rewrite being suggested.
 - **Over 32 bytes it asks you to pass it by `in`.** Past 64 it asks more insistently: a value that large is
-  copied at every call, and `in` is what stops that.
+  copied at every call, and `in` is what stops that. When the size is a bound, so is the comparison — 40
+  bytes of references is 20 on a 32-bit runtime, under the threshold — so the clause says so and advises
+  `in` either way, which costs nothing on the smaller reading.
+- **The block copy is mentioned only where it is possible AND earned.** Two conditions, both required: the
+  *source* element must be transfer-model shaped in its own right (otherwise the sentence would be advising
+  that an entity, or a type with behaviour, become a struct — on no evidence, since only the target is
+  classified), and neither type may hold a reference (`CanReinterpret` needs both sides unmanaged, so a DTO
+  with a `string` can never blit however it is declared). Even then it says **could**: layout identity and
+  field-name alignment are the rest of the proof, and this diagnostic has not run it. An unshaped source is
+  still reported — the allocation win does not depend on the source — it just hears nothing about its own
+  type.
 - **"The derived-type check covered this assembly only."** When the type is `public` and not `sealed`, the
   sweep that looked for subclasses saw *this* compilation. A project that references yours can still derive
   from it, and a struct cannot be a base type — so that is yours to confirm, and the message says so rather

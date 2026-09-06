@@ -56,9 +56,8 @@ so a version with no section here ships with no notes.
 - **`DWARF103` (Info) — a mapped collection builds one class element per item, and that element type could be
   a `readonly record struct`.** Reported at the MAPPING SITE, never on the type: the allocation is paid once
   per element, and a type-level rule would fire on every DTO in a solution. The message names the pair, what
-  the rewrite buys ("the collection becomes one allocation instead of one per element; with the source
-  element a struct as well, the pair takes the block copy") and the size of the would-be struct. **Remedy:**
-  declare the element type as a `readonly record struct`.
+  the rewrite buys ("the collection becomes one allocation instead of one per element") and the size of the
+  would-be struct. **Remedy:** declare the element type as a `readonly record struct`.
 
   **Read the hazards before taking it.** Unlike the other performance hints this one asks for a change of
   *meaning*: a struct has no reference identity, cannot be `null`, and cannot be mutated through an indexer
@@ -68,6 +67,14 @@ so a version with no section here ships with no notes.
   (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): 0.30× the time at 1,000 elements (3.3× faster)
   and 0.09× at 100,000 (11× faster). A single flat DTO is 2.2× faster at 1,000 and 9–12× faster at 100,000
   — smaller at the low end, comparable at scale — with 43 % less memory.
+
+  **The block copy is only mentioned where it is possible and earned.** The clause naming it requires the
+  SOURCE element to be transfer-model shaped in its own right — only the target is classified otherwise, so
+  without this the message advised that an ORM-tracked entity become a struct — and requires neither type to
+  hold a reference, since `CanReinterpret` needs both sides unmanaged and a DTO with a `string` can never
+  blit however it is declared. Even then it says "could", naming the layout and field-name identity the
+  proof still requires. An unshaped source is still reported: collapsing N object headers into one array is
+  the measured win and does not depend on the source.
 
   **The size is honest about what it is.** It is the WOULD-BE struct's size, counting any transfer model the
   type holds as a struct too (that is the rewrite being advised), and it is printed as a bound — "at most N

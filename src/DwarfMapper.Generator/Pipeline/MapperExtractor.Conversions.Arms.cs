@@ -672,7 +672,16 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            var message = TransferModelElementMessage(srcElem, target, verdict);
+            // The SOURCE is classified too, and only for the block-copy clause. It is asked last, after the
+            // target's own verdict has already earned the report, so a pair that says nothing never pays for
+            // it — and it is asked at all because the clause advises converting the source, which no other
+            // rule in this method has checked. An unshaped source still reports; it just hears nothing about
+            // its own type. See TransferModelElementMessage's remarks.
+            var sourceVerdict = srcElem is INamedTypeSymbol namedSource
+                ? TransferModelShape.Classify(namedSource, req.Compilation, TransferModelFacts(req.Compilation))
+                : TransferModelShape.Verdict.No("the source element is not a named type");
+
+            var message = TransferModelElementMessage(srcElem, target, verdict, sourceVerdict);
 
             foreach (var reported in diagnostics)
                 if (ReferenceEquals(reported.Descriptor, DiagnosticDescriptors.CollectionElementCouldBeAStruct) &&
@@ -752,18 +761,46 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <para>
         ///         <c>SuggestIn</c> is a BAND flag and is false on <c>TooLarge</c>, so the advice is asked for as
         ///         <c>TooLarge || SuggestIn</c>; reading the flag alone would drop it for exactly the types that
-        ///         need it most. And the derivation clause states the SCOPE of the sweep rather than its
-        ///         conclusion. That is deliberate: the flag does not propagate out of a nested model, and it
-        ///         reads false for an <c>internal</c> type that an <c>InternalsVisibleTo</c> grant lets a friend
-        ///         assembly derive from. A message that claimed derivation had been ruled out would be wrong in
-        ///         both of those; this one never claims it at all, and says what was actually walked where the
-        ///         gap is widest.
+        ///         need it most. It reprints the size, so it reprints the HEDGE with it (T2.2 review, important
+        ///         4): the message used to say "at most 40 bytes" in one clause and "At 40 bytes" in the next,
+        ///         and the threshold comparison is provisional in the same way the number is — 40 bytes of
+        ///         references is 20 on a 32-bit runtime, which is under the limit. The advice survives that
+        ///         either way (passing a smaller struct by <c>in</c> costs nothing), and the clause says so
+        ///         rather than pretending the comparison was settled.
+        ///     </para>
+        ///     <para>
+        ///         The derivation clause states the SCOPE of the sweep rather than its conclusion. That is
+        ///         deliberate: the flag does not propagate out of a nested model, and it reads false for an
+        ///         <c>internal</c> type that an <c>InternalsVisibleTo</c> grant lets a friend assembly derive
+        ///         from. A message that claimed derivation had been ruled out would be wrong in both of those;
+        ///         this one never claims it at all, and says what was actually walked where the gap is widest.
+        ///     </para>
+        ///     <para>
+        ///         <b>The block-copy clause is EARNED twice over, and used to be earned not at all</b> (T2.2
+        ///         review, criticals 1 and 2). It said "with '{source}' a struct as well, the pair takes the
+        ///         block copy" unconditionally, which failed two different ways. It advised converting a SOURCE
+        ///         type nothing had classified — and in the commonest real shape, entity to DTO, that is advice
+        ///         to turn an ORM-tracked entity into a value type, exactly what the classifier exists to
+        ///         refuse. And it stated a block copy the generator can itself disprove: <c>CanReinterpret</c>
+        ///         needs BOTH element types unmanaged, so a target with a reference member — the same fact that
+        ///         sets <see cref="TransferModelShape.Verdict.SizeIsUpperBound" /> — can never blit, and the
+        ///         message hedged its byte count for that reason two clauses earlier while asserting the
+        ///         consequence as fact. So the clause now requires the source to be transfer-model shaped in its
+        ///         own right AND neither side to hold a reference, and even then says "could", naming the layout
+        ///         and field-name identity the proof still requires and this site has not checked.
+        ///     </para>
+        ///     <para>
+        ///         Note what is NOT gated: the diagnostic still FIRES for an unshaped source. Collapsing N
+        ///         object headers into one array is the measured win and does not depend on the source type at
+        ///         all; the block copy is a further tier. Narrowing the trigger would have silenced the
+        ///         entity-to-DTO shape, where the target is the consumer's own type and the win is undiminished.
         ///     </para>
         /// </remarks>
         private static string TransferModelElementMessage(
             ITypeSymbol srcElem,
             ITypeSymbol tgtElem,
-            TransferModelShape.Verdict verdict)
+            TransferModelShape.Verdict verdict,
+            TransferModelShape.Verdict sourceVerdict)
         {
             // WITHOUT the annotation. A `List<OrderDto?>` element arrives here as `OrderDto?`, and the message
             // names a type the consumer is being asked to REDECLARE — "declare 'OrderDto?' as a readonly record
@@ -781,11 +818,28 @@ namespace DwarfMapper.Generator.Pipeline
                 $"'{source}' → '{target}' allocates one '{target}' per element, and '{target}' is " +
                 "transfer-model shaped: declared as a readonly record struct — with any transfer model it " +
                 $"holds a struct too — it is {sizeText} and the collection becomes one allocation instead of " +
-                $"one per element; with '{source}' a struct as well, the pair takes the block copy.";
+                "one per element.";
+
+            // The block copy needs an UNMANAGED pair, and a verdict carrying SizeIsUpperBound is one whose
+            // would-be struct holds a reference — so on either side that flag is proof the pair can never
+            // blit, whatever else is true of it. The flag propagates out of a nested model (TryMeasureMember
+            // hands nested.SizeIsUpperBound straight back), so it covers the whole inlined graph and not just
+            // the top level.
+            if (sourceVerdict.IsShaped && !verdict.SizeIsUpperBound && !sourceVerdict.SizeIsUpperBound)
+            {
+                message += $" '{source}' is transfer-model shaped too, and neither type holds a reference: as " +
+                           "structs with identical layout and matching field names the pair could take the " +
+                           "block copy instead of the element loop.";
+            }
 
             if (verdict.Kind == TransferModelShape.Outcome.TooLarge || verdict.SuggestIn)
             {
-                message += $" At {size} bytes pass it by 'in' rather than by value.";
+                var limit = TransferModelShape.SilentSizeLimit.ToString(CultureInfo.InvariantCulture);
+                message += verdict.SizeIsUpperBound
+                    ? $" At most {size} bytes — over the {limit}-byte threshold for copying by value unless a " +
+                      "32-bit runtime narrows it below, and worth passing by 'in' either way."
+                    : $" At {size} bytes it is over the {limit}-byte threshold for copying by value, so pass " +
+                      "it by 'in'.";
             }
 
             if (verdict.DerivationCheckedWithinAssemblyOnly)

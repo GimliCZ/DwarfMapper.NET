@@ -50,8 +50,16 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private const int MaxDepth = 16;
 
-        /// <summary>Bytes at or under which a struct transfer model is silent; above it, pass it by <c>in</c>.</summary>
-        private const int SilentSizeLimit = 32;
+        /// <summary>
+        ///     Bytes at or under which a struct transfer model is silent; above it, pass it by <c>in</c>.
+        ///     <para>
+        ///         Assembly-visible so <c>DWARF103</c>'s message can PRINT the threshold it applied rather than
+        ///         restate it as a literal. A second copy of 32 in the diagnostic would be free to drift from
+        ///         the one the verdict was decided by, and the message would then name a threshold nothing
+        ///         enforces (round 29, T2.2).
+        ///     </para>
+        /// </summary>
+        internal const int SilentSizeLimit = 32;
 
         /// <summary>Bytes above which the struct is reported <see cref="Outcome.TooLarge" /> to copy by value.</summary>
         private const int SuggestInSizeLimit = 64;

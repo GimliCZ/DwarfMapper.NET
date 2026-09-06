@@ -41,12 +41,18 @@ namespace DwarfMapper.Generator.Tests
                                           [DwarfMapper] public partial class M { public partial D Map(C c); }
                                           """;
 
-        /// <summary>The message the two fixtures above and below both produce, for a 16-byte sealed target.</summary>
+        /// <summary>
+        ///     The message the fixtures around it produce, for a 16-byte sealed target whose SOURCE is itself
+        ///     transfer-model shaped and holds no reference — the one shape in which the block-copy clause is
+        ///     both earned and possible.
+        /// </summary>
         private const string OrderDtoMessage =
             "'Demo.Order' → 'Demo.OrderDto' allocates one 'Demo.OrderDto' per element, and 'Demo.OrderDto' is " +
             "transfer-model shaped: declared as a readonly record struct — with any transfer model it holds a " +
-            "struct too — it is 16 bytes, and the collection becomes one allocation instead of one per element; " +
-            "with 'Demo.Order' a struct as well, the pair takes the block copy.";
+            "struct too — it is 16 bytes, and the collection becomes one allocation instead of one per element. " +
+            "'Demo.Order' is transfer-model shaped too, and neither type holds a reference: as structs with " +
+            "identical layout and matching field names the pair could take the block copy instead of the " +
+            "element loop.";
 
         private static List<Diagnostic> Run(string source)
         {
@@ -150,9 +156,14 @@ namespace DwarfMapper.Generator.Tests
                 "'Demo.Person' → 'Demo.PersonDto' allocates one 'Demo.PersonDto' per element, and " +
                 "'Demo.PersonDto' is transfer-model shaped: declared as a readonly record struct — with any " +
                 "transfer model it holds a struct too — it is at most 16 bytes, a reference member counted at " +
-                "8 bytes, its x64 width, and the collection becomes one allocation instead of one per element; " +
-                "with 'Demo.Person' a struct as well, the pair takes the block copy.",
+                "8 bytes, its x64 width, and the collection becomes one allocation instead of one per element.",
                 Message(one));
+
+            // Round 29 T2.2 review, critical 1. The block copy is not merely unproven for this pair, it is
+            // IMPOSSIBLE: BlittableProof requires both element types to be unmanaged, and a type carrying a
+            // string never is — which is the same fact that set SizeIsUpperBound two clauses earlier. A message
+            // that hedges its byte count and then states the block copy as fact contradicts itself.
+            Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -173,7 +184,10 @@ namespace DwarfMapper.Generator.Tests
                                         [DwarfMapper] public partial class M { public partial D Map(C c); }
                                         """));
 
-            Assert.EndsWith(" At 40 bytes pass it by 'in' rather than by value.", Message(one), StringComparison.Ordinal);
+            Assert.EndsWith(
+                " At 40 bytes it is over the 32-byte threshold for copying by value, so pass it by 'in'.",
+                Message(one),
+                StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -195,7 +209,10 @@ namespace DwarfMapper.Generator.Tests
                                         [DwarfMapper] public partial class M { public partial D Map(C c); }
                                         """));
 
-            Assert.EndsWith(" At 72 bytes pass it by 'in' rather than by value.", Message(one), StringComparison.Ordinal);
+            Assert.EndsWith(
+                " At 72 bytes it is over the 32-byte threshold for copying by value, so pass it by 'in'.",
+                Message(one),
+                StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -337,6 +354,80 @@ namespace DwarfMapper.Generator.Tests
                     }
                     [DwarfMapper] public partial class M { public partial D Map(C c); }
                     """).Count);
+        }
+
+        /// <summary>
+        ///     An UNSHAPED source is still reported — the advice is about the target, which is fully
+        ///     rule-checked — but the message says nothing about converting the source. Round 29 T2.2 review,
+        ///     critical 2: <c>Classify</c> runs on the target only, and every refusal that earns the target its
+        ///     safety (derived from, abstract, IDisposable, an event, ORM-tracked, a validating constructor) was
+        ///     never asked of the source. In the commonest real shape — entity → DTO — the closing clause was
+        ///     therefore advising that a tracked entity become a struct, on no evidence at all.
+        ///     <para>
+        ///         The trigger is deliberately NOT narrowed: collapsing N object headers into one array is the
+        ///         measured win and it does not depend on the source. Only the clause is gated.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void An_unshaped_source_is_reported_but_never_told_to_become_a_struct()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public sealed class Order
+                                        {
+                                            public long Id { get; set; }
+                                            public int Quantity { get; set; }
+                                            public event EventHandler Changed;
+                                        }
+                                        public sealed class OrderDto { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.Equal(
+                "'Demo.Order' → 'Demo.OrderDto' allocates one 'Demo.OrderDto' per element, and 'Demo.OrderDto' " +
+                "is transfer-model shaped: declared as a readonly record struct — with any transfer model it " +
+                "holds a struct too — it is 16 bytes, and the collection becomes one allocation instead of one " +
+                "per element.",
+                Message(one));
+
+            Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
+            Assert.DoesNotContain("'Demo.Order' is transfer-model shaped", Message(one), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A size that is a BOUND stays a bound in the <c>in</c> advice too. Round 29 T2.2 review,
+        ///     important 4: the message hedged the size in one clause and reprinted it as a bare fact in the
+        ///     next ("at most 40 bytes …" then "At 40 bytes pass it by 'in'"). No fixture crossed both branches,
+        ///     so nothing caught it. Five strings is 40 bytes on x64 and 20 on x86 — over the threshold on the
+        ///     bound, possibly under it in reality, and worth passing by <c>in</c> either way.
+        /// </summary>
+        [Fact]
+        public void A_bounded_size_stays_a_bound_in_the_in_advice()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public sealed class Wide { public string A { get; set; } public string B { get; set; } public string C1 { get; set; } public string D1 { get; set; } public string E { get; set; } }
+                                        public sealed class WideDto { public string A { get; set; } public string B { get; set; } public string C1 { get; set; } public string D1 { get; set; } public string E { get; set; } }
+                                        public class C { public List<Wide> Rows { get; set; } }
+                                        public class D { public List<WideDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.EndsWith(
+                " At most 40 bytes — over the 32-byte threshold for copying by value unless a 32-bit runtime " +
+                "narrows it below, and worth passing by 'in' either way.",
+                Message(one),
+                StringComparison.Ordinal);
+
+            // The same pair may not be told it could blit: five reference members, so neither side is unmanaged.
+            Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
         }
 
         // ─── The silence cases ───────────────────────────────────────────────────
