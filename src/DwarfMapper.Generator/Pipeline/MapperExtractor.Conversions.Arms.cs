@@ -690,9 +690,12 @@ namespace DwarfMapper.Generator.Pipeline
             var source = (INamedTypeSymbol)srcElem;
             // NULL, not a fabricated refusal: "there is no verdict for the source" is what this means, and a
             // Verdict.No would have had to invent a reason string nothing on this path ever prints. The first
-            // attempt at that used `default`, which is a trap worth recording — Outcome.Eligible is the enum's
-            // zero, so `default(Verdict)` reports IsShaped TRUE and the clause came straight back. The
-            // regression test caught it; the nullable makes the state unrepresentable instead.
+            // attempt at that used `default`, which is a trap worth recording — Outcome.Eligible WAS the enum's
+            // zero, so `default(Verdict)` reported IsShaped TRUE and the clause came straight back. The
+            // regression test caught it; the nullable makes the state unrepresentable instead. T2.3 ruling 3
+            // then moved NotEligible into the zero slot, so the trap no longer exists — this stays a nullable
+            // anyway, because "nobody asked" and "asked, and the answer was no" are different facts and only
+            // one of them has a reason to print.
             TransferModelShape.Verdict? sourceVerdict = IsGeneratorAuthored(source)
                 ? null
                 : TransferModelShape.Classify(source, req.Compilation, facts);

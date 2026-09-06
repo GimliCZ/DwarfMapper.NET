@@ -957,6 +957,34 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(72, verdict.Size);
         }
 
+        // ─── The fail-safe default (T2.3 ruling 3) ───────────────────────────────
+
+        /// <summary>
+        ///     <c>default(Verdict)</c> must REFUSE. <c>Outcome.Eligible</c> was the enum's zero member until
+        ///     round 29 T2.3, so a verdict nobody had computed answered <c>IsShaped</c> true — "yes, rewrite
+        ///     this consumer's class into a struct" as the value of a struct that had never been asked. Two
+        ///     separate agents hit it: T2.2's implementer wrote <c>default(Verdict)</c> for "there is no source
+        ///     verdict" and the block-copy clause came straight back. T2.3 consumes verdicts to decide what a
+        ///     code fix REWRITES, so the default answer has to be the safe one by construction rather than by
+        ///     every caller remembering.
+        /// </summary>
+        [Fact]
+        public void A_default_verdict_is_not_shaped()
+        {
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, default(TransferModelShape.Verdict).Kind);
+            Assert.False(default(TransferModelShape.Verdict).IsShaped);
+        }
+
+        /// <summary>
+        ///     The same fact stated where it actually bites: the zero of the ENUM, which is what a
+        ///     default-constructed <c>Verdict</c>, a zeroed array element and an uninitialised field all get.
+        /// </summary>
+        [Fact]
+        public void The_refusal_outcome_is_the_enums_zero_member()
+        {
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, default(TransferModelShape.Outcome));
+        }
+
         // ─── The compilation-wide facts, and the shape T2.2 calls ────────────────
 
         /// <summary>

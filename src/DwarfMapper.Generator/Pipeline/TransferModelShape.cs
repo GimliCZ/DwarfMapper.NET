@@ -74,9 +74,23 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         internal const int SuggestInSizeLimit = 64;
 
-        /// <summary>What <see cref="Classify(INamedTypeSymbol, Compilation)" /> concluded.</summary>
+        /// <summary>
+        ///     What <see cref="Classify(INamedTypeSymbol, Compilation)" /> concluded.
+        ///     <para>
+        ///         <b><see cref="NotEligible" /> is the zero member on purpose</b> (round 29 T2.3, ruling 3).
+        ///         <see cref="Eligible" /> held that slot until T2.3, which made <c>default(Verdict)</c> answer
+        ///         <see cref="Verdict.IsShaped" /> TRUE — a zero value that says "yes, rewrite this consumer's
+        ///         class into a struct". It bit two separate agents: T2.2's implementer wrote
+        ///         <c>default(Verdict)</c> for "no source verdict" and the block-copy clause came straight back
+        ///         (that site now holds a <c>Verdict?</c>, and its comment records the trap). Nothing reads these
+        ///         members by ordinal — the order is the fail-safe and nothing else.
+        ///     </para>
+        /// </summary>
         public enum Outcome
         {
+            /// <summary>Not transfer-model shaped. <see cref="Verdict.Reason" /> says why, in a consumer's terms.</summary>
+            NotEligible,
+
             /// <summary>Transfer-model shaped and small enough to pass by value.</summary>
             Eligible,
 
@@ -95,10 +109,7 @@ namespace DwarfMapper.Generator.Pipeline
             ///         for.
             ///     </para>
             /// </summary>
-            TooLarge,
-
-            /// <summary>Not transfer-model shaped. <see cref="Verdict.Reason" /> says why, in a consumer's terms.</summary>
-            NotEligible
+            TooLarge
         }
 
         /// <summary>
@@ -142,7 +153,11 @@ namespace DwarfMapper.Generator.Pipeline
         /// </param>
         /// <param name="Reason">
         ///     Why the type was refused, in terms of the consumer's own declaration — empty for the two
-        ///     eligible outcomes. Always non-empty on <see cref="Outcome.NotEligible" />.
+        ///     eligible outcomes. Always non-empty on a <see cref="Outcome.NotEligible" /> verdict this
+        ///     classifier RETURNED; <c>default(Verdict)</c> is NotEligible with an empty reason, which is the
+        ///     price of the fail-safe zero and is the correct trade — a default that refuses without a reason
+        ///     costs a caller a message it should never have been printing, where a default that accepted cost
+        ///     a consumer a rewrite nothing had classified.
         /// </param>
         internal readonly record struct Verdict(
             Outcome Kind,
@@ -152,7 +167,11 @@ namespace DwarfMapper.Generator.Pipeline
             bool DerivationCheckedWithinAssemblyOnly,
             string Reason)
         {
-            /// <summary>True when the type is transfer-model shaped, whatever its size.</summary>
+            /// <summary>
+            ///     True when the type is transfer-model shaped, whatever its size. False on
+            ///     <c>default(Verdict)</c>, which is what <see cref="Outcome.NotEligible" /> being the enum's
+            ///     zero member buys: a verdict nobody computed cannot answer "yes, rewrite it".
+            /// </summary>
             public bool IsShaped => Kind != Outcome.NotEligible;
 
             internal static Verdict Fits(
