@@ -1333,13 +1333,21 @@ namespace DwarfMapper.Generator.Pipeline
             // Phase 5: parameters after the source are extra named value sources, matched to destination
             // members by name (precedence: explicit > extra parameter > by-name). Pre-format their
             // signature fragments ("global::Type name") for emission.
+            //
+            // NullableFullyQualifiedFormat, not FullyQualifiedFormat: the fragment is re-emitted VERBATIM as
+            // the implementing half of the user's partial declaration, so dropping the '?' off a nullable
+            // reference parameter makes the two halves disagree — CS8611, inside the consumer's .g.cs, where
+            // no pragma or NoWarn of theirs can reach it. Same hole the collection helper's declared
+            // parameter/return types had, hence the same format rather than a third copy of it. Under
+            // `#nullable disable` the annotation is Oblivious and the format adds nothing, so this is a no-op
+            // for every oblivious consumer.
             var extraParams = new List<(string Name, ITypeSymbol Type)>();
             var extraParamSig = new List<string>();
             for (var pi = 1; pi < method.Parameters.Length; pi++)
             {
                 var ep = method.Parameters[pi];
                 extraParams.Add((ep.Name, ep.Type));
-                extraParamSig.Add(ep.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + " " + ep.Name);
+                extraParamSig.Add(ep.Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat) + " " + ep.Name);
             }
 
             // Read methodAutoNest early — needed by both Plan 21 (derived dispatch) and the normal path.

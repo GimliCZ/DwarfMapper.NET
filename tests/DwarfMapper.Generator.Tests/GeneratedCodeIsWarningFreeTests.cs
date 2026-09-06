@@ -282,6 +282,38 @@ namespace DwarfMapper.Generator.Tests
                                         }
                                         """
             ];
+
+            // Phase 5 extra parameters, every nullability arm at once. Round 29 task 2.7: the signature fragment
+            // dropped the '?' off a nullable reference parameter (CS8611) and the phase discarded the
+            // null-handling decision, so once the '?' came back the body was CS8604 (converter argument), CS8601
+            // (raw assign) and CS0266 (nullable value into a non-nullable value member — a compile ERROR that had
+            // been there since Phase 5 was written). No schema declares an extra parameter at all.
+            yield return
+            [
+                "NullableExtraParameter", """
+                                          using DwarfMapper;
+                                          namespace Demo;
+                                          public sealed class Child { public int V { get; set; } }
+                                          public sealed class ChildDto { public int V { get; set; } }
+                                          public sealed class Src { public int Id { get; set; } }
+                                          public sealed class Dst
+                                          {
+                                              public int Id { get; set; }
+                                              public ChildDto? Lifted { get; set; }
+                                              public ChildDto Forgiven { get; set; } = new();
+                                              public Child Raw { get; set; } = new();
+                                              public Child? Plain { get; set; }
+                                              public int Count { get; set; }
+                                              public long? Widened { get; set; }
+                                          }
+                                          [DwarfMapper]
+                                          public partial class M
+                                          {
+                                              public partial Dst Map(Src s, Child? lifted, Child? forgiven, Child? raw, Child? plain, int? count, int? widened);
+                                              public partial ChildDto ToDto(Child c);
+                                          }
+                                          """
+            ];
         }
 
         [Theory]

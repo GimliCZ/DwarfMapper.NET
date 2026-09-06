@@ -125,7 +125,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var line = m.ValueExpression is not null
                 ? m.EmitTargetName + " = " + m.ValueExpression
-                : m.EmitTargetName + " <- " + (m.EmitSourceName.Length == 0 ? "(none)" : m.EmitSourceName);
+                : m.EmitTargetName + " <- " + (m.SourceAccessExpression ?? (m.EmitSourceName.Length == 0 ? "(none)" : m.EmitSourceName));
             if (m.ConverterMethod is not null)
             {
                 line += " via " + m.ConverterMethod;
@@ -1387,10 +1387,17 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
+            // How this member's value is READ. Ordinarily a member of the source object; for a Phase 5 extra
+            // parameter, the parameter identifier itself. Composed once so every arm below — the lift, the
+            // unwrap, the converter call, the raw assign — reads the same expression: an extra parameter that
+            // took a different route through this method is exactly how it came to carry no null handling at
+            // all (see MemberMap.SourceAccessExpression).
+            var srcAccess = member.SourceAccessExpression ?? paramName + "." + member.EmitSourceName;
+
             // [MapProperty(NullSubstitute=)]: coalesce a null source member to a constant (direct members only).
             if (member.NullSubstituteLiteral is not null && member.ConverterMethod is null)
             {
-                sb.Append(paramName).Append('.').Append(member.EmitSourceName).Append(" ?? ")
+                sb.Append(srcAccess).Append(" ?? ")
                     .Append(member.NullSubstituteLiteral);
                 return;
             }
@@ -1405,11 +1412,10 @@ namespace DwarfMapper.Generator.Pipeline
             // forbids the null — `null!` instead of `null`, because the plain form is CS8601 inside the .g.cs.
             if (member.NullHandling is NullHandling.NullableProject or NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving)
             {
-                var srcExpr = paramName + "." + member.EmitSourceName;
                 if (member.ConverterMethod is null)
                 {
                     // Defensive fallback: T?→U? where T→U is implicit (direct assignment).
-                    sb.Append(srcExpr);
+                    sb.Append(srcAccess);
                     return;
                 }
 
@@ -1418,14 +1424,14 @@ namespace DwarfMapper.Generator.Pipeline
                 var extraArgs = member.ConverterNeedsDepthCtx ? ", " + ctxVarName + ", " + depthArg : "";
                 if (member.NullHandling is NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving)
                 {
-                    sb.Append(srcExpr)
+                    sb.Append(srcAccess)
                         .Append(member.NullHandling == NullHandling.NullableProjectRefForgiving ? " is null ? null! : " : " is null ? null : ")
-                        .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(extraArgs).Append(')');
+                        .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(extraArgs).Append(')');
                 }
                 else
                 {
-                    sb.Append(srcExpr).Append(".HasValue ? ")
-                        .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value")
+                    sb.Append(srcAccess).Append(".HasValue ? ")
+                        .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(".Value")
                         .Append(extraArgs).Append(')').Append(" : null");
                 }
 
@@ -1437,15 +1443,17 @@ namespace DwarfMapper.Generator.Pipeline
             switch (member.NullHandling)
             {
                 case NullHandling.ThrowIfNull:
-                    innerAccess = paramName + "." + member.EmitSourceName + " ?? throw new global::System.InvalidOperationException(\"Source member '" + member.EmitSourceName + "' was null\")";
+                    innerAccess = srcAccess + " ?? throw new global::System.InvalidOperationException(\""
+                        + (member.SourceAccessExpression is null ? "Source member '" + member.EmitSourceName : "Mapping parameter '" + member.SourceAccessExpression)
+                        + "' was null\")";
                     break;
 
                 case NullHandling.ValueOrDefault:
-                    innerAccess = paramName + "." + member.EmitSourceName + ".GetValueOrDefault()";
+                    innerAccess = srcAccess + ".GetValueOrDefault()";
                     break;
 
                 default:
-                    innerAccess = paramName + "." + member.EmitSourceName;
+                    innerAccess = srcAccess;
                     break;
             }
 
@@ -1491,14 +1499,14 @@ namespace DwarfMapper.Generator.Pipeline
                     if (member.ConverterNeedsDepthCtx)
                     {
                         sb.Append(member.ConverterMethod).Append('(')
-                            .Append(paramName).Append('.').Append(member.EmitSourceName)
+                            .Append(srcAccess)
                             .Append(needsBang ? "!" : "").Append(", ")
                             .Append(ctxVarName).Append(", ").Append(depthArg).Append(')');
                     }
                     else
                     {
                         sb.Append(member.ConverterMethod).Append('(')
-                            .Append(paramName).Append('.').Append(member.EmitSourceName)
+                            .Append(srcAccess)
                             .Append(needsBang ? "!)" : ")");
                     }
                 }

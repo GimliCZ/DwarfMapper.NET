@@ -105,6 +105,13 @@ namespace DwarfMapper.Generator.Tests.Golden
                 },
                 {
                     "WrapperMapPayloadEdge", "value: src.Value is null ? null : ToDto(src.Value)"
+                },
+                {
+                    // The extra parameter read as a source ACCESS rather than handed over as a finished
+                    // expression. `lifted is null ? null :` can only be emitted when the null-handling decision
+                    // reaches the Phase 5 member — the whole of task 2.7's second defect — and `lifted` is a
+                    // parameter name, so no source-member edge can produce this text by accident.
+                    "NullableExtraParameter", "Lifted = lifted is null ? null : ToDto(lifted)"
                 }
             };
         }

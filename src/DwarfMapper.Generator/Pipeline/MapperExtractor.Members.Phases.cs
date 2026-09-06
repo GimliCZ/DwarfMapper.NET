@@ -595,7 +595,7 @@ namespace DwarfMapper.Generator.Pipeline
                             target.Name,
                             acc.Diagnostics,
                             out var epConv,
-                            out _,
+                            out var epNull,
                             out var epNeedsCtx,
                             req.Options.AutoNest,
                             req.NestedRegistry,
@@ -606,8 +606,30 @@ namespace DwarfMapper.Generator.Pipeline
                             reservedConverters: lookups.ReservedConverters) &&
                         !epNeedsCtx)
                     {
-                        var valueExpr = epConv is null ? ep.Name : epConv + "(" + ep.Name + ")";
-                        acc.Result.Add(new MemberMap(target.Name, "", ValueExpression: valueExpr));
+                        // The extra parameter is carried as a source ACCESS, not as a finished ValueExpression:
+                        // ValueExpression short-circuits the emitter before any null handling is read, which is
+                        // how this site came to emit `Count = count` for `int? -> int` (CS0266, a compile ERROR
+                        // in the consumer's .g.cs), `ToDto(inner)` for `Child? -> ChildDto` (CS8604) and
+                        // `Inner = inner` for `Child? -> Child` (CS8601). Its nullability metadata is resolved
+                        // by exactly the helpers every other member edge uses, so the four emitters keep
+                        // answering the extra parameter the same way they answer a source member — the parameter
+                        // is just where the value is read FROM.
+                        acc.Result.Add(new MemberMap(target.Name,
+                            "",
+                            epConv,
+                            epNull,
+                            false, // !epNeedsCtx is in the guard above: an extra parameter never threads (ctx, depth).
+                            SourceMayBeNullRef(ep.Type!),
+                            NullRefIntoNonNullable: IsDirectNullRefAssign(epConv, epNull, ep.Type!, target.Type),
+                            ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(epConv,
+                                ep.Type!,
+                                target.Type,
+                                req.AutoCandidates,
+                                req.AllMethods,
+                                ep.Name,
+                                req.Location,
+                                acc.Diagnostics),
+                            SourceAccessExpression: ep.Name));
                         acc.HandledTargets.Add(target.Name);
                         acc.ConsumedExtraParams.Add(ep.Name);
                         continue;

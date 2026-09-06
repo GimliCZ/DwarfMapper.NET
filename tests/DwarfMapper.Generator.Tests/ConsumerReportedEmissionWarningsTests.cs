@@ -564,6 +564,158 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains(run.Diagnostics, d => d.Id == "DWARF070");
         }
 
+        // -- 5. the Phase-5 EXTRA PARAMETER dropped its nullability twice (CS8611, then CS8604/CS8601/CS0266) --
+        // Round 29 task 2.7, found by task 2.6's audit of all twenty TryResolveConversion call sites.
+        //
+        // Two defects on one path, and the second is only visible once the first is fixed:
+        //   * the signature fragment for an extra parameter was formatted with
+        //     SymbolDisplayFormat.FullyQualifiedFormat, which DROPS the '?' off a nullable reference. The
+        //     implementing half of the user's partial therefore declared `Child inner` against their
+        //     `Child? inner` — CS8611.
+        //   * the extra-parameter phase passed `out _` for the null-handling decision and handed the emitter a
+        //     finished ValueExpression, which short-circuits AppendValueExpression before any null handling is
+        //     read. With the '?' restored, that bare emission is CS8604 / CS8601 / CS0266 depending on the arm.
+        // Every one of them lands inside the consumer's .g.cs, where no pragma of theirs reaches it.
+
+        private const string NullableExtraParamIdentity = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public Child? Inner { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s, Child? inner); }
+            }
+            """;
+
+        private const string NullableExtraParamViaDeclaredMap = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public ChildDto? Inner { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s, Child? inner);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableExtraParamIntoNonNullableViaDeclaredMap = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public ChildDto Inner { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    public partial Dst Map(Src s, Child? inner);
+                    public partial ChildDto ToDto(Child c);
+                }
+            }
+            """;
+
+        private const string NullableExtraParamIntoNonNullableRef = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public Child Inner { get; set; } = new(); }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s, Child? inner); }
+            }
+            """;
+
+        private const string NullableValueExtraParamIntoNonNullableValue = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } public int Count { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s, int? count); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_extra_parameter_keeps_its_annotation_in_the_emitted_signature()
+        {
+            // Defect 1 on its own: the identity assign needs no null handling at all, so the ONLY thing that can
+            // warn here is the signature. RED before the fix with CS8611 and nothing else.
+            AssertWarningFree(NullableExtraParamIdentity, "Map(Src s, Child? inner) -> Child? Inner");
+        }
+
+        [Fact]
+        public void The_emitted_partial_declares_the_extra_parameter_exactly_as_the_user_did()
+        {
+            var generated = GeneratorAssert.CompilesClean(NullableExtraParamIdentity, NullableContextOptions.Enable);
+            Assert.Contains("Map(global::T.Src s, global::T.Child? inner)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Nullable_extra_parameter_through_a_declared_map_emits_no_CS8604()
+        {
+            AssertWarningFree(NullableExtraParamViaDeclaredMap, "Child? inner -> ChildDto? Inner via the user's own ToDto");
+        }
+
+        [Fact]
+        public void Nullable_extra_parameter_into_a_non_nullable_target_through_a_declared_map_emits_no_CS8604()
+        {
+            AssertWarningFree(NullableExtraParamIntoNonNullableViaDeclaredMap, "Child? inner -> ChildDto Inner via the user's own ToDto");
+        }
+
+        [Fact]
+        public void Nullable_extra_parameter_raw_assigned_into_a_non_nullable_target_emits_no_CS8601()
+        {
+            AssertWarningFree(NullableExtraParamIntoNonNullableRef, "Child? inner -> Child Inner, raw assign");
+        }
+
+        [Fact]
+        public void Nullable_value_extra_parameter_into_a_non_nullable_value_target_emits_no_CS0266()
+        {
+            // The worst arm: not a warning but a hard compile ERROR in the .g.cs, and pre-existing since Phase 5
+            // was written — `int? count` was assigned straight into an `int` member. It survived because
+            // Nullable<T> is a TYPE rather than an annotation, so it needed no nullable context to reproduce and
+            // still nothing in the corpus declared it.
+            AssertWarningFree(NullableValueExtraParamIntoNonNullableValue, "int? count -> int Count");
+        }
+
+        [Fact]
+        public void The_extra_parameter_is_answered_exactly_as_the_equivalent_source_member_is()
+        {
+            // The point of the fix, and the thing a per-site re-spelling would drift away from: an extra
+            // parameter is a place the value is READ FROM, not a different kind of edge. Each arm below is the
+            // emission the same shape gets when it arrives as a source member instead — the lift, the forgiven
+            // converter argument, the forgiven raw assign, and the nullable-value unwrap.
+            var lifted = GeneratorAssert.CompilesClean(NullableExtraParamViaDeclaredMap, NullableContextOptions.Enable);
+            Assert.Contains("Inner = inner is null ? null : ToDto(inner)", lifted, StringComparison.Ordinal);
+
+            var forgivenArg = GeneratorTestHarness.Run(NullableExtraParamIntoNonNullableViaDeclaredMap, NullableContextOptions.Enable);
+            Assert.Contains("Inner = ToDto(inner!)", forgivenArg.GeneratedSource, StringComparison.Ordinal);
+            Assert.Contains(forgivenArg.Diagnostics, d => d.Id == "DWARF070");
+
+            var forgivenAssign = GeneratorTestHarness.Run(NullableExtraParamIntoNonNullableRef, NullableContextOptions.Enable);
+            Assert.Contains("Inner = inner!", forgivenAssign.GeneratedSource, StringComparison.Ordinal);
+            Assert.Contains(forgivenAssign.Diagnostics, d => d.Id == "DWARF070");
+
+            var unwrapped = GeneratorAssert.CompilesClean(NullableValueExtraParamIntoNonNullableValue, NullableContextOptions.Enable);
+            Assert.Contains("Count = count ?? throw new global::System.InvalidOperationException(\"Mapping parameter 'count' was null\")", unwrapped, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void DWARF070_names_the_extra_parameter_rather_than_an_empty_string()
+        {
+            // The member-side DWARF070 report prints MemberMap.SourceName, which an extra parameter does not have
+            // (it is not a member of the source type). Without the fallback the consumer read "Source member ''".
+            var run = GeneratorTestHarness.Run(NullableExtraParamIntoNonNullableRef, NullableContextOptions.Enable);
+            var d = Assert.Single(run.Diagnostics.Where(x => x.Id == "DWARF070"));
+            Assert.Contains("'inner'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Enum_without_obsolete_members_emits_no_pragma()
         {

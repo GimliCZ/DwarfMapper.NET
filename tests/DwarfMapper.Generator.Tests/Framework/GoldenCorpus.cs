@@ -186,6 +186,35 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                    public partial class M { public partial ChildDto ToDto(Child c); }
                                                    """, "DwarfGenerator");
 
+            // Round 29 task 2.7 — the same blind spot one path over. Phase 5 extra parameters had no golden case
+            // at all, and the two defects they carried both need the nullable context to show: the emitted
+            // partial dropped the '?' off `Child? lifted` (CS8611 against the user's own declaration) and the
+            // phase discarded the null-handling decision, so the body was emitted bare. `#nullable enable` opens
+            // the case source because GeneratorRunner defaults to NullableContextOptions.Disable, under which
+            // every annotation here is Oblivious and none of these arms is reachable.
+            yield return ("NullableExtraParameter", """
+                                                    #nullable enable
+                                                    using DwarfMapper;
+                                                    namespace Demo;
+                                                    public class Child { public int V { get; set; } }
+                                                    public class ChildDto { public int V { get; set; } }
+                                                    public class A { public int Id { get; set; } }
+                                                    public class B
+                                                    {
+                                                        public int Id { get; set; }
+                                                        public ChildDto? Lifted { get; set; }
+                                                        public ChildDto Forgiven { get; set; } = new();
+                                                        public Child Raw { get; set; } = new();
+                                                        public int Count { get; set; }
+                                                    }
+                                                    [DwarfMapper]
+                                                    public partial class M
+                                                    {
+                                                        public partial B Map(A a, Child? lifted, Child? forgiven, Child? raw, int? count);
+                                                        public partial ChildDto ToDto(Child c);
+                                                    }
+                                                    """, "DwarfGenerator");
+
             yield return ("EnumByName", """
                                         using DwarfMapper;
                                         namespace Demo;

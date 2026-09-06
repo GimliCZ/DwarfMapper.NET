@@ -80,6 +80,28 @@ namespace DwarfMapper.Generator.Model
     ///     never forgiven — dropping a null it was written to accept. Set only for the user-declared converter path;
     ///     synthesized helpers keep flowing through <c>IsSynthesized</c>.
     /// </param>
+    /// <param name="SourceAccessExpression">
+    ///     When non-null, the member's value is read from this raw C# expression instead of
+    ///     <c>param.Member</c> — and, unlike <see cref="ValueExpression" />, the converter and
+    ///     <see cref="NullHandling" /> still apply ON TOP of it. Set for a <b>Phase 5 extra parameter</b>, whose
+    ///     value is a bare identifier in scope rather than a member of the source object.
+    ///     <para>
+    ///         WHY IT IS NOT <see cref="ValueExpression" />. The extra-parameter phase used to hand the emitter a
+    ///         finished <c>Conv(p)</c> string, which short-circuits <c>AppendValueExpression</c> before any
+    ///         null handling is consulted — so a nullable extra parameter was emitted bare: <c>Count = count</c>
+    ///         for <c>int? → int</c> (CS0266, a compile ERROR in the consumer's .g.cs), <c>ToDto(inner)</c> for
+    ///         <c>Child? → ChildDto</c> (CS8604) and <c>Inner = inner</c> for <c>Child? → Child</c> (CS8601).
+    ///         Carrying the ACCESS rather than the finished value lets the extra parameter flow through the one
+    ///         emitter switch every other edge reads, instead of re-spelling <c>null</c> / <c>null!</c> / <c>!</c>
+    ///         at a fifth site.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="SourceName" /> stays empty, exactly as it was: every pass that treats
+    ///         <see cref="SourceName" /> as a path into the SOURCE TYPE (the <c>SkipNullSourceMembers</c> marking,
+    ///         the consumed-source-member analysis, flatten-root accounting) must keep skipping this member — a
+    ///         parameter named <c>inner</c> is not the source member <c>inner</c>.
+    ///     </para>
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -95,7 +117,8 @@ namespace DwarfMapper.Generator.Model
         bool NullRefIntoNonNullable = false,
         string? UpsertKeyMember = null,
         string? UpsertKeyTypeFqn = null,
-        bool ConverterParamIsNonNullableRef = false) : IEquatable<MemberMap>
+        bool ConverterParamIsNonNullableRef = false,
+        string? SourceAccessExpression = null) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

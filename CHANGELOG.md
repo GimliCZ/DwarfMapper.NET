@@ -153,6 +153,27 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **An extra mapping parameter declared nullable broke the consumer's build twice over: `CS8611` on the
+  generated signature, and `CS8604` / `CS8601` / `CS0266` in its body.** A parameter after the source on a map
+  method (`partial Dst Map(Src s, Child? inner)`) is matched to a destination member by name. Two things were
+  dropped on the way to emission, and the second was hidden behind the first:
+  - The implementing half of your partial re-declared that parameter **without its `?`**, so the two halves of
+    the partial disagreed — **`CS8611`, inside the generated file**, where no `#pragma`, `NoWarn` or
+    editorconfig of yours reaches it and `TreatWarningsAsErrors` makes it a build failure with no remedy on
+    your side.
+  - The phase that resolves the parameter to a member **discarded the null-handling decision** and handed the
+    emitter a finished expression, which bypasses null handling entirely. With the annotation restored, that
+    bare emission is `ToDto(inner)` → **`CS8604`** for a nullable parameter into a converter that refuses null,
+    `Inner = inner` → **`CS8601`** for a raw assign into a non-nullable member, and — independent of any
+    nullable context, so it has been there since extra parameters shipped — `Count = count` for an `int?`
+    parameter into an `int` member, which is **`CS0266`**, a hard compile **error** in a file you cannot edit.
+
+  An extra parameter is now answered exactly as the equivalent source member is: the lift
+  (`inner is null ? null : ToDto(inner)`) when the destination can hold the null, the forgiven argument
+  (`ToDto(inner!)`) with **`DWARF070`** against your own DTO when it cannot, and the mapper's `NullStrategy`
+  for a nullable value parameter. It is the same decision the rest of the engine reads, not a second copy of
+  it — the parameter is simply where the value is read from.
+
 - **A nested member mapped through one of your OWN map methods ignored the mapper's null policy: `CS8604` in
   the consumer's generated file, or an `ArgumentNullException` at run time.** When a nested edge resolves to a
   *synthesized* helper the engine emits `if (s is null) return null!;` — null in, null out, and it has done so
