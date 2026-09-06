@@ -45,11 +45,7 @@ namespace DwarfMapper.Generator.Tests
             Compile(string source)
         {
             var tree = CSharpSyntaxTree.ParseText(source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            var refs = References();
 
             var compilation = CSharpCompilation.Create(
                 "TransferModelTestAsm_" + Guid.NewGuid().ToString("N"),
@@ -79,6 +75,60 @@ namespace DwarfMapper.Generator.Tests
                 }
 
             return (compilation, types);
+        }
+
+        private static IEnumerable<MetadataReference> References()
+        {
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+        }
+
+        /// <summary>
+        ///     Compiles <paramref name="librarySource" /> to an assembly, references THAT, and returns the
+        ///     named type as the consuming compilation sees it â€” an imported symbol, not a source one.
+        /// </summary>
+        /// <remarks>
+        ///     The difference is the whole point: a metadata symbol has no <c>DeclaringSyntaxReferences</c>
+        ///     and, under the default <c>MetadataImportOptions</c>, no private backing fields either. Rules
+        ///     that read syntax do not FAIL on such a symbol, they pass it, so nothing short of a real
+        ///     metadata reference tests them. Building one in-memory is a few lines and is the only honest
+        ///     fixture for this.
+        /// </remarks>
+        private static (Compilation Compilation, INamedTypeSymbol Type) CompileFromMetadata(
+            string librarySource,
+            string typeMetadataName)
+        {
+            var options = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
+            var library = CSharpCompilation.Create(
+                "TransferModelLib_" + Guid.NewGuid().ToString("N"),
+                new[]
+                {
+                    CSharpSyntaxTree.ParseText(librarySource)
+                },
+                References(),
+                options);
+
+            using var image = new MemoryStream();
+            var emitted = library.Emit(image);
+            Assert.True(emitted.Success, "library fixture did not compile: " + string.Join("; ", emitted.Diagnostics));
+            image.Position = 0;
+
+            var consumer = CSharpCompilation.Create(
+                "TransferModelConsumer_" + Guid.NewGuid().ToString("N"),
+                new[]
+                {
+                    CSharpSyntaxTree.ParseText("namespace Consumer { public sealed class Anchor { public int A; } }")
+                },
+                References().Append(MetadataReference.CreateFromStream(image)),
+                options);
+
+            var type = consumer.GetTypeByMetadataName(typeMetadataName)
+                       ?? throw new InvalidOperationException($"'{typeMetadataName}' is not in the emitted assembly");
+
+            return (consumer, type);
         }
 
         private static TransferModelShape.Verdict ClassifyType(string source, string typeName = "Dto")
@@ -429,6 +479,8 @@ namespace DwarfMapper.Generator.Tests
         [InlineData("public Dto(int id) { if (id < 0) throw new System.ArgumentException(nameof(id)); Id = id; }")]
         [InlineData("public Dto(int id) { Id = id + 1; }")]
         [InlineData("public Dto(int id) { Id = id; if (id > 0) { } }")]
+        [InlineData("public Dto(int id) => Validate(id); private static void Validate(int id) { }")]
+        [InlineData("public Dto(int id) { Id = 42; }")]
         [InlineData("public Dto(int id) : this() { Id = id; } public Dto() { }")]
         public void Refuses_a_constructor_that_does_more_than_assign(string ctor)
         {
@@ -589,7 +641,7 @@ namespace DwarfMapper.Generator.Tests
                 "public sealed class Node { public Dto Owner { get; set; } } }");
 
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
-            Assert.Contains("cycle", verdict.Reason, StringComparison.Ordinal);
+            Assert.Contains("contains itself by value", verdict.Reason, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -603,7 +655,7 @@ namespace DwarfMapper.Generator.Tests
                 "#nullable enable\nnamespace T { public sealed class Dto { public int Id { get; set; } public Dto? Next { get; set; } } }");
 
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
-            Assert.Contains("cycle", verdict.Reason, StringComparison.Ordinal);
+            Assert.Contains("contains itself by value", verdict.Reason, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -669,6 +721,194 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
             Assert.Contains("Twice", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Fix round 1, Critical: a type from a REFERENCED ASSEMBLY came back Eligible with three rules
+        ///     silently vacuous. A metadata symbol has no <c>DeclaringSyntaxReferences</c>, so the constructor
+        ///     walk found no body to object to and returned "allowed" for a constructor that validates; the
+        ///     derived-type sweep reads this compilation's assembly and cannot see a subclass in the defining
+        ///     one; and the code fix has no declaration to rewrite. One guard refuses all three, and the reason
+        ///     names the assembly, because that project is the only place the consumer could act.
+        /// </summary>
+        [Fact]
+        public void Refuses_a_type_imported_from_a_referenced_assembly()
+        {
+            var (compilation, type) = CompileFromMetadata(
+                "namespace Lib { public sealed class Dto { public int Id { get; set; } public long Value { get; set; } " +
+                "public Dto(int id) { if (id < 0) throw new System.ArgumentException(nameof(id)); Id = id; } } }",
+                "Lib.Dto");
+
+            var verdict = TransferModelShape.Classify(type, compilation);
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("referenced assembly", verdict.Reason, StringComparison.Ordinal);
+            Assert.Equal(0, verdict.Size);
+        }
+
+        /// <summary>
+        ///     The same root cause's second symptom, and worth its own test: an imported auto-property has no
+        ///     backing field under the default <c>MetadataImportOptions</c>, so the member walk called an
+        ///     ordinary DTO's property "computed". That reason is FALSE, and T2.2 prints the reason verbatim —
+        ///     a wrong explanation is worse than a right refusal, because the consumer goes and stares at a
+        ///     property that is exactly what it should be.
+        /// </summary>
+        [Fact]
+        public void An_imported_auto_property_is_not_called_a_computed_property()
+        {
+            var (compilation, type) = CompileFromMetadata(
+                "namespace Lib { public sealed class Plain { public int Id { get; set; } public long Value { get; set; } } }",
+                "Lib.Plain");
+
+            var verdict = TransferModelShape.Classify(type, compilation);
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.DoesNotContain("computed property", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Fix round 1: the estimate must PROPAGATE out of a nested model. <c>Inner</c> holds a string, so
+        ///     its 16 B is a bound; inlining it into <c>Dto</c> makes <c>Dto</c>'s 24 B a bound too. Without
+        ///     the propagation the outer verdict claims an exact size that was built partly from an estimate,
+        ///     and T2.2 prints it as measured — the ruling-1 hazard, one level down, where no other fixture
+        ///     was looking.
+        /// </summary>
+        [Fact]
+        public void The_size_bound_propagates_out_of_a_nested_model()
+        {
+            var verdict = ClassifyType(
+                "#nullable enable\nnamespace T { public sealed class Inner { public string Name { get; set; } = \"\"; public int A { get; set; } } " +
+                "public sealed class Dto { public long L { get; set; } public Inner I { get; set; } = new Inner(); } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(24, verdict.Size);
+            Assert.True(verdict.SizeIsUpperBound);
+        }
+
+        /// <summary>
+        ///     Fix round 1: a collection's ELEMENT type is checked, and no fixture had exercised it. The
+        ///     collection is a reference either way, but the code fix rewrites the reachable subgraph, and an
+        ///     element it cannot rewrite is a member the consumer must be told about rather than one silently
+        ///     left behind. The reason names the member AND the element's own reason.
+        /// </summary>
+        [Theory]
+        [InlineData("System.Collections.Generic.List<Bad>")]
+        [InlineData("Bad[]")]
+        public void Refuses_a_collection_whose_element_is_not_transfer_model_shaped(string memberType)
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Bad { public int Id { get; set; } public int Twice() => Id * 2; } " +
+                "public sealed class Dto { public " + memberType + " Items { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("Items", verdict.Reason, StringComparison.Ordinal);
+            Assert.Contains("Twice", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Fix round 1, minor: <c>Dto[] Children</c> was refused as a reference cycle, which is factually
+        ///     wrong — an array element is a REFERENCE, there is no layout recursion, and
+        ///     <c>readonly record struct Dto(Dto[] Children)</c> is legal C#. The cycle rule is about a type
+        ///     that contains ITSELF BY VALUE, which this shape does not.
+        /// </summary>
+        [Fact]
+        public void A_self_referencing_array_member_is_not_a_cycle()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int Id { get; set; } public Dto[] Children { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(16, verdict.Size);
+            Assert.True(verdict.SizeIsUpperBound);
+        }
+
+        /// <summary>
+        ///     Fix round 1, minor: a struct member may be neither <c>protected</c> (CS0666 — there is no
+        ///     derived type to protect it from) nor <c>virtual</c> (CS0106 — nothing can override it). Left
+        ///     open, the T2.3 rewrite would put a compile error in the consumer's file instead of a diagnostic
+        ///     in ours. A record's own protected virtual members are implicitly declared and never reach here,
+        ///     which <see cref="Eligible_for_a_positional_record_class" /> keeps honest.
+        /// </summary>
+        [Theory]
+        [InlineData("protected int Secret;", "protected")]
+        [InlineData("public virtual int V { get; set; }", "virtual")]
+        public void Refuses_a_member_a_struct_cannot_declare(string member, string expected)
+        {
+            var verdict = ClassifyType(
+                "namespace T { public class Dto { public int Id { get; set; } " + member + " } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains(expected, verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>An indexer is not state, and a transfer model that computes on lookup is not one.</summary>
+        [Fact]
+        public void Refuses_an_indexer()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int Id { get; set; } public int this[int i] => Id + i; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("indexer", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The "not a class" arm, reached by something that is not a struct either — every other refusal
+        ///     test feeds it a class, and the value-type test covers the other side of that branch.
+        /// </summary>
+        [Fact]
+        public void Refuses_an_interface()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public interface IDto { int Id { get; } } }",
+                "IDto");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("not a class", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Ruling on the review's Important 3: a PUBLIC unsealed DTO can be subclassed by a consuming
+        ///     project the sweep never sees, so the verdict records the scope of its own evidence rather than
+        ///     letting T2.2 imply derivation was ruled out everywhere. Restricting the rule to non-public types
+        ///     would end the feature, since most transfer models are public — so the check stays and the claim
+        ///     gets qualified instead. Sealed and internal types are decided on complete evidence and carry no
+        ///     flag.
+        /// </summary>
+        [Theory]
+        [InlineData("public", true)]
+        [InlineData("public sealed", false)]
+        [InlineData("internal", false)]
+        public void An_eligible_verdict_records_how_far_the_derivation_check_could_see(
+            string modifiers,
+            bool limited)
+        {
+            var verdict = ClassifyType(
+                "namespace T { " + modifiers + " class Dto { public int Id { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(limited, verdict.DerivationCheckedWithinAssemblyOnly);
+        }
+
+        /// <summary>
+        ///     A nested model over 64 B does NOT refuse its owner, and the controller ruled the code right:
+        ///     TooLarge is a size BAND, not a shape. The inner type can perfectly well be a struct — it is
+        ///     merely one to pass by <c>in</c> — so it inlines, and inlining it carries the outer past 64,
+        ///     where the outer's own threshold reports it honestly. Nine longs is 72 B, and the outer comes
+        ///     back 72 B rather than refused.
+        /// </summary>
+        [Fact]
+        public void A_nested_model_over_the_limit_makes_the_outer_too_large_not_refused()
+        {
+            var longs = string.Join(
+                " ",
+                Enumerable.Range(0, 9).Select(i => $"public long L{i} {{ get; set; }}"));
+            var verdict = ClassifyType(
+                "#nullable enable\nnamespace T { public sealed class Inner { " + longs + " } " +
+                "public sealed class Dto { public Inner I { get; set; } = new Inner(); } }");
+
+            Assert.Equal(TransferModelShape.Outcome.TooLarge, verdict.Kind);
+            Assert.Equal(72, verdict.Size);
         }
 
         // ─── The compilation-wide facts, and the shape T2.2 calls ────────────────

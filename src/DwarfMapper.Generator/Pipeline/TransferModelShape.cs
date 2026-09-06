@@ -91,6 +91,18 @@ namespace DwarfMapper.Generator.Pipeline
         ///     x64 and smaller on a 32-bit runtime, so a caller must word it as a bound ("at most N bytes"),
         ///     never as a measurement.
         /// </param>
+        /// <param name="DerivationCheckedWithinAssemblyOnly">
+        ///     True when the "sealed, or nothing derives from it" rule was decided on evidence that does not
+        ///     cover everywhere the type is visible: a <c>public</c> unsealed type can be subclassed by a
+        ///     CONSUMING project, and the sweep sees this assembly only.
+        ///     <para>
+        ///         Restricting the rule to non-public types would end the feature — most transfer models are
+        ///         public. So the check stays, and the verdict says what it actually checked instead: a caller
+        ///         must not word the suggestion as though derivation had been ruled out everywhere. Telling a
+        ///         consumer exactly what is wrong has a corollary, which is not implying we looked further
+        ///         than we did.
+        ///     </para>
+        /// </param>
         /// <param name="Reason">
         ///     Why the type was refused, in terms of the consumer's own declaration — empty for the two
         ///     eligible outcomes. Always non-empty on <see cref="Outcome.NotEligible" />.
@@ -100,24 +112,44 @@ namespace DwarfMapper.Generator.Pipeline
             int Size,
             bool SuggestIn,
             bool SizeIsUpperBound,
+            bool DerivationCheckedWithinAssemblyOnly,
             string Reason)
         {
             /// <summary>True when the type is transfer-model shaped, whatever its size.</summary>
             public bool IsShaped => Kind != Outcome.NotEligible;
 
-            internal static Verdict Fits(int size, bool suggestIn, bool sizeIsUpperBound)
+            internal static Verdict Fits(
+                int size,
+                bool suggestIn,
+                bool sizeIsUpperBound,
+                bool derivationCheckedWithinAssemblyOnly)
             {
-                return new Verdict(Outcome.Eligible, size, suggestIn, sizeIsUpperBound, string.Empty);
+                return new Verdict(
+                    Outcome.Eligible,
+                    size,
+                    suggestIn,
+                    sizeIsUpperBound,
+                    derivationCheckedWithinAssemblyOnly,
+                    string.Empty);
             }
 
-            internal static Verdict Oversized(int size, bool sizeIsUpperBound)
+            internal static Verdict Oversized(
+                int size,
+                bool sizeIsUpperBound,
+                bool derivationCheckedWithinAssemblyOnly)
             {
-                return new Verdict(Outcome.TooLarge, size, false, sizeIsUpperBound, string.Empty);
+                return new Verdict(
+                    Outcome.TooLarge,
+                    size,
+                    false,
+                    sizeIsUpperBound,
+                    derivationCheckedWithinAssemblyOnly,
+                    string.Empty);
             }
 
             internal static Verdict No(string reason)
             {
-                return new Verdict(Outcome.NotEligible, 0, false, false, reason);
+                return new Verdict(Outcome.NotEligible, 0, false, false, false, reason);
             }
         }
 
@@ -268,14 +300,16 @@ namespace DwarfMapper.Generator.Pipeline
         {
             alignment = 1;
 
-            foreach (var visiting in path)
-                if (SymbolEqualityComparer.Default.Equals(visiting, type))
-                {
-                    // A struct cannot contain itself (CS0523), so this graph has no value form at all. The
-                    // class the consumer wrote compiles, which is exactly why the walk cannot lean on the
-                    // language rule to stop it.
-                    return Verdict.No($"'{type.Name}' is part of a reference cycle and has no value layout");
-                }
+            // A struct cannot contain itself (CS0523), so an INLINE chain that returns to a type it is
+            // already inside has no value form at all. The class the consumer wrote compiles, which is
+            // exactly why the walk cannot lean on the language rule to stop it. Only inline edges reach
+            // here â€” a collection element is a reference and is accepted in TryMeasureMember instead.
+            if (Contains(path, type))
+            {
+                return Verdict.No(
+                    $"'{type.Name}' contains itself by value, directly or through another transfer model, " +
+                    "so it has no value layout");
+            }
 
             if (path.Count >= MaxDepth)
             {
@@ -357,12 +391,23 @@ namespace DwarfMapper.Generator.Pipeline
             var layout = LayoutHygiene.LayOut(members);
             alignment = layout.Alignment;
 
+            // What the derived-type sweep could actually see. A sealed type cannot be derived from at all, and
+            // a non-public one can only be derived from inside the assembly the sweep walked; a public unsealed
+            // one can be subclassed by a project this compilation never sees, so the verdict carries the scope
+            // of its own evidence rather than letting a caller overstate it.
+            var derivationCheckedWithinAssemblyOnly =
+                type is { IsSealed: false, DeclaredAccessibility: Accessibility.Public };
+
             if (layout.Size > SuggestInSizeLimit)
             {
-                return Verdict.Oversized(layout.Size, sizeIsUpperBound);
+                return Verdict.Oversized(layout.Size, sizeIsUpperBound, derivationCheckedWithinAssemblyOnly);
             }
 
-            return Verdict.Fits(layout.Size, layout.Size > SilentSizeLimit, sizeIsUpperBound);
+            return Verdict.Fits(
+                layout.Size,
+                layout.Size > SilentSizeLimit,
+                sizeIsUpperBound,
+                derivationCheckedWithinAssemblyOnly);
         }
 
         /// <summary>
@@ -383,6 +428,26 @@ namespace DwarfMapper.Generator.Pipeline
             if (type.TypeKind != TypeKind.Class)
             {
                 return Verdict.No($"'{type.Name}' is not a class");
+            }
+
+            // A type imported from a referenced assembly is refused OUTRIGHT, and this guard has to come
+            // before every rule that reads syntax, because those rules do not fail on it — they pass. A
+            // metadata symbol has no DeclaringSyntaxReferences, so the constructor walk finds nothing to
+            // object to and returns "allowed" for a constructor that validates; the derived-type sweep reads
+            // this compilation's assembly and cannot see a subclass in the defining one; and its
+            // auto-properties' backing fields are not imported under the default MetadataImportOptions, so the
+            // member walk would call an ordinary auto-property "computed". Three rules silently vacuous and a
+            // fourth actively wrong, on one root cause.
+            //
+            // The refusal is right on its own merits too: the code fix rewrites a DECLARATION, and there is no
+            // declaration here to rewrite. Naming the assembly is what makes it actionable — the consumer has
+            // to change that project, or nothing.
+            if (type.DeclaringSyntaxReferences.IsEmpty)
+            {
+                var assembly = type.ContainingAssembly?.Name ?? "another assembly";
+                return Verdict.No(
+                    $"'{type.Name}' is declared in referenced assembly '{assembly}', not in source, so its " +
+                    "shape cannot be checked and its declaration cannot be rewritten");
             }
 
             if (type.IsStatic)
@@ -510,6 +575,24 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // Two modifiers a struct member simply may not carry, and the rewrite would turn each into a
+                // compile error in the consumer's file rather than a diagnostic in ours: `protected` is CS0666
+                // (a struct has no derived type to protect anything from) and `virtual` is CS0106 (there is
+                // nothing to override it). A record's own protected virtual members â€” EqualityContract,
+                // PrintMembers â€” are implicitly declared and never reach here.
+                if (member.IsVirtual)
+                {
+                    return Verdict.No(
+                        $"'{type.Name}.{member.Name}' is virtual, which a struct member cannot be (CS0106)");
+                }
+
+                if (member.DeclaredAccessibility is Accessibility.Protected
+                    or Accessibility.ProtectedOrInternal or Accessibility.ProtectedAndInternal)
+                {
+                    return Verdict.No(
+                        $"'{type.Name}.{member.Name}' is protected, which a struct member cannot be (CS0666)");
+                }
+
                 switch (member)
                 {
                     case IEventSymbol:
@@ -632,6 +715,18 @@ namespace DwarfMapper.Generator.Pipeline
             return null;
         }
 
+        /// <summary>Symbol-aware membership, so the two callers of the inline path agree on the comparer.</summary>
+        private static bool Contains(List<INamedTypeSymbol> path, INamedTypeSymbol type)
+        {
+            foreach (var visiting in path)
+                if (SymbolEqualityComparer.Default.Equals(visiting, type))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
         /// <summary>True for <c>X = p</c> and <c>this.X = p</c>, where <c>p</c> names a parameter.</summary>
         private static bool IsParameterAssignment(ExpressionSyntax expression, HashSet<string> parameters)
         {
@@ -691,6 +786,20 @@ namespace DwarfMapper.Generator.Pipeline
                 // variable-length sequence. Its ELEMENT type is still checked, because the code fix rewrites
                 // the reachable transfer-model subgraph, and an element it cannot rewrite is a member the
                 // consumer must be told about rather than one silently left behind.
+                //
+                // An element already on the inline path is ACCEPTED here rather than refused as a cycle.
+                // `Dto[] Children` inside `Dto` recurses through a REFERENCE: there is no layout recursion,
+                // and `readonly record struct Dto(Dto[] Children)` is legal C#. Calling that a cycle told the
+                // consumer something factually untrue. Every other rule for that type is being checked by its
+                // own frame further up the stack, and reusing `path` — rather than starting a fresh one — is
+                // what keeps the walk terminating on `A { B[] } / B { A[] }`.
+                if (element is INamedTypeSymbol namedElement && Contains(path, namedElement))
+                {
+                    measured = ReferenceField;
+                    sizeIsUpperBound = true;
+                    return true;
+                }
+
                 if (!TryMeasureMember(
                         element,
                         compilation,
@@ -712,6 +821,12 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (memberType is INamedTypeSymbol { IsReferenceType: true } reference)
             {
+                // IsShaped, not "Eligible": TooLarge is admitted DELIBERATELY, because it is a size band
+                // and not a shape. A nested model over 64 B can still be inlined â€” it is a struct the
+                // consumer would be told to pass by `in`, not one that cannot exist â€” and inlining it pushes
+                // the OUTER type past 64 too, where the outer's own threshold reports it honestly. The rule
+                // that an unshaped member refuses its owner is about a member that cannot become a struct at
+                // all: an entity, a type with behaviour, a class with a base.
                 var nested = Classify(reference, compilation, facts, path, out var nestedAlignment);
                 if (!nested.IsShaped)
                 {
