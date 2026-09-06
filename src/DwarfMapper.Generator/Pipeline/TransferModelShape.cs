@@ -51,23 +51,26 @@ namespace DwarfMapper.Generator.Pipeline
         private const int MaxDepth = 16;
 
         /// <summary>
-        ///     Bytes at or under which a struct transfer model's SIZE is not worth remarking on. Above it the
-        ///     size is printed; only above <see cref="SuggestInSizeLimit" /> is <c>in</c> advised. (The
-        ///     diagnostic itself fires on SHAPE, not on size, in every band.)
+        ///     Bytes at or under which a struct transfer model's size is not worth remarking on — the line
+        ///     <see cref="Verdict.SuggestIn" /> marks, and nothing more than that.
         ///     <para>
-        ///         Assembly-visible so <c>DWARF103</c>'s message can PRINT the threshold it applied rather than
-        ///         restate it as a literal. A second copy of 32 in the diagnostic would be free to drift from
-        ///         the one the verdict was decided by, and the message would then name a threshold nothing
-        ///         enforces (round 29, T2.2).
+        ///         <b>It is not a threshold <c>DWARF103</c> applies.</b> That message prints the size for every
+        ///         element it names, in every band, and adds the <c>in</c> advice only above
+        ///         <see cref="SuggestInSizeLimit" />. This constant was briefly <c>internal</c> so the message
+        ///         could print it; fix round 4 found the message no longer refers to it and narrowed it back,
+        ///         because an accessibility widened for a reader that has gone is a claim about coupling that
+        ///         no longer exists.
         ///     </para>
         /// </summary>
-        internal const int SilentSizeLimit = 32;
+        private const int SilentSizeLimit = 32;
 
         /// <summary>
         ///     Bytes above which the struct is reported <see cref="Outcome.TooLarge" /> to copy by value — and
-        ///     the ONLY band in which <c>DWARF103</c> advises <c>in</c>. Assembly-visible for the same reason
-        ///     <see cref="SilentSizeLimit" /> is: the message prints the threshold it applied rather than a
-        ///     literal that could drift from it.
+        ///     the ONLY band in which <c>DWARF103</c> advises <c>in</c>. Assembly-visible because that message
+        ///     PRINTS this number ("over the 64-byte limit"): a second literal 64 in the diagnostic would be
+        ///     free to drift from the one the verdict was decided by, and the message would then name a limit
+        ///     nothing enforces. <see cref="SilentSizeLimit" /> is private for the mirror-image reason —
+        ///     nothing outside this file reads it.
         /// </summary>
         internal const int SuggestInSizeLimit = 64;
 
@@ -86,7 +89,7 @@ namespace DwarfMapper.Generator.Pipeline
             ///         documented the same way — so both bands appeared to warrant the advice and
             ///         <c>DWARF103</c> gave it in both. The spec tiers them (≤32 B silent, 32–64 B Info, &gt;64 B
             ///         suggest <c>in</c>), the project owner ruled that tiering reasonable
-            ///         (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §9, ruling (b)), and the measurement
+            ///         (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §8, ruling (b)), and the measurement (§7)
             ///         behind it is that a 64-byte struct still beat its class by value (26.4 ns vs 29.9 ns).
             ///         Advising <c>in</c> at 40 bytes would be advising an indirection the numbers do not ask
             ///         for.

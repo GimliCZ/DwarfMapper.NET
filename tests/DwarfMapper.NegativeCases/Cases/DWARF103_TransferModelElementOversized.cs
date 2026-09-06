@@ -13,7 +13,8 @@
 //       `TooLarge || SuggestIn` advises `in` at 40 bytes too, and the measurement does not support it (a
 //       64-byte struct still beat its class by value, 26.4 ns against 29.9 ns). The spec tiers the bands
 //       ≤32 B silent, 32-64 B Info, >64 B suggest `in`, and the project owner ruled that tiering reasonable
-//       (Issues/round29/RESEARCH-hardware-mode.md section 9, ruling (b)). This file fails if the top band
+//       (Issues/round29/RESEARCH-hardware-mode.md section 8, ruling (b); the measurement is section 7).
+//       This file fails if the top band
 //       ever loses the advice; its middle-band sibling in TransferModelDiagnosticTests fails if the middle
 //       band gains it.
 //

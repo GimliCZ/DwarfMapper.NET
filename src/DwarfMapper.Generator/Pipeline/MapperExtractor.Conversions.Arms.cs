@@ -797,7 +797,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         round 3 — advises it at 40 bytes as well, which the measurement does not support: a 64-byte
         ///         struct still beat its class by value (26.4 ns vs 29.9 ns). The spec tiers the bands ≤32 B
         ///         silent, 32–64 B Info, &gt;64 B suggest <c>in</c>, the project owner ruled that tiering
-        ///         reasonable (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §9, ruling (b)), and the answer
+        ///         reasonable (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §8, ruling (b)), and the answer
         ///         is <c>Kind == TooLarge</c> on its own. The middle band's whole report is the size, printed
         ///         in every band.
         ///     </para>
@@ -878,7 +878,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // TooLarge ALONE, not `TooLarge || SuggestIn` (fix round 3). The spec tiers the bands — ≤32 B
             // silent, 32–64 B Info, >64 B suggest `in` — and the project owner ruled that tiering reasonable
-            // (Issues/round29/RESEARCH-hardware-mode.md §9, ruling (b)). The measurement under it is that a
+            // (Issues/round29/RESEARCH-hardware-mode.md §8, ruling (b); the measurement is §7). Under it is that a
             // 64-byte struct still beat its class BY VALUE (26.4 ns vs 29.9 ns, 240 B), so `in` in the middle
             // band would be advising an indirection the numbers do not ask for. The middle band's report is
             // the size, which is printed above in every band.

@@ -173,7 +173,7 @@ namespace DwarfMapper.Generator.Tests
         ///         Fix round 3. This shipped advising <c>in</c> here, on a reading of the classifier's own
         ///         (since corrected) doc comments; the spec tiers the bands ≤32 B silent, 32–64 B Info,
         ///         &gt;64 B suggest <c>in</c>, and the project owner ruled that tiering reasonable
-        ///         (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §9, ruling (b)). The measurement is why: a
+        ///         (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §8, ruling (b)). The measurement (§7) is why: a
         ///         64-byte struct still beat its class BY VALUE, 26.4 ns against 29.9 ns, so telling a consumer
         ///         to add an indirection at 40 bytes is advice against the numbers.
         ///     </para>
@@ -440,7 +440,7 @@ namespace DwarfMapper.Generator.Tests
                 Message(one),
                 StringComparison.Ordinal);
 
-            // The same pair may not be told it could blit: five reference members, so neither side is unmanaged.
+            // The same pair may not be told it could blit: nine reference members, so neither side is unmanaged.
             Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
         }
 

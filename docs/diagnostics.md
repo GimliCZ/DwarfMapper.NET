@@ -1985,14 +1985,14 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
   number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
   because that is the rewrite being suggested.
-- **Three size bands, and only the top one asks you to pass it by `in`.** At or under **32 bytes** the size
-  is not remarked on. Between **32 and 64** the size is printed and nothing else — a struct that size still
-  wins by value, measured: 26.4 ns against the class's 29.9 ns at 64 bytes, so adding an indirection there
-  would be advice against the numbers. **Over 64 bytes** the copy is what dominates, and the message says to
-  pass it by `in`. The diagnostic itself fires on *shape*, in every band; the bands govern only what is said
-  about size. When the size is a bound, so is the comparison — 72 bytes of references is 36 on a 32-bit
-  runtime, under the limit — so the clause says so and advises `in` either way, which costs nothing on the
-  smaller reading.
+- **The size is printed for every element the diagnostic names; only one band adds advice about it.** At or
+  under **64 bytes** you are told the size and nothing more — a struct that size still wins by value,
+  measured: 26.4 ns against the class's 29.9 ns at 64 bytes, so adding an indirection there would be advice
+  against the numbers. **Over 64 bytes** the copy is what dominates, and the message says to pass it by `in`.
+  When the size is a bound, so is the comparison — 72 bytes of references is 36 on a 32-bit runtime, under
+  the limit — so the clause says so and advises `in` either way, which costs nothing on the smaller reading.
+  (Internally there is a third line at **32 bytes**, where the by-value copy starts to cost something without
+  yet outweighing the class. It changes nothing you are shown here; it marks a band for the code fix.)
 - **The block copy is mentioned only where it is possible AND earned.** Two conditions, both required: the
   *source* element must be transfer-model shaped in its own right (otherwise the sentence would be advising
   that an entity, or a type with behaviour, become a struct — on no evidence, since only the target is
