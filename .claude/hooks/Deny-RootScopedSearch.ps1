@@ -123,9 +123,45 @@ try {
 catch { exit 0 }
 if ([string]::IsNullOrWhiteSpace($command)) { exit 0 }
 
-# Split on the separators that start a new command, so `cd x && grep -r . ` is inspected too.
+# Split on the separators that start a new command, so `cd x && grep -r . ` is inspected too — but ONLY
+# outside quotes. A naive `-split` on `|` tears a quoted regex in half: `grep -rc "\[Fact\]\|\[Theory\]" path`
+# became the fragment `grep -rc "\[Fact\]\`, which has a recursive flag and no path operand left, and so read
+# as a pathless root search. That refused a correct command — measured, on this hook's own author, within
+# minutes of installing it. A false refusal is the cheap failure here, but it is still a failure.
+function Split-Segments {
+    param([string] $Command)
+
+    $segments = New-Object System.Collections.Generic.List[string]
+    $current = ''
+    $quote = [char]0
+
+    for ($i = 0; $i -lt $Command.Length; $i++) {
+        $ch = $Command[$i]
+
+        if ($quote -ne [char]0) {
+            $current += $ch
+            if ($ch -eq $quote) { $quote = [char]0 }
+            continue
+        }
+        if ($ch -eq '"' -or $ch -eq "'") {
+            $quote = $ch
+            $current += $ch
+            continue
+        }
+        if ($ch -eq ';' -or $ch -eq '|' -or $ch -eq '&') {
+            $segments.Add($current) | Out-Null
+            $current = ''
+            continue
+        }
+        $current += $ch
+    }
+
+    $segments.Add($current) | Out-Null
+    return $segments
+}
+
 $offending = $false
-foreach ($segment in ($command -split '(\|\||&&|\||;)')) {
+foreach ($segment in (Split-Segments -Command $command)) {
     $hit = $false
     try { $hit = Test-RootScopedSearch -Text $segment } catch { $hit = $false }
     if ($hit) { $offending = $true; break }
