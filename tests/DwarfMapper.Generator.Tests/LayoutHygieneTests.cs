@@ -173,6 +173,120 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     The four BCL value types a real DTO is made of. Each is a metadata struct with no source
+        ///     declaration, so the sequential-layout gate refuses it and, before this, refused the whole
+        ///     enclosing struct with it — a DTO carrying a <c>Guid Id</c> could not be sized at all, which is
+        ///     most of them. Their layouts are runtime facts, fixed by the platform ABI and asserted against
+        ///     <c>Unsafe.SizeOf</c> in <see cref="BclLayoutFactsTests" />, so they are stated here on exactly the
+        ///     footing <c>Nullable&lt;T&gt;</c> already stood on: a documented layout this generator may rely on.
+        ///     <para>
+        ///         Sizes and alignments (x64 and x86 alike): <c>Guid</c> 16/4 — four fields of int, short, short,
+        ///         then eight bytes, so it aligns to 4, not 16; <c>DateTime</c> 8/8 and <c>TimeSpan</c> 8/8, each
+        ///         one <c>ulong</c>/<c>long</c>; <c>decimal</c> 16/8, four <c>int</c>s but 8-aligned on x64.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [InlineData("System.Guid", 16, 4)]
+        [InlineData("System.DateTime", 8, 8)]
+        [InlineData("System.TimeSpan", 8, 8)]
+        [InlineData("System.Decimal", 16, 8)]
+        public void Measure_sizes_the_fixed_layout_BCL_value_types(string metadataName, int size, int align)
+        {
+            var (compilation, _) = Compile("namespace T { public struct Unused { public int A; } }");
+            var type = compilation.GetTypeByMetadataName(metadataName)!;
+
+            var layout = LayoutHygiene.Measure(type);
+
+            Assert.NotNull(layout);
+            Assert.Equal(size, layout!.Value.Size);
+            Assert.Equal(align, layout.Value.Alignment);
+            // They carry no field order of their own: the fields are the runtime's, in the runtime's order, so
+            // there is no remedy to print — the same contract Nullable<T> has.
+            Assert.Empty(layout.Value.PackedOrder);
+            Assert.False(LayoutHygiene.WastesAQuarter(layout.Value));
+        }
+
+        /// <summary>
+        ///     The shape this exists for: the commonest transfer struct there is. Before the BCL layouts were
+        ///     known, <c>Guid Id</c> refused and took the whole struct's measurement with it, so
+        ///     <c>TransferModelShape.Classify</c> (round 29 Phase 2) could not size the very types it is meant to
+        ///     decompose. Verified against the runtime: <c>Unsafe.SizeOf</c> is 40.
+        ///     <para>
+        ///         Layout: <c>Guid</c> 16 (4-aligned) at 0, <c>long</c> at 16, <c>byte</c> at 24, <c>DateTime</c>
+        ///         8-aligned at 32 → 40, struct aligned to 8. Payload 16 + 8 + 1 + 8 = 33, so 7 bytes of padding
+        ///         — under the 8-byte floor, so it is correctly NOT reported.
+        ///     </para>
+        ///     <para>
+        ///         The packed order is worth reading twice, because it is the trap in this whole feature: packing
+        ///         sorts by ALIGNMENT descending, not by size, so the 16-byte <c>Guid</c> lands AFTER the 8-byte
+        ///         <c>long</c> and <c>DateTime</c> — it is only 4-aligned. An earlier draft of this test asserted
+        ///         <c>Id</c> first, on the assumption that the biggest field leads; the implementation was right
+        ///         and the assumption was wrong.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void Measure_sizes_a_DTO_whose_first_field_is_a_Guid()
+        {
+            var layout = MeasureType(
+                """
+                using System;
+                namespace T
+                {
+                    public struct OrderDto
+                    {
+                        public Guid Id;
+                        public long Amount;
+                        public byte Flag;
+                        public DateTime When;
+                    }
+                }
+                """,
+                "OrderDto");
+
+            Assert.Equal(40, layout.Size);
+            Assert.Equal(8, layout.Alignment);
+            Assert.Equal(7, layout.Padding);
+            Assert.Equal("Amount, When, Id, Flag", layout.PackedOrderText);
+            Assert.False(LayoutHygiene.WastesAQuarter(layout));
+        }
+
+        /// <summary>
+        ///     And the same DTO laid out wastefully still reports, now that the <c>Guid</c> no longer blocks the
+        ///     measurement: <c>byte</c> at 0, <c>Guid</c> 4-aligned at 4, <c>byte</c> at 20, <c>DateTime</c>
+        ///     8-aligned at 24 → 32, payload 26, padding 6 … which is under the floor. Widening the gap with a
+        ///     second 8-aligned field is what clears it — the point being that the arithmetic now RUNS for a
+        ///     Guid-bearing struct at all, which is what was broken.
+        /// </summary>
+        [Fact]
+        public void A_padded_Guid_bearing_struct_is_now_reportable()
+        {
+            var layout = MeasureType(
+                """
+                using System;
+                namespace T
+                {
+                    public struct Padded
+                    {
+                        public byte A;
+                        public Guid Id;
+                        public byte B;
+                        public DateTime When;
+                        public byte C;
+                        public double Rate;
+                    }
+                }
+                """,
+                "Padded");
+
+            Assert.Equal(48, layout.Size);
+            Assert.Equal(13, layout.Padding);
+            Assert.True(LayoutHygiene.WastesAQuarter(layout),
+                "13 bytes of padding in 48 clears both the quarter rule and the 8-byte floor");
+            // 8-aligned fields first, then the 4-aligned Guid, then the bytes — alignment order, not size order.
+            Assert.Equal("When, Rate, Id, A, B, C", layout.PackedOrderText);
+        }
+
+        /// <summary>
         ///     A nested struct is measured recursively and then counted as ONE field at its full size — its own
         ///     internal padding belongs to its own declaration, never to the enclosing type's remedy.
         /// </summary>
@@ -341,8 +455,10 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         [Theory]
         // A metadata struct: an absent [StructLayout] cannot be read as Sequential, and the consumer cannot
-        // reorder a type they do not declare.
-        [InlineData("Metadata", "namespace T { public struct Holder { public System.Guid G; } }", "System.Guid")]
+        // reorder a type they do not declare. System.Guid used to stand here; it is now one of the four
+        // fixed-layout BCL types Measure is allowed to know (see Measure_sizes_the_fixed_layout_BCL_value_types),
+        // so the refusal is pinned with a metadata struct that carries no such promise.
+        [InlineData("Metadata", "namespace T { public struct Holder { public System.DateTimeOffset G; } }", "System.DateTimeOffset")]
         // Non-Sequential layout: the runtime is free to reorder.
         [InlineData("Auto",
             "using System.Runtime.InteropServices; namespace T { [StructLayout(LayoutKind.Auto)] public struct S { public byte A; public long B; } }",
@@ -372,8 +488,11 @@ namespace DwarfMapper.Generator.Tests
         [InlineData("Managed", "namespace T { public struct S { public byte A; public string B; } }", "S")]
         // A class is not laid out by these rules at all.
         [InlineData("Class", "namespace T { public class S { public byte A; public long B; } }", "S")]
-        // decimal has no width PrimitiveSize will claim, and its own layout is metadata's business.
-        [InlineData("Decimal", "namespace T { public struct S { public byte A; public decimal B; } }", "S")]
+        // A type PARAMETER: its width is whatever the consumer substitutes, so there is no number to state.
+        // (decimal used to stand here, on the grounds that PrimitiveSize claims no width for it. It is now a
+        //  known 16/8 — asserted against the runtime in BclLayoutFactsTests — so the refusal it once pinned
+        //  belongs to a shape that genuinely has no knowable size.)
+        [InlineData("TypeParameter", "namespace T { public struct S<T2> where T2 : unmanaged { public byte A; public T2 B; } }", "S")]
         public void Measure_refuses_a_shape_whose_bytes_it_cannot_prove(string shape, string source, string typeName)
         {
             var (compilation, types) = Compile(source);

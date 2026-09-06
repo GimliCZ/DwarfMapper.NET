@@ -160,6 +160,14 @@ namespace DwarfMapper.Generator.Pipeline
                 return new Layout(nullableSize, inner.Align, nullableSize - (1 + inner.Size), nullableSize, NoOrder);
             }
 
+            // The fixed-layout BCL types, asked for directly rather than as someone's field. Same contract as
+            // Nullable<T> above: a size and an alignment, and NO field order — their fields are the runtime's,
+            // so there is no remedy to print and WastesAQuarter refuses them on the empty order alone.
+            if (FixedLayoutBclSize(named) is { } bcl)
+            {
+                return new Layout(bcl.Size, bcl.Align, 0, bcl.Size, NoOrder);
+            }
+
             // Everything below is read from BlittableProof so the two agree by construction:
             //  - not in source, or a [StructLayout] that is not Sequential  → the field order is not knowable;
             //  - an explicit Pack                                          → every offset below is wrong;
@@ -250,7 +258,56 @@ namespace DwarfMapper.Generator.Pipeline
                 return width > 0 ? (width, width) : null;
             }
 
+            if (FixedLayoutBclSize(type) is { } bcl)
+            {
+                return bcl;
+            }
+
             return MeasureStruct(type, depth) is { } nested ? (nested.Size, nested.Alignment) : null;
+        }
+
+        /// <summary>
+        ///     The four BCL value types whose layout this generator is allowed to know, or <see langword="null" />
+        ///     for everything else.
+        ///     <para>
+        ///         Every other metadata struct is refused, because its bytes are not knowable from symbols alone —
+        ///         and that refusal is the right default. These four are the exception on the same footing
+        ///         <c>Nullable&lt;T&gt;</c> already stood on: their layouts are fixed by the platform ABI and part
+        ///         of the types' contracts, not incidental to a particular build. Without them the refusal
+        ///         cascaded — a struct with a <c>Guid Id</c> could not be measured at all, and that is the
+        ///         commonest transfer model there is, so the diagnostic went quiet on precisely the types it
+        ///         exists for.
+        ///     </para>
+        ///     <para>
+        ///         A hard-coded table inside a generator is only honest if something executes it: every size and
+        ///         alignment here is asserted against the real runtime by
+        ///         <c>DwarfMapper.IntegrationTests.BclLayoutFactsTests</c>, which fails the build the day any of
+        ///         them moves. Note <c>Guid</c> is 16 bytes but 4-ALIGNED — it is {int, short, short, 8 bytes},
+        ///         not a 16-byte block — so a caller that assumed size and alignment agree would place every
+        ///         following field wrongly.
+        ///     </para>
+        ///     <para>
+        ///         Deliberately NOT extended further. <c>DateTimeOffset</c> is {DateTime, short} and would be a
+        ///         defensible fifth, but each entry is a promise about another type's internals, and the list
+        ///         earns its keep only while every member is load-bearing for a shape consumers actually write.
+        ///     </para>
+        /// </summary>
+        private static (int Size, int Align)? FixedLayoutBclSize(ITypeSymbol type)
+        {
+            if (type.TypeKind != TypeKind.Struct || type.ContainingNamespace is not { Name: "System" } ns ||
+                !ns.ContainingNamespace.IsGlobalNamespace)
+            {
+                return null;
+            }
+
+            return type.MetadataName switch
+            {
+                "Guid" => (16, 4),
+                "DateTime" => (8, 8),
+                "TimeSpan" => (8, 8),
+                "Decimal" => (16, 8),
+                _ => null
+            };
         }
 
         /// <summary>Lays the members out in the order given and returns the struct size that results.</summary>
