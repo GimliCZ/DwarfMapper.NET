@@ -11,7 +11,12 @@
         <!-- CA1720/IDE1006: `Format`, `Page<T>` and the DTO member names mirror real application vocabulary. -->
         <!-- CA1034: view models NESTED inside the handler that owns them is the harvested pattern under test
              (ContosoUniversity), not an oversight — a mapper has to cope with types that are not top-level. -->
-        <NoWarn>$(NoWarn);CA1707;CA1515;CA2227;CA1002;CA1034</NoWarn>
+        <!-- CA1819 was named in the comment above from the start and had no shape to fire on until the
+             ordering corpus added one. `byte[] RowVersion` is EF Core's concurrency token and `string[]` is
+             what a schema generator emits and what JSON deserialises into: both are the declaration under
+             test. This is an analyzer rule about the CORPUS's own DTO style, not a DwarfMapper diagnostic —
+             no engine finding is silenced by it. -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA2227;CA1002;CA1034;CA1819</NoWarn>
         <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a known
              advisory. Test-only, non-shipped (IsPackable=false), mapping in-memory POCOs with no untrusted
              input — same reasoning and same suppression as the benchmark and differential projects. -->
