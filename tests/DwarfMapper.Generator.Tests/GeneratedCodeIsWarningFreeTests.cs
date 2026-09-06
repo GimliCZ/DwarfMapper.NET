@@ -324,6 +324,25 @@ namespace DwarfMapper.Generator.Tests
                                           }
                                           """
             ];
+
+            // The SOURCE parameter of a user-declared partial, on the two branches that write their own
+            // signature: the ordinary create-map and update-into. Round 29 task 2.7 fix round 1 — the same
+            // dropped '?' as the extra parameter, one field over, and CS8611 in the consumer's .g.cs.
+            yield return
+            [
+                "NullableSourceParameter", """
+                                           using DwarfMapper;
+                                           namespace Demo;
+                                           public sealed class Src { public int Id { get; set; } }
+                                           public sealed class Dst { public int Id { get; set; } }
+                                           [DwarfMapper]
+                                           public partial class M
+                                           {
+                                               public partial Dst Map(Src? s);
+                                               public partial void Update(Src? s, Dst d);
+                                           }
+                                           """
+            ];
         }
 
         [Theory]

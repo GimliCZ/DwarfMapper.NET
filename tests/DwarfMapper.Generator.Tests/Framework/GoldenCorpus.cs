@@ -215,6 +215,23 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                     }
                                                     """, "DwarfGenerator");
 
+            // Round 29 task 2.7 fix round 1. The extra parameter's sibling: the SOURCE parameter of the user's
+            // own partial. `#nullable enable` for the same reason — GeneratorRunner defaults to Disable, where
+            // the annotation is Oblivious and the arm is unreachable.
+            yield return ("NullableSourceParameter", """
+                                                     #nullable enable
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public class A { public int Id { get; set; } }
+                                                     public class B { public int Id { get; set; } }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         public partial B Map(A? a);
+                                                         public partial void Update(A? a, B b);
+                                                     }
+                                                     """, "DwarfGenerator");
+
             yield return ("EnumByName", """
                                         using DwarfMapper;
                                         namespace Demo;

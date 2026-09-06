@@ -112,6 +112,12 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // reaches the Phase 5 member — the whole of task 2.7's second defect — and `lifted` is a
                     // parameter name, so no source-member edge can produce this text by accident.
                     "NullableExtraParameter", "Lifted = lifted is null ? null : ToDto(lifted)"
+                },
+                {
+                    // The '?' surviving into the implementing half of the user's partial. `Map(global::Demo.A? a)`
+                    // cannot be produced by the annotation-stripping format that site used before, and the pair's
+                    // typeof registration in the same run proves the OTHER string stayed unannotated.
+                    "NullableSourceParameter", "Map(global::Demo.A? a)"
                 }
             };
         }

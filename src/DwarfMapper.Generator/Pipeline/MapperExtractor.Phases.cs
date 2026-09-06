@@ -1545,7 +1545,8 @@ namespace DwarfMapper.Generator.Pipeline
                     true,
                     targetType.IsReferenceType,
                     DerivedTypeArms: EquatableArray.From(armModels),
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 // A dispatch method's arm resolution is not an unscoped-ignore consumer this walk can see,
                 // so the class-site DWARF095 verdict stands down for this class (see the flag's declaration).
                 classIgnoreLivenessBlinded = true;
@@ -1653,7 +1654,8 @@ namespace DwarfMapper.Generator.Pipeline
                     IsTopLevelCollectionConversion: true,
                     ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                     ReturnIsPublicType: IsEffectivelyPublic(targetType),
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 // A top-level collection map's element pair is acc.Synthesized (pair-scoped config only), so
                 // this method consumes no unscoped ignore this walk can see — class-site DWARF095 stands
                 // down for the class rather than guess (see the flag's declaration).
@@ -2037,7 +2039,8 @@ namespace DwarfMapper.Generator.Pipeline
                     ParameterIsPublicType: IsEffectivelyPublic(method.Parameters[0].Type),
                     ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType),
                     MaxDepth: policy.MaxDepth,
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 return true;
             }
 
@@ -2245,7 +2248,8 @@ namespace DwarfMapper.Generator.Pipeline
                     EquatableArray.From(Array.Empty<HookCall>()),
                     true,
                     projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    ProjectionMembers: EquatableArray.From(projMembers.ToArray())));
+                    ProjectionMembers: EquatableArray.From(projMembers.ToArray()),
+                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 return true;
             }
 
@@ -2496,7 +2500,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // registration gate rejected every merge method for types that are plainly public.
                     ParameterIsPublicType: IsEffectivelyPublic(updSrc),
                     ReturnIsPublicType: IsEffectivelyPublic(updTgt),
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: updSrc.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 return true;
             }
 
@@ -2970,7 +2975,8 @@ namespace DwarfMapper.Generator.Pipeline
                 ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
                 ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                 ReturnIsPublicType: IsEffectivelyPublic(targetType),
-                Withheld: withheld));
+                Withheld: withheld,
+                ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
             acc.PublicMethodLocs[acc.Methods.Count - 1] = methodLocation;
         }
 

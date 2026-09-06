@@ -772,6 +772,70 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("Class = @class", generated, StringComparison.Ordinal);
         }
 
+        // -- 7. the SOURCE parameter of a user-declared partial dropped its '?' too (CS8611) ----------------
+        // Round 29 task 2.7 fix round 1, item 2. The sibling of the extra-parameter defect: `ParameterTypeFullName`
+        // is built with the same annotation-stripping FullyQualifiedFormat and re-emitted as the implementing
+        // half of the user's partial, so `partial Dst Map(Src? s)` was implemented as `Map(global::T.Src s)`.
+        //
+        // The obvious fix — annotate that string in place, as the extra-parameter fragment was — is WRONG, and
+        // was measured wrong rather than argued wrong: ParameterTypeFullName is also the operand of `typeof(…)`
+        // in the ambient registration, so annotating it turns CS8611 into CS8639 ("the typeof operator cannot be
+        // used on a nullable reference type"), and the same move on the return string produces CS8628 ("cannot
+        // use a nullable reference type in object creation") on the `new T` the emitter writes from it. Hence a
+        // SEPARATE ParameterTypeSignature, read only where a signature must match a user's own declaration.
+
+        private const string NullableSourceParameter = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src? s); }
+            }
+            """;
+
+        private const string NullableSourceParameterOnUpdateInto = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Src { public int Id { get; set; } }
+                public class Dst { public int Id { get; set; } }
+                [DwarfMapper] public partial class M { public partial void Update(Src? s, Dst d); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_source_parameter_keeps_its_annotation_in_the_emitted_signature()
+        {
+            AssertWarningFree(NullableSourceParameter, "partial Dst Map(Src? s)");
+
+            var generated = GeneratorAssert.CompilesClean(NullableSourceParameter, NullableContextOptions.Enable);
+            Assert.Contains("Map(global::T.Src? s)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Nullable_source_parameter_on_an_update_into_keeps_its_annotation()
+        {
+            // A second signature-emitting branch, and the reason the fix is a model field rather than an edit at
+            // one emitter site: update-into writes its own signature, as do the async-stream and span maps.
+            AssertWarningFree(NullableSourceParameterOnUpdateInto, "partial void Update(Src? s, Dst d)");
+
+            var generated = GeneratorAssert.CompilesClean(NullableSourceParameterOnUpdateInto, NullableContextOptions.Enable);
+            Assert.Contains("Update(global::T.Src? s, global::T.Dst d)", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_typeof_operand_stays_annotation_free_when_the_signature_gains_one()
+        {
+            // The guard on the whole design, and it PASSES RED by design — its job is to stay green across the
+            // change, not to fail before it. The ambient registration writes `typeof(ParameterTypeFullName)`,
+            // which is CS8639 on a nullable reference type — so the two strings must stay different, and this
+            // fails the moment someone "simplifies" ParameterTypeSignature away by annotating the FullName.
+            var run = GeneratorTestHarness.RunAll(NullableSourceParameter, NullableContextOptions.Enable);
+            Assert.Contains("typeof(global::T.Src)", run.GeneratedSource, StringComparison.Ordinal);
+            Assert.DoesNotContain("typeof(global::T.Src?)", run.GeneratedSource, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Enum_without_obsolete_members_emits_no_pragma()
         {

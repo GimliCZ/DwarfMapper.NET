@@ -205,6 +205,13 @@ namespace DwarfMapper.Generator.Pipeline
 
             // IsPartial=true → user-declared partial: emit "public partial T Name(S s)"
             // IsPartial=false → synthesized private: plain or depth-guarded
+            //
+            // ParameterTypeSignature ?? ParameterTypeFullName, here and in the async-stream and update-into
+            // signatures: those three plus the span map are every place the generator writes a signature that
+            // must MATCH a declaration the user wrote, and a dropped '?' there is CS8611 inside the .g.cs. The
+            // two synthesized branches below deliberately do NOT read it — the generator writes and calls those
+            // itself, and the nested helper's `if (s is null) return null!;` contract depends on its parameter
+            // staying non-nullable-annotated.
             if (method.IsPartial)
             {
                 // Public declared method — signature never changes (no ctx param for callers).
@@ -212,7 +219,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // since the user never declared a partial to implement.
                 sb.Append(indent).Append(method.Accessibility).Append(method.EmitAsNonPartial ? " " : " partial ")
                     .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-                    .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName);
+                    .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(method.ParameterName);
                 foreach (var ep in method.ExtraParameters) sb.Append(", ").Append(ep); // Phase 5: extra params
                 sb.AppendLine(")");
             }
@@ -790,7 +797,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
                 .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-                .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src);
+                .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src);
             if (ct is not null)
                 // [EnumeratorCancellation] is what links the parameter to the token a consumer passes to
                 // WithCancellation on the RESULT; without it the token is inert and the stream is uncancellable.
@@ -900,7 +907,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             sb.Append(indent).Append(method.Accessibility).Append(" partial ").Append(retType).Append(' ')
                 .Append(method.MethodName).Append('(')
-                .Append(method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
+                .Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
                 .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
 

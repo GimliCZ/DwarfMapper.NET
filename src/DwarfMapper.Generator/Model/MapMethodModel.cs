@@ -165,6 +165,21 @@ namespace DwarfMapper.Generator.Model
     ///     DECLARES, and a declaration is not un-made by failing to compile. Only the six emission and
     ///     aggregation sites skip it, so the single thing that changes is what reaches the consumer's file.
     /// </param>
+    /// <param name="ParameterTypeSignature">
+    ///     <see cref="ParameterTypeFullName" /> WITH its nullable reference annotations, for the one place the
+    ///     annotation is part of the contract: the source parameter of a signature that must match a partial
+    ///     method the USER declared. Null on every model whose signature the generator both writes and calls,
+    ///     which then falls back to <see cref="ParameterTypeFullName" />.
+    ///     <para>
+    ///         It is a SEPARATE field rather than an annotation on <see cref="ParameterTypeFullName" /> because
+    ///         that string is not only a signature: it is the operand of <c>typeof(…)</c> in the ambient
+    ///         registration, the target of <c>new …()</c> and of a cast, the key the pair is deduplicated and
+    ///         resolved by (<c>ResolveByFqn</c>), and text inside diagnostic messages. Annotating it in place was
+    ///         measured, not assumed: it turns <c>CS8611</c> into <c>CS8639</c> ("the typeof operator cannot be
+    ///         used on a nullable reference type") in the same generated file, and on the return side into
+    ///         <c>CS8628</c> ("cannot use a nullable reference type in object creation"). Round 29 task 2.7.
+    ///     </para>
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -203,5 +218,6 @@ namespace DwarfMapper.Generator.Model
         bool ParameterIsPublicType = false,
         bool ReturnIsPublicType = false,
         string? FactoryMethod = null,
-        bool Withheld = false) : IEquatable<MapMethodModel>;
+        bool Withheld = false,
+        string? ParameterTypeSignature = null) : IEquatable<MapMethodModel>;
 }

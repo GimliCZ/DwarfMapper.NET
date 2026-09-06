@@ -153,6 +153,21 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A map method whose SOURCE parameter is declared nullable emitted a signature that contradicted it
+  (`CS8611`).** `partial Dst Map(Src? s)` was implemented as `Map(global::T.Src s)` — the same dropped `?` as
+  the extra parameter above, on the ordinary source parameter, and on update-into, async-stream and projection
+  methods alike. Unsuppressible, inside the generated file.
+
+  The annotation now travels on its own, separate from the pair's canonical type name. That distinction is the
+  fix rather than an implementation detail: the canonical name is also the operand of `typeof(…)` in the
+  generated ambient registration and the target of the `new T` the mapper writes, and a nullable annotation is
+  illegal in both — annotating it in place trades `CS8611` for `CS8639` and `CS8628`.
+
+  Two shapes are improved but not yet clean, and both were already broken before this release: a map over
+  `IAsyncEnumerable<S?>` now reports the real problem (its element conversion does not handle the null) instead
+  of a signature mismatch, and a top-level collection conversion declared to RETURN a nullable element still
+  reports `CS8819` on the return type. Both are tracked separately.
+
 - **An extra mapping parameter named after a C# keyword produced a generated file that did not parse.** Both
   the emitted signature and the value expression were built from the raw symbol name, which Roslyn hands over
   without the `@` — the escape is syntax, not part of the name — so `partial Dst Map(Src s, int @class)` was
