@@ -32,7 +32,7 @@ using DwarfMapper.Generator.Tests.Contracts;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation
 {
-    public sealed class BclLayoutTableCoverageTests
+    public sealed class BclLayoutTableScanTests
     {
         private static readonly string LayoutHygienePath =
             Path.Combine(RepoPaths.PipelineDir, "LayoutHygiene.cs");
@@ -78,7 +78,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static bool IsAssertedIn(string codeText, string name)
         {
-            return Regex.IsMatch(codeText, $@"\b{Regex.Escape(name)}\b", RegexOptions.IgnoreCase);
+            return Regex.IsMatch(codeText, $@"\b{Regex.Escape(name)}\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         [Fact]
@@ -106,7 +107,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             var armNames = ParseArmNames(File.ReadAllText(LayoutHygienePath));
 
-            Assert.Equal(7, armNames.Count);
+            Assert.True(armNames.Count == 7,
+                $"FixedLayoutBclSize has {armNames.Count} arm(s); this pin says 7. If a new arm was added " +
+                "with its size AND alignment assertion already in BclLayoutFactsTests.cs, re-pin this count " +
+                "to the new value. If not, Every_FixedLayoutBclSize_arm_has_a_runtime_assertion above should " +
+                "also be failing — a green run there while this pin is stale means the parser stopped " +
+                "matching arms, not that the table stopped growing.");
         }
 
         /// <summary>
