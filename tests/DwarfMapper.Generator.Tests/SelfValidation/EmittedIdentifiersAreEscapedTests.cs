@@ -64,6 +64,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Path.Combine("Pipeline", "AggregateEmitter.cs"),
             Path.Combine("Pipeline", "AmbientValidator.cs"),
             Path.Combine("Pipeline", "CollectionConverter.cs"),
+            Path.Combine("Pipeline", "DenseEnumProof.cs"),
             Path.Combine("Pipeline", "DictionaryConverter.cs"),
             Path.Combine("Pipeline", "EnumConverter.cs"),
             Path.Combine("Pipeline", "MapEmitter.SpanMap.cs"),

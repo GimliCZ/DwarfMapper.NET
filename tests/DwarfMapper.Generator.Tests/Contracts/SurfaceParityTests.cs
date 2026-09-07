@@ -515,12 +515,19 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         declare no mapping method to carry it. Structural, and it moved for the same reason
         ///         [Reinterpret]'s four cells are already in this count.
         ///     </para>
+        ///     <para>
+        ///         Re-measured again 2026-09-07 (round 29 T3.2): 72 -> 78, total 120 -> 126. [MapDenseEnumKeys]
+        ///         is a method-level directive with a multiplicity axis AND a writable property, so it renders
+        ///         THREE cases — ctor(1), Offset=1, ×2 — at each of the two sites that declare no mapping
+        ///         method. Structural, for the third time; the only new information is that a property axis
+        ///         adds a case per value where [MapShare] had none.
+        ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
             ["registry-has-no-mapper-class"] = 48,
-            ["no-mapping-method"] = 72
+            ["no-mapping-method"] = 78
         };
 
         /// <summary>

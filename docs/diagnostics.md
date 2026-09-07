@@ -1499,9 +1499,10 @@ Some directives are read at **one** mapping endpoint and at no other. Written on
 were read by nobody and reported by nobody — the identical text on the identical mapper class meaning one
 thing on one overload and nothing on the next four.
 
-Two families share this id, pointing in opposite directions. Three directives are about the destination the
-mapper **constructs and returns**, so only the create map reads them; one is about a destination that
-**already exists**, so only the update-into reads it. First the create-map three:
+Three families share this id. Three directives are about the destination the mapper **constructs and
+returns**, so only the create map reads them; one is about a destination that **already exists**, so only the
+update-into reads it; and one is read at **both** of the endpoints that resolve destination members one at a
+time, and at neither of the three that do not. First the create-map three:
 
 <!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
 ```csharp
@@ -1581,8 +1582,34 @@ named "not an update-into method" as a case it covered — but no call site ever
 the upsert path is reached from the update-into branch alone. The check could not have lived on `DWARF074`
 in any case: that id is an **Error**, and an error here suppresses the whole class's emission.
 
+`[MapDenseEnumKeys]` is the third family, and the only one with **two** home endpoints. It fills an
+`[InlineArray]` member by looping over an enum-keyed dictionary and indexing — and the create map and the
+update-into are the two endpoints that resolve destination members one at a time and can emit a loop. A
+projection is translated into an expression tree, which has no statement for one to live in; a span map and
+an async stream map each element through a mapper for the *element* pair and read no per-member directive at
+all. Written on any of those three it was discarded, and a dictionary into an inline array is no conversion
+at all — so what the caller actually got was the ordinary refusal for a member that cannot be mapped, with
+nothing saying the directive they wrote was not in force:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapDenseEnumKeys("Counts", Offset = 1)]       // honoured — Counts is filled by index
+    public partial StatsDto Map(Stats s);
+
+    [MapDenseEnumKeys("Counts", Offset = 1)]       // DWARF092 — discarded; Counts is refused instead
+    public partial IQueryable<StatsDto> Project(IQueryable<Stats> q);
+}
+```
+
+[`DWARF105`](#dwarf105) proves this directive at its two home endpoints — every declared enum member inside
+the array, both ends, in a width that cannot wrap. Nothing proved it at the other three either, which is the
+same asymmetry `[MapCollectionKey]` carries above.
+
 **Fix:** declare the directive at its **home** endpoint over the same pair — a create map for the first three,
-an update-into for `[MapCollectionKey]`. For the create-map three, at the two **element-wise** endpoints that
+an update-into for `[MapCollectionKey]`, and either a create map or an update-into for `[MapDenseEnumKeys]`. For the create-map three, at the two **element-wise** endpoints that
 is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
 method for that pair where one exists, so the create map carrying the directive is what the emitted loop
 calls, and the directive reaches the element-wise endpoint through it. Measured, not asserted:
@@ -1594,6 +1621,7 @@ calls, and the directive reaches the element-wise endpoint through it. Measured,
 | `[MapDerivedType<Dog, DogDto>]` on `void MapSpan(ReadOnlySpan<Animal>, Span<AnimalDto>)` | the same on a `partial AnimalDto Map(Animal a)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` and that create map is the runtime-type switch, so the dispatch runs per element |
 | `[ReverseMap]` on **any** of the four | the same on a `partial Dst Map(Src s)`, with the inverse declared as a `partial Src Back(Dst d)` | the inverse emits `A = d.B`; without `[ReverseMap]` the same two methods are `DWARF001`. **No transfer**, at any of the four — `[ReverseMap]` does not change what the create map emits, so the element-wise adoption above does not carry it, and the message deliberately does not claim it does |
 | `[MapCollectionKey("Items", "Id")]` on **any** of the other four | the same on a `partial void Update(Order o, OrderDto d)` beside it | the update-into emits the key index and the replace-or-append merge, and the method you wrote it on is unchanged. **No transfer**, at any of the four, including element-wise — what a span or stream loop adopts is a declared **create** map for the element pair, and an update-into is not one |
+| `[MapDenseEnumKeys("Counts")]` on a projection, a span map or an async stream | the same on a `partial StatsDto Map(Stats s)` or a `partial void Update(Stats s, StatsDto d)` beside it | either home endpoint emits the indexed fill and proves it. **No transfer**, including element-wise — this directive configures a member of the pair the method itself names, so an adopted sibling brings its own applications and not this one |
 
 The directive is quoted back in the **form you wrote it** — `[MapDerivedType<Dog, DogDto>]` stays generic and
 `[MapDerivedType(typeof(Dog), typeof(DogDto))]` stays open — rather than normalized into whichever one the
@@ -2183,6 +2211,91 @@ delete the attribute too, because the automatic path takes it from there.
 
 `NullCollectionStrategy.AsNull` is refused for the same family of reasons: its null-preserving contract is
 the collection converter's, and the share does not implement it.
+
+---
+## dwarf105
+**Invalid [MapDenseEnumKeys] target** · Error
+
+`[MapDenseEnumKeys("X")]` writes an enum-keyed dictionary into a fixed-size `[InlineArray(n)]` struct by
+**indexing** it: `slots[(int)key - Offset] = value`. There is no hash, no bucket array and no allocation — the
+slots are storage inside the object that declares them. This error says the mapping into them cannot be
+proven total, and the generator refuses rather than emitting it.
+
+**There is deliberately no slower fallback.** A shape that cannot be proven is not mapped as an ordinary
+dictionary instead: that would leave you believing a directive is in force that is not, and a bounds-checked
+slow path would be exactly the "hide an unprovable shape behind a runtime test" this feature must never do.
+Deleting the attribute is always a valid fix and costs you one dictionary.
+
+**What is proven, what is refused, and what no proof can reach.** Three tiers, and the third is the one worth
+reading:
+
+| | What happens |
+|---|---|
+| **Every declared enum member lands in `[Offset, Offset + n)`** — both ends, computed in a width that cannot wrap | the dense fill is emitted |
+| **Any declared member falls outside it** — including a negative member, which would index in *front* of the array | **DWARF105**, naming that member and its value |
+| **A key that is no declared member at all** — `(TEnum)999` is legal C# | not decidable at compile time by anyone; the emitted loop range-checks the index and throws `ArgumentOutOfRangeException` naming the key |
+
+That last row is why the emitted loop carries a check even though the proof passed. For an `int`-width enum
+it turns an `IndexOutOfRangeException` thrown from inside a file you cannot edit into a message that names
+the key. For an enum whose underlying type is **wider than `int`** it does more than that: a bare `(int)`
+cast of such a key *wraps* — `(int)(E)0x1_0000_0001` is `1` — so without the check the write would land in a
+slot belonging to a different key, with nothing thrown and nothing to see afterwards.
+
+<!-- fence-exempt: the sample shows the shape that is REFUSED, so it has no compiling counterpart to snippet from -->
+```csharp
+public enum Platform { Web = 0, Ios = 1, Android = 2, Desktop = 3 }   // four members
+[InlineArray(3)] public struct Counts3 { private int _e0; }           // three slots
+
+[DwarfMapper]
+public partial class M
+{
+    [MapDenseEnumKeys("Counts")]     // DWARF105 — Platform.Desktop = 3 is outside [0, 3)
+    public partial Dst Map(Src s);
+}
+```
+
+**Fix:** widen the inline array to `[InlineArray(4)]`, set `Offset` so the window covers the members you
+have, or remove the attribute and map the member as an ordinary dictionary. **Adding a member to the enum
+later re-runs the proof**, so a fifth platform fails your build rather than reaching the index — that is the
+feature's safety argument, and it is why this is an error rather than a warning.
+
+**Every other thing this error says**, all with the same remedy:
+
+- **The key enum is `[Flags]`.** A flags enum's key space is the *power set* of its members: `Read | Write`
+  is a legitimate dictionary key that no member declares, and it would land in whatever slot its numeric
+  value happens to name. Proving the declared members are in range would prove nothing about the keys the
+  dictionary can hold, so the shape is refused outright.
+- **A member has no `long` representation** — a `ulong`-backed enum with a value above `long.MaxValue`.
+  Converting it would wrap into a negative number a range test could read as in-bounds.
+- **The destination is not an `[InlineArray(n)]` struct.** The destination is what *declares* the slot count,
+  and that count is the bound every member is proven against. A `TValue[]` is not accepted: its length is not
+  declared anywhere, so there is nothing to prove against.
+- **The source is not a dictionary**, or is **not keyed by an enum.** The source must yield
+  `KeyValuePair<TEnum, TValue>`; an `int`-keyed dictionary declares no finite value set, so the directive
+  would be an assertion rather than a proof.
+- **The value type does not match the slot type.** The dense path assigns each value straight into its slot
+  and performs no conversion — not even a widening one.
+- **A nullable reference value is written into a non-nullable slot.** That is CS8601 inside generated code
+  you cannot edit. Make the inline array's element type nullable, or the dictionary's value type
+  non-nullable.
+- **The member does not exist.** `[MapDenseEnumKeys("Cuonts")]` naming no writable destination member is a
+  typo, and a typo that maps the dictionary silently is the failure this project treats as worse than a build
+  break.
+- **The member is also assigned by `[MapValue]`.** That directive supplies the value outright, so there is no
+  source dictionary left to index.
+- **The member also carries a `[MapProperty]` that modifies its assignment** — `Use=`, `When=`,
+  `NullSubstitute=` or `StringFormat=`. The dense fill writes each value straight into its slot and calls
+  nothing, so the two directives cannot both apply.
+- **The same member is named twice.** Two applications are two different index computations; which one you
+  got would depend on the order the attributes were read in.
+- **The member was never reached by member resolution.** It exists and it is writable, but something else
+  claimed it first — a constructor parameter, an earlier directive, a flattened path — so the directive is
+  not in force and the dictionary you believe is being indexed densely is not.
+
+**One thing to know that is not an error.** An inline array reached through a **property** is a struct
+*copy*, so `dst.Counts[0] = x` does not compile for a caller; through a **field** it does. The mapper does
+not care — it assigns the whole array either way — but it decides what you can do with the destination
+afterwards.
 
 ---
 ## dwarf106

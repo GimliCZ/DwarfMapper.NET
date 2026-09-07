@@ -502,6 +502,51 @@ namespace DwarfMapper.Generator.Tests
                                            }
                                            """
             ];
+
+            // [MapDenseEnumKeys] — round 29 T3.2. The golden manifest pins these bytes and the runtime suite
+            // executes them, but NEITHER of those oracles reads warnings, and this list is hand-maintained
+            // rather than derived from GoldenCorpus, so a new directive is outside the warning-free bar until
+            // it is written here. The synthesized helper takes a NULLABLE parameter and answers null itself,
+            // so the call site emits no `!` — which is precisely the shape that produces CS8604 when it is
+            // got wrong. Both endpoints, both source shapes (Dictionary and IReadOnlyDictionary), and a
+            // nullable-annotated source member, because that member is the one whose forgiveness is decided
+            // rather than fixed.
+            yield return
+            [
+                "MapDenseEnumKeys", """
+                                    using System.Collections.Generic;
+                                    using System.Runtime.CompilerServices;
+                                    using DwarfMapper;
+                                    namespace Demo;
+                                    public enum Platform { Web = 1, Ios = 2, Android = 3 }
+                                    [InlineArray(3)] public struct Counts3 { private int _e0; }
+                                    public sealed class Src
+                                    {
+                                        public Dictionary<Platform, int> Counts { get; set; } = new();
+                                        public IReadOnlyDictionary<Platform, int> Reads { get; set; } = new Dictionary<Platform, int>();
+                                        public Dictionary<Platform, int>? Maybe { get; set; }
+                                    }
+                                    public sealed class Dst
+                                    {
+                                        public Counts3 Counts { get; set; }
+                                        public Counts3 Reads { get; set; }
+                                        public Counts3 Maybe;
+                                    }
+                                    [DwarfMapper]
+                                    public partial class M
+                                    {
+                                        [MapDenseEnumKeys(nameof(Dst.Counts), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Reads), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Maybe), Offset = 1)]
+                                        public partial Dst Map(Src s);
+
+                                        [MapDenseEnumKeys(nameof(Dst.Counts), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Reads), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Maybe), Offset = 1)]
+                                        public partial void Into(Src s, Dst d);
+                                    }
+                                    """
+            ];
         }
 
         [Theory]

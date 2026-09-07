@@ -740,8 +740,56 @@ function Assert-NoMutatedProductBinaries {
 # Headroom to the first red byte (316 KB = 323,584 B): 890 B on Windows. For DwarfMapper.Testing
 # (50 KB = 51,200 B): 143 B. Both ceilings are re-measured in this commit rather than merely carried.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# RE-MEASURED 2026-09-07, in the commit that added [MapDenseEnumKeys] and the dense-enum range proof
+# (round 29, task 3.2). SDK 10.0.101, Release, -p:EnablePackageValidation=false, packed twice from this
+# worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  329,154 B -> floor(329154/1024) = 321 KB   (was 315)
+#            DwarfMapper.Testing...nupkg    51,056 B -> floor( 51056/1024) =  49 KB   (UNCHANGED)
+# 329,154 is the LARGER of the two packs in this session (329,153 and 329,154). ONLY WINDOWS WAS MEASURED,
+# and that limit is stated exactly as the three blocks above state it: no ubuntu container was available
+# here. Windows has measured the LARGER of the pair at every round-28/29 pairing (a ~200-500 B CRLF-vs-LF
+# difference in DwarfMapper.xml and the nuspec), so ubuntu lands near 328,650-328,950 B, which is still
+# 321 KB. The ceiling takes the LARGER of the two per the round-28 rule: the same tree must be green
+# wherever the gate is run.
+#
+# WHERE THE 6,534 B WENT, entry by entry, against a pack of aa6eb7a (this task's parent) taken from a
+# `git worktree add` in the SAME session so the toolchain is held fixed. Deflated bytes, from the two
+# .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   216,800 -> 221,835   +5,035
+#   lib/net10.0/DwarfMapper.xml                39,649 ->  40,930   +1,281
+#   lib/net10.0/DwarfMapper.dll                18,177 ->  18,348     +171
+#   DwarfMapper.nuspec                            746 ->     775      +29
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,230 ->  17,249      +19
+#   _rels/.rels                                   287 ->     286       -1
+#   (README.md and [Content_Types].xml are byte-identical; the .psmdcp part is NuGet's random name, not
+#    payload, and its 642 B moves from one name to the other. Total +6,534, and
+#    322,620 + 6,534 = 329,154 exactly.)
+#
+# THE READING. Two rows carry the change and both are the expected ones. Generator.dll +5,035 B is
+# DenseEnumProof.cs (the range proof over every declared enum member and the helper it authorises),
+# MapperExtractor.DenseEnum.cs (the per-member decision plus the directive's own name/duplicate/conflict
+# validation), the two resolution sites, the new DWARF092 arm for this directive, and the DWARF105
+# descriptor with its message and help text - descriptor and message strings are payload, not comments,
+# and this feature's refusals carry a sentence each by design. DwarfMapper.xml +1,281 B is
+# MapDenseEnumKeysAttribute's own XML documentation, whose <remarks> state what is proven, what is
+# caller-visible at run time and why [Flags] is refused; that page is what a consumer sees in IntelliSense,
+# so it is shipped weight on purpose. DwarfMapper.dll +171 B is the attribute type itself: a sealed class,
+# one constructor, one property, one settable int. SAME NINE ENTRIES AS BEFORE - no new dependency, no new
+# resource, nothing newly shipping, which is the class this gate exists to catch.
+#
+# The two small rows are the previous blocks' own finding restated rather than re-derived: the baseline was
+# packed in a DIFFERENT CHECKOUT (a detached-HEAD worktree, which is also why the nuspec's
+# `<repository commit=.../>` moves 29 B), and `git diff aa6eb7a -- src/DwarfMapper.CodeFixes/` is EMPTY -
+# so CodeFixes.dll's +19 B is that unpinned build-environment channel, not payload.
+#
+# THIS IS AN OBSERVABILITY RATCHET, NOT A BUDGET. 315 -> 321 KB is what a real feature costs and the number
+# is re-measured rather than defended; nothing about the design was shaped to fit under the old ceiling.
+#
+# Headroom to the first red byte (322 KB = 329,728 B): 574 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 144 B. Both ceilings are re-measured in this commit rather than merely carried.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 315
+    'DwarfMapper'         = 321
     'DwarfMapper.Testing' = 49
 }
 

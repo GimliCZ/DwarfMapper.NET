@@ -352,9 +352,52 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Standing aside for the modifier is right; standing aside SILENTLY is the other half of the
                 // same mistake. A caller who wrote both wrote one directive that does nothing, which is the
-                // "accepted it, changed nothing, said nothing" shape this round exists to remove. The AUTOMATIC
-                // path falls through to the copy with no diagnostic — the modifier is honoured there, exactly
-                // as it was yesterday — and only the caller who ASKED for the share is told.
+                // "accepted it, changed nothing, said nothing" shape this round exists to remove. Stated once
+                // here and applied to BOTH directives below: the AUTOMATIC share falls through to the copy with
+                // no diagnostic — the modifier is honoured there, exactly as it was yesterday — and only the
+                // caller who ASKED for a share or a dense fill is told.
+                // The dense fill, on a [MapProperty] rename, and gated by the SAME set the share is: a directive
+                // that transforms the value cannot both apply and be bypassed. The dense path assigns kv.Value
+                // straight into a slot and calls nothing, so honouring it over a Use=/StringFormat=/When=/
+                // NullSubstitute= would drop that modifier silently — the T3.1 blocker, one member over.
+                if (modifiesTheAssignment && req.DenseEnumMembers.ContainsKey(tgtName))
+                {
+                    var whichDense = useMethod is not null ? "Use=" :
+                        hasExtras && shareExtras.When is not null ? "When=" :
+                        hasExtras ? "NullSubstitute=" : "StringFormat=";
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DenseEnumInvalid,
+                        req.Location,
+                        $"[MapDenseEnumKeys] member '{tgtName}' also carries a [MapProperty] that modifies its " +
+                        $"assignment ({whichDense}); the dense fill writes each dictionary value straight into " +
+                        "its slot and calls nothing, so the two cannot both apply — remove one of them",
+                        MemberName: tgtName));
+                }
+
+                if (!modifiesTheAssignment && req.DenseEnumMembers.TryGetValue(tgtName, out var explicitDenseOffset))
+                {
+                    if (TryPlanDense(srcMatch,
+                            tgtType,
+                            explicitDenseOffset,
+                            acc.Synthesized,
+                            req.Location,
+                            tgtName,
+                            acc.Diagnostics,
+                            out var explicitDenseConv))
+                    {
+                        // SourceIsNullableRef is deliberately NOT set. It exists to make the emitter append a
+                        // `!` for a converter whose parameter cannot take null; this helper's parameter IS
+                        // nullable and it answers null itself, exactly as the collection and dictionary helpers
+                        // do — which is also why `__DwarfDense_` does not carry the `__DwarfMap_` prefix that
+                        // drives GeneratedNames.IsSynthesized.
+                        acc.Result.Add(new MemberMap(tgtName, srcName, explicitDenseConv));
+                    }
+
+                    // Refused OR planned, the member is settled here. A refusal is a DWARF105 ERROR, so falling
+                    // through to the ordinary resolver would add a second, unrelated diagnostic about a mapper
+                    // that is not going to be emitted anyway.
+                    continue;
+                }
+
                 if (modifiesTheAssignment && req.ShareMembers.Contains(tgtName))
                 {
                     var which = useMethod is not null ? "Use=" :
@@ -861,6 +904,28 @@ namespace DwarfMapper.Generator.Pipeline
                         req.Location,
                         target.Name,
                         MemberName: target.Name));
+                    continue;
+                }
+
+                // [MapDenseEnumKeys]. Decided BEFORE the resolver runs, for the reason the share states below:
+                // resolving first would synthesize a dictionary helper nothing then calls, and the aggregate
+                // emitter writes every helper the table holds.
+                if (req.DenseEnumMembers.TryGetValue(target.Name, out var denseOffset))
+                {
+                    if (TryPlanDense(source.Type,
+                            target.Type,
+                            denseOffset,
+                            acc.Synthesized,
+                            req.Location,
+                            target.Name,
+                            acc.Diagnostics,
+                            out var denseConv))
+                    {
+                        // No SourceIsNullableRef — see the explicit site above.
+                        acc.Result.Add(new MemberMap(target.Name, source.Name, denseConv));
+                    }
+
+                    // Settled either way — see the explicit site above for why a refusal does not fall through.
                     continue;
                 }
 

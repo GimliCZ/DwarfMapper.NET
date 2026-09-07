@@ -17,8 +17,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         ///     <see cref="The_executed_cross_product_covers_exactly_the_elements_it_is_pinned_to" /> for why this
         ///     is a pin and not a bound.
         /// </summary>
-        // 29 -> 30 (round 29 T3.1): [MapShare]. Re-measured in the commit that added it, as the pin requires.
-        private const int CrossProductElementCount = 30;
+        // 29 -> 30 (round 29 T3.1): [MapShare]. 30 -> 31 (T3.2): [MapDenseEnumKeys]. Each re-measured in the
+        // commit that added it, as the pin requires.
+        private const int CrossProductElementCount = 31;
 
         /// <summary>Every public attribute type shipped by the runtime package.</summary>
         public static IReadOnlyList<Type> PublicAttributeTypes { get; } =

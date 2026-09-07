@@ -53,6 +53,13 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "MapShare", "Asserted = a.Asserted ?? global::System.Array.Empty<global::Demo.Badge>()"
                 },
                 {
+                    // The emitted ARITHMETIC, not the helper's name. A marker matching "__DwarfDense_" would
+                    // pass on the helper existing at all; the subtraction is what the Offset argument decides,
+                    // so this is the byte that moves if the directive's value is ever dropped on the way
+                    // through.
+                    "MapDenseEnumKeys", "var __i = unchecked((long)__kv.Key - 1L);"
+                },
+                {
                     "Flatten", "City = "
                 },
                 {

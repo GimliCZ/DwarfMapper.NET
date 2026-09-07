@@ -144,7 +144,12 @@ namespace DwarfMapper.Generator.Pipeline
             // Destination members the caller asked to SHARE with [MapShare], read by TryPlanShare. Optional, and
             // an absent list means "the caller forced nothing" rather than "no share at all": the AUTOMATIC share
             // is a property of the TYPES and needs no directive, exactly as the blit needs no [Reinterpret].
-            List<string>? shareMembers = null)
+            List<string>? shareMembers = null,
+            // Destination members the caller asked to fill densely with [MapDenseEnumKeys], each with its
+            // Offset, read by TryPlanDense. Optional, and an absent list means "the caller asked for nothing":
+            // unlike the share there is NO automatic path here, because whether a member should BE an inline
+            // array is a declaration the consumer writes, not a fact the generator can prove.
+            List<(string Member, int Offset)>? denseEnumMembers = null)
         {
             // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
             // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -238,6 +243,24 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
+            // Where THIS call's diagnostics start. `diagnostics` is the mapper CLASS's list and every method on
+            // the class appends to it, so the dense post-pass — which reads the list back to avoid reporting a
+            // second, vaguer refusal about a member it already refused precisely — must not see another
+            // method's entries. A member named on two methods is two independent questions.
+            var diagnosticsStart = diagnostics.Count;
+
+            // Validated BEFORE resolution, like its [Reinterpret] and [MapShare] twins: a name matching no
+            // writable member, a name already claimed by [MapIgnore] or [MapValue], and two applications naming
+            // one member are all refusals that must not wait for a member match that will never happen.
+            var denseEnumDirectives = ValidateDenseEnumDirectives(denseEnumMembers ?? [],
+                targetType,
+                compilation,
+                options.AllowNonPublic,
+                ignores,
+                mapValues,
+                location,
+                diagnostics);
+
             // Three bundles over the parameters and locals above -- NOT copies of them: every field below is the
             // same instance this method keeps using, so a pass that mutates through a bundle is doing exactly what
             // it did when it was inline. The split is request / derived / filled, and which side a name falls on
@@ -255,6 +278,7 @@ namespace DwarfMapper.Generator.Pipeline
                 nullStrategy,
                 reinterpretMembers,
                 new HashSet<string>(shareMembers ?? [], StringComparer.Ordinal),
+                denseEnumDirectives,
                 consumedCtorParams,
                 requiredMustInitialize,
                 nestedRegistry,
@@ -407,6 +431,10 @@ namespace DwarfMapper.Generator.Pipeline
                         m.SourceAccessExpression is not null ? NullSourceKind.MappingParameter : NullSourceKind.SourceMember)));
 
             ReportUnguardedFlattenHops(flattenInfos, consumedFlattenRoots, location, diagnostics);
+
+            // A directive that named a real member which resolution never offered it. Last, so that every pass
+            // has had its chance to fire the directive before it is reported as having done nothing.
+            ReportUnappliedDenseEnumDirectives(denseEnumDirectives, result, location, diagnostics, diagnosticsStart);
 
             return result;
         }

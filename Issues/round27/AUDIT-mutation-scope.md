@@ -7,7 +7,7 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**11.4 % of `src/` is inside any leg's `mutate` globs** — 4,634 of 40,773 lines.
+**11.1 % of `src/` is inside any leg's `mutate` globs** — 4,785 of 42,976 lines.
 
 > **Corrected 2026-09-07.** This line said 12.0 % while the table below said 11.5 %, and the two are
 > the same measurement — the headline simply stopped being updated when the table was re-measured
@@ -28,13 +28,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 73 | 7 | 33,860 | 2,370 | **7.0 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 43 | 6 | 3,523 | 944 | **26.8 %** | 73.9 % |
+| `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 44 | 6 | 3,614 | 944 | **26.1 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **140** | **22** | **41,935** | **4,682** | **11.2 %** | |
+| **all** | **143** | **22** | **42,976** | **4,785** | **11.1 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -76,6 +76,28 @@ leg already covers. The generator's share reads 7.0 % where it read 7.1 %, the r
 read 27.5 %, and the headline 11.2 % where it read 11.4 %. **The measurement is the whole table again, not
 an increment**: the line columns had drifted between the last re-measure and this one, which is the drift the
 file-count pin cannot see and the reason this document is re-measured rather than adjusted.
+
+**Re-measured in full again 2026-09-07 (round 29, T3.2)**, which added `[MapDenseEnumKeys]`: two generator
+files — `Pipeline/DenseEnumProof.cs` (the range proof and the helper it authorises, 418 lines) and
+`Pipeline/MapperExtractor.DenseEnum.cs` (the per-member decision and the directive's own validation, 235
+lines), both **outside** every `mutate` glob — and the runtime's `MapDenseEnumKeysAttribute.cs` (91 lines,
+likewise outside). File counts 73 → 75 and 43 → 44, 140 → 143 overall. The numerator moved by 103 lines,
+in `Pipeline/BlittableProof.cs`'s neighbours inside the pipeline leg —
+`Pipeline/MapperExtractor.Members.Phases.cs`, `Pipeline/MapperExtractor.Members.cs`,
+`Pipeline/MapperExtractor.cs` (the `DWARF092` arm) and `Pipeline/MemberResolutionContext.cs` — all of which
+that leg already covers. The generator's share reads 7.1 % where it read 7.0 %, the runtime's 26.1 % where
+it read 26.8 %, and the headline 11.1 % where it read 11.2 %. **The measurement is the whole table again,
+not an increment**, for the reason the block above gives: the line columns drift between re-measures and the
+file-count pin cannot see it.
+
+**Neither the range proof nor the decision beside it is in a mutation leg**, which is the same sentence the
+block below writes about `ImmutabilityProof` and it is worse here: a wrong `true` from `DenseEnumProof`
+authorises an index. What guards it instead is a per-refusal test set (`MapDenseEnumKeysTests`, 32 cases,
+most of them refusals), a runtime suite that executes the fill and the guard, a `NegativeCases` row pinning
+the out-of-range message, and the `feat:MapDenseEnumKeys` golden case — whose pinned bytes include the
+emitted subtraction, so an offset silently dropped on the way through moves a hash. Adding the file to a leg
+is a leg-runtime decision outside this task; recorded here so it is a known hole rather than an assumed
+covering.
 
 **The proof itself is not in a mutation leg, and that is worth stating rather than leaving to the table.**
 `ImmutabilityProof` is the component whose wrong answer is worst in this feature — a false `Proven` shares a

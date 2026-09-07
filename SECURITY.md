@@ -97,6 +97,25 @@ are refused outright because their width is the running platform's rather than t
 only where you can state why the bytes line up.
 *Held by `ReinterpretSafetyTests`.*
 
+### `[MapDenseEnumKeys]` turns a lookup into an index, and the bound is proven before it does
+
+It writes an enum-keyed dictionary into a fixed-size `[InlineArray(n)]` struct by indexing with the key's
+numeric value. Before a single line is emitted, the generator proves that **every member the key enum
+declares** lands inside `[Offset, Offset + n)` — both bounds, so a negative member cannot index in front of
+the array, and in a width that cannot wrap, so a member outside `int` cannot cast its way into range. A shape
+that fails the proof is `DWARF105`, an error: there is deliberately **no** bounds-checked slow path that
+would let an unprovable shape compile.
+
+What a compile-time proof cannot reach is a key that is not any declared member — `(TEnum)999` is legal C#.
+The emitted loop therefore range-checks the computed index and throws `ArgumentOutOfRangeException` naming
+the key. That check is not decoration: for an enum whose underlying type is wider than `int`, a bare `(int)`
+cast of such a key wraps (`(int)(E)0x1_0000_0001` is `1`) and the write would land in a slot belonging to a
+different key with nothing thrown at all.
+
+Nothing here is `unsafe`. `[InlineArray]` is a safe language feature and indexing it stays bounds-safe; the
+proof is what keeps a *provably wrong* mapping from being emitted in the first place.
+*Held by `MapDenseEnumKeysTests` (every refusal) and `MapDenseEnumKeysRuntimeTests` (the undeclared key).*
+
 ## Build integrity
 Releases are deterministic, ship a CycloneDX SBOM, and are produced from the
 audited GitHub Actions workflow in `.github/workflows/`.

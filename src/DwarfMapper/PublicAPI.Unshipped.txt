@@ -1,4 +1,9 @@
 #nullable enable
+DwarfMapper.MapDenseEnumKeysAttribute
+DwarfMapper.MapDenseEnumKeysAttribute.MapDenseEnumKeysAttribute(string! member) -> void
+DwarfMapper.MapDenseEnumKeysAttribute.Member.get -> string!
+DwarfMapper.MapDenseEnumKeysAttribute.Offset.get -> int
+DwarfMapper.MapDenseEnumKeysAttribute.Offset.set -> void
 DwarfMapper.MapShareAttribute
 DwarfMapper.MapShareAttribute.MapShareAttribute(string! member) -> void
 DwarfMapper.MapShareAttribute.Member.get -> string!

@@ -1233,6 +1233,40 @@ namespace DwarfMapper.Generator.Pipeline
                         MapEndpointKind.UpdateInto);
             }
 
+            // ── An arm whose home is BOTH member-resolving endpoints, skipped at the other three ─────────────
+            //
+            // [MapDenseEnumKeys] fills a destination member with a LOOP that indexes a fixed-size inline array,
+            // and only the create map and the update-into resolve destination members one at a time. Read
+            // through ReadDenseEnumKeys — the reader both of those branches read with — so this reports exactly
+            // the applications they would have acted on.
+            //
+            // carriedByTheAdoptedSibling is FALSE at the element-wise endpoints, on [MapCollectionKey]'s
+            // reasoning rather than [FlattenGraph]'s: what a span or async-stream loop adopts is a mapping for
+            // the ELEMENT pair, and this directive configures a member of the pair the method itself names. The
+            // adopted sibling's own [MapDenseEnumKeys] would arrive; this method's does not, and saying it did
+            // would prescribe a remedy that changes nothing.
+            if (endpoint is not (MapEndpointKind.CreateMap or MapEndpointKind.UpdateInto))
+            {
+                foreach (var (denseMember, denseOffset) in ReadDenseEnumKeys(method))
+                    Report(
+                        denseOffset == 0
+                            ? $"[MapDenseEnumKeys(\"{denseMember}\")]"
+                            : $"[MapDenseEnumKeys(\"{denseMember}\", Offset = {denseOffset})]",
+                        $"A dense fill writes an enum-keyed dictionary into the [InlineArray] member " +
+                        $"'{denseMember}' by INDEXING it — a loop, one entry at a time — and only an endpoint " +
+                        "that resolves destination members one at a time emits one. A projection is translated " +
+                        "into an expression tree, which has no statement for a loop to live in; a span map and " +
+                        "an async stream map each element through a mapper for the element pair and read no " +
+                        "per-member directive at all. Here the directive is discarded and the member is " +
+                        "resolved as if it had never been written — and a dictionary into an inline array is " +
+                        "no conversion at all, so what the caller actually gets is the ordinary refusal for a " +
+                        "member that cannot be mapped. The home endpoints also PROVE this directive (DWARF105 " +
+                        "for an enum member that would index outside the array); nothing proved it here " +
+                        "either.",
+                        MapEndpointKind.CreateMap,
+                        false);
+            }
+
             void Report(
                 string written,
                 string what,

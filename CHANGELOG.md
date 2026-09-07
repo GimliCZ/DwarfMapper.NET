@@ -88,6 +88,49 @@ so a version with no section here ships with no notes.
   one copy — or make the shape provable and delete the attribute afterwards, because the automatic path takes
   it from there.
 
+- **`[MapDenseEnumKeys("Member")]` — an enum-keyed dictionary written into an inline array.** The
+  destination member is an `[InlineArray(n)]` struct; the source is a `Dictionary<TEnum, TValue>` (or anything
+  yielding `KeyValuePair<TEnum, TValue>`); the generated code is one pass that indexes rather than hashes:
+  `slots[(int)key - Offset] = value`. The slots live inside the object that declares them, so the destination
+  costs no allocation at all. `Offset` moves the window for the common 1-based enum whose 0 means "unset".
+
+  **The proof is the feature.** Before anything is emitted, the generator establishes that every member the
+  key enum declares lands inside `[Offset, Offset + n)` — both ends, so a negative member cannot index in
+  front of the array, and in a width that cannot wrap, so a member outside `int` cannot cast its way into
+  range. A shape that fails is `DWARF105`, an error: there is deliberately **no** bounds-checked slow path,
+  because a proof that does not hold must be refused rather than hidden behind a runtime test. Adding a
+  member to the enum later re-runs the proof and fails the build, which is the feature's safety argument.
+
+  What no compile-time proof can reach is a key that is not a declared member — `(TEnum)999` is legal C#.
+  The emitted loop therefore range-checks the computed index and throws `ArgumentOutOfRangeException` naming
+  the key. That check is load-bearing rather than decorative: for an enum wider than `int`, a bare `(int)`
+  cast of such a key wraps (`(int)(E)0x1_0000_0001` is `1`) and the write would otherwise land in a slot
+  belonging to a different key with nothing thrown.
+
+  `[Flags]` enums are refused: their key space is the power set of their members, so proving the declared
+  members are in range would prove nothing about the keys a dictionary can hold. Aliases (`None = 0,
+  Default = 0`) are a non-case — the proof judges values, not names.
+
+- **`DWARF092` also speaks for `[MapDenseEnumKeys]` now**, and it is the first directive on that id with
+  **two** home endpoints: the create map and the update-into both resolve destination members one at a time
+  and can emit the fill loop, while a projection is an expression tree with no statement for one to live in
+  and the two element-wise endpoints read no per-member directive at all. Written on any of those three the
+  directive used to be discarded in silence — and since a dictionary into an inline array is no conversion at
+  all, what the caller met was the ordinary refusal for an unmappable member with nothing saying the
+  directive was not in force.
+
+- **`DWARF105` (Error) — `[MapDenseEnumKeys]` names a member whose dense index cannot be proven.** Reported
+  when a declared enum member falls outside `[Offset, Offset + n)` at either end (the message names the
+  member and its value), when the key enum is `[Flags]`, when a `ulong` member has no `long` representation,
+  when the destination is not an `[InlineArray(n)]` struct, when the source is not a dictionary or is not
+  keyed by an enum, when the value type does not match the slot type, when a nullable reference value would
+  be written into a non-nullable slot, when the name matches no writable destination member, when the member
+  is also assigned by `[MapValue]` or carries a `[MapProperty]` that modifies its assignment (`Use=`,
+  `When=`, `NullSubstitute=`, `StringFormat=`), when the same member is named twice with different offsets,
+  and when the member exists but member resolution never reached it — a directive that is not in force.
+  **Remedy:** widen the inline array, set `Offset`, or remove the attribute and map the member as an
+  ordinary dictionary.
+
 - **`DWARF107` (Warning) — a converter you declared returns a nullable reference, and its result is stored
   where null is forbidden.** `partial ChildDto? ToDto(Child c)` feeding a non-nullable `ChildDto Inner`,
   `List<ChildDto>`, `Dictionary<string, ChildDto>`, constructor parameter, span element or async-stream

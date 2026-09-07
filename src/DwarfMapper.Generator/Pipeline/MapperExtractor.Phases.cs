@@ -1775,6 +1775,7 @@ namespace DwarfMapper.Generator.Pipeline
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
             var shareMembers = ReadShareMembers(method);
+            var denseEnumMembers = ReadDenseEnumKeys(method);
 
             // ── Plan 20 / 22: [FlattenGraph] ─────────────────────────────────
             // Read and resolve [FlattenGraph] directives BEFORE ResolveMembers so that
@@ -1904,7 +1905,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // would. Gating here produced a false DWARF079 on that shape.
                 CtorSetsRequiredMembers(ctor),
                 ignoredSourceMembers: IgnoredSourcesFor(decls, method),
-                shareMembers: shareMembers);
+                shareMembers: shareMembers,
+                denseEnumMembers: denseEnumMembers);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -2347,6 +2349,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var updFlatten = ReadFlattenRoots(method);
                 var updReinterpret = ReadReinterpretMembers(method);
                 var updShare = ReadShareMembers(method);
+                var updDense = ReadDenseEnumKeys(method);
                 var updAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
 
                 var updMembers = ResolveMembers(
@@ -2398,7 +2401,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // DWARF079 — caught by NonTrivialShapeRuntimeTests, which does exactly that legitimately.
                     requiredMembersAlreadySatisfied: true,
                     ignoredSourceMembers: IgnoredSourcesFor(decls, method),
-                    shareMembers: updShare);
+                    shareMembers: updShare,
+                    denseEnumMembers: updDense);
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing

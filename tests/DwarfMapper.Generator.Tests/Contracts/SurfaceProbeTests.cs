@@ -230,7 +230,11 @@ namespace DwarfMapper.Generator.Tests.Contracts
             // 19 → 20 with `shareable-readonly-member` (round 29 T3.1), and the reason is the same a third
             // time: [MapShare] is AttributeTargets.Method, so no Property- or Field-site case demands that
             // fixture and none reads NoSuchSite for want of a slot in it.
-            const int baseline = 20;
+//
+            // 20 → 21 with `dense-enum-keyed-member` (round 29 T3.2), and the reason is the same a fourth time:
+            // [MapDenseEnumKeys] is AttributeTargets.Method, so no Property- or Field-site case demands that
+            // fixture and none reads NoSuchSite for want of a slot in it.
+            const int baseline = 21;
             Assert.True(missing.Count == baseline,
                 $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures carry neither " +
                 $"{nameof(EndpointSources.PropertySlotMarker)} nor {nameof(EndpointSources.FieldSlotMarker)}: " +

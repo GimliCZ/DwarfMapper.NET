@@ -1942,6 +1942,49 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf104");
 
         /// <summary>
+        ///     <c>DWARF105</c> — <c>[MapDenseEnumKeys]</c> names a member whose dense index cannot be proven.
+        ///     <para>
+        ///         The directive replaces a hash lookup with a raw index: <c>dst[(int)kv.Key - Offset]</c>. That
+        ///         is a mapping only while every index it can produce is inside the destination's inline array,
+        ///         so the generator proves the range over every value the key enum DECLARES — both bounds, in a
+        ///         width that cannot wrap — before emitting anything. This id is what a failed proof says.
+        ///     </para>
+        ///     <para>
+        ///         An ERROR, and deliberately not a fallback to the ordinary dictionary copy. A member that
+        ///         cannot be proven is a member whose fast path would be wrong, and quietly mapping it the slow
+        ///         way would leave the consumer believing a directive is in force that is not — the "accepted it,
+        ///         changed nothing, said nothing" silence this round exists to remove. Deleting the attribute is
+        ///         always a valid fix and costs exactly one dictionary.
+        ///     </para>
+        ///     <para>
+        ///         The refusals are the hazards this shape has, each disposed of rather than assumed: a member
+        ///         outside <c>[Offset, Offset + n)</c> at EITHER end (a negative member indexes before the
+        ///         array); an underlying type whose values do not fit the proof's arithmetic; a <c>[Flags]</c>
+        ///         enum, whose key space is the power set of its members and therefore contains legitimate keys
+        ///         no member declares; a destination that is not an <c>[InlineArray(n)]</c> struct, and so
+        ///         declares no bound to prove anything against; a source that is not a dictionary, or is keyed by
+        ///         something other than an enum; a value type that does not match the slot type; and a name
+        ///         matching no writable destination member, or one already claimed by another directive.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor DenseEnumInvalid = new(
+            "DWARF105",
+            "Invalid [MapDenseEnumKeys] target",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            "[MapDenseEnumKeys] writes an enum-keyed dictionary into a fixed-size inline array by indexing it " +
+            "with the key's numeric value, which is only correct while every declared enum member lands inside " +
+            "the array. The generator proves that at compile time and refuses when it cannot: an out-of-range " +
+            "member, a [Flags] enum whose key space is the power set of its members, a destination that is not " +
+            "an [InlineArray(n)] struct, a source that is not an enum-keyed dictionary, or a value type that " +
+            "does not match the slot type. There is no bounds-checked fallback on purpose — a proof that does " +
+            "not hold is refused rather than hidden behind a runtime test. Remove the attribute to map the " +
+            "member as an ordinary dictionary, widen the inline array, or set Offset.",
+            HelpBase + "dwarf105");
+
+        /// <summary>
         ///     <c>[Reinterpret]</c> on a member took the block copy, and by doing so did NOT call a conversion
         ///     the element pair would otherwise have resolved to — a user-declared method on the mapper, or a
         ///     user-defined conversion operator between the element types.

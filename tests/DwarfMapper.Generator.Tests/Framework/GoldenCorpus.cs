@@ -94,6 +94,23 @@ namespace DwarfMapper.Generator.Tests.Framework
                                       [DwarfMapper] public partial class M { [MapShare("Asserted")] public partial B Map(A a); }
                                       """, "DwarfGenerator");
 
+            // Round 29 T3.2: the dense fill, with an Offset that is not zero, because the offset is part of the
+            // emitted ARITHMETIC and a case at Offset = 0 would pin a subtraction the compiler could fold away.
+            // `Counts` is the dense member and `Legacy` is the same dictionary mapped ORDINARILY beside it, so
+            // the manifest notices if the directive ever starts reaching a member that did not ask for it — or
+            // stops reaching the one that did.
+            yield return ("MapDenseEnumKeys", """
+                                              using DwarfMapper;
+                                              using System.Collections.Generic;
+                                              using System.Runtime.CompilerServices;
+                                              namespace Demo;
+                                              public enum Platform { Web = 1, Ios = 2, Android = 3 }
+                                              [InlineArray(3)] public struct Counts3 { private int _e0; }
+                                              public class A { public Dictionary<Platform, int> Counts { get; set; } = new(); public Dictionary<Platform, int> Legacy { get; set; } = new(); }
+                                              public class B { public Counts3 Counts { get; set; } public Dictionary<Platform, int> Legacy { get; set; } = new(); }
+                                              [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts", Offset = 1)] public partial B Map(A a); }
+                                              """, "DwarfGenerator");
+
             yield return ("AsyncStream", """
                                          using DwarfMapper;
                                          using System.Collections.Generic;

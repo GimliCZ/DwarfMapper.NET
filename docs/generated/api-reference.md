@@ -285,6 +285,16 @@ Overrides how the (TSource → TTarget) destination is constructed from the clas
 | `Method` | `String` | — | Name of the factory method: takes , returns . |
 | `TypeId` | `Object` | — |  |
 
+### attribute `MapDenseEnumKeysAttribute`
+
+Maps an enum-keyed dictionary member into a fixed-size inline array, indexing it by the key's numeric value instead of hashing it. Apply to a mapping method.
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `Member` | `String` | — | Name of the destination inline-array member. |
+| `Offset` | `Int32` | — | The enum value that maps to slot 0. Defaults to 0. An enum whose members start at 1 — the common shape, where 0 is reserved for "unset" — wastes a slot at offset 0 and needs one more than it has members. Offset = 1 makes the first declared member slot 0. The proof is run against the offset actually in force, so an offset that pushes a member out of either end of the array is DWARF105. |
+| `TypeId` | `Object` | — |  |
+
 ### attribute `MapDerivedTypeAttribute`
 
 Non-generic form of MapDerivedTypeAttribute`2.

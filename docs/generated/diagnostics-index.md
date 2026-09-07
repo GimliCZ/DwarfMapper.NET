@@ -107,7 +107,8 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF101` | Info | Struct layout pads more than a quarter of its size |
 | `DWARF103` | Info | Collection element could be a struct |
 | `DWARF104` | Error | Invalid [MapShare] target |
+| `DWARF105` | Error | Invalid [MapDenseEnumKeys] target |
 | `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive |
 | `DWARF107` | Warning | A converter's nullable return is stored where null is forbidden |
 
-101 diagnostics.
+102 diagnostics.

@@ -62,8 +62,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // pencilled it in for the dense-enum-key misuse; that task has not landed and the share needed a
             // refusal id, so it took the reservation the block exists to hand out. The plan text is stale on
             // this point rather than contradicted: the dense-enum task will allocate a fresh id when it lands.
-            "DWARF102",
-            "DWARF105"
+            // DWARF105 left in round 29 T3.2, claimed by [MapDenseEnumKeys] ("Invalid [MapDenseEnumKeys]
+            // target") — the dense-enum task the note above said would allocate a fresh id when it landed, and
+            // this reservation is the one the plan had left for it. DWARF102 is now the block's only entry, and
+            // it is the one that must NOT be handed out: see the paragraph above.
+            "DWARF102"
         };
     }
 

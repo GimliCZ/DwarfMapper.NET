@@ -109,6 +109,7 @@ DWARF100 | DwarfMapper | Info | Array or span pair narrowly missed the blittable
 DWARF101 | DwarfMapper | Info | Struct layout pads more than a quarter of its size
 DWARF103 | DwarfMapper | Info | Collection element could be a struct
 DWARF104 | DwarfMapper | Error | Invalid [MapShare] target
+DWARF105 | DwarfMapper | Error | Invalid [MapDenseEnumKeys] target
 DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
 DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
 
