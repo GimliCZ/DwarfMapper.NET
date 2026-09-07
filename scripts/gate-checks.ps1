@@ -665,8 +665,49 @@ function Assert-NoMutatedProductBinaries {
 # Headroom to the first red byte (311 KB = 318,464 B): 932 B on Windows. For DwarfMapper.Testing
 # (50 KB = 51,200 B): 140 B, and its 49 KB is re-measured in this commit rather than merely carried.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-07, in the commit that added [MapShare] and the immutability proof (round 29, task
+# 3.1). SDK 10.0.101, Release, -p:EnablePackageValidation=false, packed twice from this worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  322,630 B -> floor(322630/1024) = 315 KB   (was 310)
+#            DwarfMapper.Testing...nupkg    51,060 B -> floor( 51060/1024) =  49 KB   (UNCHANGED)
+# 322,630 is the LARGER of two packs in this session (322,629 and 322,630). ONLY WINDOWS WAS MEASURED, and
+# that limit is stated exactly as the two blocks above state it: no ubuntu container was available here.
+# Windows has measured the LARGER of the pair at every round-28/29 pairing (a ~200-500 B CRLF-vs-LF
+# difference in DwarfMapper.xml and the nuspec), so ubuntu lands near 322,100-322,400 B, which is 314 KB.
+# The ceiling takes the LARGER of the two, 315, per the round-28 rule: the same tree must be green wherever
+# the gate is run, and 314 would be red on every Windows pack.
+#
+# WHERE THE 5,200 B WENT, entry by entry, against a pack of 3c2c1ef (this task's parent) taken from a
+# `git worktree add` in the SAME session so the toolchain is held fixed. Deflated bytes, from the two
+# .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   212,737 -> 216,730   +3,993
+#   lib/net10.0/DwarfMapper.xml                38,638 ->  39,649   +1,011
+#   lib/net10.0/DwarfMapper.dll                18,064 ->  18,201     +137
+#   DwarfMapper.nuspec                            744 ->     776      +32
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,231 ->  17,257      +26
+#   _rels/.rels                                   285 ->     286       +1
+#   (README.md, [Content_Types].xml and the .psmdcp are byte-identical; total +5,200, and
+#    317,430 + 5,200 = 322,630 exactly.)
+#
+# THE READING. Two rows carry the change and both are the expected ones. Generator.dll +3,993 B is
+# ImmutabilityProof.cs (the deep-immutability proof), MapperExtractor.Share.cs (the per-member decision),
+# the DWARF104 descriptor with its message and help text — descriptor strings are payload, not comments —
+# and the emitter's guard branch. DwarfMapper.xml +1,011 B is MapShareAttribute's own XML documentation,
+# whose <remarks> spell out the three tiers and what the caller is asserting; that page is what a consumer
+# sees in IntelliSense, so it is shipped weight on purpose. DwarfMapper.dll +137 B is the attribute type
+# itself: a sealed class, one constructor, one property. SAME NINE ENTRIES AS BEFORE — no new dependency,
+# no new resource, nothing newly shipping, which is the class this gate exists to catch.
+#
+# The three small rows are the previous block's own finding restated rather than re-derived: the baseline
+# was packed in a DIFFERENT CHECKOUT (a detached-HEAD worktree, which is also why the nuspec's
+# `<repository commit=.../>` moves 32 B), and `git diff 3c2c1ef HEAD -- src/DwarfMapper.CodeFixes/` is
+# EMPTY — so CodeFixes.dll's +26 B is that unpinned build-environment channel, not payload.
+#
+# Headroom to the first red byte (316 KB = 323,584 B): 954 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 140 B, and its 49 KB is re-measured in this commit rather than merely carried.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 310
+    'DwarfMapper'         = 315
     'DwarfMapper.Testing' = 49
 }
 

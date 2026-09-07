@@ -367,6 +367,79 @@ public sealed class ImmDst
     public ImmutableArray<int> V { get; set; }
 }
 
+// ── Round 29 T3.1 — [MapShare]: the source reference assigned instead of the collection rebuilt.
+// Four types rather than two mapper methods over one pair, because the directive is per-method and naming the
+// same pair twice is a different question (DWARF060/094) from the one measured here.
+//
+// ShBadge is SEALED with nothing but get-only members, so the immutability proof accepts it; ShLoose has a
+// setter, so the proof disproves it. That is the only difference between the two arms below, and it is what
+// decides whether the collection is shared or rebuilt — the elements themselves are reference-copied either
+// way, so the allocation delta is the CONTAINER and nothing else.
+public sealed class ShBadge
+{
+    public ShBadge(string name, int weight)
+    {
+        Name = name;
+        Weight = weight;
+    }
+
+    public string Name { get; }
+
+    public int Weight { get; }
+}
+
+public sealed class ShLoose
+{
+    public string Name { get; set; } = "";
+
+    public int Weight { get; set; }
+}
+
+// The FORCED arm. IReadOnlyList<T> is an interface, which the automatic proof refuses on principle, so
+// [MapShare] is the only thing that can share it — and its twin below is the identical shape without the
+// attribute, which is what the helper it replaces costs.
+public sealed class ShareSrc
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+public sealed class ShareDst
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+public sealed class ShareCopySrc
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+public sealed class ShareCopyDst
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+// The AUTOMATIC arm. Same ImmutableArray<T> storage on both sides of both pairs; only the ELEMENT's
+// provability differs, so this pair measures what the proof itself is worth with no attribute in sight.
+public sealed class AutoShareSrc
+{
+    public ImmutableArray<ShBadge> Badges { get; set; }
+}
+
+public sealed class AutoShareDst
+{
+    public ImmutableArray<ShBadge> Badges { get; set; }
+}
+
+public sealed class AutoShareCopySrc
+{
+    public ImmutableArray<ShLoose> Badges { get; set; }
+}
+
+public sealed class AutoShareCopyDst
+{
+    public ImmutableArray<ShLoose> Badges { get; set; }
+}
+
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
 [DwarfMapper]
 public partial class DwarfM
@@ -392,6 +465,16 @@ public partial class DwarfM
     public partial NfOrderDto MapNestedFill(NfOrder s); // nested graph mixing both fill strategies
     public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
     public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
+
+    // Round 29 T3.1 — the share and its copying twin, in both modes. See the type declarations above.
+    [MapShare(nameof(ShareDst.Badges))]
+    public partial ShareDst MapShare(ShareSrc s); // IReadOnlyList<T> shared on the caller's assertion
+
+    public partial ShareCopyDst MapShareCopy(ShareCopySrc s); // the same shape, rebuilt
+
+    public partial AutoShareDst MapAutoShare(AutoShareSrc s); // proven element → shared, no attribute
+
+    public partial AutoShareCopyDst MapAutoShareCopy(AutoShareCopySrc s); // settable element → rebuilt
 
     // Round 25 T4 — the four halves of the two ratio pairs. Each *Blit method takes a reinterpret; each
     // *Scalar method is the same shape with renamed members, so the by-name proof fails and the element
@@ -486,6 +569,12 @@ public class MapperBenchmarks
     private NfOrder _nestedFill = null!;
     private NumListSrc _numList = null!;
     private SetSrc _set = null!;
+
+    // Round 29 T3.1 — the four share arms. Built once in [GlobalSetup] like every other payload.
+    private ShareSrc _share = null!;
+    private ShareCopySrc _shareCopy = null!;
+    private AutoShareSrc _autoShare = null!;
+    private AutoShareCopySrc _autoShareCopy = null!;
     private WidenSrc _widen = null!;
 
     // Round 29 T0.2 — preallocated OUTSIDE the measured method, like every span-map destination: the
@@ -583,6 +672,32 @@ public class MapperBenchmarks
         _imm = new ImmSrc
         {
             V = RealisticPayloads.Elements<int>(N, 11)
+        };
+        // Round 29 T3.1 — the four share arms. ONE draw, handed to all four: the arms differ in what the
+        // generator decides about the element TYPE, so drawing four independent payloads would let element
+        // content vary between them and put noise in the one number the pins read.
+        var shareBadges = RealisticPayloads.Elements<ShBadge>(N, 15);
+        var looseBadges = Array.ConvertAll(shareBadges,
+            b => new ShLoose
+            {
+                Name = b.Name,
+                Weight = b.Weight
+            });
+        _share = new ShareSrc
+        {
+            Badges = new List<ShBadge>(shareBadges)
+        };
+        _shareCopy = new ShareCopySrc
+        {
+            Badges = new List<ShBadge>(shareBadges)
+        };
+        _autoShare = new AutoShareSrc
+        {
+            Badges = ImmutableArray.Create(shareBadges)
+        };
+        _autoShareCopy = new AutoShareCopySrc
+        {
+            Badges = ImmutableArray.Create(looseBadges)
         };
         // Distinct salt (12) so this draw is not a correlated copy of the Set/Imm draws above.
         _numList = new NumListSrc
@@ -1059,5 +1174,39 @@ public class MapperBenchmarks
     public ImmDst Immutable_Dwarf()
     {
         return _dwarf.MapImmutable(_imm);
+    }
+
+    // ── Round 29 T3.1 — [MapShare]: the reference assigned against the collection rebuilt ────
+    // Two pairs, each a share and its copying twin over the SAME payload, so the delta is the container the
+    // share does not build. MapShare_* is the FORCED mode (an interface the proof refuses; the attribute is
+    // the only thing that can share it); AutoShare_* is the AUTOMATIC one (identical ImmutableArray storage
+    // on both pairs, and only the element's provability differs). Allocation is what this feature saves and
+    // allocation is what this repository gates exactly, so all four are pinned.
+    [Benchmark]
+    [BenchmarkCategory("MapShare")]
+    public ShareDst MapShare_Dwarf()
+    {
+        return _dwarf.MapShare(_share);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("MapShare")]
+    public ShareCopyDst MapShare_Copy_Dwarf()
+    {
+        return _dwarf.MapShareCopy(_shareCopy);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("AutoShare")]
+    public AutoShareDst AutoShare_Dwarf()
+    {
+        return _dwarf.MapAutoShare(_autoShare);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("AutoShare")]
+    public AutoShareCopyDst AutoShare_Copy_Dwarf()
+    {
+        return _dwarf.MapAutoShareCopy(_autoShareCopy);
     }
 }

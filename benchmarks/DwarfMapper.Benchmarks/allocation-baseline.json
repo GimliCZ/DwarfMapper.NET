@@ -35,7 +35,9 @@
     "",
     "2026-09-03 (round 29, T0.2): two SpanBlit_* scenarios added, 55 -> 57 benchmarks. SpanBlit_Dwarf is the zero-alloc span map void Map(ReadOnlySpan<Vec3Src> src, Span<Vec3Dst> dst) taking the BlittableProof block copy (MemoryMarshal.Cast + CopyTo) into a preallocated destination array; SpanBlit_Scalar is its [StructLayout(Auto)] twin (Vec3Ren), which keeps the per-element loop \u2014 same pair-selection discipline as BlitRatio. Both pin at 0 B/op: every element is a value-type struct copied into a preallocated destination array, so neither path allocates anything, unlike the array/list blit rows above which allocate the destination array itself.",
     "",
-    "2026-09-07 (round 29, Phase 1 WITHDRAWN): the two View_* scenarios were removed with the [GenerateView] endpoint, 59 -> 57 benchmarks, and the View_Dwarf (0 B) and View_Map_Dwarf (48,000 B) pins went with them. The endpoint was withdrawn by owner ruling for its FAILURE MODE, not for a defect - a view evaluates each member on access, so a source mutated between two reads yields a record that never existed at any instant (Issues/round29/WITHDRAWN-generated-views.md). RE-MEASURED rather than restored to the pre-view 57: the smoke was re-run in this commit and reported 57/57 benchmarks executed with all 22 remaining pins exact-matched, so this 57 is a count taken AFTER the removal, not the number that happened to be there before it."
+    "2026-09-07 (round 29, Phase 1 WITHDRAWN): the two View_* scenarios were removed with the [GenerateView] endpoint, 59 -> 57 benchmarks, and the View_Dwarf (0 B) and View_Map_Dwarf (48,000 B) pins went with them. The endpoint was withdrawn by owner ruling for its FAILURE MODE, not for a defect - a view evaluates each member on access, so a source mutated between two reads yields a record that never existed at any instant (Issues/round29/WITHDRAWN-generated-views.md). RE-MEASURED rather than restored to the pre-view 57: the smoke was re-run in this commit and reported 57/57 benchmarks executed with all 22 remaining pins exact-matched, so this 57 is a count taken AFTER the removal, not the number that happened to be there before it.",
+    "",
+    "2026-09-07 (round 29, T3.1): four share scenarios added, 57 -> 61 benchmarks, and they are the pins that PROVE [MapShare] rather than merely describe it. Two pairs, each a share and its copying twin over ONE payload draw, so the delta is the container the share does not build and nothing else — the elements are reference-copied on both arms. MapShare_* is the FORCED mode: IReadOnlyList<ShBadge> on both sides, which the immutability proof refuses on principle (an interface is not a guarantee), so only [MapShare] can share it. 24 B/op against the twin's 8,080 — the 24 is the destination object itself and the collection now costs NOTHING, while the twin pays 32 B for a List<T> plus 8,024 for its 1000-element backing array. AutoShare_* is the AUTOMATIC mode: identical ImmutableArray<T> storage on both pairs, differing ONLY in whether the element type is provable (ShBadge is sealed and get-only; ShLoose has a setter). 24 B/op against 48. That 24-byte gap is the whole automatic saving on this shape and it is worth stating exactly, because it CORRECTS an expectation: ImmutableArray.CreateRange<T>(IEnumerable<T>) already reuses the backing array through its IImmutableArray fast path, so the copying helper never allocated the array — it allocated the BOX its IEnumerable<T> parameter forces. The automatic path removes a box and a call, not a collection; the forced path removes the collection. Both are real, they are two different sizes, and the pins are what keep the difference honest."
   ],
   "measuredWith": {
     "sdk": "10.0.101",
@@ -45,7 +47,7 @@
     "tree": "d7b60cd4ae425dfc735b66622c50f5e8f0babfdb plus the T8 smoke config committed together with this file",
     "job": "ShortRun via DWARF_BENCH_SMOKE=1, N=1000, seed RealisticPayloads.Seed=20260724"
   },
-  "totalBenchmarks": 57,
+  "totalBenchmarks": 61,
   "pins": {
     "Flat_Dwarf": 40,
     "Nested_Dwarf": 112,
@@ -68,7 +70,11 @@
     "NumList_Dwarf": 8112,
     "NestedFill_Dwarf": 8112,
     "SpanBlit_Dwarf": 0,
-    "SpanBlit_Scalar": 0
+    "SpanBlit_Scalar": 0,
+    "MapShare_Dwarf": 24,
+    "MapShare_Copy_Dwarf": 8080,
+    "AutoShare_Dwarf": 24,
+    "AutoShare_Copy_Dwarf": 48
   },
   "unstable": {}
 }
