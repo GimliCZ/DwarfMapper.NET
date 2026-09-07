@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -91,11 +92,21 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // The same PAIR declared twice. Emitting one view and ignoring the second attribute would be the
+                // silence this endpoint's own arrival was rejected for, so it is said out loud — the treatment
+                // DWARF094 gives a [GenerateMap] pair declared twice.
+                var srcFqn = v.Source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                if (factorySources.TryGetValue(srcFqn, out var firstTarget) && string.Equals(firstTarget, v.Target.ToDisplayString(), StringComparison.Ordinal))
+                {
+                    acc.Diagnostics.Add(ViewRefusal(v.Loc ?? classLoc,
+                        $"[GenerateView<{v.Source.ToDisplayString()}, {v.Target.ToDisplayString()}>] is declared twice on this mapper. One view is emitted for the pair; the second declaration adds nothing. Remove it, or give it [GenerateView(Name = \"...\")] and a different target if a second shape was meant"));
+                    continue;
+                }
+
                 // Two views over one source type would both want `public <View> View(TSource)`, which differ only
                 // in return type: CS0111, out of a file the consumer cannot edit. The same shape DWARF060 refuses
                 // for two [GenerateMap] pairs sharing a source.
-                var srcFqn = v.Source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                if (factorySources.TryGetValue(srcFqn, out var firstTarget))
+                if (factorySources.TryGetValue(srcFqn, out firstTarget))
                 {
                     acc.Diagnostics.Add(ViewRefusal(v.Loc ?? classLoc,
                         $"[GenerateView<{v.Source.ToDisplayString()}, {v.Target.ToDisplayString()}>] and the view to '{firstTarget}' share the source type '{v.Source.ToDisplayString()}', so both would emit `View({v.Source.ToDisplayString()})` and the two would differ only in return type (CS0111). Declare one of them on a second [DwarfMapper] class"));
@@ -240,6 +251,28 @@ namespace DwarfMapper.Generator.Pipeline
                 requiredMembersAlreadySatisfied: true,
                 ignoredSourceMembers: ClassIgnoredSources(decls));
 
+            // The SOURCE side of the completeness gate, under RequiredMapping = Both. A source member no view
+            // property exposes is unconsumed in exactly the sense DWARF039 means it, and [MapIgnoreSource] is
+            // the same silencer here that it is everywhere else — so the view runs the gate the create map runs
+            // rather than being the one endpoint where "every source member is read" quietly stops being
+            // checked. Fed the RESOLVED member list, before the nested-object members below become nested views:
+            // a nested view exposes the nested source object, so its source member is consumed either way, and
+            // reading coverage off the post-conversion list would have made every nested member look dropped.
+            if (policy.RequiredMapping == 1) // RequiredMappingStrategy.Both
+            {
+                EmitSourceCoverage(
+                    src,
+                    members,
+                    null,
+                    decls.ClassIgnoreSources,
+                    Array.Empty<string>(),
+                    policy.IgnoreObsolete,
+                    comp,
+                    policy.AllowNonPublic,
+                    loc,
+                    viewDiagnostics);
+            }
+
             foreach (var d in viewDiagnostics)
                 if (!acc.Diagnostics.Exists(e => ReferenceEquals(e.Descriptor, d.Descriptor) && string.Equals(e.MessageArg, d.MessageArg, StringComparison.Ordinal) && string.Equals(e.MessageArg2, d.MessageArg2, StringComparison.Ordinal)))
                 {
@@ -261,7 +294,7 @@ namespace DwarfMapper.Generator.Pipeline
                     return null;
                 }
 
-                var targetType = FindMemberType(tgt, member.TargetName, policy.AllowNonPublic);
+                var targetType = FindTargetMemberType(tgt, member.TargetName, comp, policy.AllowNonPublic);
                 if (targetType is null)
                 {
                     // The resolver matched a destination member this lookup cannot see. Refusing is the only
@@ -277,7 +310,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // conversion would have to allocate, and the view refuses.
                 if (GeneratedNames.IsComplexHelper(member.ConverterMethod) && !GeneratedNames.IsObjectMap(member.ConverterMethod))
                 {
-                    var sourceType = FindMemberType(src, member.SourceName, policy.AllowNonPublic);
+                    var sourceType = FindSourceMemberType(src, member.SourceName, comp, policy.AllowNonPublic);
                     if (sourceType is null || !HasImplicitConversion(comp, sourceType, targetType))
                     {
                         acc.Diagnostics.Add(ViewRefusal(loc,
@@ -295,7 +328,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // helper allocates the nested destination, which is exactly what is being avoided.
                 if (GeneratedNames.IsObjectMap(member.ConverterMethod))
                 {
-                    var sourceType = FindMemberType(src, member.SourceName, policy.AllowNonPublic);
+                    var sourceType = FindSourceMemberType(src, member.SourceName, comp, policy.AllowNonPublic);
                     if (sourceType is null || targetType is not INamedTypeSymbol nestedTarget || sourceType.IsValueType)
                     {
                         acc.Diagnostics.Add(ViewRefusal(loc,
@@ -488,34 +521,54 @@ namespace DwarfMapper.Generator.Pipeline
             return (instance, statics);
         }
 
-        /// <summary>The declared type of <paramref name="name" /> on <paramref name="type" /> or a base of it.</summary>
-        private static ITypeSymbol? FindMemberType(ITypeSymbol type, string name, bool allowNonPublic)
+        /// <summary>
+        ///     The declared type of the DESTINATION member <paramref name="name" /> on <paramref name="type" />,
+        ///     as the view's property signature must spell it.
+        /// </summary>
+        /// <remarks>
+        ///     Through <see cref="MemberFacts.Writable" /> rather than a walk of <c>GetMembers()</c> with an
+        ///     accessibility test of its own: <c>allowNonPublic</c> widens binding WITHIN the C# rules, and the
+        ///     one place that decides what those rules permit is <c>IsSymbolAccessibleWithin</c>, which
+        ///     <see cref="MemberFacts" /> consults. A second, hand-rolled test here would be free to disagree
+        ///     with the resolution that produced the member in the first place — and this file's first draft did,
+        ///     which <c>AccessibilityBoundaryTests</c> named on sight.
+        /// </remarks>
+        private static ITypeSymbol? FindTargetMemberType(
+            ITypeSymbol type,
+            string name,
+            Compilation compilation,
+            bool allowNonPublic)
         {
             if (string.IsNullOrEmpty(name))
             {
                 return null;
             }
 
-            for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-                foreach (var m in t.GetMembers())
+            foreach (var m in MemberFacts.Writable(type, compilation, allowNonPublic))
+                if (string.Equals(m.Name, name, StringComparison.Ordinal))
                 {
-                    if (!string.Equals(m.Name, name, StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
+                    return m.Type;
+                }
 
-                    if (!allowNonPublic && m.DeclaredAccessibility != Accessibility.Public)
-                    {
-                        continue;
-                    }
+            return null;
+        }
 
-                    switch (m)
-                    {
-                        case IPropertySymbol { IsIndexer: false } p:
-                            return p.Type;
-                        case IFieldSymbol { IsImplicitlyDeclared: false } f:
-                            return f.Type;
-                    }
+        /// <summary>The declared type of the SOURCE member <paramref name="name" /> — see <see cref="FindTargetMemberType" />.</summary>
+        private static ITypeSymbol? FindSourceMemberType(
+            ITypeSymbol type,
+            string name,
+            Compilation compilation,
+            bool allowNonPublic)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            foreach (var m in MemberFacts.Readable(type, compilation, allowNonPublic))
+                if (string.Equals(m.Name, name, StringComparison.Ordinal))
+                {
+                    return m.Type;
                 }
 
             return null;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper
 {
@@ -36,8 +36,9 @@ namespace DwarfMapper
 // would have decided all seven. Measurement metadata, read only by the test projects; see DwarfSurfaceAttribute.
     [DwarfSurface(SurfaceCategory.ConsumerDirective)]
     [DwarfSurfaceSite(AttributeTargets.Constructor,
-        SurfaceEndpoints.All & ~SurfaceEndpoints.UpdateInto,
-        "An update-into writes into a destination THE CALLER ALREADY BUILT — `void Update(Src s, Dst d)` receives " +
+        SurfaceEndpoints.All & ~SurfaceEndpoints.UpdateInto & ~SurfaceEndpoints.View,
+        "TWO endpoints ask no such question, for the same reason from opposite ends. An update-into writes " +
+        "into a destination THE CALLER ALREADY BUILT — `void Update(Src s, Dst d)` receives " +
         "the `Dst`, null-guards it and assigns its members — so for the pair that endpoint declares there is no " +
         "construction step, and 'which constructor should build this' is not a question it asks. That is a fact " +
         "about the shape of the endpoint's signature, not about what the generator currently reads: every other " +
@@ -51,7 +52,12 @@ namespace DwarfMapper
         "is called, measured and pinned by " +
         "ConstructorMappingTests.Annotated_ctor_is_honoured_for_a_nested_update_into_target. That construction " +
         "is the auto-synthesized CREATE map for the inner pair, which is the CreateMap cell of this matrix, " +
-        "and the update-into merely calls it.")]
+        "and the update-into merely calls it. A VIEW is the other end of the same fact: it constructs no " +
+        "destination AT ALL, at any depth. Each property is an expression evaluated on access against the " +
+        "source, and a nested member is another view rather than a constructed object — so unlike the " +
+        "update-into there is not even an inner pair whose constructor could be selected. Narrowed rather " +
+        "than refused for the reason above, doubled: the attribute sits on the destination TYPE, which one " +
+        "codebase legitimately shares between a Map that honours it and a View that has nothing to build.")]
     [AttributeUsage(AttributeTargets.Constructor, AllowMultiple = false, Inherited = false)]
     public sealed class DwarfMapperConstructorAttribute : Attribute
     {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Reflection;
 
@@ -32,6 +32,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
             ["DwarfProvidesMap/0"] = "ctor takes two typeofs; a type reference has no member axis to rotate",
             ["DwarfRequiresMap/0"] = "ctor takes two typeofs; a type reference has no member axis to rotate",
             ["GenerateMap/2"] = "arity-2 generic form, no constructor arguments to vary",
+            ["GenerateView/2"] = "arity-2 generic form, no constructor arguments to vary (its one property, " + "Name, is the property axis and renders its own case)",
             ["GenerateWrapperMap/0"] = "ctor takes one typeof",
             ["MapDerivedType/0"] = "declared Arguments are two typeofs (the polymorphic-hierarchy fixture's " + "derived pair); rotating would need a SECOND derived pair in the fixture",
             ["MapDerivedType/2"] = "arity-2 generic form, no constructor arguments to vary",
