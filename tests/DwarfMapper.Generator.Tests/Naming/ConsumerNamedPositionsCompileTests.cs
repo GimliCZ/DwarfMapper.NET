@@ -748,5 +748,90 @@ namespace DwarfMapper.Generator.Tests.Naming
                              """;
             GeneratorAssert.CompilesClean(s);
         }
+
+        /// <summary>
+        ///     A <c>[MapConstructor&lt;S,T&gt;]</c> factory method the consumer named after a keyword.
+        /// </summary>
+        /// <remarks>
+        ///     The old investigation's attribute table listed this one as "not separately probed". It is the
+        ///     position behind <c>MapMethodModel.EmitFactoryMethod</c>, and without a case here that escape
+        ///     would be a fix with nothing holding it — the repo rule is a RED→GREEN test per fix, named for
+        ///     the finding.
+        /// </remarks>
+        [Fact]
+        public void P39_map_constructor_factory_method_name()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Src { public int Id { get; set; } public int Tag { get; set; } }
+                             public class Dst { public Dst(int id) { Id = id; } public int Id { get; } public int Tag { get; set; } }
+                             [DwarfMapper]
+                             [GenerateMap<Src, Dst>]
+                             [MapConstructor<Src, Dst>("class")]
+                             public partial class M
+                             {
+                                 private static Dst @class(Src s) => new Dst(s.Id);
+                             }
+                             """;
+            GeneratorAssert.CompilesClean(s);
+        }
+
+        /// <summary>
+        ///     An async-stream map whose user-declared <c>CancellationToken</c> parameter is keyword-named.
+        /// </summary>
+        /// <remarks>
+        ///     P31 covers the method and source parameter of the same endpoint but declares NO token, so the
+        ///     <c>AsyncCancellationParam</c> branch — the parameter that carries
+        ///     <c>[EnumeratorCancellation]</c> and threads through <c>WithCancellation</c> — was never reached
+        ///     by any position. The generated half must match the user's partial signature exactly, so this
+        ///     name is theirs to choose.
+        /// </remarks>
+        [Fact]
+        public void P40_async_stream_cancellation_token_parameter_name()
+        {
+            const string s = """
+                             using System.Collections.Generic;
+                             using System.Threading;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Src { public int Id { get; set; } }
+                             public class Dst { public int Id { get; set; } }
+                             [DwarfMapper]
+                             public partial class M
+                             {
+                                 public partial IAsyncEnumerable<Dst> Map(IAsyncEnumerable<Src> src, CancellationToken @class);
+                             }
+                             """;
+            GeneratorAssert.CompilesClean(s);
+        }
+
+        /// <summary>
+        ///     A <c>[Flags]</c> enum whose members are keyword-named, in all three directions.
+        /// </summary>
+        /// <remarks>
+        ///     P06–P08 are all NON-flags: a flags enum takes three separate emission paths — the
+        ///     <c>__r |= E.@class;</c> accumulator in enum→enum, the same in the comma-splitting string→enum
+        ///     parser, and a string form that must stay UNESCAPED because <c>Enum.ToString</c> produces the
+        ///     bare identifier. Three of the six escaped sites in <c>EnumConverter</c> are reachable only from
+        ///     here, and the fourth is the literal that must NOT be escaped, on the same line as one that must.
+        /// </remarks>
+        [Fact]
+        public void P41_flags_enum_member_names()
+        {
+            const string s = """
+                             using System;
+                             using DwarfMapper;
+                             namespace Demo;
+                             [Flags] public enum E1 { None = 0, @class = 1, @event = 2 }
+                             [Flags] public enum E2 { None = 0, @class = 1, @event = 2 }
+                             public class Src { public E1 A { get; set; } public E1 B { get; set; } public string C { get; set; } }
+                             public class Dst { public E2 A { get; set; } public string B { get; set; } public E1 C { get; set; } }
+                             [DwarfMapper]
+                             [GenerateMap<Src, Dst>]
+                             public partial class M;
+                             """;
+            GeneratorAssert.CompilesClean(s);
+        }
     }
 }

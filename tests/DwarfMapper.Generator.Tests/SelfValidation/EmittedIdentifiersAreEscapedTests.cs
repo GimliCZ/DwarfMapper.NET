@@ -174,10 +174,16 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         ///     recorded five times, so the instrument states what it must find for its green to mean anything.
         /// </summary>
         /// <summary>
-        ///     Measured 2026-09-07: the walk sees 1,565 text-writing calls across the 24 emitting files. The
-        ///     floor is the measurement rounded down, per R2 — a floor that is not a measurement is a guess that
-        ///     will be re-guessed.
+        ///     Measured 2026-09-07: the walk sees 1,565 text-writing calls across the 24 emitting files.
         /// </summary>
+        /// <remarks>
+        ///     A SANITY FLOOR, deliberately below the measurement and deliberately NOT a ratchet: the count
+        ///     moves with every ordinary edit to an emitter, and pinning it exactly would fail this test for
+        ///     reasons that have nothing to do with escaping. What it must catch is the walk finding nothing —
+        ///     a rename of the writer methods, or an argument traversal that stops traversing. The floor that
+        ///     IS exact is <see cref="MinimumEscapedEmissionSites" />, which counts the thing this file is
+        ///     about.
+        /// </remarks>
         private const int MinimumWriteCallsScanned = 1500;
 
         /// <summary>

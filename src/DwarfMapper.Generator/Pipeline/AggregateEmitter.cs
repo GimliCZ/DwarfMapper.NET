@@ -706,10 +706,13 @@ namespace DwarfMapper.Generator.Pipeline
             // CS0102 out of generated code. Both call sites dedupe by exact FQN, so only a genuine collision of
             // different names can reach here. A hash of the ORIGINAL name disambiguates while staying stable
             // across processes (a GetHashCode would not be).
-            // Unescaped for the same reason as ShortName: the dots of an already-escaped fully-qualified name
-            // are flattened into underscores here, so a mapper the consumer called @class would otherwise give
-            // the field the un-parseable name __Demo_@class_<hash>.
-            return "__" + Identifiers.Unescaped(s).Replace('.', '_').Replace("@", string.Empty) + "_" + StableHash.Fnv1a(s);
+            // Every @ is stripped, not just a leading one, and that is the difference from ShortName: the
+            // dots of an already-escaped fully-qualified name are flattened into underscores here, so the @ in
+            // `Demo.@class.M` ends up INSIDE the field name — __Demo_@class_M_<hash>, which does not parse.
+            // Identifiers.Unescaped would be a no-op on this string for exactly that reason (its @ is never
+            // leading), so the blanket Replace is the whole fix rather than a belt-and-braces addition to it.
+            // The HASH still reads the original `s`, so two mappers differing only in an @ cannot collide.
+            return "__" + s.Replace('.', '_').Replace("@", string.Empty) + "_" + StableHash.Fnv1a(s);
         }
 
         /// <summary>One candidate convenience extension: <c>{ExtName}(this {Source}) => {Mapper}.{Method}(...)</c>.</summary>

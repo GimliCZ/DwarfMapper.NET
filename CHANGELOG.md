@@ -258,17 +258,18 @@ so a version with no section here ships with no notes.
 ### Fixed
 
 - **Naming anything in your own code after a C# keyword — `@class`, `@event`, `@record` — produced generated
-  code that did not compile, in twenty-five distinct places.** `@class` is legal C# and people write it,
+  code that did not compile, in twenty-seven distinct places.** `@class` is legal C# and people write it,
   particularly in DTOs generated from a JSON or OpenAPI schema; the `@` is syntax, so the compiler hands a
   generator back the bare `class`, and writing that out gives you `public partial class class` or
   `Id = class(src.Id)` in a `.g.cs` you never wrote and cannot edit, with no DwarfMapper diagnostic to connect
-  the errors to anything. Thirty-seven consumer-controllable naming positions were driven through the real
-  generator; twenty-five were broken. Now fixed at every one: the mapper class name and its containing types,
+  the errors to anything. Forty consumer-controllable naming positions were driven through the real
+  generator; twenty-seven were broken. Now fixed at every one: the mapper class name and its containing types,
   map/projection/round-trip/reverse-map method names and their parameters, `[BeforeMap]`/`[AfterMap]` hooks,
   `[MapProperty(Use =)]` / `(When =)` / `[MapValue(Use =)]` targets, discovered user conversions, enum member
-  names in both directions, `[MapDerivedType]` arms, `[MapCollectionKey]` members, `[FlattenGraph]` node leaves
-  and edges, `[ProvidesMap]` methods, the convenience facade, the DI registration, the ambient registry, and
-  the separate `[MapTo]` registry generator. **No remedy needed, and nothing that compiled before changes** —
+  names in both directions (`[Flags]` included), `[MapDerivedType]` arms, `[MapCollectionKey]` members,
+  `[FlattenGraph]` node leaves and edges, `[MapConstructor]` factory methods, an async stream's
+  `CancellationToken` parameter, `[ProvidesMap]` methods, the convenience facade, the DI registration, the
+  ambient registry, and the separate `[MapTo]` registry generator. **No remedy needed, and nothing that compiled before changes** —
   the escape is the identity function for every name that is not a keyword, so no existing output moved by a
   byte.
 
