@@ -2164,7 +2164,7 @@ existed. If you want the share, make the shape provable: seal the type, make its
 `init`-only, and use `ImmutableArray<T>` or `ImmutableList<T>` rather than an interface — and then you can
 delete the attribute too, because the automatic path takes it from there.
 
-**The other three things this error says**, all with the same remedy:
+**The other five things this error says**, all with the same remedy:
 
 - **The member does not exist.** `[MapShare("Bagdes")]` naming no writable destination member is a typo, and
   a typo that copies silently is the failure this project treats as worse than a build break.
@@ -2174,6 +2174,12 @@ delete the attribute too, because the automatic path takes it from there.
   collection (`NullCollectionStrategy.AsEmpty`), and it reproduces that arm with a cached singleton —
   `ImmutableList<T>.Empty`, `Array.Empty<T>()`. A type exposing no such value would need an allocation to
   answer a null source, and a share whose worst case is the copy it replaced is not worth having.
+- **The member is also assigned by `[MapValue]`.** That directive supplies the value outright, so there is no
+  source reference left to share. The attribute would change nothing, and a directive that quietly changes
+  nothing is the same failure as the typo above.
+- **The member also carries a `[MapProperty]` that modifies its assignment** — `Use=`, `When=`,
+  `NullSubstitute=` or `StringFormat=`. A share assigns the source reference and *nothing else*, so it cannot
+  also run your converter, guard the write, or format the value; the two directives cannot both apply.
 
 `NullCollectionStrategy.AsNull` is refused for the same family of reasons: its null-preserving contract is
 the collection converter's, and the share does not implement it.

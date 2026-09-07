@@ -81,8 +81,10 @@ so a version with no section here ships with no notes.
 - **`DWARF104` (Error) — `[MapShare]` names a member that cannot be shared.** Reported when the member is
   provably mutable ("not immutable: sharing would alias mutable state"), names no writable destination
   member, maps two different types (a share performs no conversion at all), has no allocation-free empty
-  value to answer a null source with, or is mapped under `NullCollectionStrategy.AsNull`, whose
-  null-preserving contract the share does not implement. **Remedy:** remove the attribute — it costs exactly
+  value to answer a null source with, is mapped under `NullCollectionStrategy.AsNull`, whose null-preserving
+  contract the share does not implement, is also assigned by `[MapValue]` (which leaves no source reference to
+  share), or also carries a `[MapProperty]` that modifies the assignment — `Use=`, `When=`, `NullSubstitute=`
+  or `StringFormat=` — none of which a share can perform, since it assigns the reference and nothing else. **Remedy:** remove the attribute — it costs exactly
   one copy — or make the shape provable and delete the attribute afterwards, because the automatic path takes
   it from there.
 

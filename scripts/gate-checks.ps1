@@ -705,6 +705,40 @@ function Assert-NoMutatedProductBinaries {
 #
 # Headroom to the first red byte (316 KB = 323,584 B): 954 B on Windows. For DwarfMapper.Testing
 # (50 KB = 51,200 B): 140 B, and its 49 KB is re-measured in this commit rather than merely carried.
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED AGAIN 2026-09-07, in the commit that fixed the dropped [MapProperty] modifier and the two
+# refusals that were not true (round 29, task 3.1, review round). The block above was measured one commit
+# earlier, and this file's own rule is to ASSUME ANY CHANGE MOVES THIS NUMBER AND RE-MEASURE rather than
+# reason about which way it went - so it was packed again, twice, on the same SDK 10.0.101 / Release /
+# -p:EnablePackageValidation=false:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  322,694 B -> floor(322694/1024) = 315 KB   (UNCHANGED)
+#            DwarfMapper.Testing...nupkg    51,057 B -> floor( 51057/1024) =  49 KB   (UNCHANGED)
+# 322,694 is the LARGER of the two packs in this session (322,693 and 322,694). ONLY WINDOWS, with the same
+# stated limit and the same CRLF-vs-LF reasoning as the block above.
+#
+# THE +64 B, entry by entry against that block's own 322,630 measurement. Deflated bytes, from the two
+# .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   216,730 -> 216,807     +77
+#   _rels/.rels                                   286 ->     287      +1
+#   lib/net10.0/DwarfMapper.xml                39,649 ->  39,649       0
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,257 ->  17,253      -4
+#   lib/net10.0/DwarfMapper.dll                18,201 ->  18,194      -7
+#   DwarfMapper.nuspec                            776 ->     773      -3
+#   (README.md, [Content_Types].xml and the .psmdcp are byte-identical; total +64, and
+#    322,630 + 64 = 322,694 exactly.)
+#
+# THE READING. One row carries the change and it is the only one that could: Generator.dll +77 B is the
+# widened modifier gate in ResolveExplicitMaps (the `hasExtras` lookup and the `which` ternary), the
+# collection/dictionary check moved ahead of the proof, the cycle guard keyed on the constructed type, and
+# the four new message literals - descriptor and message strings are payload, not comments. SAME NINE
+# ENTRIES AS BEFORE. The four small rows are noise on channels this file has already characterised: no
+# source under src/DwarfMapper/ or src/DwarfMapper.CodeFixes/ changed in that commit
+# (`git diff 7e112c7 HEAD -- src/DwarfMapper/ src/DwarfMapper.CodeFixes/` is empty), and the nuspec moves
+# with the `<repository commit=.../>` sha, which is a different sha by construction.
+#
+# Headroom to the first red byte (316 KB = 323,584 B): 890 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 143 B. Both ceilings are re-measured in this commit rather than merely carried.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper'         = 315
