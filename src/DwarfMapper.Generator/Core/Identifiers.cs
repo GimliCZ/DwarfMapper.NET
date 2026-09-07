@@ -79,14 +79,16 @@ namespace DwarfMapper.Generator.Core
         ///         the type's name is still <c>scoped</c>, and a consumer may write it either way.
         ///     </para>
         ///     <para>
-        ///         NO PRODUCTION CALL SITE at present, and kept deliberately. Its only caller was the
-        ///         <c>[GenerateView]</c> endpoint, withdrawn 2026-09-07 (see
-        ///         <c>Issues/round29/WITHDRAWN-generated-views.md</c>) — but nothing about the helper was
-        ///         view-specific, and every remaining type-declaration position the generator writes (a mapper
-        ///         class name, a containing-type header) has the same exposure: a consumer may legally write
-        ///         <c>public partial class @record</c>, and <c>ISymbol.Name</c> hands back <c>record</c>.
-        ///         Deleting it would mean rediscovering the measurement above the next time one of those is
-        ///         escaped. Its tests execute it directly, so it is not untested dead code.
+        ///         Its callers are <see cref="DwarfMapper.Generator.Model.MapperClassModel.EmitClassName" />, its
+        ///         containing-type chain, and the fully-qualified name built from both — every type-DECLARATION
+        ///         position the generator writes. It reached them a day after it was kept with no caller at all:
+        ///         its only one had been the <c>[GenerateView]</c> endpoint, withdrawn 2026-09-07 (see
+        ///         <c>Issues/round29/WITHDRAWN-generated-views.md</c>), and it was retained on the argument that
+        ///         nothing about it was view-specific. That argument held. A consumer may legally write
+        ///         <c>public partial class @record</c>, <c>ISymbol.Name</c> hands back <c>record</c>, and the
+        ///         emitted <c>public partial class record</c> is <c>CS8860</c> — a WARNING, unsuppressible from
+        ///         a <c>.g.cs</c>, which an errors-only probe called green
+        ///         (<c>ConsumerNamedPositionsCompileTests.P16</c> measures exactly that).
         ///     </para>
         /// </remarks>
         public static string EscapeTypeName(string name)
