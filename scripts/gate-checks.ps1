@@ -590,7 +590,9 @@ function Assert-NoMutatedProductBinaries {
 # The Generator growth is Phase 1 itself: MapperExtractor.Views.cs, ViewEmitter.cs, ViewModel.cs and
 # DWARF102 — ~8.3 KB of deflated IL. DwarfMapper.dll and DwarfMapper.xml grow by the one new public type,
 # GenerateViewAttribute<TSource, TTarget>, and its doc comment. README grows by the Gallery's guide-36
-# table row. The CodeFixes and .rels deltas are compression noise on byte-identical raw content. SAME
+# table row. The CodeFixes and .rels rows have identical RAW sizes but differing compressed ones, which is
+# not compression noise — deflate is deterministic — but the baseline being packed from a `C:/dmbase`
+# worktree, whose path leaks into the PE. Identical raw size, not byte-identical content. SAME
 # ENTRIES AS BEFORE: no new dependency, no new resource, nothing newly shipping that should not — none of
 # the class this gate exists to catch — so this is a raise with its reason, not a finding against the
 # package.
