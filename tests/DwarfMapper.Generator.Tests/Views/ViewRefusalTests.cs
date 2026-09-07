@@ -348,5 +348,145 @@ namespace DwarfMapper.Generator.Tests.Views
             Assert.Contains(diagnostics, d => d.Id == "DWARF102" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("the view 'DstView' cannot be emitted", StringComparison.Ordinal));
             Assert.DoesNotContain("ref struct DstView", generated, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     <c>Name</c> is written into generated C# verbatim, so a value that is not an identifier makes the
+        ///     .g.cs fail to parse — CS1001 pointing at code the consumer cannot edit, for a typing mistake.
+        ///     DWARF108 refuses it AT THE ARGUMENT, which is the only text that is wrong.
+        /// </summary>
+        [Theory]
+        [InlineData("3 dogs", "a leading digit and a space")]
+        [InlineData("Customer-Card", "punctuation")]
+        [InlineData("class", "a reserved keyword: a valid identifier by SyntaxFacts, not a usable type name")]
+        [InlineData("", "the empty string, which used to mean 'no name given' and silently took the default")]
+        public void A_view_name_that_is_not_a_usable_type_name_is_refused_at_the_argument(string name, string why)
+        {
+            var source = $$"""
+                           #nullable enable
+                           using DwarfMapper;
+                           namespace Demo;
+                           public sealed class Src { public int Id { get; set; } }
+                           public sealed class Dst { public int Id { get; set; } }
+                           [DwarfMapper]
+                           [GenerateView<Src, Dst>(Name = "{{name}}")]
+                           public partial class M { }
+                           """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+
+            var reported = Assert.Single(diagnostics.Where(d => d.Id == "DWARF108"));
+            Assert.Contains($"[GenerateView(Name = \"{name}\")] is not a usable C# type name",
+                reported.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+            Assert.Contains("valid C# identifier that is not a reserved keyword",
+                reported.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+
+            // On the ARGUMENT, not on the attribute and not on the class: `[GenerateView<Src, Dst>(` is 24
+            // characters, so the argument starts at column 25. Locating it on the class would point the
+            // consumer at a line where nothing is wrong. (`why` names the shape for the failure output.)
+            Assert.Equal(25, reported.Location.GetLineSpan().StartLinePosition.Character + 1);
+            Assert.False(string.IsNullOrEmpty(why));
+
+            // Refused, so nothing is emitted for it — the point is that no CS error reaches the .g.cs.
+            Assert.DoesNotContain("readonly ref struct", generated, StringComparison.Ordinal);
+            // The point of the refusal: nothing the generator emitted carries a compiler error, so the ONLY
+            // thing the consumer sees is the DWARF108 above, at the argument they typed.
+            GeneratorAssert.EmitsCompilableCode(source, NullableContextOptions.Enable);
+        }
+
+        /// <summary>
+        ///     The refusal is deliberately BROADER than what the compiler rejects, and this pins both halves of
+        ///     that trade so it cannot drift into being believed exact.
+        ///     <para>
+        ///         Measured against the real generator: of 29 contextual keywords, exactly five break —
+        ///         <c>record</c>, <c>required</c>, <c>file</c>, <c>scoped</c>, <c>partial</c> — and the other
+        ///         24, <c>var</c> and <c>with</c> among them, would have compiled. All of them are refused
+        ///         anyway. An exact syntactic check was written first and abandoned on evidence: it caught four
+        ///         of the five, and <c>scoped</c> parses into the SAME tree shape as a good name (struct
+        ///         <c>scoped</c>, method <c>View</c> returning <c>scoped</c>, no syntax diagnostics) with
+        ///         CS9062 raised later by the binder. One leaked CS error in a .g.cs costs more than a rename.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [InlineData("record")]  // genuinely breaks — the FACTORY's return type reads as a record declaration
+        [InlineData("scoped")]  // genuinely breaks, and no syntax check can see it
+        [InlineData("var")]     // would have compiled: refused by the broader rule, on purpose
+        [InlineData("with")]    // ditto
+        public void A_contextual_keyword_is_refused_even_where_it_would_have_compiled(string name)
+        {
+            var source = $$"""
+                           #nullable enable
+                           using DwarfMapper;
+                           namespace Demo;
+                           public sealed class Src { public int Id { get; set; } }
+                           public sealed class Dst { public int Id { get; set; } }
+                           [DwarfMapper]
+                           [GenerateView<Src, Dst>(Name = "{{name}}")]
+                           public partial class M { }
+                           """;
+
+            var (diagnostics, _) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+
+            Assert.Single(diagnostics.Where(d => d.Id == "DWARF108"));
+            // The point of the refusal: nothing the generator emitted carries a compiler error, so the ONLY
+            // thing the consumer sees is the DWARF108 above, at the argument they typed.
+            GeneratorAssert.EmitsCompilableCode(source, NullableContextOptions.Enable);
+        }
+
+        /// <summary>
+        ///     A PascalCase name that merely resembles a keyword is untouched — the check is case-sensitive and
+        ///     the over-refusal above is confined to lowercase keyword-shaped words, which is what makes it an
+        ///     acceptable trade rather than a nuisance.
+        /// </summary>
+        [Fact]
+        public void A_name_that_only_resembles_a_keyword_is_accepted()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class Src { public int Id { get; set; } }
+                                  public sealed class Dst { public int Id { get; set; } }
+                                  [DwarfMapper]
+                                  [GenerateView<Src, Dst>(Name = "Record")]
+                                  public partial class M { }
+                                  """;
+
+            var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
+
+            Assert.Contains("public readonly ref struct Record", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A name that IS an identifier but is already taken by a type the consumer declares on the same
+        ///     mapper. CS0102 in the .g.cs otherwise — the same collision DWARF102 already refuses between two
+        ///     views, applied to the type the consumer wrote, which is why it is DWARF102 and not a new id.
+        /// </summary>
+        [Fact]
+        public void A_view_name_already_used_by_a_type_on_the_mapper_is_refused()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class Src { public int Id { get; set; } }
+                                  public sealed class Dst { public int Id { get; set; } }
+                                  [DwarfMapper]
+                                  [GenerateView<Src, Dst>(Name = "Row")]
+                                  public partial class M { public sealed class Row { } }
+                                  """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+
+            var reported = Assert.Single(diagnostics.Where(d => d.Id == "DWARF102"));
+            Assert.Contains("already declares a type of that name",
+                reported.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("readonly ref struct", generated, StringComparison.Ordinal);
+            // The point of the refusal: nothing the generator emitted carries a compiler error, so the ONLY
+            // thing the consumer sees is the DWARF108 above, at the argument they typed.
+            GeneratorAssert.EmitsCompilableCode(source, NullableContextOptions.Enable);
+        }
     }
 }

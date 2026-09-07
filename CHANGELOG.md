@@ -79,7 +79,16 @@ so a version with no section here ships with no notes.
   a co-located `[GenerateMap]` host, and a converter name declared both `static` and as an instance method.
   Scoped to the view — the `Map` methods on the same mapper still generate. A view that reaches *itself* is
   **not** refused: the property is an expression rather than a field, so the recursion is lazy and walking a
-  linked structure without materialising it is what the feature is best at.
+  linked structure without materialising it is what the feature is best at. It also refuses a view whose name
+  is already taken by a type on the same mapper, and a view whose nested view could not itself be built (the
+  parent is withdrawn with the child rather than left naming a type nothing declares).
+- **`DWARF108` (Error) — `[GenerateView(Name = ...)]` is not a usable type name.** The view's name is written
+  into generated C# verbatim — the struct declaration, its constructor, and the factory's return type — so a
+  value that is not an identifier, or is a keyword, made the generated file fail to parse: a `CS1001` inside a
+  `.g.cs` the consumer cannot edit, for an ordinary typing mistake. Refused **at the argument**, so the report
+  points at the text that is wrong. `Name = ""` no longer silently means "no name given". The refusal is
+  deliberately broader than the compiler's for contextual keywords, and `docs/diagnostics.md` records the
+  measurement behind that trade.
 
 
 - **`DWARF107` (Warning) — a converter you declared returns a nullable reference, and its result is stored

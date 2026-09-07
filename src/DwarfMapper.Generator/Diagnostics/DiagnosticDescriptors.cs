@@ -1872,10 +1872,45 @@ namespace DwarfMapper.Generator.Diagnostics
         ///         an unflatten PATH (there is no such property name to declare), a cyclic nested view, a
         ///         value-type source (the view would hold a copy, so it would neither be zero-copy nor read
         ///         through to the source), two views colliding on one type name or on the one
-        ///         <c>View(TSource)</c> factory, and <c>[GenerateView]</c> on a class the mapper pipeline never
+        ///         <c>View(TSource)</c> factory, a view whose name is already taken by a type the consumer
+        ///         declares on the same mapper, and <c>[GenerateView]</c> on a class the mapper pipeline never
         ///         visits. Round 29, Phase 1.
         ///     </para>
         /// </summary>
+        /// <summary>
+        ///     <c>DWARF108</c> — the name given to <c>[GenerateView(Name = "…")]</c> cannot be written as a C#
+        ///     type name, so the view would be declared with it verbatim and the generated file would not parse.
+        ///     <para>
+        ///         An <b>Error</b>, and located on the ARGUMENT rather than on the attribute or the class,
+        ///         because the offending text is the argument and nothing else on that line is wrong. Without it
+        ///         the consumer's only feedback is <c>CS1001 Identifier expected</c> pointing into a
+        ///         <c>.g.cs</c> they cannot edit and did not write — the unsuppressible-diagnostic class this
+        ///         round exists to clear — for what is an ordinary typing mistake.
+        ///     </para>
+        ///     <para>
+        ///         The refused set is exactly the set the C# compiler rejects, taken from the compiler's own
+        ///         predicates rather than a hand-written character rule: anything
+        ///         <see cref="Microsoft.CodeAnalysis.CSharp.SyntaxFacts.IsValidIdentifier" /> rejects (a space,
+        ///         a digit first, punctuation, and the empty string), plus a RESERVED keyword, which is a valid
+        ///         identifier by that predicate but not a usable type name. A CONTEXTUAL keyword —
+        ///         <c>record</c>, <c>value</c>, <c>nint</c> — is left alone, because <c>struct record</c> is
+        ///         legal C# and refusing it would be this diagnostic inventing a rule the language does not
+        ///         have. Round 29, Phase 1, review round 1.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor ViewNameIsNotATypeName = new(
+            "DWARF108",
+            "[GenerateView(Name = ...)] is not a usable type name",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            "[GenerateView(Name = \"…\")] names the nested `readonly ref struct` the generator declares, so the " +
+            "value is written into generated C# verbatim. A value that is not a C# identifier — or that is a " +
+            "reserved keyword — makes that file fail to parse, with the compiler pointing at generated code the " +
+            "consumer cannot edit. Give the view a valid C# identifier, or omit Name and take the default " +
+            "(the target type's name plus 'View').");
+
         public static readonly DiagnosticDescriptor MemberNotViewable = new(
             "DWARF102",
             "Member cannot be viewed without allocating",

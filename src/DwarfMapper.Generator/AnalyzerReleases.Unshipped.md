@@ -111,6 +111,7 @@ DWARF102 | DwarfMapper | Error | Member cannot be viewed without allocating
 DWARF103 | DwarfMapper | Info | Collection element could be a struct
 DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
 DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
+DWARF108 | DwarfMapper | Error | [GenerateView(Name = ...)] is not a usable type name
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

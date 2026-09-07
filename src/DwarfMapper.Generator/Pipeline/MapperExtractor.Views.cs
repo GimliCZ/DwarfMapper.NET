@@ -6,6 +6,8 @@ using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DwarfMapper.Generator.Pipeline
 {
@@ -83,7 +85,30 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var v in declared)
             {
+                // The name is written into emitted C# verbatim, so a value the compiler cannot read as a type
+                // name puts a CS1001 into a .g.cs the consumer cannot edit — for a typing mistake. Refused
+                // here, at the argument, before anything is built.
+                if (v.Name is not null && !IsUsableTypeName(v.Name))
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ViewNameIsNotATypeName,
+                        v.NameLoc ?? v.Loc ?? classLoc,
+                        $"[GenerateView(Name = \"{v.Name}\")] is not a usable C# type name, and the view's name is written into generated code exactly as given — the generated file would not parse. Give the view a valid C# identifier that is not a reserved keyword, or omit Name to take the default '{v.Target.Name}View'",
+                        ScopedToMethod: true));
+                    continue;
+                }
+
                 var name = string.IsNullOrEmpty(v.Name) ? v.Target.Name + "View" : v.Name!;
+
+                // The name is free, but the consumer's own class may already use it. Emitting anyway is CS0102
+                // in the generated file; the collision between two VIEWS is refused below for the same reason,
+                // so this is that rule applied to the type the consumer declared rather than to another view.
+                if (decls.ClassSymbol.GetTypeMembers(name).Length > 0)
+                {
+                    acc.Diagnostics.Add(ViewRefusal(v.NameLoc ?? v.Loc ?? classLoc,
+                        $"the view would be named '{name}', and '{decls.ClassSymbol.Name}' already declares a type of that name — the generated nested type would collide with yours (CS0102). Give the view [GenerateView(Name = \"...\")] with a name your class does not use"));
+                    continue;
+                }
 
                 if (v.Source.IsValueType)
                 {
@@ -159,6 +184,46 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var view in built) MergeReferencedHelpers(view, viewSynthesized, acc.Synthesized);
 
             acc.Views.AddRange(PropagateOwner(built));
+        }
+
+        /// <summary>
+        ///     Whether a <c>[GenerateView(Name = …)]</c> value can be written into generated C# as a type name.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The question is not "is this an identifier" but "does the code this generator is about to
+        ///         write compile", and the two differ in both directions. The name is written into THREE
+        ///         positions — the struct declaration, its constructor, and the factory's return type — and it
+        ///         is the last one that actually breaks: <c>public readonly ref struct record { }</c> parses
+        ///         perfectly, while <c>public record View(Src source) =&gt; …</c> three lines later reads as a
+        ///         record declaration. A check that looked only at the declaration would have passed
+        ///         <c>record</c> and shipped the CS1514.
+        ///     </para>
+        ///     <para>
+        ///         Three predicates, and the third is deliberately BROADER than the compiler's minimum. That is
+        ///         a trade, so here is the measurement behind it. Of 29 contextual keywords probed against the
+        ///         real generator, exactly five break: <c>record</c>, <c>required</c>, <c>file</c>,
+        ///         <c>scoped</c> and <c>partial</c>. An exact syntactic test was written and then abandoned,
+        ///         because it cannot be exact: parsing the emitted shape catches four of the five, and
+        ///         <c>scoped</c> produces a parse tree BYTE-FOR-BYTE the shape of a good name — struct named
+        ///         <c>scoped</c>, method <c>View</c> returning <c>scoped</c>, zero syntax diagnostics — with
+        ///         CS9062 raised later by the binder. Compiling a probe inside an incremental generator to
+        ///         recover that one name is not a trade worth making.
+        ///     </para>
+        ///     <para>
+        ///         So every contextual keyword is refused, which over-refuses the eighteen that would have been
+        ///         fine (<c>var</c>, <c>with</c>, <c>init</c>, <c>where</c>, <c>async</c> …). The cost of the
+        ///         over-refusal is one clear message telling a consumer to rename; the cost of the alternative
+        ///         — a hand-kept list of the five, going stale the next time C# grows a modifier — is a CS
+        ///         error inside a <c>.g.cs</c> nobody can edit. Every name this refuses unnecessarily is a
+        ///         lowercase keyword-shaped word, which is not what anyone names a type.
+        ///     </para>
+        /// </remarks>
+        private static bool IsUsableTypeName(string name)
+        {
+            return SyntaxFacts.IsValidIdentifier(name) &&
+                   SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None &&
+                   SyntaxFacts.GetContextualKeywordKind(name) == SyntaxKind.None;
         }
 
         /// <summary>
@@ -704,10 +769,10 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>Every <c>[GenerateView&lt;S,T&gt;]</c> on the mapper class, in declaration order.</summary>
-        private static List<(ITypeSymbol Source, INamedTypeSymbol Target, string? Name, LocationInfo? Loc)>
+        private static List<(ITypeSymbol Source, INamedTypeSymbol Target, string? Name, LocationInfo? Loc, LocationInfo? NameLoc)>
             ReadViewDeclarations(INamedTypeSymbol classSymbol)
         {
-            var result = new List<(ITypeSymbol, INamedTypeSymbol, string?, LocationInfo?)>();
+            var result = new List<(ITypeSymbol, INamedTypeSymbol, string?, LocationInfo?, LocationInfo?)>();
             foreach (var attr in classSymbol.GetAttributes())
             {
                 if (attr.AttributeClass is not { Name: KnownNames.GenerateView } ac ||
@@ -720,18 +785,47 @@ namespace DwarfMapper.Generator.Pipeline
 
                 string? name = null;
                 foreach (var na in attr.NamedArguments)
-                    if (na.Key == "Name" && na.Value.Value is string n && n.Length > 0)
+                    if (na.Key == "Name" && na.Value.Value is string n)
                     {
+                        // Note the absence of a `n.Length > 0` guard, which this used to carry. It made
+                        // Name = "" mean "no name given" — the consumer wrote something and silently got the
+                        // default. An empty string is not a type name, so it now goes through the same
+                        // DWARF108 check every other unusable name does.
                         name = n;
                     }
+
+                var syntax = attr.ApplicationSyntaxReference?.GetSyntax();
 
                 result.Add((ac.TypeArguments[0],
                     target,
                     name,
-                    LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)));
+                    LocationInfo.From(syntax?.GetLocation() ?? Location.None),
+                    LocationInfo.From(NameArgumentLocation(syntax) ?? syntax?.GetLocation() ?? Location.None)));
             }
 
             return result;
+        }
+
+        /// <summary>
+        ///     The location of the <c>Name = "…"</c> ARGUMENT inside a <c>[GenerateView]</c> application, so
+        ///     DWARF108 underlines the offending text rather than the whole attribute or the class. Falls back
+        ///     to the attribute when the argument cannot be found in syntax (a value supplied through a
+        ///     metadata reference has no argument list to point at).
+        /// </summary>
+        private static Location? NameArgumentLocation(SyntaxNode? attributeSyntax)
+        {
+            if (attributeSyntax is not AttributeSyntax { ArgumentList: { } list })
+            {
+                return null;
+            }
+
+            foreach (var argument in list.Arguments)
+                if (argument.NameEquals is { } nameEquals && string.Equals(nameEquals.Name.Identifier.Text, "Name", StringComparison.Ordinal))
+                {
+                    return argument.GetLocation();
+                }
+
+            return null;
         }
     }
 }
