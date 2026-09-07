@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Reflection;
 using DwarfMapper.Generator.Registry;
 using DwarfMapper.Testing;
@@ -133,6 +134,7 @@ namespace DwarfMapper.Generator.Tests
 
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
+            AssertGeneratedSourceParses(output);
 
             var generated = output.SyntaxTrees
                                 .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
@@ -193,6 +195,7 @@ namespace DwarfMapper.Generator.Tests
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
                 new MapToGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
+            AssertGeneratedSourceParses(output);
 
             var generated = string.Join("\n",
                 output.SyntaxTrees
@@ -216,6 +219,7 @@ namespace DwarfMapper.Generator.Tests
 
             var driver = CSharpGeneratorDriver.Create(new MapToGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
+            AssertGeneratedSourceParses(output);
 
             var generated = output.SyntaxTrees
                                 .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
@@ -241,6 +245,7 @@ namespace DwarfMapper.Generator.Tests
 
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+            AssertGeneratedSourceParses(output);
 
             return output.SyntaxTrees
                        .Where(t => t.FilePath.EndsWith(hintNameSuffix, StringComparison.Ordinal))
@@ -264,6 +269,7 @@ namespace DwarfMapper.Generator.Tests
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
                 new MapToGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+            AssertGeneratedSourceParses(outputCompilation);
 
             return outputCompilation.GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -297,6 +303,7 @@ namespace DwarfMapper.Generator.Tests
                 ? CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator())
                 : CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+            AssertGeneratedSourceParses(outputCompilation);
 
             return outputCompilation.GetDiagnostics()
                 .Where(d => d.Severity >= DiagnosticSeverity.Warning)
@@ -304,6 +311,101 @@ namespace DwarfMapper.Generator.Tests
                 .Where(IsInGeneratedCode)
                 .ToImmutableArray();
         }
+
+        /// <summary>
+        ///     THE SELF-PARSE INVARIANT: nothing this generator writes may fail to PARSE.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Every one of the 25 broken naming positions, the <c>int class</c> defect of <c>b888cc3</c>, and
+        ///         both withdrawn-view defects was a SYNTAX failure. So the invariant does not care which escape
+        ///         was forgotten, only whether the result is valid C# — which is close to the strongest guarantee
+        ///         available to a tool that writes files the consumer cannot edit.
+        ///     </para>
+        ///     <para>
+        ///         <b>Why it lives here and not in the generator, with the number.</b> Measured on this machine
+        ///         (2026-09-07, Release, three fixtures × 20 rounds, 4 generated files / 9,377 chars per round):
+        ///         a bare driver run is <b>2.08 ms</b>; adding <c>ParseText + GetDiagnostics</c> over its output
+        ///         costs a further <b>2.33 ms</b> — <b>112 % of the generator's own run time</b>, and <b>9.4 %</b>
+        ///         of a full compilation (24.7 ms) of the same fixture. Reading the diagnostics off the driver's
+        ///         OWN trees instead of re-parsing measured the same (116 %): the driver defers the parse, so
+        ///         there is no already-paid-for tree to read cheaply.
+        ///     </para>
+        ///     <para>
+        ///         That cost buys NO prevention in the generator, and this is the part worth being explicit
+        ///         about: the consumer's compiler parses the emitted file microseconds later and reports the very
+        ///         same syntax errors. An always-on check would change WHO reports them — one located DWARF
+        ///         instead of 27 CS errors in an unowned file — which is a real improvement in message quality
+        ///         and no improvement at all in what ships. What stops a broken emission from EVER reaching a
+        ///         consumer is catching it here, in the corpus, before release. So the check is paid for once in
+        ///         CI rather than on every consumer keystroke, and the doubling of generator time is refused.
+        ///     </para>
+        ///     <para>
+        ///         <b>Its limit, stated so the guarantee is not over-read.</b> It catches syntax only. An
+        ///         unescaped CONTEXTUAL keyword in type position — <c>record</c>, <c>partial</c>, <c>scoped</c> —
+        ///         parses into the same tree as a good name and fails later, in the binder or as the CS8860
+        ///         WARNING that <c>P16</c> measured. Rule 1 (escape at the model boundary,
+        ///         <c>EmittedIdentifiersAreEscapedTests</c>) is what covers that family; this is not a substitute
+        ///         for it.
+        ///     </para>
+        ///     <para>
+        ///         Called from every method here that drives a generator, so its reach is the whole generator-test
+        ///         corpus rather than a fixture list someone has to remember to extend.
+        ///     </para>
+        /// </remarks>
+        public static void AssertGeneratedSourceParses(Compilation output)
+        {
+            ArgumentNullException.ThrowIfNull(output);
+
+            List<string>? broken = null;
+            foreach (var tree in output.SyntaxTrees)
+            {
+                if (!tree.FilePath.EndsWith(GeneratedFileSuffix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (var d in tree.GetDiagnostics())
+                {
+                    if (d.Severity != DiagnosticSeverity.Error)
+                    {
+                        continue;
+                    }
+
+                    broken ??= [];
+                    if (broken.Count < MaxReportedSyntaxErrors)
+                    {
+                        var line = d.Location.GetLineSpan().StartLinePosition.Line + 1;
+                        broken.Add($"{Path.GetFileName(tree.FilePath)}({line}): {d.Id} {d.GetMessage(CultureInfo.InvariantCulture)}");
+                    }
+                }
+            }
+
+            if (broken is null)
+            {
+                return;
+            }
+
+            Assert.Fail(
+                "THE GENERATOR EMITTED C# THAT DOES NOT PARSE. This is the b888cc3 failure mode: the consumer " +
+                "gets a pile of CS errors in a .g.cs file they never wrote and cannot edit, with no DwarfMapper " +
+                "diagnostic connecting them to anything.\n\n  " +
+                string.Join("\n  ", broken) +
+                "\n\n--- generated ---\n" +
+                string.Join("\n", output.SyntaxTrees
+                    .Where(t => t.FilePath.EndsWith(GeneratedFileSuffix, StringComparison.Ordinal))
+                    .Select(t => t.ToString())));
+        }
+
+        /// <summary>The suffix every hint name this generator emits under ends with.</summary>
+        private const string GeneratedFileSuffix = ".g.cs";
+
+        /// <summary>
+        ///     How many syntax errors a failure message lists. One broken identifier cascades into dozens of
+        ///     follow-on errors (b888cc3 produced 27), and the first few name the site; the rest are noise that
+        ///     would bury the generated source printed underneath them.
+        /// </summary>
+        private const int MaxReportedSyntaxErrors = 12;
 
         /// <summary>
         ///     Whether a compiler diagnostic is reported against code THIS GENERATOR WROTE, rather than against
@@ -349,6 +451,7 @@ namespace DwarfMapper.Generator.Tests
         {
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+            AssertGeneratedSourceParses(outputCompilation);
 
             using var ms = new MemoryStream();
             var result = outputCompilation.Emit(ms);
