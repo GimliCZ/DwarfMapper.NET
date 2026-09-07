@@ -2310,11 +2310,10 @@ Only fires for a genuinely annotated destination. A destination written in a `#n
 ## dwarf108
 **[GenerateView(Name = ...)] is not a usable type name** · Error
 
-`[GenerateView<Src, Dst>(Name = "…")]` names the nested `readonly ref struct` the generator declares, and the
-value is written into generated C# **verbatim** — into three places: the struct declaration, its constructor,
-and the `View(TSource)` factory's return type. A value that is not a usable C# type name therefore does not
-fail at your attribute. It fails as `CS1001 Identifier expected` inside a `.g.cs` you cannot edit and did not
-write, for what is an ordinary typing mistake. This error moves that report back to the argument you typed.
+`[GenerateView<Src, Dst>(Name = "…")]` names the nested `readonly ref struct` the generator declares. A value
+that is not a C# identifier therefore does not fail at your attribute — it fails as
+`CS1001 Identifier expected` inside a `.g.cs` you cannot edit and did not write, for what is an ordinary
+typing mistake. This error moves that report back to the argument you typed.
 
 It is reported **on the argument** — not on the attribute, and not on the class — because the argument is the
 only text that is wrong.
@@ -2326,25 +2325,19 @@ only text that is wrong.
 public partial class M { }
 ```
 
-**What is refused, and the fix for each:**
+**What is refused:** a value that is not an identifier at all — a space, a leading digit, punctuation, the
+empty string, or whitespace. **Fix:** give a valid C# identifier, or omit `Name` and take the default (the
+target type's name plus `View`).
 
-- **Not an identifier at all** — a space, a leading digit, punctuation, or the empty string. Note the empty
-  string in particular: it used to mean "no name given" and silently took the default, so what you wrote was
-  discarded without a word. **Fix:** give a valid C# identifier, or omit `Name` and take the default (the
-  target type's name plus `View`).
-- **A reserved keyword** — `class`, `int`, `ref`. These *are* valid identifiers and still cannot name a type.
-  **Fix:** rename, or use the PascalCase form (`Class`), which is not a keyword.
-- **A contextual keyword** — `record`, `scoped`, `partial`, `var`, `with`. **Fix:** as above; `Record` and
-  `With` are accepted.
+Note the empty string in particular. `Name = ""` used to mean "no name given" and silently took the default,
+so what you wrote was discarded without a word. It is refused now.
 
-**On that last group, plainly: the refusal is broader than the compiler's.** Measured against the generator,
-five of 29 contextual keywords actually break — `record`, `required`, `file`, `scoped` and `partial` — and the
-other 24 would have compiled. All are refused. An exact check was written first and abandoned on evidence:
-parsing the shape the generator emits catches four of the five, and `scoped` produces the same parse tree as a
-perfectly good name (`CS9062` arrives later, from the binder). Recovering that one name would mean compiling a
-probe inside the generator. The cost of the broader rule is one rename with a clear message; the cost of a
-hand-kept list of five names is a compiler error in a file nobody can edit, the first time C# grows a modifier.
-Every name refused unnecessarily is a lowercase keyword-shaped word.
+**A keyword is NOT refused.** `Name = "class"`, `Name = "record"`, `Name = "scoped"` are all accepted: the
+generator writes them escaped, so the declaration reads `public readonly ref struct @record` and the type's
+name is still `record`. `@` is C#'s own mechanism for using a keyword as an identifier, so there is nothing
+here to report and nothing for you to work around — and you may refer to the type either way. Every keyword
+Roslyn knows (127 of them, reserved and contextual) is covered, and a test sweeps all of them through the
+generator rather than trusting a list.
 
 **A name that is valid but TAKEN** — your class already declares a type of that name — is `dwarf102`, not this
 one. The name is fine there; the slot is occupied.

@@ -41,6 +41,43 @@ namespace DwarfMapper.Generator.Core
         }
 
         /// <summary>
+        ///     The same, for a name written in a TYPE-DECLARATION position — <c>record</c> becomes
+        ///     <c>@record</c> as well as <c>class</c> becoming <c>@class</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A separate helper rather than a widening of <see cref="Escape" />, because the two positions
+        ///         genuinely differ and the difference is measured, not assumed. As a MEMBER name a contextual
+        ///         keyword needs nothing — <c>public int record { get; }</c> is fine — which is why
+        ///         <see cref="Escape" /> deliberately leaves it alone and why widening it would churn every
+        ///         golden file for no gain. As a TYPE name it is not fine: of 29 contextual keywords run
+        ///         through the generator, five broke — <c>record</c>, <c>required</c>, <c>file</c>,
+        ///         <c>scoped</c> and <c>partial</c>, each of them something that may legally precede
+        ///         <c>struct</c>.
+        ///     </para>
+        ///     <para>
+        ///         Escaping rather than refusing, which is the whole point: <c>@</c> is C#'s own mechanism for
+        ///         using a keyword as an identifier, so there is nothing to refuse and no list to keep. It also
+        ///         dissolves the one case no syntactic check could catch — an unescaped <c>scoped</c> parses
+        ///         into the same tree as a good name and fails later in the binder, while <c>@scoped</c> cannot
+        ///         be read as a modifier at all, so the ambiguity has nothing to bind. The <c>@</c> is syntax:
+        ///         the type's name is still <c>scoped</c>, and a consumer may write it either way.
+        ///     </para>
+        /// </remarks>
+        public static string EscapeTypeName(string name)
+        {
+            if (name.Length == 0 || name[0] == '@')
+            {
+                return name;
+            }
+
+            return SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None &&
+                   SyntaxFacts.GetContextualKeywordKind(name) == SyntaxKind.None
+                ? name
+                : "@" + name;
+        }
+
+        /// <summary>
         ///     The same, for a dotted member PATH — every segment independently.
         /// </summary>
         /// <remarks>

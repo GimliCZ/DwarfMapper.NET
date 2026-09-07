@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 
 namespace DwarfMapper.Generator.Model
 {
@@ -60,7 +61,15 @@ namespace DwarfMapper.Generator.Model
         string? NestedSourceMember = null,
         bool NestedSourceIsNullable = false,
         bool NestedViewNeedsOwner = false,
-        string? NestedSourceTypeFullName = null) : IEquatable<ViewMemberModel>;
+        string? NestedSourceTypeFullName = null) : IEquatable<ViewMemberModel>
+    {
+        /// <summary>
+        ///     <see cref="NestedViewTypeName" /> as it must be written into emitted C# — see
+        ///     <see cref="ViewModel.EmitViewTypeName" />.
+        /// </summary>
+        public string? EmitNestedViewTypeName =>
+            NestedViewTypeName is null ? null : Identifiers.EscapeTypeName(NestedViewTypeName);
+    }
 
     /// <summary>
     ///     One <c>readonly ref struct</c> view to emit inside the mapper class: the create map's member
@@ -93,5 +102,21 @@ namespace DwarfMapper.Generator.Model
         string SourceTypeFullName,
         EquatableArray<ViewMemberModel> Members,
         bool NeedsOwner,
-        bool EmitFactory) : IEquatable<ViewModel>;
+        bool EmitFactory) : IEquatable<ViewModel>
+    {
+        /// <summary>
+        ///     <see cref="ViewTypeName" /> as it must be written into emitted C# — <c>class</c> becomes
+        ///     <c>@class</c>, <c>record</c> becomes <c>@record</c>.
+        /// </summary>
+        /// <remarks>
+        ///     A computed property rather than an escaped value in the record, exactly as
+        ///     <see cref="MemberMap.EmitTargetName" /> is: <see cref="ViewTypeName" /> is the type's IDENTITY
+        ///     and is what the collision checks compare and what a diagnostic quotes back to the consumer, while
+        ///     this is only how it is spelled. Escaping once here rather than at each of the six emission sites
+        ///     — the declaration, the constructor, the factory's doc comment, its return type, its <c>new</c>,
+        ///     and a parent's <c>new</c> for a nested view — is what keeps the "fix applied to one of N
+        ///     identical sites" hazard from applying: the sites cannot disagree because there is one answer.
+        /// </remarks>
+        public string EmitViewTypeName => Identifiers.EscapeTypeName(ViewTypeName);
+    }
 }

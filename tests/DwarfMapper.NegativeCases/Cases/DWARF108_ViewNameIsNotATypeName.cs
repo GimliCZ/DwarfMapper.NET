@@ -1,30 +1,39 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // CASE: [GenerateView(Name = "3 dogs")] — round 29, Phase 1, review round 1
-// WHY:  The Name is the nested `readonly ref struct`'s type name, and it is written into generated C#
-//       VERBATIM — into three positions: the struct declaration, its constructor, and the factory's
-//       return type. A value that is not a usable type name therefore does not fail at the attribute; it
-//       fails as CS1001/CS1514/CS1513 inside a .g.cs the consumer cannot edit and did not write, for
-//       what is an ordinary typing mistake. That is the unsuppressible-diagnostic class round 29 exists
-//       to clear, appearing in code this very round shipped.
+// WHY:  The Name becomes the nested `readonly ref struct`'s type name, written into generated C# in three
+//       positions: the struct declaration, its constructor, and the factory's return type. A value that
+//       is not an identifier therefore does not fail at the attribute; it fails as CS1001/CS1514/CS1513
+//       inside a .g.cs the consumer cannot edit and did not write, for an ordinary typing mistake. That
+//       is the unsuppressible-diagnostic class round 29 exists to clear, appearing in code the round
+//       itself shipped.
 //
-//       Measured before the check was written, not assumed: `Name = "3 dogs"` emitted
-//       `public readonly ref struct 3 dogs` with no generator diagnostic at all. Three neighbouring
-//       shapes were probed at the same time — a reserved keyword ("class") produced the same CS1001, an
-//       empty string silently discarded what the consumer wrote and took the default, and a name already
-//       used by a type on the mapper produced CS0102 (that last one is DWARF102, not this id: the name is
-//       valid, it is occupied, which is the collision DWARF102 already refuses between two views).
+//       Measured before the check was written: `Name = "3 dogs"` emitted
+//       `public readonly ref struct 3 dogs` with no generator diagnostic at all.
+//
+//       WHAT IS NOT REFUSED, and this is the point of the design rather than a footnote: a KEYWORD.
+//       `Name = "class"` and `Name = "record"` are accepted and emitted escaped — `@class`, `@record` —
+//       because `@` is C#'s own mechanism for using a keyword as an identifier. The repository already
+//       had Identifiers.Escape for exactly this (b888cc3 used it for a keyword-named mapping parameter);
+//       reusing it here removed a refusal instead of adding one. Escaping also dissolves the single case
+//       no syntactic check could catch: unescaped `scoped` parses into the same tree as a good name and
+//       fails later in the binder, while `@scoped` cannot be read as a modifier at all. A test sweeps
+//       every keyword Roslyn knows (127, reserved and contextual) through the generator rather than
+//       trusting a list that would go stale.
+//
+//       So the only question left is "is this an identifier", which SyntaxFacts.IsValidIdentifier answers
+//       exactly — no list, nothing over-refused. `Name = ""` is refused under the same rule, and that
+//       closes a silence: it used to mean "no name given" and discarded what the consumer wrote.
 //
 //       LOCATED ON THE ARGUMENT, not on the attribute and not on the class: the offending text is the
 //       argument and nothing else on that line is wrong.
 //
-//       The refusal is deliberately BROADER than the compiler's minimum for contextual keywords — see
-//       IsUsableTypeName, which records the measurement (5 of 29 actually break, and `scoped` parses into
-//       the same tree shape as a good name, so an exact syntactic test is impossible).
+//       A name that IS an identifier but is already taken by a type on the mapper is DWARF102, not this:
+//       the name is valid, the slot is occupied.
 // EXPECT: DWARF108
-// EXPECT-MESSAGE DWARF108: is not a usable C# type name
-// EXPECT-MESSAGE DWARF108: written into generated code exactly as given
-// EXPECT-MESSAGE DWARF108: valid C# identifier that is not a reserved keyword
+// EXPECT-MESSAGE DWARF108: is not a C# identifier
+// EXPECT-MESSAGE DWARF108: Give the view a valid C# identifier
 // EXPECT-MESSAGE DWARF108: omit Name to take the default 'DstView'
+// EXPECT-MESSAGE DWARF108: A keyword IS accepted
 
 using DwarfMapper;
 

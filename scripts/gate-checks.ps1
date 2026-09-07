@@ -564,31 +564,32 @@ function Assert-NoMutatedProductBinaries {
 #
 # RE-MEASURED 2026-09-07 (round-29 Phase 1, zero-copy views), at the Phase 1 tip, SDK 10.0.101, Release,
 # -p:EnablePackageValidation=false, CI=true:
-#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  325,948 B -> floor(325948/1024) = 318 KB   (was 308)
-#            DwarfMapper.Testing...nupkg    51,049 B -> floor( 51049/1024) =  49 KB   (UNCHANGED)
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  326,093 B -> floor(326093/1024) = 318 KB   (was 308)
+#            DwarfMapper.Testing...nupkg    51,045 B -> floor( 51045/1024) =  49 KB   (UNCHANGED)
 # ONLY WINDOWS WAS MEASURED THIS TIME, and the ceiling is stated with that limit: no ubuntu container was
 # available in this environment. It is nonetheless the SAFE direction. Both round-28 and round-29-Phase-2
 # measured Windows as the LARGER of the two (287,189 vs 286,985; 316,155 vs 315,638 — a ~200-500 B
 # CRLF-vs-LF difference in DwarfMapper.xml and the nuspec), so the Windows number is the conservative
-# bound, and applying the same ~520 B offset puts ubuntu at ~325,430 B, which truncates to the SAME 318 KB.
+# bound, and applying the same ~520 B offset puts ubuntu at ~325,575 B, which truncates to the SAME 318 KB.
 # The nightly `package-size` job is what confirms it; it is the only place this gate runs.
 # One further limit worth stating: re-packing the round-29-Phase-2 tree (8e11b52) locally reproduced
-# 316,129 B against the 316,155 B recorded above — a 26-byte drift between two Windows packs of the same
-# commit (and 316,128 B on a third pack in the same session, so the drift is real and small). The headroom
-# below is 708 B, which is larger than that drift but not by much.
+# 316,131 B against the 316,155 B recorded above — a 24-byte drift between two Windows packs of the same
+# commit (four packs of it in one session gave 316,130 / 316,128 / 316,129 / 316,131, so the drift is real,
+# small and bounded). The headroom below is 563 B, larger than that drift but not by an order of magnitude.
 #
 # WHERE THE ~8 KB WENT, entry by entry (raw / deflated bytes, the 8e11b52 pack -> this tree). Measured by
 # diffing the two .nupkg central directories in the same session, so the platform is held constant:
-#   analyzers/.../DwarfMapper.Generator.dll   639,488 / 211,436 -> 668,672 / 220,544   +9,108
+#   analyzers/.../DwarfMapper.Generator.dll   639,488 / 211,436 -> 669,184 / 220,692   +9,256
 #   lib/net10.0/DwarfMapper.xml               168,571 /  38,638 -> 169,960 /  38,977     +339
-#   lib/net10.0/DwarfMapper.dll                42,496 /  18,066 ->  43,520 /  18,397     +331
-#   DwarfMapper.nuspec                          1,370 /     746 ->   1,417 /     776      +30
+#   lib/net10.0/DwarfMapper.dll                42,496 /  18,066 ->  43,520 /  18,394     +328
+#   DwarfMapper.nuspec                          1,370 /     746 ->   1,417 /     774      +28
 #   README.md                                  80,105 /  27,595 ->  80,108 /  27,605      +10
-#   analyzers/.../DwarfMapper.CodeFixes.dll    36,864 /  17,227 ->  36,864 /  17,228       +1
-#   (total deflated +9,819, and 316,129 + 9,819 = 325,948 exactly; the .psmdcp part is NuGet's random
+#   analyzers/.../DwarfMapper.CodeFixes.dll    36,864 /  17,227 ->  36,864 /  17,230       +3
+#   _rels/.rels                                   505 /     287 ->     505 /     285       -2
+#   (total deflated +9,962, and 316,131 + 9,962 = 326,093 exactly; the .psmdcp part is NuGet's random
 #    name, not payload, and is excluded)
 # The Generator growth is Phase 1 itself: MapperExtractor.Views.cs, ViewEmitter.cs, ViewModel.cs, DWARF102
-# and DWARF108 — ~9.1 KB of deflated IL. DwarfMapper.dll and DwarfMapper.xml grow by the one new public type,
+# and DWARF108 — ~9.3 KB of deflated IL. DwarfMapper.dll and DwarfMapper.xml grow by the one new public type,
 # GenerateViewAttribute<TSource, TTarget>, and its doc comment. README grows by the Gallery's guide-36
 # table row. The CodeFixes and .rels rows have identical RAW sizes but differing compressed ones, which is
 # not compression noise — deflate is deterministic — but the baseline being packed from a `C:/dmbase`
@@ -597,13 +598,16 @@ function Assert-NoMutatedProductBinaries {
 # the class this gate exists to catch — so this is a raise with its reason, not a finding against the
 # package.
 #
-# Headroom to the first red byte (319 KB = 326,656 B): 708 B on Windows. That is TIGHT, and deliberately
+# Headroom to the first red byte (319 KB = 326,656 B): 563 B on Windows. That is TIGHT, and deliberately
 # so — R1 forbids a cushion. It is not theoretical: this ceiling was measured and turned red TWICE inside
 # the single task that set it. 316 KB (324,259 B) went red when a ~60-line nested-view fix took the package
 # to 325,131 B; the re-measured 317 KB went red again when DWARF108 took it to 325,948 B. Assume any
 # generator change of any size moves this number, and re-measure rather than hoping. The gate is a tripwire
-# on what ships, not a budget.
-# For DwarfMapper.Testing (50 KB = 51,200 B): 151 B, and its 49 KB is re-measured, not merely carried.
+# on what ships, not a budget. Worth recording that the direction is not always obvious: replacing DWARF108's
+# refusal logic with Identifiers.EscapeTypeName DELETED two predicates and a paragraph of reasoning, and the
+# package still grew 145 B (325,948 -> 326,093) — simpler code, more bytes, because the doc comments that
+# carry the measurement ship in DwarfMapper.xml. Measure; do not reason about which way it went.
+# For DwarfMapper.Testing (50 KB = 51,200 B): 155 B, and its 49 KB is re-measured, not merely carried.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper'         = 318

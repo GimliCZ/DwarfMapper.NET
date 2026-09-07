@@ -93,7 +93,7 @@ namespace DwarfMapper.Generator.Pipeline
                     acc.Diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.ViewNameIsNotATypeName,
                         v.NameLoc ?? v.Loc ?? classLoc,
-                        $"[GenerateView(Name = \"{v.Name}\")] is not a usable C# type name, and the view's name is written into generated code exactly as given — the generated file would not parse. Give the view a valid C# identifier that is not a reserved keyword, or omit Name to take the default '{v.Target.Name}View'",
+                        $"[GenerateView(Name = \"{v.Name}\")] is not a C# identifier, and the view's name is written into generated code as the nested type's name — the generated file would not parse. Give the view a valid C# identifier, or omit Name to take the default '{v.Target.Name}View'. A keyword IS accepted: it is emitted escaped, so Name = \"record\" declares a type named 'record'",
                         ScopedToMethod: true));
                     continue;
                 }
@@ -187,43 +187,20 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Whether a <c>[GenerateView(Name = …)]</c> value can be written into generated C# as a type name.
+        ///     Whether a <c>[GenerateView(Name = …)]</c> value can name a type at all.
         /// </summary>
         /// <remarks>
-        ///     <para>
-        ///         The question is not "is this an identifier" but "does the code this generator is about to
-        ///         write compile", and the two differ in both directions. The name is written into THREE
-        ///         positions — the struct declaration, its constructor, and the factory's return type — and it
-        ///         is the last one that actually breaks: <c>public readonly ref struct record { }</c> parses
-        ///         perfectly, while <c>public record View(Src source) =&gt; …</c> three lines later reads as a
-        ///         record declaration. A check that looked only at the declaration would have passed
-        ///         <c>record</c> and shipped the CS1514.
-        ///     </para>
-        ///     <para>
-        ///         Three predicates, and the third is deliberately BROADER than the compiler's minimum. That is
-        ///         a trade, so here is the measurement behind it. Of 29 contextual keywords probed against the
-        ///         real generator, exactly five break: <c>record</c>, <c>required</c>, <c>file</c>,
-        ///         <c>scoped</c> and <c>partial</c>. An exact syntactic test was written and then abandoned,
-        ///         because it cannot be exact: parsing the emitted shape catches four of the five, and
-        ///         <c>scoped</c> produces a parse tree BYTE-FOR-BYTE the shape of a good name — struct named
-        ///         <c>scoped</c>, method <c>View</c> returning <c>scoped</c>, zero syntax diagnostics — with
-        ///         CS9062 raised later by the binder. Compiling a probe inside an incremental generator to
-        ///         recover that one name is not a trade worth making.
-        ///     </para>
-        ///     <para>
-        ///         So every contextual keyword is refused, which over-refuses the eighteen that would have been
-        ///         fine (<c>var</c>, <c>with</c>, <c>init</c>, <c>where</c>, <c>async</c> …). The cost of the
-        ///         over-refusal is one clear message telling a consumer to rename; the cost of the alternative
-        ///         — a hand-kept list of the five, going stale the next time C# grows a modifier — is a CS
-        ///         error inside a <c>.g.cs</c> nobody can edit. Every name this refuses unnecessarily is a
-        ///         lowercase keyword-shaped word, which is not what anyone names a type.
-        ///     </para>
+        ///     One compiler predicate, and only one, because the other half of the problem is not this
+        ///     function's to solve: a keyword IS a usable type name once it is written <c>@class</c> or
+        ///     <c>@record</c>, and <see cref="Identifiers.EscapeTypeName" /> writes it that way. What is left
+        ///     after escaping is the genuinely unusable — a space, a leading digit, punctuation, the empty
+        ///     string — and <see cref="SyntaxFacts.IsValidIdentifier(string)" /> decides exactly that set. A
+        ///     leading <c>@</c> the consumer typed themselves is theirs to keep, so it is validated on the
+        ///     name behind it.
         /// </remarks>
         private static bool IsUsableTypeName(string name)
         {
-            return SyntaxFacts.IsValidIdentifier(name) &&
-                   SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None &&
-                   SyntaxFacts.GetContextualKeywordKind(name) == SyntaxKind.None;
+            return SyntaxFacts.IsValidIdentifier(name.Length > 0 && name[0] == '@' ? name.Substring(1) : name);
         }
 
         /// <summary>

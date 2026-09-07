@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace DwarfMapper.Generator.Tests.Views
 {
@@ -350,16 +351,16 @@ namespace DwarfMapper.Generator.Tests.Views
         }
 
         /// <summary>
-        ///     <c>Name</c> is written into generated C# verbatim, so a value that is not an identifier makes the
+        ///     <c>Name</c> becomes the nested type's name, so a value that is not an identifier at all makes the
         ///     .g.cs fail to parse — CS1001 pointing at code the consumer cannot edit, for a typing mistake.
         ///     DWARF108 refuses it AT THE ARGUMENT, which is the only text that is wrong.
         /// </summary>
         [Theory]
         [InlineData("3 dogs", "a leading digit and a space")]
         [InlineData("Customer-Card", "punctuation")]
-        [InlineData("class", "a reserved keyword: a valid identifier by SyntaxFacts, not a usable type name")]
         [InlineData("", "the empty string, which used to mean 'no name given' and silently took the default")]
-        public void A_view_name_that_is_not_a_usable_type_name_is_refused_at_the_argument(string name, string why)
+        [InlineData("   ", "whitespace, the same silence wearing a different coat")]
+        public void A_view_name_that_is_not_an_identifier_is_refused_at_the_argument(string name, string why)
         {
             var source = $$"""
                            #nullable enable
@@ -375,10 +376,7 @@ namespace DwarfMapper.Generator.Tests.Views
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
 
             var reported = Assert.Single(diagnostics.Where(d => d.Id == "DWARF108"));
-            Assert.Contains($"[GenerateView(Name = \"{name}\")] is not a usable C# type name",
-                reported.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-                StringComparison.Ordinal);
-            Assert.Contains("valid C# identifier that is not a reserved keyword",
+            Assert.Contains($"[GenerateView(Name = \"{name}\")] is not a C# identifier",
                 reported.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
                 StringComparison.Ordinal);
 
@@ -388,32 +386,30 @@ namespace DwarfMapper.Generator.Tests.Views
             Assert.Equal(25, reported.Location.GetLineSpan().StartLinePosition.Character + 1);
             Assert.False(string.IsNullOrEmpty(why));
 
-            // Refused, so nothing is emitted for it — the point is that no CS error reaches the .g.cs.
             Assert.DoesNotContain("readonly ref struct", generated, StringComparison.Ordinal);
-            // The point of the refusal: nothing the generator emitted carries a compiler error, so the ONLY
-            // thing the consumer sees is the DWARF108 above, at the argument they typed.
             GeneratorAssert.EmitsCompilableCode(source, NullableContextOptions.Enable);
         }
 
         /// <summary>
-        ///     The refusal is deliberately BROADER than what the compiler rejects, and this pins both halves of
-        ///     that trade so it cannot drift into being believed exact.
+        ///     A KEYWORD is not refused — it is escaped. <c>@</c> is C#'s own mechanism for using a keyword as
+        ///     an identifier, so there is nothing here for a diagnostic to report and nothing for the consumer
+        ///     to work around: the type's name is still <c>record</c>, and it is spelled <c>@record</c> in the
+        ///     generated file.
         ///     <para>
-        ///         Measured against the real generator: of 29 contextual keywords, exactly five break —
-        ///         <c>record</c>, <c>required</c>, <c>file</c>, <c>scoped</c>, <c>partial</c> — and the other
-        ///         24, <c>var</c> and <c>with</c> among them, would have compiled. All of them are refused
-        ///         anyway. An exact syntactic check was written first and abandoned on evidence: it caught four
-        ///         of the five, and <c>scoped</c> parses into the SAME tree shape as a good name (struct
-        ///         <c>scoped</c>, method <c>View</c> returning <c>scoped</c>, no syntax diagnostics) with
-        ///         CS9062 raised later by the binder. One leaked CS error in a .g.cs costs more than a rename.
+        ///         <c>scoped</c> is in this list on purpose. Unescaped it is the one name no syntactic check
+        ///         could catch — it parses into the same tree as a good name and fails later in the binder —
+        ///         and escaped the ambiguity has nothing to bind. It is the case that proves escaping is the
+        ///         right mechanism rather than a more careful refusal.
         ///     </para>
         /// </summary>
         [Theory]
-        [InlineData("record")]  // genuinely breaks — the FACTORY's return type reads as a record declaration
-        [InlineData("scoped")]  // genuinely breaks, and no syntax check can see it
-        [InlineData("var")]     // would have compiled: refused by the broader rule, on purpose
-        [InlineData("with")]    // ditto
-        public void A_contextual_keyword_is_refused_even_where_it_would_have_compiled(string name)
+        [InlineData("class")]    // reserved
+        [InlineData("int")]      // reserved
+        [InlineData("record")]   // contextual, and breaks unescaped — via the FACTORY's return type
+        [InlineData("scoped")]   // contextual, breaks unescaped, invisible to any syntax check
+        [InlineData("partial")]  // contextual, breaks unescaped
+        [InlineData("var")]      // contextual, would have compiled anyway — escaped, still fine
+        public void A_keyword_view_name_is_escaped_rather_than_refused(string name)
         {
             var source = $$"""
                            #nullable enable
@@ -426,21 +422,44 @@ namespace DwarfMapper.Generator.Tests.Views
                            public partial class M { }
                            """;
 
-            var (diagnostics, _) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+            var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
 
-            Assert.Single(diagnostics.Where(d => d.Id == "DWARF108"));
-            // The point of the refusal: nothing the generator emitted carries a compiler error, so the ONLY
-            // thing the consumer sees is the DWARF108 above, at the argument they typed.
-            GeneratorAssert.EmitsCompilableCode(source, NullableContextOptions.Enable);
+            // Escaped in every position the name is written, the factory's return type included — that one is
+            // what actually broke before, and a fix applied only to the declaration would pass a test that
+            // looked at the declaration alone.
+            Assert.Contains($"public readonly ref struct @{name}", generated, StringComparison.Ordinal);
+            Assert.Contains($"internal @{name}(", generated, StringComparison.Ordinal);
+            Assert.Contains($"public @{name} View(", generated, StringComparison.Ordinal);
+            Assert.Contains($"=> new @{name}(", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>A name the consumer already escaped is left as they wrote it, not double-escaped.</summary>
+        [Fact]
+        public void A_name_the_consumer_escaped_themselves_is_not_escaped_twice()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class Src { public int Id { get; set; } }
+                                  public sealed class Dst { public int Id { get; set; } }
+                                  [DwarfMapper]
+                                  [GenerateView<Src, Dst>(Name = "@class")]
+                                  public partial class M { }
+                                  """;
+
+            var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
+
+            Assert.Contains("public readonly ref struct @class", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("@@", generated, StringComparison.Ordinal);
         }
 
         /// <summary>
-        ///     A PascalCase name that merely resembles a keyword is untouched — the check is case-sensitive and
-        ///     the over-refusal above is confined to lowercase keyword-shaped words, which is what makes it an
-        ///     acceptable trade rather than a nuisance.
+        ///     A PascalCase name that merely resembles a keyword is untouched — no escape, no refusal. The
+        ///     escape is case-sensitive because <c>SyntaxFacts</c> is.
         /// </summary>
         [Fact]
-        public void A_name_that_only_resembles_a_keyword_is_accepted()
+        public void A_name_that_only_resembles_a_keyword_is_left_alone()
         {
             const string source = """
                                   #nullable enable
@@ -456,6 +475,52 @@ namespace DwarfMapper.Generator.Tests.Views
             var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
 
             Assert.Contains("public readonly ref struct Record", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("@Record", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The measurement the escape rests on, kept as a test rather than a note: EVERY keyword Roslyn
+        ///     knows — reserved and contextual, 127 of them at the time of writing, taken from
+        ///     <c>SyntaxFacts.GetKeywordKinds()</c> rather than a hand-picked list that would go stale — names
+        ///     a view that compiles. Nothing is refused; nothing leaks a CS error into the generated file.
+        /// </summary>
+        [Fact]
+        public void Every_keyword_roslyn_knows_names_a_view_that_compiles()
+        {
+            var keywords = SyntaxFacts.GetKeywordKinds().Select(SyntaxFacts.GetText)
+                .Where(t => !string.IsNullOrEmpty(t))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            Assert.True(keywords.Count > 100, $"only {keywords.Count} keywords found — the sweep stopped sweeping");
+
+            var leaks = new List<string>();
+            foreach (var name in keywords)
+            {
+                var source = $$"""
+                               #nullable enable
+                               using DwarfMapper;
+                               namespace Demo;
+                               public sealed class Src { public int Id { get; set; } }
+                               public sealed class Dst { public int Id { get; set; } }
+                               [DwarfMapper]
+                               [GenerateView<Src, Dst>(Name = "{{name}}")]
+                               public partial class M { }
+                               """;
+
+                if (GeneratorTestHarness.Run(source, NullableContextOptions.Enable)
+                    .Diagnostics.Any(d => d.Id == "DWARF108"))
+                {
+                    leaks.Add($"{name}: refused, but a keyword is escapable and should not be");
+                    continue;
+                }
+
+                // EmitsCompilableCode rather than a direct harness call: it is the sanctioned helper and it
+                // names the offending keyword in its own failure, so nothing is lost by stopping at the first.
+                GeneratorAssert.EmitsCompilableCode(source, NullableContextOptions.Enable);
+            }
+
+            Assert.True(leaks.Count == 0, string.Join("\n", leaks));
         }
 
         /// <summary>
