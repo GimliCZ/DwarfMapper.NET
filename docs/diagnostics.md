@@ -1986,6 +1986,66 @@ the line you edit — and it is reported once per type however many members reac
 - **Padding that lives inside a nested struct.** It is charged to the type that declares those fields, never
   to the one that contains it — reordering the outer fields could not recover it.
 ---
+## dwarf102
+**Member cannot be viewed without allocating** · Error
+
+`[GenerateView<TSource, TTarget>]` asks for a **zero-copy view**: a nested `readonly ref struct` whose
+properties evaluate the same member resolution `Map` would, lazily, against the source instance. Nothing is
+allocated and nothing is copied. This error says the view you asked for cannot be built without doing exactly
+what a view exists not to do — so it is not built, and you are told why rather than left with an attribute
+that changed nothing.
+
+It is an **Error**, unlike the other round-29 hints, and that is deliberate: `dwarf100`, `dwarf101` and
+`dwarf103` describe a mapping that is already correct, while this one says the thing you declared does not
+exist. A warning would leave `[GenerateView<Src, Dst>]` written, accepted, and silently absent.
+
+It is **scoped to the view**: the `Map` methods on the same mapper are unaffected and still generate, exactly
+as an untranslatable projection member drops one `Project` method and leaves its siblings alone (`dwarf028` /
+`dwarf096`).
+
+<!-- fence-exempt: the sample shows the shapes that TRIGGER the refusal; each is refused, so there is no generated behaviour to snippet -->
+```csharp
+public sealed class Src { public List<int>  Tags { get; set; } = new(); }
+public sealed class Dst { public List<long> Tags { get; set; } = new(); }   // elements need converting
+
+[DwarfMapper]
+[GenerateView<Src, Dst>]              // DWARF102 — the converted List<long> would have to be allocated
+public partial class M { }
+```
+
+**The causes, and the fix for each:**
+
+- **A collection whose ELEMENTS need converting.** Building the converted collection is an allocation, per
+  view, per read. **Fix:** map the element type to itself (`List<int>` → `IReadOnlyList<int>`) so the source
+  collection can be handed back as it is, or use `Map` for that pair. A collection whose elements need **no**
+  conversion is not refused — the view returns the *source collection itself*, which is a real difference
+  from `Map`, and the point.
+- **A value-type source.** A view holds its source in a field, so for a `struct` that field is a *copy*: the
+  view would neither be zero-copy nor read through to the source, which is half of what the contract
+  promises. **Fix:** use `Map`, or declare the source as a class.
+- **An unflatten path.** `[MapProperty("AddressCity", "Address.City")]` is assigned by building the
+  intermediate object first. A view builds nothing, and `Address.City` is not a property name it could
+  declare. **Fix:** use `Map` for that pair.
+- **A collection, dictionary or scalar TARGET.** A map *converts* those rather than constructing them member
+  by member, so there are no members to expose. **Fix:** use `Map`.
+- **Two views that would collide.** Two `[GenerateView]` over the same source type would both emit
+  `View(TSource)` and differ only in return type (CS0111); two that would take the same type name are CS0102.
+  **Fix:** `[GenerateView<Src, Dst>(Name = "Row")]`, or a second mapper class.
+- **`[GenerateView]` on a co-located `[GenerateMap]` host.** That host's mapping is emitted into a separate
+  generated `<Host>Mapper` type, so there is no class of yours for the view to be nested in. **Fix:** move the
+  attribute to a `[DwarfMapper]` partial class.
+- **A converter name declared both `static` and as an instance method.** A view is a nested type: it must
+  write a static call unqualified (CS0120 otherwise) and an instance call through the mapper (CS0176
+  otherwise), and with both present it cannot tell which overload the mapping picked. **Fix:** rename one.
+
+**What is NOT refused.** A view that reaches **itself** — `Node → NodeDto` whose `Next` is another
+`Node → NodeDto` — is emitted and works: the property is an expression, not a field, so the recursion is
+lazy and costs nothing until you walk it. Walking a linked structure without materialising it is the shape
+this feature is best at.
+
+**Completeness is not weakened by laziness.** A destination member with no source is still `dwarf001` for a
+view, exactly as it is for a create map.
+---
 ## dwarf103
 **Collection element could be a struct** · Info
 

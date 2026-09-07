@@ -1848,6 +1848,50 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf101");
 
         /// <summary>
+        ///     <c>DWARF102</c> — a <c>[GenerateView]</c> cannot be emitted for the pair, or for one member of it,
+        ///     without doing the thing a view exists not to do: allocate, copy, or read through a source it does
+        ///     not actually hold.
+        ///     <para>
+        ///         An <b>Error</b>, and unlike DWARF100/101/103 it must be one. Those are hints about a mapping
+        ///         that is already correct; this one says the view the caller asked for does not exist. A warning
+        ///         would leave <c>[GenerateView&lt;Src, Dst&gt;]</c> written, accepted, and silently absent — the
+        ///         precise "the caller wrote something, the generator accepted it, changed nothing, and said
+        ///         nothing" shape this round has spent itself removing.
+        ///     </para>
+        ///     <para>
+        ///         Scoped to the view (<see cref="DiagnosticInfo.ScopedToMethod" />), so it drops the view alone
+        ///         and leaves the <c>Map</c> methods on the same class standing — the boundary
+        ///         <c>DWARF028</c>/<c>DWARF096</c> established for a projection that cannot be translated
+        ///         (TASKS.md I14). Taking a whole mapper down because one member of one view is not viewable
+        ///         would be worse collateral than the fact reported.
+        ///     </para>
+        ///     <para>
+        ///         The message is built by the caller (a single <c>{0}</c>) because the causes prescribe
+        ///         different remedies and share only their verdict: a collection member whose ELEMENTS need
+        ///         conversion (the converted collection would have to be allocated), a member whose target name is
+        ///         an unflatten PATH (there is no such property name to declare), a cyclic nested view, a
+        ///         value-type source (the view would hold a copy, so it would neither be zero-copy nor read
+        ///         through to the source), two views colliding on one type name or on the one
+        ///         <c>View(TSource)</c> factory, and <c>[GenerateView]</c> on a class the mapper pipeline never
+        ///         visits. Round 29, Phase 1.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor MemberNotViewable = new(
+            "DWARF102",
+            "Member cannot be viewed without allocating",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            "A view is the create map's member resolution evaluated LAZILY against the source instance: every " +
+            "property is an expression over a source the view borrows, and nothing is allocated or copied. A " +
+            "member that cannot be written as such an expression has no place in one — a collection whose " +
+            "elements need converting would have to be built, and a view that held a copy of a value-type source " +
+            "would stop reading through to it. Use Map for that member's pair, or map the element type to " +
+            "itself so the source collection can be handed back as it is.",
+            HelpBase + "dwarf102");
+
+        /// <summary>
         ///     <c>DWARF103</c> — a mapped collection builds one class element per item, and that element type is
         ///     TRANSFER-MODEL SHAPED: declared as a <c>readonly record struct</c> the whole collection would be
         ///     one allocation instead of one per element.

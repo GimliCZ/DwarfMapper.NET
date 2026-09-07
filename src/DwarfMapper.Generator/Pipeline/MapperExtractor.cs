@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Core;
@@ -388,8 +388,10 @@ namespace DwarfMapper.Generator.Pipeline
                 ignoreObsolete, implicitConversions, isPreserveMode, isSetNullMode, skipNullSrc, maxDepth,
                 nameConvention, referenceHandling, requiredMapping, nullCollections, nullStrategy, enumPolicy);
 
+            var views = new List<ViewModel>();
+
             var acc = new MapperAccumulators(methods, diagnostics, synthesized, nestedRegistry,
-                publicMethodLocs, liveClassIgnores, elementPairsOwedCoverage, ignorableNamesMemo);
+                publicMethodLocs, liveClassIgnores, elementPairsOwedCoverage, ignorableNamesMemo, views);
 
             foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
             {
@@ -398,6 +400,10 @@ namespace DwarfMapper.Generator.Pipeline
 
             // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
             ExtractGenerateMapPairs(ctx, decls, policy, acc, genPairs, genComp, genLoc, hostDirectives);
+            // ── [GenerateView<TSrc, TTgt>] — zero-copy views over the same member resolution ──────
+            // Here and not after the drain: a view RESOLVES members, and a resolution that ran after the drain
+            // would queue pairs nothing would build.
+            ExtractViews(ctx, decls, policy, acc, genComp, genLoc, separateEmit);
             // ── Drain the NestedMappingRegistry queue ────────────────────────────────
             var pendingNestedModels = new List<(MapMethodModel Model, string MethodName)>();
             DrainNestedMappingQueue(ctx, decls, policy, acc, genPairs, genComp, pendingNestedModels, ct);
@@ -596,7 +602,8 @@ namespace DwarfMapper.Generator.Pipeline
                 EquatableArray.From(containingTypes),
                 EquatableArray.From(conventionRefs),
                 registerCollectionShapes,
-                EquatableArray.From(handWrittenProvides));
+                EquatableArray.From(handWrittenProvides),
+                EquatableArray.From(views));
         }
 
         // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes

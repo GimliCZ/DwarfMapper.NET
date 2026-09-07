@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 // Assembly-scanning / reflection-driven self-validation suite.
 // Purpose: catch FORGOTTEN registrations and missing coverage when new
@@ -43,12 +43,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "DWARF006",
             "DWARF019", // retired; superseded by DWARF028 (ProjectionNotTranslatable)
             "DWARF029",
-            // DWARF102/104/105: held by the round-29 plan for tasks still to land, so DWARF106 was allocated
+            // DWARF104/105: held by the round-29 plan for tasks still to land, so DWARF106 was allocated
             // out of order rather than renumbering work already specified against those ids. Each entry leaves
             // when its task claims it; this block must only SHRINK. DWARF101 left it in round 29 T0.3
-            // (LayoutHygiene / struct padding) and DWARF103 in T2.2 (the transfer-model hint at the mapping
-            // site), which is what the block is for.
-            "DWARF102",
+            // (LayoutHygiene / struct padding), DWARF103 in T2.2 (the transfer-model hint at the mapping
+            // site), and DWARF102 in Phase 1 (a member that cannot be viewed without allocating), which is
+            // what the block is for.
             "DWARF104",
             "DWARF105"
         };

@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
@@ -52,6 +52,35 @@ so a version with no section here ships with no notes.
   factory it replaced, so no fixture capability was lost.
 
 ### Added
+
+- **`[GenerateView<TSource, TTarget>]` — zero-copy DTO views.** The generator emits a nested
+  `public readonly ref struct <TTarget>View` on the mapper class whose properties evaluate the *same* member
+  resolution `Map` would — lazily, on access, against the source instance — plus a `View(TSource)` factory
+  beside them. Nothing is allocated and nothing is copied: a collection whose elements need no conversion is
+  handed back as the source collection itself, and a nested object member becomes a nested view rather than a
+  constructed DTO. `[MapProperty]` renames, `[MapIgnore]`, `[MapValue]`, `NullSubstitute`, `When =` and
+  `SkipNullSourceMembers` all reach it, because each is an expression; completeness is not weakened by
+  laziness, so an unmapped destination member is still `DWARF001`.
+
+  **The `ref struct` is the contract, not a limitation.** The compiler will not let a view be stored in a
+  field, boxed, captured by a lambda or held across an `await`, so it cannot outlive the source it borrows —
+  which is what makes reading through to a live source safe. **Consume a view at once; use `Map` where the
+  result is kept.** A source mutated after the view was created is visible through it: a view is a window,
+  not a snapshot.
+
+  Measured against map-then-consume (`Issues/round29/plan3-results.md`): **0.20× at 1k, 0.04× at 100k, zero
+  bytes allocated**. The zero is the view's own; a converter it calls may still allocate on its own account
+  (an `int → string` edge builds a string), and it does so once per read rather than once per map — so a view
+  read many times can cost more than one map, and the win is in consume-once-and-discard shapes.
+- **`DWARF102` (Error) — a member cannot be viewed without allocating.** Refuses the shapes a zero-copy view
+  cannot be: a collection whose elements need converting, a value-type source (the view would hold a copy,
+  so it would neither be zero-copy nor read through), an unflatten path, a collection/dictionary/scalar
+  target, two views that would collide on the `View(TSource)` factory or on a type name, `[GenerateView]` on
+  a co-located `[GenerateMap]` host, and a converter name declared both `static` and as an instance method.
+  Scoped to the view — the `Map` methods on the same mapper still generate. A view that reaches *itself* is
+  **not** refused: the property is an expression rather than a field, so the recursion is lazy and walking a
+  linked structure without materialising it is what the feature is best at.
+
 
 - **`DWARF107` (Warning) — a converter you declared returns a nullable reference, and its result is stored
   where null is forbidden.** `partial ChildDto? ToDto(Child c)` feeding a non-nullable `ChildDto Inner`,

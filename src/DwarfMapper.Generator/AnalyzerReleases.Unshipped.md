@@ -1,4 +1,4 @@
-; Unshipped analyzer release
+﻿; Unshipped analyzer release
 ; https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
 
 ### New Rules
@@ -107,6 +107,7 @@ DWARF098 | DwarfMapper | Warning | [DwarfMapperConstructor] names a constructor 
 DWARF099 | DwarfMapper | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations
 DWARF100 | DwarfMapper | Info | Array or span pair narrowly missed the blittable fast path
 DWARF101 | DwarfMapper | Info | Struct layout pads more than a quarter of its size
+DWARF102 | DwarfMapper | Error | Member cannot be viewed without allocating
 DWARF103 | DwarfMapper | Info | Collection element could be a struct
 DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
 DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
