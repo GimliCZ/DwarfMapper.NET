@@ -403,7 +403,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── [GenerateView<TSrc, TTgt>] — zero-copy views over the same member resolution ──────
             // Here and not after the drain: a view RESOLVES members, and a resolution that ran after the drain
             // would queue pairs nothing would build.
-            ExtractViews(ctx, decls, policy, acc, genComp, genLoc, separateEmit);
+            ExtractViews(decls, policy, acc, genComp, genLoc, separateEmit);
             // ── Drain the NestedMappingRegistry queue ────────────────────────────────
             var pendingNestedModels = new List<(MapMethodModel Model, string MethodName)>();
             DrainNestedMappingQueue(ctx, decls, policy, acc, genPairs, genComp, pendingNestedModels, ct);

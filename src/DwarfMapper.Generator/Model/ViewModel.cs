@@ -37,13 +37,22 @@ namespace DwarfMapper.Generator.Model
     ///     For a nested member, whether the source member may be null — in which case the property yields
     ///     <c>default</c>, a view whose <c>HasValue</c> is <c>false</c>, rather than constructing over null.
     /// </param>
+    /// <param name="NestedViewNeedsOwner">
+    ///     For a nested member, whether the view type this property constructs carries an owner field — in
+    ///     which case the mapper reference must be passed to it. Independent of the ENCLOSING view's own
+    ///     <see cref="ViewModel.NeedsOwner" />: a parent over identity members alone still has to hand the
+    ///     mapper to a child that converts one, so the flag is resolved by a fixed point over the whole view
+    ///     set rather than read off the member being emitted. Getting it wrong is CS7036 inside a
+    ///     <c>.g.cs</c> the consumer cannot edit.
+    /// </param>
     public sealed record ViewMemberModel(
         string Name,
         string TypeFullName,
         MemberMap? Value = null,
         string? NestedViewTypeName = null,
         string? NestedSourceMember = null,
-        bool NestedSourceIsNullable = false) : IEquatable<ViewMemberModel>;
+        bool NestedSourceIsNullable = false,
+        bool NestedViewNeedsOwner = false) : IEquatable<ViewMemberModel>;
 
     /// <summary>
     ///     One <c>readonly ref struct</c> view to emit inside the mapper class: the create map's member
@@ -62,8 +71,9 @@ namespace DwarfMapper.Generator.Model
     /// <param name="Members">One property per resolved destination member.</param>
     /// <param name="NeedsOwner">
     ///     Whether any member expression names an INSTANCE member of the mapper, so the view must carry a
-    ///     reference to it. Emitted only when needed: a view over identity members alone holds nothing but the
-    ///     source.
+    ///     reference to it — or whether any NESTED view it constructs does, since the owner can only reach that
+    ///     child through its parent. Emitted only when needed: a view over identity members alone, reaching no
+    ///     nested view that needs one either, holds nothing but the source.
     /// </param>
     /// <param name="EmitFactory">
     ///     Whether the mapper gets a <c>public &lt;View&gt; View(TSource)</c> factory for this view. True for a

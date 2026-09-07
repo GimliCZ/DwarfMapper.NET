@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Linq;
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
@@ -35,7 +36,6 @@ namespace DwarfMapper.Generator.Pipeline
         ///     </para>
         /// </remarks>
         private static void ExtractViews(
-            GeneratorAttributeSyntaxContext ctx,
             MapperDeclarations decls,
             MapperPolicy policy,
             MapperAccumulators acc,
@@ -147,7 +147,7 @@ namespace DwarfMapper.Generator.Pipeline
                 byPair[key] = name;
                 byName[name] = key;
 
-                var model = BuildView(ctx, decls, policy, acc, comp, viewRegistry, viewSynthesized, src, tgt, name,
+                var model = BuildView(decls, policy, acc, comp, viewRegistry, viewSynthesized, src, tgt, name,
                     loc, root, instanceNames, staticNames, queue);
                 if (model is not null)
                 {
@@ -157,7 +157,52 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var view in built) MergeReferencedHelpers(view, viewSynthesized, acc.Synthesized);
 
-            acc.Views.AddRange(built);
+            acc.Views.AddRange(PropagateOwner(built));
+        }
+
+        /// <summary>
+        ///     Propagates <see cref="ViewModel.NeedsOwner" /> UP the nesting graph, to a fixed point.
+        /// </summary>
+        /// <remarks>
+        ///     A view's own resolution decides whether IT names an instance member of the mapper, but its
+        ///     constructor arity is what its PARENT has to write, and the parent may need no owner of its own:
+        ///     a flat pair whose one nested member converts through an instance method is exactly that shape,
+        ///     and emitting <c>new ChildView(_s.Child)</c> against a two-parameter constructor is CS7036 in a
+        ///     file the consumer cannot edit. So a view that constructs an owner-needing view needs one too,
+        ///     transitively. Iterated to a fixed point rather than recursed because the nesting graph may be
+        ///     CYCLIC — a self-referential view is built and supported — and a set that only ever grows over a
+        ///     finite list terminates where a recursion would not.
+        /// </remarks>
+        private static List<ViewModel> PropagateOwner(List<ViewModel> built)
+        {
+            var needsOwner = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var view in built.Where(v => v.NeedsOwner)) needsOwner.Add(view.ViewTypeName);
+
+            bool changed;
+            do
+            {
+                changed = false;
+                foreach (var view in built)
+                {
+                    if (needsOwner.Contains(view.ViewTypeName))
+                    {
+                        continue;
+                    }
+
+                    if (view.Members.Any(m => m.NestedViewTypeName is not null && needsOwner.Contains(m.NestedViewTypeName)) && needsOwner.Add(view.ViewTypeName))
+                    {
+                        changed = true;
+                    }
+                }
+            } while (changed);
+
+            return built.Select(view => view with
+            {
+                NeedsOwner = needsOwner.Contains(view.ViewTypeName),
+                Members = EquatableArray.From(view.Members.Select(m => m.NestedViewTypeName is not null
+                    ? m with { NestedViewNeedsOwner = needsOwner.Contains(m.NestedViewTypeName) }
+                    : m))
+            }).ToList();
         }
 
         /// <summary>
@@ -173,7 +218,6 @@ namespace DwarfMapper.Generator.Pipeline
         ///     structure without materialising it.
         /// </remarks>
         private static ViewModel? BuildView(
-            GeneratorAttributeSyntaxContext ctx,
             MapperDeclarations decls,
             MapperPolicy policy,
             MapperAccumulators acc,
@@ -357,7 +401,6 @@ namespace DwarfMapper.Generator.Pipeline
                 viewMembers.Add(new ViewMemberModel(member.EmitTargetName, Render(targetType), qualified));
             }
 
-            _ = ctx;
             return new ViewModel(viewTypeName,
                 src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 EquatableArray.From(viewMembers),

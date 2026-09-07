@@ -363,6 +363,69 @@ namespace DwarfMapper.Generator.Tests.Views
             Assert.Equal(1, CountOf(generated, "public readonly ref struct InnerDtoView"));
         }
 
+        /// <summary>
+        ///     A nested view whose OWN members need the mapper, held by a parent whose members do not. The
+        ///     parent must still pass the owner it does not otherwise need, or the nested constructor call is
+        ///     CS7036 in a file the consumer cannot edit.
+        /// </summary>
+        [Fact]
+        public void A_parent_that_needs_no_owner_still_passes_one_to_a_nested_view_that_does()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class Inner { public int Amount { get; set; } }
+                                  public sealed class InnerDto { public string Amount { get; set; } = ""; }
+                                  public sealed class Src { public int Id { get; set; } public Inner Inner { get; set; } = new(); }
+                                  public sealed class Dst { public int Id { get; set; } public InnerDto Inner { get; set; } = new(); }
+                                  [DwarfMapper]
+                                  [MapProperty<Inner, InnerDto>(nameof(Inner.Amount), nameof(InnerDto.Amount), Use = nameof(Money))]
+                                  [GenerateView<Src, Dst>]
+                                  public partial class M
+                                  {
+                                      private string Money(int v) => v.ToString();
+                                  }
+                                  """;
+
+            var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
+
+            Assert.Contains("public InnerDtoView Inner => new InnerDtoView(_m, _s.Inner);",
+                generated,
+                StringComparison.Ordinal);
+            Assert.Contains("private readonly M _m;", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The same hazard through a CYCLE: a self-referential view whose own members need the mapper
+        ///     constructs itself, so the owner has to be threaded through the recursive call as well. This is
+        ///     also what proves the fixed point terminates on a cyclic nesting graph.
+        /// </summary>
+        [Fact]
+        public void A_cyclic_view_that_needs_the_owner_threads_it_through_its_own_recursion()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class Node { public int Amount { get; set; } public Node? Next { get; set; } }
+                                  public sealed class NodeDto { public string Amount { get; set; } = ""; public NodeDto? Next { get; set; } }
+                                  [DwarfMapper]
+                                  [MapProperty<Node, NodeDto>(nameof(Node.Amount), nameof(NodeDto.Amount), Use = nameof(Money))]
+                                  [GenerateView<Node, NodeDto>]
+                                  public partial class M
+                                  {
+                                      private string Money(int v) => v.ToString();
+                                  }
+                                  """;
+
+            var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
+
+            Assert.Contains("_s.Next is null ? default : new NodeDtoView(_m, _s.Next)",
+                generated,
+                StringComparison.Ordinal);
+        }
+
         private static int CountOf(string haystack, string needle)
         {
             var count = 0;

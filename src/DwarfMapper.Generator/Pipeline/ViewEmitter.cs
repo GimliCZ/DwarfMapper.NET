@@ -119,8 +119,16 @@ namespace DwarfMapper.Generator.Pipeline
                     sb.Append("_s.").Append(member.NestedSourceMember).Append(" is null ? default : ");
                 }
 
-                sb.Append("new ").Append(member.NestedViewTypeName).Append("(_s.").Append(member.NestedSourceMember)
-                    .Append(')');
+                sb.Append("new ").Append(member.NestedViewTypeName).Append('(');
+                if (member.NestedViewNeedsOwner)
+                {
+                    // The child's own resolution named an instance member of the mapper, so its constructor
+                    // takes the owner. The parent passes it whether or not IT needs one for itself — which is
+                    // why NeedsOwner propagates UP the nesting graph before anything is emitted.
+                    sb.Append("_m, ");
+                }
+
+                sb.Append("_s.").Append(member.NestedSourceMember).Append(')');
                 return;
             }
 
