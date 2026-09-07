@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 // Fixtures shared by the guide examples (30+). Named to match the vocabulary the README and the migration
 // guides already use — Customer, Order, Address — so a snippet lifted into that prose reads as if it had been
@@ -63,6 +63,21 @@ namespace DwarfMapper.Gallery.Guides
         public int Id { get; set; }
 
         public string FullName { get; set; } = "";
+    }
+
+    /// <summary>
+    ///     Zero-copy view target (example 36). Its own type for the reason at the top of this file: example 31
+    ///     already maps <c>Customer -&gt; CustomerRow</c>, and a second ambient provider for one pair is
+    ///     DWARF063. <c>Total</c> is a <c>string</c> on purpose: a CONVERTED member shows that a view calls the
+    ///     same synthesized converter the map calls, and that it calls it on every READ rather than once.
+    /// </summary>
+    public sealed class CustomerCard
+    {
+        public int Id { get; set; }
+
+        public string FullName { get; set; } = "";
+
+        public string Total { get; set; } = "";
     }
 
     public sealed class Order

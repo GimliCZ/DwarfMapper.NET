@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: GPL-2.0-only -->
+﻿<!-- SPDX-License-Identifier: GPL-2.0-only -->
 
 # What mutation testing does NOT cover, and whether widening it would pay
 
@@ -7,7 +7,12 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**12.0 % of `src/` is inside any leg's `mutate` globs** — 4,278 of 35,538 lines.
+**11.1 % of `src/` is inside any leg's `mutate` globs** — 4,634 of 41,684 lines.
+
+> **Corrected 2026-09-07.** This line said 12.0 % while the table below said 11.5 %, and the two are
+> the same measurement — the headline simply stopped being updated when the table was re-measured
+> under it. It is the table's `all` row now, and it stays so: `MutationScopeScanTests` re-derives that
+> row from the configs on every build, so the headline can no longer drift away from it alone.
 
 > **Corrected 2026-08-27.** This file previously said 15.3 %, on a table crediting the generator with 10
 > files and 3,849 mutated lines. **No revision of `stryker-config.json` has ever listed more than the four
@@ -23,13 +28,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 71 | 7 | 31,965 | 2,289 | **7.2 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 42 | 6 | 3,437 | 944 | **27.5 %** | 73.9 % |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
+| `DwarfMapper.Generator` | 74 | 7 | 33,664 | 2,322 | **6.9 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 43 | 6 | 3,468 | 944 | **27.2 %** | 73.9 % |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **137** | **22** | **39,953** | **4,601** | **11.5 %** | |
+| **all** | **141** | **22** | **41,684** | **4,634** | **11.1 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -51,7 +56,16 @@ in full again 2026-09-06 (round 29, T2.3), which added the FIFTH code-fix provid
 `ConvertToRecordStructCodeFixProvider.cs` (559 lines — the `DWARF103` transitive rewrite). The generator grew
 1,103 lines across the same task (the classifier's inlined-model collector and the `DWARF103` report site's
 diagnostic properties, 28 of them inside `BlittableProof.cs`'s glob); its share reads 7.2 % where it read
-7.3 %.
+7.3 %. Re-measured in full again 2026-09-07 (round 29, Phase 1 — zero-copy views),
+which added FOUR files: `Model/ViewModel.cs`, `Pipeline/MapperExtractor.Views.cs` and
+`Pipeline/ViewEmitter.cs` to the generator (71 → 74 files, 137 → 141 overall) and `GenerateViewAttribute.cs`
+to the runtime (42 → 43). **Not one of the four is inside any `mutate` glob**, which is the same shape this
+document keeps recording: both shares fall — the generator's from 7.2 % to 6.9 %, the runtime's from 27.5 %
+to 27.2 % — because the denominators grew and the numerators did not. The generator's numerator DID move,
+2,289 → 2,322, and that is not Phase 1's doing: all 33 lines are in
+`Pipeline/MapperExtractor.Members.Phases.cs` (836 → 869), which the pipeline leg already covers, and they
+arrived with round 29's null-handling fixes between the last measurement and this one. No file inside any
+leg changed in Phase 1 at all.
 
 **`DwarfMapper.CodeFixes` drops from 100 % to 53.2 %, and that is the honest number rather than a regression
 nobody noticed.** T2.3 did add the new provider to `stryker-config.codefixes.json` and ran the leg
@@ -174,7 +188,7 @@ the compiler and `ShippedRuntimeSafetyTests` do not already say.
 
 The CodeFixes leg is done (87.01 %, and it found what it was predicted to find). **Next is a leg over the
 round-27 extracted `Pipeline/` files**, because that is where the brief actually pointed and where the share
-was 0 %. Record **12.0 %** wherever the leg scores are quoted, so the numbers keep meaning what they say.
+was 0 %. Record **11.1 %** wherever the leg scores are quoted, so the numbers keep meaning what they say.
 
 That figure is no longer maintained by hand: `MutationScopeScanTests` recomputes it from the configs on
 disk and fails when this table drifts from them. The 15.3 % this document used to publish was a one-off

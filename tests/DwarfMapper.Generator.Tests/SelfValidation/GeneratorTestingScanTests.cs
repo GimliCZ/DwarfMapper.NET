@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -36,13 +36,19 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // A test asserts the generated output is byte-identical with and without it, which is a better guarantee
         // than a pinned snapshot would be. Its behaviour is DWARF084/085, covered by RestatesBaseTests.
         //
-        // Baselines: 35 public attribute types, 16 public enum
+        // Raised to 36 on 2026-09-07 for [GenerateView<TSource, TTarget>] — the zero-copy view (round 29,
+        // Phase 1). It DOES get a golden emission case, and needed one: a view is a whole second emission shape
+        // on the mapper class (a nested `readonly ref struct` with an owner field, a null-guarded constructor,
+        // a HasValue property and one expression per member), reachable through no other case in the corpus.
+        // GoldenCorpus.FeatureCases() gained "View" in the same commit as this raise.
+        //
+        // Baselines: 36 public attribute types, 16 public enum
         // values (8 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
         // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
         // it cannot force a specific new case the way true derivation would, but it forces a human to notice
         // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
         // going stale next to an attribute or enum value nobody golden-tested.
-        private const int BaselineAttributeTypeCount = 35;
+        private const int BaselineAttributeTypeCount = 36;
         private const int BaselineEnumValueCount = 16;
 
         // A real \n ESCAPE, anywhere in the line. The negative lookbehind excludes `\\n` (an escaped backslash then

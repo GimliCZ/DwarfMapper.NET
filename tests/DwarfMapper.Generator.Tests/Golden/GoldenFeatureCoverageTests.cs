@@ -144,6 +144,14 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // closing paren exists only on the return-side arm, and the `Free` member in the same case
                     // (a nullable destination) proves it is not sprayed on every call.
                     "NullableReturnConverter", "Strict = a.Strict is null ? null! : ToDto(a.Strict)!"
+                },
+                {
+                    // The NESTED view's construction, which is the one line no other case in the corpus can
+                    // produce: only the view emitter writes `new <T>View(`, and only for a member the create
+                    // map would have routed through an object helper. A marker on the outer struct
+                    // (`readonly ref struct`) or on the factory would also have been satisfied by a FLAT view,
+                    // so it would have advertised the nested edge without exercising it.
+                    "View", "Nested => _s.Nested is null ? default : new InnerDtoView(_s.Nested)"
                 }
             };
         }

@@ -448,6 +448,25 @@ namespace DwarfMapper.Generator.Tests.Framework
                                         }
                                         """, "DwarfGenerator");
 
+            // The zero-copy view (round 29, Phase 1). Pinned as its own feature case because a view is a whole
+            // second emission SHAPE on the mapper class - a nested `readonly ref struct` with an owner field,
+            // a null-guarded constructor, a HasValue property and one expression per member - and none of it
+            // is reachable through any other case here. Both a converted member and a nested one, because
+            // those are the two edges whose expression names something other than `_s.Member`.
+            yield return ("View", """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public enum Kind { A, B }
+                                  public class Inner { public string Label { get; set; } = ""; }
+                                  public class InnerDto { public string Label { get; set; } = ""; }
+                                  public class A { public int X { get; set; } public Kind K { get; set; } public Inner? Nested { get; set; } }
+                                  public class B { public int X { get; set; } public string K { get; set; } = ""; public InnerDto? Nested { get; set; } }
+                                  [DwarfMapper]
+                                  [GenerateMap<A, B>]
+                                  [GenerateView<A, B>]
+                                  public partial class M { }
+                                  """, "DwarfGenerator");
+
             yield return ("CoLocatedGenerateMap", """
                                                   using DwarfMapper;
                                                   namespace Demo;
