@@ -25,7 +25,6 @@ namespace DwarfMapper.Generator.Pipeline
         public const string MapCollectionKey = "MapCollectionKeyAttribute";
         public const string GenerateMap = "GenerateMapAttribute";
         public const string GenerateWrapperMap = "GenerateWrapperMapAttribute";
-        public const string GenerateView = "GenerateViewAttribute";
         public const string MapProperty = "MapPropertyAttribute";
         public const string MapIgnore = "MapIgnoreAttribute";
         public const string MapIgnoreSource = "MapIgnoreSourceAttribute";

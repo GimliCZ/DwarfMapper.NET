@@ -245,15 +245,6 @@ Declares a mapping from to WITHOUT writing a partial method per pair. Both place
 |---|---|---|---|
 | `TypeId` | `Object` | — |  |
 
-### attribute `GenerateViewAttribute<TSource, TTarget>`
-
-Declares a ZERO-COPY view from shaped as : the generator emits a nested readonly ref struct <TTarget>View on the mapper class whose properties evaluate the same member resolution a Map would — lazily, on access, against the source instance. Nothing is allocated and nothing is copied; the view cannot outlive its source (it is a ref struct), which is the contract that makes it free. Use it where a mapped DTO is consumed at once — serialized, rendered, compared — and Map where it is stored or returned.
-
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `Name` | `String` | — | Optional view type name; default is the target type's name followed by View. |
-| `TypeId` | `Object` | — |  |
-
 ### attribute `GenerateWrapperMapAttribute`
 
 Opt-in: for every [GenerateMap<A, B>] declared on the same [DwarfMapper] class, also synthesize a map for the closed wrapper instantiation W<A> -> W<B> (where W is the supplied open generic wrapper). This removes the boilerplate of declaring a wrapper map per payload pair for single-payload generic envelope families (Result<T>, Page<T>, Envelope<T>, …). Closed instantiations only. One concrete mapper is emitted per used (A, B) pair — open generics are never emitted, so the result stays NativeAOT- and trim-safe. The wrapper must be a generic type with exactly one type parameter and a single payload member of that parameter's type (other members are copied/converted as usual). A wrapper that does not qualify is reported as DWARF067. public sealed class Envelope<T> { public T Payload { get; set; } = default!; public int Status { get; set; } } [DwarfMapper] [GenerateMap<User, UserDto>] [GenerateWrapperMap(typeof(Envelope<>))] // also synthesizes Envelope<User> -> Envelope<UserDto> public partial class Mappers { } Envelope<UserDto> dto = new Mappers().Map(envelopeOfUser);

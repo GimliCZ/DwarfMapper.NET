@@ -1,5 +1,1 @@
 #nullable enable
-DwarfMapper.GenerateViewAttribute<TSource, TTarget>
-DwarfMapper.GenerateViewAttribute<TSource, TTarget>.GenerateViewAttribute() -> void
-DwarfMapper.GenerateViewAttribute<TSource, TTarget>.Name.get -> string?
-DwarfMapper.GenerateViewAttribute<TSource, TTarget>.Name.set -> void
