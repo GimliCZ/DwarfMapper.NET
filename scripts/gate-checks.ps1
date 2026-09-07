@@ -629,8 +629,44 @@ function Assert-NoMutatedProductBinaries {
 # (the Phase 1 note measured a 3-byte spread over four packs). For DwarfMapper.Testing (50 KB = 51,200 B):
 # 161 B, and its 49 KB is re-measured in this commit, not merely carried.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-07, in the commit that made the generator structurally incapable of emitting a broken
+# identifier (round 29, task 1.y). SDK 10.0.101, Release, -p:EnablePackageValidation=false, packed twice
+# from this worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  317,532 B -> floor(317532/1024) = 310 KB   (was 308)
+#            DwarfMapper.Testing...nupkg    51,060 B -> floor( 51060/1024) =  49 KB   (UNCHANGED)
+# 317,532 is the LARGER of two packs in this session (317,531 and 317,532), so the number does not rest on
+# a single sample. ONLY WINDOWS WAS MEASURED, stated with that limit exactly as the previous block states
+# it: no ubuntu container was available here. Windows has measured the LARGER of the pair at every
+# round-28/29 pairing (287,189 vs 286,985; 316,155 vs 315,638 — a ~200-500 B CRLF-vs-LF difference in
+# DwarfMapper.xml and the nuspec), so applying that offset puts ubuntu near 317,000-317,300 B, which is
+# 309 KB. The ceiling takes the LARGER of the two, 310, per the rule the round-28 block states: the same
+# tree must be green wherever the gate is run, and 309 would be red on every Windows pack.
+#
+# WHERE THE ~1.2 KB WENT, entry by entry, against a pack of cce2977 (the [GenerateView]-withdrawal commit,
+# this task's parent) taken from a `git worktree add` in the SAME session so the toolchain is held fixed.
+# Deflated bytes, measured by diffing the two .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   211,522 -> 212,763   +1,241
+#   DwarfMapper.nuspec                            745 ->     776      +31
+#   lib/net10.0/DwarfMapper.dll                18,106 ->  18,084      -22
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,275 ->  17,254      -21
+#   (total +1,229; 316,303 + 1,229 = 317,532 exactly. The .psmdcp part is NuGet's random name, not payload.)
+#
+# THE READING. One row carries the change and it is the expected one: Generator.dll +1,241 B for the Emit*
+# computed properties on six model records, Identifiers.Unescaped, and the ~40 emission sites rewritten to
+# go through them — plus their doc comments, which are the measurement this task exists to stop being
+# rediscovered. SAME FOUR ENTRIES AS BEFORE: no new dependency, no new resource, nothing newly shipping
+# that should not, which is the class this gate exists to catch. The two NEGATIVE rows are the previous
+# block's own finding restated: the baseline was built in a DIFFERENT CHECKOUT (a temporary worktree, whose
+# detached HEAD also explains the nuspec's `<repository commit=.../>` moving 31 B), and DwarfMapper.dll's
+# source is untouched by this task — `git diff cce2977 -- src/DwarfMapper/` is empty — so a 22-byte move
+# there is the same unpinned build-environment channel, not payload.
+#
+# Headroom to the first red byte (311 KB = 318,464 B): 932 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 140 B, and its 49 KB is re-measured in this commit rather than merely carried.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 308
+    'DwarfMapper'         = 310
     'DwarfMapper.Testing' = 49
 }
 
