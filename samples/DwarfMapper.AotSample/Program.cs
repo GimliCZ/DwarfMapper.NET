@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
 using DwarfMapper;
@@ -712,11 +712,102 @@ if (asyncCollected.Count != 3 || asyncCollected[0].V != 1 || asyncCollected[2].V
 
 Console.WriteLine($"async stream: mapped {asyncCollected.Count} elements lazily (AOT-safe)");
 
+// -- Zero-copy view: a nested readonly ref struct over the source (round 29, Phase 1) ---------
+// A view is emitted code and nothing else - no reflection, no delegate, no generic instantiation the
+// trimmer cannot see - so there is nothing here for NativeAOT to fail on in principle. This gate exists
+// because "in principle" is what every AOT hazard in this file was, right up until it was run: the check
+// compares the view member for member against the MAP of the same pair, so a view that silently read the
+// wrong slot under AOT is a failure rather than a green build.
+//
+// Kept out of a local function on purpose. A ref struct cannot be captured, returned in a Task, or made a
+// type argument, so it can only be read where it is created - the compiler enforcing the contract this
+// feature is built on, in the sample that documents it.
+var viewMapper = new AotViewMapper();
+var viewSource = new AotViewSrc
+{
+    Id = 11,
+    Kind = AotViewKind.Deep,
+    Inner = new AotViewInner
+    {
+        Label = "adamantine"
+    }
+};
+
+var viewMapped = viewMapper.Map(viewSource);
+var viewSeen = viewMapper.View(viewSource);
+if (viewSeen.Id != viewMapped.Id || viewSeen.Kind != viewMapped.Kind || viewSeen.Inner.Label != viewMapped.Inner!.Label)
+{
+    Console.WriteLine("ERROR: the view and the map disagree under AOT");
+    return 1;
+}
+
+// The window, not the snapshot: the same view reads the mutated source.
+viewSource.Inner.Label = "mithril";
+if (viewSeen.Inner.Label != "mithril")
+{
+    Console.WriteLine("ERROR: the view did not read through to a mutated source under AOT");
+    return 1;
+}
+
+// And a null nested member yields the default view rather than throwing.
+viewSource.Inner = null;
+if (viewMapper.View(viewSource).Inner.HasValue)
+{
+    Console.WriteLine("ERROR: a null nested member did not yield the default view");
+    return 1;
+}
+
+Console.WriteLine($"view: {viewSeen.Id}:{viewSeen.Kind} reads through to the source, zero copies (AOT-safe)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
 namespace DwarfMapper.AotSample
 {
+    // -- Zero-copy view types (round 29, Phase 1) ---------------------------------
+    public enum AotViewKind
+    {
+        Shallow,
+        Deep
+    }
+
+    public class AotViewInner
+    {
+        public string Label { get; set; } = "";
+    }
+
+    public class AotViewInnerDto
+    {
+        public string Label { get; set; } = "";
+    }
+
+    public class AotViewSrc
+    {
+        public int Id { get; set; }
+
+        public AotViewKind Kind { get; set; }
+
+        public AotViewInner? Inner { get; set; }
+    }
+
+    public class AotViewDst
+    {
+        public int Id { get; set; }
+
+        public string Kind { get; set; } = "";
+
+        public AotViewInnerDto? Inner { get; set; }
+    }
+
+    // BOTH endpoints on one mapper, because the gate's assertion is that they agree. The enum-to-string
+    // member is deliberate: it is the edge where a view calls a synthesized `private static` helper, which
+    // is the one call shape a nested ref struct can make unqualified.
+    [DwarfMapper]
+    [GenerateMap<AotViewSrc, AotViewDst>]
+    [GenerateView<AotViewSrc, AotViewDst>]
+    public partial class AotViewMapper;
+
+
     // ── Types ─────────────────────────────────────────────────────────────────────
 
     public class Source

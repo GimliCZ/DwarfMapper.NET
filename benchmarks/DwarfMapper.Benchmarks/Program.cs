@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
@@ -368,6 +368,71 @@ public sealed class ImmDst
 }
 
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
+// Round 29 Phase 1 - the zero-copy view's payload.
+// Mirrors Issues/round29/PlanProbe3's A_view category, which is where 0.20x / 0.04x / 0 B was measured: a
+// four-object source graph whose six leaf values a consumer reads into a sink. The pair is declared with
+// pair-scoped [MapProperty] rather than [Flatten] because a view is declared by an ATTRIBUTE and has no
+// method to annotate - the same reason the surface matrix gives View an endpoint template of its own.
+public sealed class VwHeader
+{
+    public long Id { get; set; }
+
+    public int Kind { get; set; }
+}
+
+public sealed class VwAddress
+{
+    public int Zip { get; set; }
+}
+
+public sealed class VwMoney
+{
+    public long Amount { get; set; }
+
+    public int Currency { get; set; }
+}
+
+public sealed class VwOrder
+{
+    public VwHeader Header { get; set; } = new();
+
+    public VwAddress Ship { get; set; } = new();
+
+    public VwAddress Bill { get; set; } = new();
+
+    public VwMoney Total { get; set; } = new();
+}
+
+public sealed class VwOrderDto
+{
+    public long Id { get; set; }
+
+    public int Kind { get; set; }
+
+    public int ShipZip { get; set; }
+
+    public int BillZip { get; set; }
+
+    public long Amount { get; set; }
+
+    public int Currency { get; set; }
+}
+
+// A mapper of its own rather than two more members on DwarfM: the pair-scoped [MapProperty] rows are
+// class-level, and hanging six of them on the shared mapper would put them in front of every other pair's
+// DWARF056 sweep for no reason. It declares BOTH the map and the view, because the two benchmarks are a
+// comparison and must be reading the same resolved mapping.
+[DwarfMapper]
+[MapProperty<VwOrder, VwOrderDto>("Header.Id", nameof(VwOrderDto.Id))]
+[MapProperty<VwOrder, VwOrderDto>("Header.Kind", nameof(VwOrderDto.Kind))]
+[MapProperty<VwOrder, VwOrderDto>("Ship.Zip", nameof(VwOrderDto.ShipZip))]
+[MapProperty<VwOrder, VwOrderDto>("Bill.Zip", nameof(VwOrderDto.BillZip))]
+[MapProperty<VwOrder, VwOrderDto>("Total.Amount", nameof(VwOrderDto.Amount))]
+[MapProperty<VwOrder, VwOrderDto>("Total.Currency", nameof(VwOrderDto.Currency))]
+[GenerateMap<VwOrder, VwOrderDto>]
+[GenerateView<VwOrder, VwOrderDto>]
+public partial class DwarfViewM;
+
 [DwarfMapper]
 public partial class DwarfM
 {
@@ -493,6 +558,13 @@ public class MapperBenchmarks
     private Vec3Dst[] _spanBlitDst = null!;
     private Vec3Ren[] _spanBlitScalarDst = null!;
 
+    // Round 29 Phase 1 - the view payload and the sink both benchmarks write into. Preallocated for the
+    // SpanBlit reason above and one more: View_Dwarf pins at 0 B, so anything the measured method allocated
+    // would be measuring the harness rather than the feature.
+    private readonly DwarfViewM _dwarfView = new();
+    private VwOrder[] _vwOrders = null!;
+    private long[] _vwSink = null!;
+
     [Params(1000)]
     public int N { get; set; }
 
@@ -561,6 +633,21 @@ public class MapperBenchmarks
         };
         _spanBlitDst = new Vec3Dst[N];
         _spanBlitScalarDst = new Vec3Ren[N];
+
+        // The view payload. Factory-drawn like every other shape, then the four nested references
+        // materialised for the NestedSrc reason above: the factory assigns through reflection and cannot see
+        // nullable annotations, so it can null a member the declaration says is never null.
+        _vwOrders = RealisticPayloads.Elements<VwOrder>(N, 12);
+        for (var i = 0; i < _vwOrders.Length; i++)
+        {
+            var o = _vwOrders[i];
+            o.Header ??= RealisticPayloads.One<VwHeader>(1200 + i);
+            o.Ship ??= RealisticPayloads.One<VwAddress>(1300 + i);
+            o.Bill ??= RealisticPayloads.One<VwAddress>(1400 + i);
+            o.Total ??= RealisticPayloads.One<VwMoney>(1500 + i);
+        }
+
+        _vwSink = new long[N * 6];
         _widen = new WidenSrc
         {
             V = RealisticPayloads.Elements<int>(N, 5)
@@ -902,6 +989,60 @@ public class MapperBenchmarks
     {
         _dwarf.MapSpanBlitScalar(_blit.Items, _spanBlitScalarDst);
         return _spanBlitScalarDst.Length;
+    }
+
+    // -- Round 29 Phase 1: the zero-copy view against map-then-consume --------------
+    // A PAIR, and the pair is the measurement: both rows read the SAME six members of the SAME N orders into
+    // the same preallocated sink, and differ only in whether a VwOrderDto was built first. A view row on its
+    // own would say nothing, because "reading six fields" is not a mapping and has no baseline.
+    //
+    // View_Dwarf is pinned at 0 B in allocation-baseline.json, and that pin is the feature rather than a
+    // detail of it: a view that allocated anything at all would not be a view. What the pin does NOT claim is
+    // that every view is free - a converter a view calls allocates on its own account, once per READ rather
+    // than once per map, so a view read many times can cost more than one Map. This pair has no converter,
+    // which is what makes it a clean measurement of the view itself.
+    [Benchmark]
+    [BenchmarkCategory("View")]
+    public long View_Dwarf()
+    {
+        long acc = 0;
+        var sink = _vwSink;
+        for (var i = 0; i < _vwOrders.Length; i++)
+        {
+            var v = _dwarfView.View(_vwOrders[i]);
+            var o = i * 6;
+            sink[o] = v.Id;
+            sink[o + 1] = v.Kind;
+            sink[o + 2] = v.ShipZip;
+            sink[o + 3] = v.BillZip;
+            sink[o + 4] = v.Amount;
+            sink[o + 5] = v.Currency;
+            acc += v.Amount + v.ShipZip;
+        }
+
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("View")]
+    public long View_Map_Dwarf()
+    {
+        long acc = 0;
+        var sink = _vwSink;
+        for (var i = 0; i < _vwOrders.Length; i++)
+        {
+            var d = _dwarfView.Map(_vwOrders[i]);
+            var o = i * 6;
+            sink[o] = d.Id;
+            sink[o + 1] = d.Kind;
+            sink[o + 2] = d.ShipZip;
+            sink[o + 3] = d.BillZip;
+            sink[o + 4] = d.Amount;
+            sink[o + 5] = d.Currency;
+            acc += d.Amount + d.ShipZip;
+        }
+
+        return acc;
     }
 
     // ── Primitive widening array (DwarfMapper's Vector.Widen vs element loop) ────
