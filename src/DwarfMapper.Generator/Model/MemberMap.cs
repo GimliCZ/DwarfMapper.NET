@@ -117,6 +117,33 @@ namespace DwarfMapper.Generator.Model
     ///         parameter named <c>inner</c> is not the source member <c>inner</c>.
     ///     </para>
     /// </param>
+    /// <param name="ShareEmptyFallback">
+    ///     When non-null, this member is <b>SHARED</b> rather than copied — <c>[MapShare]</c>, or the automatic
+    ///     share the immutability proof authorises — and this is the allocation-free expression standing in for
+    ///     the empty collection the helper it replaces would have built.
+    ///     <para>
+    ///         The guard is not optional politeness. The collection helper this replaces begins
+    ///         <c>if (src is null) return Empty;</c> (<c>NullCollectionStrategy.AsEmpty</c>, the default), so a
+    ///         bare <c>t.M = s.M</c> would quietly turn "no source collection" from an empty collection into a
+    ///         null — a behaviour change the caller never asked for, in the one direction this feature must never
+    ///         move. And the annotation cannot be trusted to make the guard unnecessary: as
+    ///         <see cref="DwarfMapper.Generator.Core.TypeFacts.CanBeNull" /> says, a non-nullable-annotated
+    ///         reference is a promise the CALLER makes to the compiler, and generated code is public API reachable
+    ///         from assemblies that made no such promise.
+    ///     </para>
+    ///     <para>
+    ///         Costs nothing: every expression this carries names a cached singleton
+    ///         (<c>ImmutableArray&lt;T&gt;.Empty</c>, <c>Array.Empty&lt;T&gt;()</c>), never an allocation. A type
+    ///         with no such singleton is not shared at all — a share whose empty case allocates is a share whose
+    ///         worst case is the copy it replaced.
+    ///     </para>
+    /// </param>
+    /// <param name="ShareGuardsDefault">
+    ///     Which guard <see cref="ShareEmptyFallback" /> is written with: <c>true</c> emits
+    ///     <c>s.M.IsDefault ? Empty : s.M</c>, <c>false</c> emits <c>s.M ?? Empty</c>. The <c>true</c> case is
+    ///     <c>ImmutableArray&lt;T&gt;</c>, a struct that is never null and can still wrap a null array — <c>is
+    ///     null</c> against it is CS0037, so the two forms are not interchangeable.
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -134,7 +161,9 @@ namespace DwarfMapper.Generator.Model
         string? UpsertKeyTypeFqn = null,
         bool ConverterParamIsNonNullableRef = false,
         string? SourceAccessExpression = null,
-        bool ConverterReturnIsNullableRef = false) : IEquatable<MemberMap>
+        bool ConverterReturnIsNullableRef = false,
+        string? ShareEmptyFallback = null,
+        bool ShareGuardsDefault = false) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

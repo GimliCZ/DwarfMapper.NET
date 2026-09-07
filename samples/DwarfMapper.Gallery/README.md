@@ -57,6 +57,7 @@ The alternative to this page was deleting those markers — removing evidence to
 | 46 | [`46_MergeCollectionByKey.cs`](46_MergeCollectionByKey.cs) — Merge a collection by key | updating list elements in place instead of rebuilding the list |
 | 47 | [`47_RestateBaseConfig.cs`](47_RestateBaseConfig.cs) — Restated base configuration | checking a derived pair against the base pair it restates |
 | 48 | [`48_ProvidedMapShape.cs`](48_ProvidedMapShape.cs) — Hand-written provided map | registering your own method as a resolvable map |
+| 49 | [`49_MapShare.cs`](49_MapShare.cs) — `[MapShare]` — share an immutable reference | assigning a collection's reference instead of copying it, automatically where it is provable |
 | | **Testing** | |
 | 25 | [`25_RoundTrip.cs`](25_RoundTrip.cs) — `[RoundTrip]` verification | one attribute emits a fuzzing harness asserting `Back(Forward(x)) == x` |
 | 26 | [`26_InformedDumps.cs`](26_InformedDumps.cs) — Informed failure dumps | a failed round trip names the diverging member path, not two object dumps |
@@ -687,6 +688,23 @@ public partial class Mapper
         ArgumentNullException.ThrowIfNull(document);
         return document.Quotes.ConvertAll(ToQuote);
     }
+}
+```
+<!-- endsnippet -->
+
+### 49. `[MapShare]` — share an immutable reference
+
+*49_MapShare.cs* — assigning a collection's reference instead of copying it, automatically where it is provable
+
+<!-- snippet: map-share -->
+```csharp
+[DwarfMapper]
+public partial class Mapper
+{
+    // Alloys is shared automatically: same type both sides, and Alloy is provably immutable.
+    // Runes is an INTERFACE, which the proof refuses — [MapShare] is the caller's own assertion.
+    [MapShare(nameof(ForgeDto.Runes))]
+    public partial ForgeDto ToDto(Forge f);
 }
 ```
 <!-- endsnippet -->

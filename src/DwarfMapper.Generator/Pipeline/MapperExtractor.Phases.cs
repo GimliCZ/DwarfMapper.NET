@@ -1774,6 +1774,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
+            var shareMembers = ReadShareMembers(method);
 
             // ── Plan 20 / 22: [FlattenGraph] ─────────────────────────────────
             // Read and resolve [FlattenGraph] directives BEFORE ResolveMembers so that
@@ -1902,7 +1903,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
                 // would. Gating here produced a false DWARF079 on that shape.
                 CtorSetsRequiredMembers(ctor),
-                ignoredSourceMembers: IgnoredSourcesFor(decls, method));
+                ignoredSourceMembers: IgnoredSourcesFor(decls, method),
+                shareMembers: shareMembers);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -2344,6 +2346,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var updMapPropExtras = ReadMapPropertyExtras(method);
                 var updFlatten = ReadFlattenRoots(method);
                 var updReinterpret = ReadReinterpretMembers(method);
+                var updShare = ReadShareMembers(method);
                 var updAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
 
                 var updMembers = ResolveMembers(
@@ -2394,7 +2397,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // Without this, ignoring a required member on an update-into method reported a false
                     // DWARF079 — caught by NonTrivialShapeRuntimeTests, which does exactly that legitimately.
                     requiredMembersAlreadySatisfied: true,
-                    ignoredSourceMembers: IgnoredSourcesFor(decls, method));
+                    ignoredSourceMembers: IgnoredSourcesFor(decls, method),
+                    shareMembers: updShare);
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing

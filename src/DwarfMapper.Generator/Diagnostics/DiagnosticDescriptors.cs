@@ -1902,6 +1902,46 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf103");
 
         /// <summary>
+        ///     <c>DWARF104</c> — <c>[MapShare]</c> names a member that cannot be shared.
+        ///     <para>
+        ///         Sharing assigns the source's own reference to the destination instead of copying it, which is
+        ///         only a mapping — rather than a coupling — when nothing reachable through that reference can be
+        ///         written. The dangerous case is not the obvious one: <c>IReadOnlyList&lt;T&gt;</c> is an
+        ///         interface and promises nothing, so a <c>List&lt;T&gt;</c> behind it stays a
+        ///         <c>List&lt;T&gt;</c> the source can mutate after the map, silently coupling two object graphs
+        ///         the consumer believes are independent. Nothing detects that afterwards.
+        ///     </para>
+        ///     <para>
+        ///         So the generator refuses what it can DISPROVE and accepts the caller's assertion about what it
+        ///         merely cannot prove. A settable property, a writable field, an event or an array anywhere in
+        ///         the reachable graph is a disproof, and <c>[MapShare]</c> cannot assert it away — that is this
+        ///         id. An interface or an unsealed class is a gap, not a disproof, and <c>[MapShare]</c> passes
+        ///         through it on the caller's word, the way <c>[Reinterpret]</c> forces a layout the blit proof
+        ///         declines to confirm.
+        ///     </para>
+        ///     <para>
+        ///         An ERROR rather than a warning, for the same reason <c>DWARF022</c> is: the caller wrote a
+        ///         directive that cannot be honoured, and honouring it half-way — copying while saying nothing —
+        ///         is the "accepted it, changed nothing, said nothing" silence this round exists to remove.
+        ///         Deleting the attribute is always a valid fix and costs exactly one copy.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor ShareInvalid = new(
+            "DWARF104",
+            "Invalid [MapShare] target",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            "[MapShare] assigns the source member's reference to the destination instead of copying it, so the " +
+            "two objects thereafter share one instance. That is safe only when nothing reachable through the " +
+            "reference can be written; a settable property, a writable field, an event or an array anywhere in " +
+            "the graph makes it unsafe, and no attribute can assert otherwise. The generator shares provably " +
+            "immutable members automatically, so [MapShare] is only needed for a shape the proof cannot see " +
+            "through — an interface, or a type from another assembly. Removing the attribute restores the copy.",
+            HelpBase + "dwarf104");
+
+        /// <summary>
         ///     <c>[Reinterpret]</c> on a member took the block copy, and by doing so did NOT call a conversion
         ///     the element pair would otherwise have resolved to — a user-declared method on the mapper, or a
         ///     user-defined conversion operator between the element types.

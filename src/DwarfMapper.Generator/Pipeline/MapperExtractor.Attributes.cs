@@ -22,6 +22,31 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Every <c>[MapShare("Member")]</c> on a mapping method, as the caller wrote it.
+        /// </summary>
+        /// <remarks>
+        ///     The names come back RAW — never escaped. They are COMPARED against destination member names
+        ///     (<c>TryPlanShare</c>'s <c>ShareMembers.Contains</c>) and printed into <c>DWARF104</c>; escaping is
+        ///     positional, and an <c>@</c> that leaks into a comparison is how a diagnostic came to refuse a
+        ///     member that was plainly mapped. Emission is the only place the <c>@</c> belongs, and the share
+        ///     emits the DESTINATION member's own escaped name via <c>MemberMap.EmitTargetName</c>, never this
+        ///     string.
+        /// </remarks>
+        private static List<string> ReadShareMembers(ISymbol method)
+        {
+            var members = new List<string>();
+            foreach (var attr in method.GetAttributes())
+                if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapShareFqn &&
+                    attr.ConstructorArguments.Length == 1 &&
+                    attr.ConstructorArguments[0].Value is string m)
+                {
+                    members.Add(m);
+                }
+
+            return members;
+        }
+
+        /// <summary>
         ///     Every well-formed <c>[MapCollectionKey("Collection", "Key")]</c> on a mapping method, as written.
         /// </summary>
         /// <remarks>

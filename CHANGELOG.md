@@ -53,6 +53,39 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **A provably immutable collection is now SHARED rather than copied, automatically.** Where a member has the
+  same type on both sides and that type cannot be mutated through any reference —
+  `ImmutableArray<T>`, `ImmutableList<T>`, `ImmutableHashSet<T>`, `ImmutableDictionary<K,V>` and the rest of
+  the `System.Collections.Immutable` family, `string`, or a `sealed` type whose every instance member is
+  get-only or `init`-only and whose member types are themselves proven — the generated code assigns the
+  source's reference instead of building a new collection. No attribute, no option: the condition is one the
+  generator can decide, so it decides it.
+
+  Behaviour is unchanged in every case, including the null one: the assignment carries a guard
+  (`?? ImmutableList<T>.Empty`, or `.IsDefault ? ImmutableArray<T>.Empty : …`) that reproduces the copying
+  helper's `NullCollectionStrategy.AsEmpty` arm from a cached singleton, so nothing is allocated on either
+  branch. One shape gets **better**: a `default(ImmutableArray<T>)` source used to reach
+  `ImmutableArray.CreateRange` and throw `InvalidOperationException`; it now produces the empty array the
+  strategy always promised.
+
+  **The proof does not accept an interface, and that is deliberate.** `IReadOnlyList<T>` says read-only and
+  guarantees nothing — a `List<T>` behind it is still a `List<T>` at run time, and a source that mutates it
+  after the map would silently change the destination too. Those members are still copied.
+
+- **`[MapShare("Member")]` — share a reference the automatic proof cannot see through.** For an interface, an
+  unsealed class, or a type from an assembly whose members the proof cannot follow, this asserts what the
+  generator cannot establish, exactly as `[Reinterpret]` asserts a memory layout the blit proof declines to
+  confirm. What it cannot assert away is a fact the generator can SEE: a settable property, a writable field,
+  an event or an array anywhere in the reachable graph is refused with `DWARF104`.
+
+- **`DWARF104` (Error) — `[MapShare]` names a member that cannot be shared.** Reported when the member is
+  provably mutable ("not immutable: sharing would alias mutable state"), names no writable destination
+  member, maps two different types (a share performs no conversion at all), has no allocation-free empty
+  value to answer a null source with, or is mapped under `NullCollectionStrategy.AsNull`, whose
+  null-preserving contract the share does not implement. **Remedy:** remove the attribute — it costs exactly
+  one copy — or make the shape provable and delete the attribute afterwards, because the automatic path takes
+  it from there.
+
 - **`DWARF107` (Warning) — a converter you declared returns a nullable reference, and its result is stored
   where null is forbidden.** `partial ChildDto? ToDto(Child c)` feeding a non-nullable `ChildDto Inner`,
   `List<ChildDto>`, `Dictionary<string, ChildDto>`, constructor parameter, span element or async-stream

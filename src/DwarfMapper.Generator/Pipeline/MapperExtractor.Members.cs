@@ -140,7 +140,11 @@ namespace DwarfMapper.Generator.Pipeline
             // only whether a same-named source member existed, never whether the mapper had disowned it — so
             // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
             // which is the DESTINATION set.
-            HashSet<string>? ignoredSourceMembers = null)
+            HashSet<string>? ignoredSourceMembers = null,
+            // Destination members the caller asked to SHARE with [MapShare], read by TryPlanShare. Optional, and
+            // an absent list means "the caller forced nothing" rather than "no share at all": the AUTOMATIC share
+            // is a property of the TYPES and needs no directive, exactly as the blit needs no [Reinterpret].
+            List<string>? shareMembers = null)
         {
             // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
             // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -250,6 +254,7 @@ namespace DwarfMapper.Generator.Pipeline
                 enumPolicy,
                 nullStrategy,
                 reinterpretMembers,
+                new HashSet<string>(shareMembers ?? [], StringComparer.Ordinal),
                 consumedCtorParams,
                 requiredMustInitialize,
                 nestedRegistry,
@@ -328,6 +333,43 @@ namespace DwarfMapper.Generator.Pipeline
                     else if (!writableNames.Contains(rm))
                     {
                         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, rm));
+                    }
+            }
+
+            // The same rule for [MapShare], and for the same reason: a directive naming a member that does not
+            // exist is a typo, and a typo that copies silently is exactly the "accepted it, changed nothing, said
+            // nothing" shape. Kept beside its [Reinterpret] twin rather than in TryPlanShare, because TryPlanShare
+            // is only ever called for a member that WAS matched — a name matching nothing never reaches it.
+            if (shareMembers is not null && shareMembers.Count > 0)
+            {
+                var shareWritable =
+                    new HashSet<string>(WritableMembers(targetType, compilation, options.AllowNonPublic).Select(m => m.Name),
+                        StringComparer.Ordinal);
+                foreach (var sm in shareMembers)
+                    if (ignores.Contains(sm))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm));
+                    }
+                    else if (mapValues is not null &&
+                             mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
+                    {
+                        // [MapValue] claims the member before auto-matching ever looks at it, so the share would
+                        // never be consulted — and the member IS writable, so the name check below would pass it
+                        // in silence. Named here because "the caller wrote a directive that did nothing" is the
+                        // failure this id exists for, not merely the mutable-shape one.
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                            location,
+                            $"[MapShare] member '{sm}' is also assigned by [MapValue], which supplies the value " +
+                            "outright; there is no source reference left to share — remove one of them",
+                            MemberName: sm));
+                    }
+                    else if (!shareWritable.Contains(sm))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                            location,
+                            $"[MapShare] member '{sm}' does not name a writable destination member of " +
+                            $"'{targetType.ToDisplayString()}'",
+                            MemberName: sm));
                     }
             }
 

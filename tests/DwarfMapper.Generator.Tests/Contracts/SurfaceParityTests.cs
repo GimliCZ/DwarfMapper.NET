@@ -509,12 +509,18 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         change someone must look at, and a NEW cause is a slot that went missing wearing a verdict
         ///         that says nothing can be done about it.
         ///     </para>
+        ///     <para>
+        ///         Re-measured 2026-09-07 (round 29 T3.1): 68 -> 72, total 116 -> 120. [MapShare] is a method-level
+        ///         directive with a multiplicity axis, so it renders two cases at each of the two sites that
+        ///         declare no mapping method to carry it. Structural, and it moved for the same reason
+        ///         [Reinterpret]'s four cells are already in this count.
+        ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
             ["registry-has-no-mapper-class"] = 48,
-            ["no-mapping-method"] = 68
+            ["no-mapping-method"] = 72
         };
 
         /// <summary>

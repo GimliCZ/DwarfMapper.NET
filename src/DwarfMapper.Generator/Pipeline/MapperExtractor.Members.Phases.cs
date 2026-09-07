@@ -331,6 +331,42 @@ namespace DwarfMapper.Generator.Pipeline
                     ? new HashSet<string>(acc.Synthesized.Keys, StringComparer.Ordinal)
                     : null;
 
+                // The share, on a [MapProperty] rename. Skipped when the caller named a converter or a format:
+                // both TRANSFORM the value, and a share performs no conversion at all, so honouring the share
+                // over them would drop the transform silently. See TryPlanShare.
+                var transformsTheValue = useMethod is not null ||
+                                         (req.StringFormats is not null && req.StringFormats.ContainsKey(tgtName));
+
+                // ...and standing aside SILENTLY is the other half of the same mistake. A caller who wrote both
+                // [MapShare] and Use= wrote one directive that does nothing, which is precisely the "accepted
+                // it, changed nothing, said nothing" shape this round exists to remove. Report which one won.
+                if (transformsTheValue && req.ShareMembers.Contains(tgtName))
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                        req.Location,
+                        $"[MapShare] member '{tgtName}' also carries a [MapProperty] that TRANSFORMS its value " +
+                        (useMethod is not null ? "(Use=)" : "(StringFormat=)") +
+                        "; a share performs no conversion at all, so the two cannot both apply — remove one of them",
+                        MemberName: tgtName));
+                }
+
+                if (!transformsTheValue &&
+                    TryPlanShare(srcMatch,
+                        tgtType,
+                        req.Options.NullAsNull,
+                        req.ShareMembers.Contains(tgtName),
+                        req.Location,
+                        tgtName,
+                        acc.Diagnostics,
+                        out var explicitSharePlan))
+                {
+                    acc.Result.Add(new MemberMap(tgtName,
+                        srcName,
+                        ShareEmptyFallback: explicitSharePlan.EmptyFallback,
+                        ShareGuardsDefault: explicitSharePlan.GuardsDefault));
+                    continue;
+                }
+
                 if (TryResolveConversion(req.Compilation,
                         srcMatch,
                         tgtType,
@@ -807,6 +843,25 @@ namespace DwarfMapper.Generator.Pipeline
                         req.Location,
                         target.Name,
                         MemberName: target.Name));
+                    continue;
+                }
+
+                // [MapShare], and the automatic share the immutability proof authorises. Decided BEFORE the
+                // resolver runs, not after: resolving first would synthesize a __DwarfMapColl_* helper that
+                // nothing then calls, and the aggregate emitter writes every helper the table holds.
+                if (TryPlanShare(source.Type,
+                        target.Type,
+                        req.Options.NullAsNull,
+                        req.ShareMembers.Contains(target.Name),
+                        req.Location,
+                        target.Name,
+                        acc.Diagnostics,
+                        out var sharePlan))
+                {
+                    acc.Result.Add(new MemberMap(target.Name,
+                        source.Name,
+                        ShareEmptyFallback: sharePlan.EmptyFallback,
+                        ShareGuardsDefault: sharePlan.GuardsDefault));
                     continue;
                 }
 

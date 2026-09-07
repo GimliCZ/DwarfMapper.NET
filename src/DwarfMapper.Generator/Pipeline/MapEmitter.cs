@@ -1431,6 +1431,25 @@ namespace DwarfMapper.Generator.Pipeline
             // all (see MemberMap.SourceAccessExpression).
             var srcAccess = member.SourceAccessExpression ?? paramName + "." + member.EmitSourceName;
 
+            // [MapShare] / the automatic share: assign the SOURCE REFERENCE, calling no helper at all. The
+            // guard restores the one thing the helper did besides copying — its `if (src is null) return Empty;`
+            // arm — and names a cached singleton, so the shared path allocates nothing on either branch. See
+            // MemberMap.ShareEmptyFallback for why the guard is not optional and why the two forms differ.
+            if (member.ShareEmptyFallback is not null && member.ConverterMethod is null)
+            {
+                if (member.ShareGuardsDefault)
+                {
+                    sb.Append(srcAccess).Append(".IsDefault ? ").Append(member.ShareEmptyFallback)
+                        .Append(" : ").Append(srcAccess);
+                }
+                else
+                {
+                    sb.Append(srcAccess).Append(" ?? ").Append(member.ShareEmptyFallback);
+                }
+
+                return;
+            }
+
             // [MapProperty(NullSubstitute=)]: coalesce a null source member to a constant (direct members only).
             if (member.NullSubstituteLiteral is not null && member.ConverterMethod is null)
             {

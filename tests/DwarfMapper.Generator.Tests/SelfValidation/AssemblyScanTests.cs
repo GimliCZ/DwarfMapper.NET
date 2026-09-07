@@ -57,8 +57,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // reader searching the log for DWARF102 will find a view diagnostic, and an id that means two
             // things in two places is exactly the confusion this block exists to prevent. (DWARF108, which
             // the same phase allocated, was likewise unshipped and is simply unallocated again.)
+            //
+            // DWARF104 left in round 29 T3.1, claimed by [MapShare] ("Invalid [MapShare] target"). The plan had
+            // pencilled it in for the dense-enum-key misuse; that task has not landed and the share needed a
+            // refusal id, so it took the reservation the block exists to hand out. The plan text is stale on
+            // this point rather than contradicted: the dense-enum task will allocate a fresh id when it lands.
             "DWARF102",
-            "DWARF104",
             "DWARF105"
         };
     }

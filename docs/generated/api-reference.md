@@ -375,6 +375,15 @@ Configures a member mapping for a specific (TSource → TTarget) pair from the c
 | `Use` | `String` | — | Optional name of a conversion method on the mapper that transforms the source value into the destination type (takes the source member type, returns the destination member type). |
 | `When` | `String` | — | Optional bool-returning predicate method (takes the source) that guards the assignment. An invalid predicate is DWARF050 (same validation as the method-level twin). |
 
+### attribute `MapShareAttribute`
+
+Assigns the named member's source reference to the destination instead of copying it, for a shape the automatic immutability proof cannot see through. Apply to a mapping method.
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `Member` | `String` | — | Name of the destination member to share. |
+| `TypeId` | `Object` | — |  |
+
 ### attribute `MapToAttribute`
 
 Declares that the annotated plain type maps to one or more destination types, without a partial mapper class. The generator emits static extension methods (source.MapTo<TTarget>() and source.To{Target}()) for each declared target, with the same completeness gate and conversion engine as the class model. Per-member configuration uses MapPropertyAttribute / MapIgnoreAttribute on the source members.

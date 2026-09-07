@@ -46,6 +46,13 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "HeteroFlattenGraph", "__DwarfMap_FlatNodeDispatch_"
                 },
                 {
+                    // The ASSERTED share, and deliberately not the proven one. `Proven = a.Proven ?? …` is what
+                    // the automatic path emits with no attribute in sight, so a marker matching it would pass
+                    // whether [MapShare] was read or not. `Asserted` is an IReadOnlyList the proof refuses on
+                    // principle: the only way that member reaches a bare assignment is the attribute firing.
+                    "MapShare", "Asserted = a.Asserted ?? global::System.Array.Empty<global::Demo.Badge>()"
+                },
+                {
                     "Flatten", "City = "
                 },
                 {

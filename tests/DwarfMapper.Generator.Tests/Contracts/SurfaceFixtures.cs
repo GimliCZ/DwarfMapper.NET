@@ -234,6 +234,23 @@ namespace DwarfMapper.Generator.Tests.Contracts
                                                                     public sealed class Dst { public int Id { get; set; } public uint[] Data { get; set; } = System.Array.Empty<uint>(); }
                                                                     """;
 
+        // An IReadOnlyList<T> of the SAME element type on both sides. Two things make this the shape [MapShare]
+        // needs and no other fixture is: the member types are identical (a share performs no conversion, so a
+        // differing pair could never be shared), and the declared type is an INTERFACE — which the immutability
+        // proof refuses on principle, because a List<T> behind IReadOnlyList<T> is still a List<T> at run time.
+        // That refusal is exactly what leaves the automatic path silent here and the attribute with something to
+        // force, so the cell measures the directive rather than the shape.
+        //
+        // The element is a sealed get-only class rather than a string or an int: a provably-mutable element would
+        // make [MapShare] report DWARF104 instead of acting, and the cell would read Refused for a reason that
+        // has nothing to do with the endpoint under test.
+        [SurfaceProbe("shareable-readonly-member")]
+        private static readonly string ShareableReadOnlyMember = """
+                                                                 public sealed class Badge { public Badge(string n) { Name = n; } public string Name { get; } }
+                                                                 public sealed class Src { public int Id { get; set; } public System.Collections.Generic.IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
+                                                                 public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
+                                                                 """;
+
         // A real base/derived HIERARCHY on both sides, which is the only shape [MapDerivedType] has anything to
         // say about: it registers a dispatch arm from a DERIVED source type to a DERIVED destination type on a
         // method whose parameter is the base. Against the flat pair the sampled arguments were

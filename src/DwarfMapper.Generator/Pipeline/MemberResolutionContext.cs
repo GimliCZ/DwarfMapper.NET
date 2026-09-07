@@ -62,6 +62,10 @@ namespace DwarfMapper.Generator.Pipeline
             EnumPolicy EnumPolicy,
             NullStrategy NullStrategy,
             List<string> ReinterpretMembers,
+            // Destination members carrying an explicit [MapShare]. Empty, never null: "the caller forced nothing"
+            // is a real answer every pass reads the same way, and a nullable set here would put a `?? false` at
+            // each of them.
+            HashSet<string> ShareMembers,
             HashSet<string>? ConsumedCtorParams,
             HashSet<string>? RequiredMustInitialize,
             NestedMappingRegistry? NestedRegistry,

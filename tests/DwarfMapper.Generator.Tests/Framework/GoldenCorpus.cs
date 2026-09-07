@@ -76,6 +76,24 @@ namespace DwarfMapper.Generator.Tests.Framework
                                          [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<Vec3> src, Span<Vec3Dst> dst); }
                                          """, "DwarfGenerator");
 
+            // Round 29 T3.1: the share, in both of its modes, because the two take DIFFERENT decisions in the
+            // same method and only a case carrying both pins that they are different. `Proven` is an
+            // ImmutableList of a sealed get-only element, which the proof accepts and shares with no attribute;
+            // `Asserted` is an IReadOnlyList of the same element, which the proof refuses on principle (an
+            // interface is not a guarantee) and which only [MapShare] can share; `Copied` is the same interface
+            // WITHOUT the attribute, and it must keep the helper — the manifest is what will notice if the
+            // automatic path ever starts accepting an interface.
+            yield return ("MapShare", """
+                                      using DwarfMapper;
+                                      using System.Collections.Generic;
+                                      using System.Collections.Immutable;
+                                      namespace Demo;
+                                      public sealed class Badge { public Badge(string n) { Name = n; } public string Name { get; } }
+                                      public class A { public ImmutableList<Badge> Proven { get; set; } = ImmutableList<Badge>.Empty; public IReadOnlyList<Badge> Asserted { get; set; } = System.Array.Empty<Badge>(); public IReadOnlyList<Badge> Copied { get; set; } = System.Array.Empty<Badge>(); }
+                                      public class B { public ImmutableList<Badge> Proven { get; set; } = ImmutableList<Badge>.Empty; public IReadOnlyList<Badge> Asserted { get; set; } = System.Array.Empty<Badge>(); public IReadOnlyList<Badge> Copied { get; set; } = System.Array.Empty<Badge>(); }
+                                      [DwarfMapper] public partial class M { [MapShare("Asserted")] public partial B Map(A a); }
+                                      """, "DwarfGenerator");
+
             yield return ("AsyncStream", """
                                          using DwarfMapper;
                                          using System.Collections.Generic;

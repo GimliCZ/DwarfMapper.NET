@@ -2118,6 +2118,67 @@ type, which was never eligible) are enforced in both places:
   allocation is.
 - **Once per element pair per mapper**, however many members map that pair.
 ---
+## dwarf104
+**Invalid [MapShare] target** · Error
+
+`[MapShare("X")]` asks the mapper to assign the **source's own reference** to `X` instead of copying it, so
+the two objects share one instance afterwards. That is a mapping only when nothing reachable through the
+reference can be written. This error says the member you named cannot be shared.
+
+You will usually never see it, because **you rarely need the attribute at all**: where the two sides have the
+same type and that type is provably immutable — an `ImmutableArray<T>`, an `ImmutableList<T>`, a `sealed`
+type whose every instance member is get-only or `init`-only and whose member types are themselves proven —
+the generator already shares the reference, with no attribute and no option. A statically decidable
+optimization should not have to be asked for.
+
+**What the generator refuses, and what it takes your word for.** Three tiers, and the middle one is why the
+attribute exists:
+
+| The proof says | Automatic | `[MapShare]` |
+|---|---|---|
+| **Proven immutable** — sealed, every member get-only or `init`-only, member types proven | shares | shares (the attribute is redundant, and harmless) |
+| **Unprovable** — an interface, an unsealed class, a type whose members the proof cannot follow, a reference cycle | copies | **shares, on your assertion** |
+| **Provably mutable** — a settable property, a writable field, an event, or an array anywhere in the graph | copies | **DWARF104** |
+
+`IReadOnlyList<T>` is in the middle row, and that placement is the whole design. It is an **interface, not a
+guarantee**: a `List<T>` assigned to it is still a `List<T>` at run time, and if the source mutates it after
+the map, the destination sees the change. Two object graphs you believe are independent are not, and nothing
+will tell you. So the automatic path does not accept it, and this attribute is where a caller who knows the
+instance is never mutated says so — the same bargain `[Reinterpret]` offers for a memory layout the blit
+proof declines to confirm.
+
+<!-- fence-exempt: the sample shows the shape that is REFUSED, so it has no compiling counterpart to snippet from -->
+```csharp
+public sealed class Loose { public string Name { get; set; } = ""; }   // a setter — provably mutable
+
+[DwarfMapper]
+public partial class M
+{
+    [MapShare("Items")]              // DWARF104 — not immutable: sharing would alias mutable state
+    public partial Dst Map(Src s);
+}
+```
+
+**Fix:** remove the attribute. It costs exactly one copy, which is what every member did before the share
+existed. If you want the share, make the shape provable: seal the type, make its members get-only or
+`init`-only, and use `ImmutableArray<T>` or `ImmutableList<T>` rather than an interface — and then you can
+delete the attribute too, because the automatic path takes it from there.
+
+**The other three things this error says**, all with the same remedy:
+
+- **The member does not exist.** `[MapShare("Bagdes")]` naming no writable destination member is a typo, and
+  a typo that copies silently is the failure this project treats as worse than a build break.
+- **The two sides are different types.** A share performs *no conversion at all*, so `ImmutableList<T>` to
+  `ImmutableArray<T>` is not something it can do.
+- **There is no allocation-free empty value.** The share replaces a helper whose null arm returns an empty
+  collection (`NullCollectionStrategy.AsEmpty`), and it reproduces that arm with a cached singleton —
+  `ImmutableList<T>.Empty`, `Array.Empty<T>()`. A type exposing no such value would need an allocation to
+  answer a null source, and a share whose worst case is the copy it replaced is not worth having.
+
+`NullCollectionStrategy.AsNull` is refused for the same family of reasons: its null-preserving contract is
+the collection converter's, and the share does not implement it.
+
+---
 ## dwarf106
 **[Reinterpret] takes the block copy instead of a declared conversion or directive** · Info
 

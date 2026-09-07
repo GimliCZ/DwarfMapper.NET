@@ -28,13 +28,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 71 | 7 | 32,784 | 2,322 | **7.1 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 42 | 6 | 3,437 | 944 | **27.5 %** | 73.9 % |
+| `DwarfMapper.Generator` | 73 | 7 | 33,860 | 2,370 | **7.0 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 43 | 6 | 3,523 | 944 | **26.8 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **137** | **22** | **40,773** | **4,634** | **11.4 %** | |
+| **all** | **140** | **22** | **41,935** | **4,682** | **11.2 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -65,6 +65,24 @@ round-29 work landed either side of the endpoint, so the generator reads 32,784 
 recorded before it, and 2,322 mutated lines against 2,289 — the numerator moved in
 `Pipeline/MapperExtractor.Members.Phases.cs`, which the pipeline leg already covers, and not one of the
 withdrawn files was ever inside a `mutate` glob. Shares: the generator 7.1 %, the whole of `src/` 11.4 %.
+
+**Re-measured in full again 2026-09-07 (round 29, T3.1)**, which added `[MapShare]`: two generator files —
+`Pipeline/ImmutabilityProof.cs` (the deep-immutability proof, 451 lines) and
+`Pipeline/MapperExtractor.Share.cs` (the per-member decision, 161 lines), both **outside** every `mutate`
+glob — and the runtime's `MapShareAttribute.cs` (86 lines, likewise outside). File counts 71 → 73 and
+42 → 43, 137 → 140 overall. The numerator moved by 48 lines in
+`Pipeline/MapperExtractor.Members.Phases.cs` and `Pipeline/MemberResolutionContext.cs`, which the pipeline
+leg already covers. The generator's share reads 7.0 % where it read 7.1 %, the runtime's 26.8 % where it
+read 27.5 %, and the headline 11.2 % where it read 11.4 %. **The measurement is the whole table again, not
+an increment**: the line columns had drifted between the last re-measure and this one, which is the drift the
+file-count pin cannot see and the reason this document is re-measured rather than adjusted.
+
+**The proof itself is not in a mutation leg, and that is worth stating rather than leaving to the table.**
+`ImmutabilityProof` is the component whose wrong answer is worst in this feature — a false `Proven` shares a
+mutable object and nothing afterwards reports it — and it sits in the 93 % of the generator no leg covers.
+What guards it instead is a per-verdict test set (`MapShareTests`, `MapShareRuntimeTests`) and the golden
+manifest's `feat:MapShare` case, which carries a proven member, an asserted one and a copied one in one
+method precisely so that a verdict flipping in either direction moves a pinned byte.
 
 **`DwarfMapper.CodeFixes` drops from 100 % to 53.2 %, and that is the honest number rather than a regression
 nobody noticed.** T2.3 did add the new provider to `stryker-config.codefixes.json` and ran the leg
