@@ -380,7 +380,12 @@ namespace DwarfMapper.Generator.Pipeline
             // report through — so a refusal names exactly the applications this apply path would have acted on.
             foreach (var (collectionMember, keyMember) in ReadCollectionKeys(method))
             {
-                var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.EmitTargetName, collectionMember));
+                // The RAW name, not EmitTargetName: `collectionMember` is the string the consumer wrote in the
+                // attribute, so it is `event` and never `@event`. Matching the escaped form made
+                // [MapCollectionKey("event", …)] report DWARF074 "is not a mapped destination member" against a
+                // member that plainly was one — the mirror image of the emission defect, an escape leaking into
+                // a COMPARISON, and reachable only for a keyword-named member (every other name is identity).
+                var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.TargetName, collectionMember));
                 if (idx < 0)
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid,

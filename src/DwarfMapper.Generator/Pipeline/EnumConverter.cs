@@ -250,7 +250,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                         if (targetNames.Contains(m.Name))
                         {
-                            w.Line(Fq(src) + "." + m.Name + " => " + Fq(tgt) + "." + m.Name + ",");
+                            w.Line(Fq(src) + "." + Identifiers.Escape(m.Name) + " => " + Fq(tgt) + "." + Identifiers.Escape(m.Name) + ",");
                         }
                     }
 
@@ -314,10 +314,10 @@ namespace DwarfMapper.Generator.Pipeline
                             continue;
                         }
 
-                        var srcMember = Fq(src) + "." + m.Name;
+                        var srcMember = Fq(src) + "." + Identifiers.Escape(m.Name);
                         using (w.Block("if ((v & " + srcMember + ") == " + srcMember + ")"))
                         {
-                            w.Line("__r |= " + Fq(tgt) + "." + m.Name + ";");
+                            w.Line("__r |= " + Fq(tgt) + "." + Identifiers.Escape(m.Name) + ";");
                             w.Line("__rest &= unchecked((" + underlying + ")~(" + underlying + ")" + srcMember + ");");
                         }
                     }
@@ -610,7 +610,7 @@ namespace DwarfMapper.Generator.Pipeline
                             }
 
                             var text = flags ? m.Name : SerializedName(m, stringSource);
-                            w.Line(Fq(src) + "." + m.Name + " => \"" + Escape(text) + "\",");
+                            w.Line(Fq(src) + "." + Identifiers.Escape(m.Name) + " => \"" + Escape(text) + "\",");
                         }
 
                         w.Line("_ => v.ToString(),");
@@ -666,7 +666,7 @@ namespace DwarfMapper.Generator.Pipeline
                             continue;
                         }
 
-                        w.Line("\"" + Escape(text) + "\" => " + Fq(tgt) + "." + m.Name + ",");
+                        w.Line("\"" + Escape(text) + "\" => " + Fq(tgt) + "." + Identifiers.Escape(m.Name) + ",");
                     }
 
                     w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),");
@@ -712,7 +712,7 @@ namespace DwarfMapper.Generator.Pipeline
                             var first = true;
                             foreach (var m in EnumMembers(tgt))
                             {
-                                w.Line((first ? "if" : "else if") + " (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\"" + m.Name + "\"), global::System.StringComparison.Ordinal)) __r |= " + Fq(tgt) + "." + m.Name + ";");
+                                w.Line((first ? "if" : "else if") + " (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\"" + m.Name + "\"), global::System.StringComparison.Ordinal)) __r |= " + Fq(tgt) + "." + Identifiers.Escape(m.Name) + ";");
                                 first = false;
                             }
 

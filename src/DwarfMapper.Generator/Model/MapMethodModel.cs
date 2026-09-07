@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 
 namespace DwarfMapper.Generator.Model
 {
@@ -270,5 +271,57 @@ namespace DwarfMapper.Generator.Model
         string? ReturnTypeSignature = null,
         string? UpdateTargetTypeSignature = null,
         bool ReturnIsNullableRef = false,
-        string AsyncStreamTargetElementFullName = "") : IEquatable<MapMethodModel>;
+        string AsyncStreamTargetElementFullName = "") : IEquatable<MapMethodModel>
+    {
+        /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
+        /// <remarks>
+        ///     <para>
+        ///         The raw field stays, and stays raw, because it is this method's IDENTITY as much as its
+        ///         spelling: <see cref="MemberMap.ConverterMethod" /> is matched against it by ordinal equality
+        ///         to build the call graph, the DWARF060 same-source collision pass keys on it, the depth
+        ///         companion is <c>GeneratedNames.Depth + MethodName</c>, and
+        ///         <c>GeneratedNames.IsObjectMap(MethodName)</c> asks whether the generator synthesized it.
+        ///         Escaping at construction would make every one of those comparisons miss for exactly the
+        ///         consumer whose method is called <c>@class</c>.
+        ///     </para>
+        ///     <para>
+        ///         <see cref="Identifiers.Escape" /> and not <c>EscapeTypeName</c>: a method may be called
+        ///         <c>record</c> or <c>partial</c> with no escape at all, and widening would churn every golden.
+        ///     </para>
+        /// </remarks>
+        public string EmitMethodName => Identifiers.Escape(MethodName);
+
+        /// <summary><see cref="ParameterName" /> as it must be written into emitted C#.</summary>
+        /// <remarks>
+        ///     The raw field is read by the extra-parameter matcher and by DWARF047's unused-parameter check,
+        ///     which compare against <c>IParameterSymbol.Name</c> and must keep seeing the unescaped spelling.
+        /// </remarks>
+        public string EmitParameterName => Identifiers.Escape(ParameterName);
+
+        /// <summary><see cref="UpdateTargetParameterName" /> as it must be written into emitted C#.</summary>
+        public string EmitUpdateTargetParameterName => Identifiers.Escape(UpdateTargetParameterName);
+
+        /// <summary><see cref="SpanTargetParameterName" /> as it must be written into emitted C#.</summary>
+        public string EmitSpanTargetParameterName => Identifiers.Escape(SpanTargetParameterName);
+
+        /// <summary>
+        ///     <see cref="AsyncCancellationParam" /> as it must be written into emitted C#, or <c>null</c> when
+        ///     the user declared no token parameter.
+        /// </summary>
+        public string? EmitAsyncCancellationParam =>
+            AsyncCancellationParam is null ? null : Identifiers.Escape(AsyncCancellationParam);
+
+        /// <summary>
+        ///     <see cref="FactoryMethod" /> as it must be written into emitted C#, or <c>null</c> when the pair
+        ///     constructs its destination itself.
+        /// </summary>
+        public string? EmitFactoryMethod =>
+            FactoryMethod is null ? null : Identifiers.Escape(FactoryMethod);
+
+        /// <summary>
+        ///     <see cref="BeforeHooks" /> as they must be written into emitted C# — a <c>[BeforeMap]</c> method
+        ///     the consumer named <c>@class</c> is called by name from the generated body.
+        /// </summary>
+        public IEnumerable<string> EmitBeforeHooks => BeforeHooks.Select(Identifiers.Escape);
+    }
 }

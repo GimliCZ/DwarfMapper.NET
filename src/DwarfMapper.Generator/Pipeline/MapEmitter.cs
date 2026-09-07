@@ -27,13 +27,13 @@ namespace DwarfMapper.Generator.Pipeline
             // yields two unrelated types, not a partial pair (CS0759 / CS8795 out of generated code). The body
             // below keeps its own indentation — cosmetic in a generated file, and re-indenting it would churn
             // every snapshot for no benefit.
-            foreach (var containing in model.ContainingTypes)
+            foreach (var containing in model.EmitContainingTypes)
             {
                 sb.AppendLine(containing);
                 sb.AppendLine("{");
             }
 
-            sb.Append(model.Accessibility).Append(" partial class ").AppendLine(model.ClassName);
+            sb.Append(model.Accessibility).Append(" partial class ").AppendLine(model.EmitClassName);
             sb.AppendLine("{");
 
             // I17: a method whose own completeness gate refused it (DWARF001) is recorded in the model but
@@ -54,11 +54,11 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var rt in model.RoundTrips)
             {
                 sb.AppendLine();
-                sb.Append("    public void VerifyRoundTrip_").Append(rt.ForwardName)
+                sb.Append("    public void VerifyRoundTrip_").Append(rt.EmitVerifierSuffix)
                     .AppendLine("(int seed = 12345, int iterations = 100)");
                 sb.Append("        => global::DwarfMapper.Testing.RoundTrip.Verify<")
                     .Append(rt.SourceTypeFullName).Append(", ").Append(rt.DtoTypeFullName).Append(">(")
-                    .Append(rt.ForwardName).Append(", ").Append(rt.BackwardName).AppendLine(", seed, iterations);");
+                    .Append(rt.EmitForwardName).Append(", ").Append(rt.EmitBackwardName).AppendLine(", seed, iterations);");
             }
 
             // A static constructor that nameof-references each MapConfig convention method. They are read by the
@@ -68,9 +68,9 @@ namespace DwarfMapper.Generator.Pipeline
             // own (see the extractor's guard), so this can never collide (CS0111).
             if (model.ConventionMethodNames.Count > 0)
             {
-                sb.Append("    static ").Append(model.ClassName).AppendLine("()");
+                sb.Append("    static ").Append(model.EmitClassName).AppendLine("()");
                 sb.AppendLine("    {");
-                foreach (var cfg in model.ConventionMethodNames)
+                foreach (var cfg in model.EmitConventionMethodNames)
                     sb.Append("        _ = nameof(").Append(cfg).AppendLine(");");
                 sb.AppendLine("    }");
             }
@@ -225,8 +225,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // [GenerateMap]-synthesized entries are emitted as a FULL method (no `partial` keyword),
                 // since the user never declared a partial to implement.
                 sb.Append(indent).Append(method.Accessibility).Append(method.EmitAsNonPartial ? " " : " partial ")
-                    .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-                    .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(method.ParameterName);
+                    .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.EmitMethodName)
+                    .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(method.EmitParameterName);
                 foreach (var ep in method.ExtraParameters) sb.Append(", ").Append(ep); // Phase 5: extra params
                 sb.AppendLine(")");
             }
@@ -234,16 +234,16 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 // Depth-guarded synthesized private method: extra (DwarfRefContext ctx, int depth) params.
                 sb.Append(indent).Append("private ")
-                    .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-                    .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName)
+                    .Append(method.ReturnTypeFullName).Append(' ').Append(method.EmitMethodName)
+                    .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.EmitParameterName)
                     .Append(", global::DwarfMapper.DwarfRefContext ctx, int depth")
                     .AppendLine(")");
             }
             else
             {
                 sb.Append(indent).Append("private ")
-                    .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-                    .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName)
+                    .Append(method.ReturnTypeFullName).Append(' ').Append(method.EmitMethodName)
+                    .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.EmitParameterName)
                     .AppendLine(")");
             }
 
@@ -259,20 +259,20 @@ namespace DwarfMapper.Generator.Pipeline
                     // the paramName is captured via [CallerArgumentExpression].
                 {
                     sb.Append(indent).Append("    global::System.ArgumentNullException.ThrowIfNull(")
-                        .Append(method.ParameterName).AppendLine(");");
+                        .Append(method.EmitParameterName).AppendLine(");");
                 }
                 else if (method.ReturnIsReferenceType)
                     // Synthesized private nested mapper with a REFERENCE target: null source → null target
                     // (defensive, not a throw). The calling mapper owns the outer null-check.
                 {
-                    sb.Append(indent).Append("    if (").Append(method.ParameterName)
+                    sb.Append(indent).Append("    if (").Append(method.EmitParameterName)
                         .AppendLine(" is null) return null!;");
                 }
                 else
                     // Synthesized private nested mapper with a VALUE-TYPE target: cannot return null
                     // (would be CS0037), so a null source is a loud failure rather than a silent default.
                 {
-                    sb.Append(indent).Append("    if (").Append(method.ParameterName)
+                    sb.Append(indent).Append("    if (").Append(method.EmitParameterName)
                         .Append(" is null) throw new global::System.InvalidOperationException(\"Cannot map a null '")
                         .Append(method.ParameterTypeFullName)
                         .Append("' to value-type '").Append(method.ReturnTypeFullName).AppendLine("'.\");");
@@ -320,8 +320,8 @@ namespace DwarfMapper.Generator.Pipeline
             if (method.IsTopLevelCollectionConversion && method.Members.Count == 1)
             {
                 var tlm = method.Members[0];
-                var p = method.ParameterName;
-                sb.Append(indent).Append("    return ").Append(tlm.ConverterMethod!).Append('(').Append(p);
+                var p = method.EmitParameterName;
+                sb.Append(indent).Append("    return ").Append(tlm.EmitConverterMethod!).Append('(').Append(p);
                 if (tlm.ConverterNeedsDepthCtx)
                 {
                     sb.Append(", ").Append(ctxVarName).Append(", 0");
@@ -336,7 +336,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (method.IsProjection)
             {
                 sb.Append(indent).Append("    return global::System.Linq.Queryable.Select(")
-                    .Append(method.ParameterName).Append(", __s => ");
+                    .Append(method.EmitParameterName).Append(", __s => ");
 
                 var projMembers = method.ProjectionMembers;
 
@@ -408,8 +408,8 @@ namespace DwarfMapper.Generator.Pipeline
             var willUsePreservePath = method.IsPreserveMode && method.ParameterIsReferenceType && (isSynthesizedRecursive || isPublicWithCtx);
             if (!willUsePreservePath && !willUseSetNullPath)
             {
-                foreach (var before in method.BeforeHooks)
-                    sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.ParameterName)
+                foreach (var before in method.EmitBeforeHooks)
+                    sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.EmitParameterName)
                         .AppendLine(");");
             }
 
@@ -476,21 +476,21 @@ namespace DwarfMapper.Generator.Pipeline
 
             // ── [MapConstructor]: construction delegated to a user factory ──────────────
             // var __dwarf_target = Factory(src);  then assign each settable member as a statement.
-            if (method.FactoryMethod is not null)
+            if (method.EmitFactoryMethod is not null)
             {
-                sb.Append(indent).Append("    var __dwarf_target = ").Append(method.FactoryMethod)
-                    .Append('(').Append(method.ParameterName).AppendLine(");");
+                sb.Append(indent).Append("    var __dwarf_target = ").Append(method.EmitFactoryMethod)
+                    .Append('(').Append(method.EmitParameterName).AppendLine(");");
                 foreach (var member in method.Members)
                 {
                     if (member.WhenPredicate is not null)
                     {
-                        sb.Append(indent).Append("    if (").Append(member.WhenPredicate).Append('(')
-                            .Append(method.ParameterName).Append(")) __dwarf_target.").Append(member.EmitTargetName)
+                        sb.Append(indent).Append("    if (").Append(member.EmitWhenPredicate).Append('(')
+                            .Append(method.EmitParameterName).Append(")) __dwarf_target.").Append(member.EmitTargetName)
                             .Append(" = ");
                     }
                     else if (member.SkipIfSourceNull)
                     {
-                        sb.Append(indent).Append("    if (").Append(method.ParameterName).Append('.')
+                        sb.Append(indent).Append("    if (").Append(method.EmitParameterName).Append('.')
                             .Append(member.EmitSourceName)
                             .Append(" is not null) __dwarf_target.").Append(member.EmitTargetName).Append(" = ");
                     }
@@ -499,16 +499,16 @@ namespace DwarfMapper.Generator.Pipeline
                         sb.Append(indent).Append("    __dwarf_target.").Append(member.EmitTargetName).Append(" = ");
                     }
 
-                    AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
+                    AppendValueExpression(sb, member, method.EmitParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(";");
                 }
 
                 foreach (var after in method.AfterHooks)
                 {
-                    sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                    sb.Append(indent).Append("    ").Append(after.EmitName).Append('(');
                     if (after.TakesSource)
                     {
-                        sb.Append(method.ParameterName).Append(", ");
+                        sb.Append(method.EmitParameterName).Append(", ");
                     }
 
                     if (after.TargetByRef)
@@ -537,7 +537,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     var arg = ctorArgs[i];
                     sb.Append(indent).Append("        ").Append(arg.EmitTargetName).Append(": ");
-                    AppendValueExpression(sb, arg, method.ParameterName, ctxVarName, depthPassFwd);
+                    AppendValueExpression(sb, arg, method.EmitParameterName, ctxVarName, depthPassFwd);
                     if (i < ctorArgs.Count - 1)
                     {
                         sb.AppendLine(",");
@@ -562,7 +562,7 @@ namespace DwarfMapper.Generator.Pipeline
                         }
 
                         sb.Append(indent).Append("        ").Append(member.EmitTargetName).Append(" = ");
-                        AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
+                        AppendValueExpression(sb, member, method.EmitParameterName, ctxVarName, depthPassFwd);
                         sb.AppendLine(",");
                     }
 
@@ -588,7 +588,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     sb.Append(indent).Append("        ").Append(member.EmitTargetName).Append(" = ");
-                    AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
+                    AppendValueExpression(sb, member, method.EmitParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
                 }
 
@@ -601,7 +601,7 @@ namespace DwarfMapper.Generator.Pipeline
                 EmitDeferredAssignments(sb,
                     method,
                     "__dwarf_target",
-                    method.ParameterName,
+                    method.EmitParameterName,
                     ctxVarName,
                     depthPassFwd,
                     indent + "    ");
@@ -611,10 +611,10 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 foreach (var after in method.AfterHooks)
                 {
-                    sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                    sb.Append(indent).Append("    ").Append(after.EmitName).Append('(');
                     if (after.TakesSource)
                     {
-                        sb.Append(method.ParameterName).Append(", ");
+                        sb.Append(method.EmitParameterName).Append(", ");
                     }
 
                     if (after.TargetByRef)
@@ -663,7 +663,7 @@ namespace DwarfMapper.Generator.Pipeline
             string depthPassFwd,
             bool isPublicMethod)
         {
-            var p = method.ParameterName;
+            var p = method.EmitParameterName;
 
             // Step 1: Identity-map check — if already mapped, return the cached target.
             // IMPORTANT: this MUST come before the depth guard (B1 fix).
@@ -693,7 +693,7 @@ namespace DwarfMapper.Generator.Pipeline
             // A cached node returns immediately above; hooks must not fire again for the same source.
             if (isPublicMethod)
             {
-                foreach (var before in method.BeforeHooks)
+                foreach (var before in method.EmitBeforeHooks)
                     sb.Append(indent).Append("    ").Append(before).Append('(').Append(p).AppendLine(");");
             }
 
@@ -710,9 +710,9 @@ namespace DwarfMapper.Generator.Pipeline
             // the factory. Found while fixing R18-03: the declared pair used the factory and this path did not.
             var hasCtorArgs = method.ConstructorArguments.Count > 0;
 
-            if (method.FactoryMethod is not null)
+            if (method.EmitFactoryMethod is not null)
             {
-                sb.Append(indent).Append("    var __dwarf_t = ").Append(method.FactoryMethod)
+                sb.Append(indent).Append("    var __dwarf_t = ").Append(method.EmitFactoryMethod)
                     .Append('(').Append(p).AppendLine(");");
             }
             else if (hasCtorArgs)
@@ -772,7 +772,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 foreach (var after in method.AfterHooks)
                 {
-                    sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                    sb.Append(indent).Append("    ").Append(after.EmitName).Append('(');
                     if (after.TakesSource)
                     {
                         sb.Append(p).Append(", ");
@@ -798,9 +798,9 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static void EmitAsyncStreamMapMethod(StringBuilder sb, MapMethodModel method, string indent)
         {
-            var src = method.ParameterName;
+            var src = method.EmitParameterName;
 
-            var ct = method.AsyncCancellationParam;
+            var ct = method.EmitAsyncCancellationParam;
 
             // The return slot carries the declared annotation for the same reason the parameter does, and here it
             // is load-bearing rather than cosmetic: an IAsyncEnumerable<Dst?> element that the loop below LIFTS
@@ -808,7 +808,7 @@ namespace DwarfMapper.Generator.Pipeline
             // IAsyncEnumerable<Dst>. IAsyncEnumerable<out T> is covariant, so the mismatch itself is silent —
             // which is exactly how the unlifted call hid it before round 29 task 2.8.
             sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
-                .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+                .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.EmitMethodName)
                 .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src);
             if (ct is not null)
                 // [EnumeratorCancellation] is what links the parameter to the token a consumer passes to
@@ -872,7 +872,7 @@ namespace DwarfMapper.Generator.Pipeline
             sb.Append(indent).Append("        yield return ")
                 .Append(CollectionConverter.ElementExpr(
                     "__item",
-                    elem?.ConverterMethod,
+                    elem?.EmitConverterMethod,
                     elem?.NullHandling ?? NullHandling.None,
                     method.AsyncStreamTargetElementFullName,
                     elem?.ConverterNeedsDepthCtx ?? false,
@@ -925,8 +925,8 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static void EmitUpdateIntoMethod(StringBuilder sb, MapMethodModel method, string indent)
         {
-            var src = method.ParameterName;
-            var dst = method.UpdateTargetParameterName;
+            var src = method.EmitParameterName;
+            var dst = method.EmitUpdateTargetParameterName;
             // Update-into declares the destination type TWICE — as the second parameter and, in the returning
             // form, as the return — and the user may annotate them independently: `partial Dst Update(Src s,
             // Dst? d)` is legal C#, and writing one string into both slots would trade the parameter's CS8611
@@ -936,7 +936,7 @@ namespace DwarfMapper.Generator.Pipeline
             var retType = method.UpdateReturnsVoid ? "void" : method.ReturnTypeSignature ?? method.ReturnTypeFullName;
 
             sb.Append(indent).Append(method.Accessibility).Append(" partial ").Append(retType).Append(' ')
-                .Append(method.MethodName).Append('(')
+                .Append(method.EmitMethodName).Append('(')
                 .Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
                 .Append(method.UpdateTargetTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
@@ -967,7 +967,7 @@ namespace DwarfMapper.Generator.Pipeline
                     .Append(method.MaxDepth.ToString(CultureInfo.InvariantCulture)).AppendLine(");");
             }
 
-            foreach (var before in method.BeforeHooks)
+            foreach (var before in method.EmitBeforeHooks)
                 sb.Append(indent).Append("    ").Append(before).Append('(').Append(src).AppendLine(");");
 
             foreach (var member in method.Members)
@@ -1000,7 +1000,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var after in method.AfterHooks)
             {
-                sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                sb.Append(indent).Append("    ").Append(after.EmitName).Append('(');
                 if (after.TakesSource)
                 {
                     sb.Append(src).Append(", ");
@@ -1038,7 +1038,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var srcAccess = src + "." + member.EmitSourceName;
             var dstAccess = dst + "." + member.EmitTargetName;
-            var key = member.UpsertKeyMember;
+            var key = member.EmitUpsertKeyMember;
             var keyType = member.UpsertKeyTypeFqn;
 
             sb.Append(indent).Append("if (").Append(srcAccess).AppendLine(" is not null)");
@@ -1089,7 +1089,7 @@ namespace DwarfMapper.Generator.Pipeline
             string depthPassFwd,
             bool isPublicMethod)
         {
-            var p = method.ParameterName;
+            var p = method.EmitParameterName;
 
             // Back-edge guard: a source already on the active mapping stack → break cycle with null.
             // null! suppresses the nullable-return warning (the caller assigns it to a member; a
@@ -1114,7 +1114,7 @@ namespace DwarfMapper.Generator.Pipeline
             // enter so they fire exactly once for the root.
             if (isPublicMethod)
             {
-                foreach (var before in method.BeforeHooks)
+                foreach (var before in method.EmitBeforeHooks)
                     sb.Append(indent).Append("        ").Append(before).Append('(').Append(p).AppendLine(");");
             }
 
@@ -1205,7 +1205,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 foreach (var after in method.AfterHooks)
                 {
-                    sb.Append(indent).Append("        ").Append(after.Name).Append('(');
+                    sb.Append(indent).Append("        ").Append(after.EmitName).Append('(');
                     if (after.TakesSource)
                     {
                         sb.Append(p).Append(", ");
@@ -1239,7 +1239,7 @@ namespace DwarfMapper.Generator.Pipeline
             MapMethodModel method,
             string indent)
         {
-            var p = method.ParameterName;
+            var p = method.EmitParameterName;
             var arms = method.DerivedTypeArms;
             var hasAfter = method.AfterHooks.Count > 0;
 
@@ -1252,7 +1252,7 @@ namespace DwarfMapper.Generator.Pipeline
             var depthPassFwd = isSynthesizedRecursive ? "depth + 1" : "0";
 
             // Before hooks (if any)
-            foreach (var before in method.BeforeHooks)
+            foreach (var before in method.EmitBeforeHooks)
                 sb.Append(indent).Append("    ").Append(before).Append('(').Append(p).AppendLine(");");
 
             // Switch expression
@@ -1265,7 +1265,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var arm in arms)
             {
                 sb.Append(indent).Append("        ")
-                    .Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).Append("(__s");
+                    .Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
                 if (arm.ConverterNeedsDepthCtx)
                 {
                     sb.Append(", ").Append(ctxVarName).Append(", ").Append(depthPassFwd);
@@ -1289,7 +1289,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 foreach (var after in method.AfterHooks)
                 {
-                    sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                    sb.Append(indent).Append("    ").Append(after.EmitName).Append('(');
                     if (after.TakesSource)
                     {
                         sb.Append(p).Append(", ");
@@ -1364,7 +1364,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                sb.Append(indent).Append("if (").Append(member.WhenPredicate).Append('(').Append(paramName)
+                sb.Append(indent).Append("if (").Append(member.EmitWhenPredicate).Append('(').Append(paramName)
                     .Append(")) ").Append(targetVar).Append('.').Append(member.EmitTargetName).Append(" = ");
                 AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
                 sb.AppendLine(";");
@@ -1469,12 +1469,12 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     sb.Append(srcAccess)
                         .Append(member.NullHandling == NullHandling.NullableProjectRefForgiving ? " is null ? null! : " : " is null ? null : ")
-                        .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(extraArgs).Append(')').Append(resultBang);
+                        .Append(member.EmitConverterMethod).Append('(').Append(srcAccess).Append(extraArgs).Append(')').Append(resultBang);
                 }
                 else
                 {
                     sb.Append(srcAccess).Append(".HasValue ? ")
-                        .Append(member.ConverterMethod).Append('(').Append(srcAccess).Append(".Value")
+                        .Append(member.EmitConverterMethod).Append('(').Append(srcAccess).Append(".Value")
                         .Append(extraArgs).Append(')').Append(resultBang).Append(" : null");
                 }
 
@@ -1512,12 +1512,12 @@ namespace DwarfMapper.Generator.Pipeline
                     // Both converter and null-handling: Conv(src.X ?? throw ...) or Conv(src.X.GetValueOrDefault())
                     if (member.ConverterNeedsDepthCtx)
                     {
-                        sb.Append(member.ConverterMethod).Append('(').Append(innerAccess)
+                        sb.Append(member.EmitConverterMethod).Append('(').Append(innerAccess)
                             .Append(", ").Append(ctxVarName).Append(", ").Append(depthArg).Append(')').Append(callBang);
                     }
                     else
                     {
-                        sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')').Append(callBang);
+                        sb.Append(member.EmitConverterMethod).Append('(').Append(innerAccess).Append(')').Append(callBang);
                     }
                 }
                 else
@@ -1545,14 +1545,14 @@ namespace DwarfMapper.Generator.Pipeline
                     var needsBang = member.ConverterNeedsDepthCtx || (member.SourceIsNullableRef && (GeneratedNames.IsSynthesized(member.ConverterMethod) || member.ConverterParamIsNonNullableRef));
                     if (member.ConverterNeedsDepthCtx)
                     {
-                        sb.Append(member.ConverterMethod).Append('(')
+                        sb.Append(member.EmitConverterMethod).Append('(')
                             .Append(srcAccess)
                             .Append(needsBang ? "!" : "").Append(", ")
                             .Append(ctxVarName).Append(", ").Append(depthArg).Append(')').Append(callBang);
                     }
                     else
                     {
-                        sb.Append(member.ConverterMethod).Append('(')
+                        sb.Append(member.EmitConverterMethod).Append('(')
                             .Append(srcAccess)
                             .Append(needsBang ? "!)" : ")").Append(callBang);
                     }

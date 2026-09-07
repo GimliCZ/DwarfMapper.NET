@@ -61,7 +61,7 @@ namespace DwarfMapper.Generator.Pipeline
                         method.ReturnTypeSignature ?? method.ReturnTypeFullName,
                         extName,
                         mapperFullName,
-                        method.MethodName,
+                        method.EmitMethodName,
                         method.ParameterIsPublicType,
                         method.ReturnIsPublicType));
                 }
@@ -246,7 +246,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                     fields.Add(mapperFullName);
                     regs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName, FieldName(mapperFullName),
-                        method.MethodName, method.ReturnIsNullableRef));
+                        method.EmitMethodName, method.ReturnIsNullableRef));
 
                     if (!model.RegisterCollectionShapes)
                     {
@@ -257,7 +257,7 @@ namespace DwarfMapper.Generator.Pipeline
                         if (seenCollectionPairs.Add(method.ParameterTypeFullName + " " + dest))
                         {
                             collectionRegs.Add((method.ParameterTypeFullName, dest, FieldName(mapperFullName),
-                                method.MethodName, asArray, method.ReturnIsNullableRef));
+                                method.EmitMethodName, asArray, method.ReturnIsNullableRef));
                         }
                 }
 
@@ -272,7 +272,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                     fields.Add(mapperFullName);
                     updateRegs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName,
-                        FieldName(mapperFullName), method.MethodName));
+                        FieldName(mapperFullName), method.EmitMethodName));
                 }
 
                 foreach (var provide in model.HandWrittenProvides
@@ -298,7 +298,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     handWrittenRegs.Add((provide.SourceTypeFullName, provide.TargetTypeFullName, invoker,
-                        provide.MethodName));
+                        provide.EmitMethodName));
                 }
             }
 
@@ -688,7 +688,11 @@ namespace DwarfMapper.Generator.Pipeline
                 ? fullyQualified.Substring("global::".Length)
                 : fullyQualified;
             var dot = s.LastIndexOf('.');
-            return dot >= 0 ? s.Substring(dot + 1) : s;
+            // Unescaped, because the caller CONCATENATES onto this ("To" + …). The type name arrives from
+            // ToDisplayString and is therefore already escaped where it needs to be, so a target type the
+            // consumer called @event yields "@event" here and "To@event" there — an @ in the middle of an
+            // identifier is a parse error, not an escape. See Identifiers.Unescaped.
+            return Identifiers.Unescaped(dot >= 0 ? s.Substring(dot + 1) : s);
         }
 
         /// <summary>Stable, unique private-field identifier for a mapper's cached singleton.</summary>
@@ -702,7 +706,10 @@ namespace DwarfMapper.Generator.Pipeline
             // CS0102 out of generated code. Both call sites dedupe by exact FQN, so only a genuine collision of
             // different names can reach here. A hash of the ORIGINAL name disambiguates while staying stable
             // across processes (a GetHashCode would not be).
-            return "__" + s.Replace('.', '_') + "_" + StableHash.Fnv1a(s);
+            // Unescaped for the same reason as ShortName: the dots of an already-escaped fully-qualified name
+            // are flattened into underscores here, so a mapper the consumer called @class would otherwise give
+            // the field the un-parseable name __Demo_@class_<hash>.
+            return "__" + Identifiers.Unescaped(s).Replace('.', '_').Replace("@", string.Empty) + "_" + StableHash.Fnv1a(s);
         }
 
         /// <summary>One candidate convenience extension: <c>{ExtName}(this {Source}) => {Mapper}.{Method}(...)</c>.</summary>

@@ -149,5 +149,32 @@ namespace DwarfMapper.Generator.Model
 
         /// <summary><see cref="SourceName" /> as it must be written into emitted C#. See <see cref="EmitTargetName" />.</summary>
         public string EmitSourceName => Identifiers.EscapePath(SourceName);
+
+        /// <summary>
+        ///     <see cref="ConverterMethod" /> as it must be written into emitted C# — the name is emitted as a
+        ///     CALL, and it may be a consumer's own method (a discovered user conversion, a
+        ///     <c>[MapProperty(Use = …)]</c> target) rather than a synthesized one.
+        /// </summary>
+        /// <remarks>
+        ///     The raw field remains the call-graph edge label: <c>MapperExtractor</c> matches it against
+        ///     <see cref="MapMethodModel.MethodName" /> by ordinal equality to find self-recursion, to inject the
+        ///     depth companion, and to re-synthesize helpers, so escaping it in place would make those edges miss.
+        /// </remarks>
+        public string? EmitConverterMethod =>
+            ConverterMethod is null ? null : Identifiers.Escape(ConverterMethod);
+
+        /// <summary>
+        ///     <see cref="WhenPredicate" /> as it must be written into emitted C# — a
+        ///     <c>[MapProperty(When = …)]</c> predicate, emitted as the condition of an <c>if</c>.
+        /// </summary>
+        public string? EmitWhenPredicate =>
+            WhenPredicate is null ? null : Identifiers.Escape(WhenPredicate);
+
+        /// <summary>
+        ///     <see cref="UpsertKeyMember" /> as it must be written into emitted C# — a
+        ///     <c>[MapCollectionKey]</c> key member, read off both the source and the target element.
+        /// </summary>
+        public string? EmitUpsertKeyMember =>
+            UpsertKeyMember is null ? null : Identifiers.EscapePath(UpsertKeyMember);
     }
 }

@@ -45,7 +45,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // Tests a LENGTH, not a name. The empty target name is the constructor-only projection sentinel; the
             // escaped form has the same length for every name that is not a keyword and one more for those that
             // are, so reading it here would be both pointless and subtly wrong.
-            "projMembers[0].TargetName.Length == 0"
+            "projMembers[0].TargetName.Length == 0",
+
+            // Matches the destination member against the string the CONSUMER wrote in [MapCollectionKey], which
+            // is 'event' and never '@event'. This line read EmitTargetName until 2026-09-07 and reported
+            // DWARF074 against a member that plainly was mapped — an escape leaking into a comparison, the
+            // mirror image of what this scan bans, and reachable only for a keyword-named member.
+            "StringComparer.Ordinal.Equals(m.TargetName, collectionMember)"
         ];
 
         private static string RepoRoot()

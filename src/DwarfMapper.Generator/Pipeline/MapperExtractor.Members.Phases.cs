@@ -167,7 +167,11 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    acc.Result.Add(new MemberMap(mvTgt, "", ValueExpression: mv.Use + "()"));
+                    // Escaped HERE rather than at the emitter, because what goes into the model is a finished C#
+                    // EXPRESSION that MapEmitter appends verbatim — the model-transitive shape the b888cc3 defect
+                    // had. `Use` names a method the consumer declared, so it may legally be `@class`, and the
+                    // attribute carries the bare `class` that ISymbol.Name would also have given.
+                    acc.Result.Add(new MemberMap(mvTgt, "", ValueExpression: Identifiers.Escape(mv.Use) + "()"));
                 }
                 else
                 {

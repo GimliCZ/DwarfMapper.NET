@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
+
 namespace DwarfMapper.Generator.Model
 {
     /// <summary>One arm of a derived-type dispatch switch.</summary>
@@ -14,5 +16,13 @@ namespace DwarfMapper.Generator.Model
         string SrcFqn,
         string ConverterMethod,
         bool ConverterNeedsDepthCtx = false)
-        : IEquatable<DerivedTypeArm>;
+        : IEquatable<DerivedTypeArm>
+    {
+        /// <summary><see cref="ConverterMethod" /> as it must be written into emitted C#.</summary>
+        /// <remarks>
+        ///     The arm's converter may be a user-declared map method, so the consumer chose the name. The raw
+        ///     field stays the call-graph edge label, exactly as <see cref="MemberMap.ConverterMethod" /> does.
+        /// </remarks>
+        public string EmitConverterMethod => Identifiers.Escape(ConverterMethod);
+    }
 }

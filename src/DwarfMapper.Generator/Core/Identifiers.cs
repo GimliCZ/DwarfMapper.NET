@@ -103,6 +103,31 @@ namespace DwarfMapper.Generator.Core
         }
 
         /// <summary>
+        ///     The name with any leading <c>@</c> removed — for a name the generator is about to COMPOSE a new
+        ///     identifier out of, rather than emit whole.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The opposite direction from <see cref="Escape" />, and it exists because applying the wrong one
+        ///         of the two is how this class of defect kept recurring. The convenience facade builds its
+        ///         extension method as <c>"To" + ShortName(returnType)</c>, and the return type arrives from
+        ///         <c>ToDisplayString</c> — which is ALREADY escaped, correctly, by the compiler's own format. So
+        ///         the short name of <c>global::Demo.@event</c> is <c>@event</c>, and concatenating produces
+        ///         <c>To@event</c>: an <c>@</c> in the MIDDLE of an identifier is not an escape, it is a parse
+        ///         error. The same applies to the cached-mapper field name, which flattens the dots of a
+        ///         fully-qualified name into underscores.
+        ///     </para>
+        ///     <para>
+        ///         A composed name can never itself need escaping — <c>To…</c> and <c>__…</c> are not keywords
+        ///         and no keyword contains one — so stripping is the whole fix and adding is always wrong here.
+        ///     </para>
+        /// </remarks>
+        public static string Unescaped(string name)
+        {
+            return name.Length > 0 && name[0] == '@' ? name.Substring(1) : name;
+        }
+
+        /// <summary>
         ///     The same, for a dotted member PATH — every segment independently.
         /// </summary>
         /// <remarks>

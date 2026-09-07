@@ -17,10 +17,10 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static void EmitSpanMapMethod(StringBuilder sb, MapMethodModel method, string indent)
         {
-            var src = method.ParameterName;
-            var dst = method.SpanTargetParameterName;
+            var src = method.EmitParameterName;
+            var dst = method.EmitSpanTargetParameterName;
 
-            sb.Append(indent).Append(method.Accessibility).Append(" partial void ").Append(method.MethodName)
+            sb.Append(indent).Append(method.Accessibility).Append(" partial void ").Append(method.EmitMethodName)
                 .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
                 .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
