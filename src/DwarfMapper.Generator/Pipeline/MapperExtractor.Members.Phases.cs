@@ -334,23 +334,41 @@ namespace DwarfMapper.Generator.Pipeline
                 // The share, on a [MapProperty] rename. Skipped when the caller named a converter or a format:
                 // both TRANSFORM the value, and a share performs no conversion at all, so honouring the share
                 // over them would drop the transform silently. See TryPlanShare.
-                var transformsTheValue = useMethod is not null ||
-                                         (req.StringFormats is not null && req.StringFormats.ContainsKey(tgtName));
+                // Every [MapProperty] modifier that does something to the value or to the ASSIGNMENT. Use= and
+                // StringFormat= transform the value; NullSubstitute= and When= are read further down, in Phase
+                // 8, which a share reaching `continue` above them would never get to.
+                //
+                // That last clause is the whole reason this is a set rather than the two-way test it started
+                // as: with only Use=/StringFormat= here, `[MapProperty("Items","Items", When = nameof(P))]` on
+                // a provable member emitted an UNCONDITIONAL assignment and the predicate vanished — the exact
+                // defect the EndpointContractMatrix preamble was written about ("each bound their rename, so
+                // completeness was satisfied, and then the modifier was dropped"), which that matrix cannot see
+                // here because its fixture has no collection member.
+                var hasExtras = lookups.ExtrasByTarget.TryGetValue(tgtName, out var shareExtras) &&
+                                (shareExtras.HasNullSub || shareExtras.When is not null);
+                var modifiesTheAssignment = useMethod is not null ||
+                                            (req.StringFormats is not null && req.StringFormats.ContainsKey(tgtName)) ||
+                                            hasExtras;
 
-                // ...and standing aside SILENTLY is the other half of the same mistake. A caller who wrote both
-                // [MapShare] and Use= wrote one directive that does nothing, which is precisely the "accepted
-                // it, changed nothing, said nothing" shape this round exists to remove. Report which one won.
-                if (transformsTheValue && req.ShareMembers.Contains(tgtName))
+                // Standing aside for the modifier is right; standing aside SILENTLY is the other half of the
+                // same mistake. A caller who wrote both wrote one directive that does nothing, which is the
+                // "accepted it, changed nothing, said nothing" shape this round exists to remove. The AUTOMATIC
+                // path falls through to the copy with no diagnostic — the modifier is honoured there, exactly
+                // as it was yesterday — and only the caller who ASKED for the share is told.
+                if (modifiesTheAssignment && req.ShareMembers.Contains(tgtName))
                 {
+                    var which = useMethod is not null ? "Use=" :
+                        hasExtras && shareExtras.When is not null ? "When=" :
+                        hasExtras ? "NullSubstitute=" : "StringFormat=";
                     acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
                         req.Location,
-                        $"[MapShare] member '{tgtName}' also carries a [MapProperty] that TRANSFORMS its value " +
-                        (useMethod is not null ? "(Use=)" : "(StringFormat=)") +
-                        "; a share performs no conversion at all, so the two cannot both apply — remove one of them",
+                        $"[MapShare] member '{tgtName}' also carries a [MapProperty] that modifies its " +
+                        $"assignment ({which}); a share assigns the source reference and nothing else, so the " +
+                        "two cannot both apply — remove one of them",
                         MemberName: tgtName));
                 }
 
-                if (!transformsTheValue &&
+                if (!modifiesTheAssignment &&
                     TryPlanShare(srcMatch,
                         tgtType,
                         req.Options.NullAsNull,

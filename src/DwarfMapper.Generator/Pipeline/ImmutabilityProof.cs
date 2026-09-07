@@ -252,7 +252,14 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Re-entry means a reference cycle. Answer Unprovable and unwind rather than recursing forever --
             // the brief's non-negotiable: terminate, and refuse on a cycle.
-            if (!visiting.Add(named.OriginalDefinition))
+            //
+            // Keyed on the CONSTRUCTED type, not the original definition. A true cycle recurs at the identical
+            // constructed symbol (a Node whose Next is a Node), so termination is unaffected; keying on the
+            // definition additionally refused ImmutableList<ImmutableList<int>>, where the inner instantiation
+            // is a DIFFERENT type that merely shares a generic definition -- reported as a "reference cycle",
+            // which was a false statement about a perfectly ordinary nested collection. Unbounded instantiation
+            // (a Node<Node<T>> chain) is what MaxTypesVisited is for, and it still catches it.
+            if (!visiting.Add(named))
             {
                 reason = $"'{type.ToDisplayString()}' takes part in a reference cycle, which the proof refuses rather than following";
                 return ImmutabilityVerdict.Unprovable;
@@ -264,7 +271,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
             finally
             {
-                visiting.Remove(named.OriginalDefinition);
+                visiting.Remove(named);
             }
         }
 

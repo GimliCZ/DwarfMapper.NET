@@ -331,6 +331,82 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void A_When_predicate_survives_the_share()
+        {
+            // Review fix, and the one that was RED. The share's branch in ResolveExplicitMaps `continue`s
+            // above Phase 8, where NullSubstitute= and When= are read — so a provable member carrying
+            // [MapProperty(When = ...)] was emitted as an UNCONDITIONAL assignment and the predicate simply
+            // vanished. Verbatim the defect the EndpointContractMatrix preamble was written about, and one
+            // that matrix cannot see here because its fixture has no collection member.
+            var gen = GeneratorAssert.CompilesClean(Shapes + """
+                                                            public sealed class A { public ImmutableList<Badge> Items { get; set; } = null!; }
+                                                            public sealed class B { public ImmutableList<Badge> Items { get; set; } = null!; }
+                                                            [DwarfMapper] public partial class M
+                                                            {
+                                                                [MapProperty("Items", "Items", When = nameof(Wanted))]
+                                                                public partial B Map(A a);
+                                                                public static bool Wanted(A a) => a.Items.Count > 0;
+                                                            }
+                                                            """);
+
+            Assert.Contains("if (Wanted(a))", gen, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MapShare_beside_a_When_predicate_is_refused_rather_than_ignored()
+        {
+            var (diagnostics, _) = GeneratorTestHarness.Run(Shapes + """
+                                                                     public sealed class A { public ImmutableList<Badge> Items { get; set; } = null!; }
+                                                                     public sealed class B { public ImmutableList<Badge> Items { get; set; } = null!; }
+                                                                     [DwarfMapper] public partial class M
+                                                                     {
+                                                                         [MapShare("Items")]
+                                                                         [MapProperty("Items", "Items", When = nameof(Wanted))]
+                                                                         public partial B Map(A a);
+                                                                         public static bool Wanted(A a) => a.Items.Count > 0;
+                                                                     }
+                                                                     """);
+
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARF104" &&
+                     d.GetMessage(CultureInfo.InvariantCulture).Contains("When=", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void MapShare_on_a_member_that_was_never_copied_says_nothing()
+        {
+            // Review fix. TryPlanShare used to run the proof BEFORE asking whether the member takes a helper
+            // at all, so [MapShare] on a same-type MUTABLE class reported "sharing would alias mutable
+            // state" — about a member the generator raw-assigns by default and goes on raw-assigning the
+            // moment the attribute is deleted. The refusal was true of nothing: there was no copy to refuse.
+            var (diagnostics, gen) = GeneratorAssert.CompilesCleanWithDiagnostics(Shapes + """
+                                                                                          public sealed class A { public Loose Child { get; init; } = null!; }
+                                                                                          public sealed class B { public Loose Child { get; init; } = null!; }
+                                                                                          [DwarfMapper] public partial class M { [MapShare("Child")] public partial B Map(A a); }
+                                                                                          """);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF104");
+            Assert.Contains("Child = a.Child", gen, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_nested_immutable_collection_is_proven_and_not_mistaken_for_a_cycle()
+        {
+            // Review fix. The visiting set was keyed on the ORIGINAL DEFINITION, so the inner
+            // ImmutableList<int> re-entered the outer ImmutableList<...>'s entry and the proof reported a
+            // "reference cycle" about a perfectly ordinary nested collection — the safe direction (a copy),
+            // and a false statement. Keyed on the CONSTRUCTED type it is proven, and a true cycle still
+            // terminates, because a true cycle recurs at the IDENTICAL constructed symbol.
+            var gen = GeneratorAssert.CompilesClean(Shapes + """
+                                                            public sealed class A { public ImmutableList<ImmutableList<int>> Rows { get; init; } = null!; }
+                                                            public sealed class B { public ImmutableList<ImmutableList<int>> Rows { get; init; } = null!; }
+                                                            [DwarfMapper] public partial class M { public partial B Map(A a); }
+                                                            """);
+
+            Assert.DoesNotContain("__DwarfMapColl", gen, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void A_declared_converter_for_the_member_still_wins_over_the_share()
         {
             // The share must never take a member away from a conversion the caller wrote. Use= names the

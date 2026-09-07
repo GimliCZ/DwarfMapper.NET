@@ -85,6 +85,21 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
+            // Not a collection or dictionary member: the resolver already assigns it directly (an identity
+            // conversion is implicit, and HasImplicitConversion is consulted before the auto-nest arm), so
+            // there is no helper to remove and no guard to write. A [MapShare] here is honoured by the code
+            // that was already going to be emitted, which is why it is not a diagnostic.
+            //
+            // ASKED BEFORE Classify, and the order is the fix to a message that lied. With the proof first,
+            // [MapShare("Child")] on a same-type MUTABLE class reported "sharing would alias mutable state" —
+            // about a member the generator raw-assigns by default, and goes on raw-assigning the moment the
+            // attribute is deleted. The refusal was true of nothing: there was no copy to refuse.
+            if (!CollectionConverter.TryResolve(srcType, tgtType, out _, out _, out _, nullAsNull) &&
+                !DictionaryConverter.TryResolve(srcType, tgtType, out _, out _, out _, out _, out _))
+            {
+                return false;
+            }
+
             var verdict = ImmutabilityProof.Classify(tgtType, out var reason);
             if (verdict == ImmutabilityVerdict.Mutable)
             {
@@ -126,15 +141,6 @@ namespace DwarfMapper.Generator.Pipeline
                         MemberName: targetName));
                 }
 
-                return false;
-            }
-
-            // Not a collection or dictionary member: the resolver already assigns it directly (an identity
-            // conversion is implicit), so there is no helper to remove and no guard to write. A [MapShare] here
-            // is honoured by the code that was already going to be emitted, which is why it is not a diagnostic.
-            if (!CollectionConverter.TryResolve(srcType, tgtType, out _, out _, out _, nullAsNull) &&
-                !DictionaryConverter.TryResolve(srcType, tgtType, out _, out _, out _, out _, out _))
-            {
                 return false;
             }
 
