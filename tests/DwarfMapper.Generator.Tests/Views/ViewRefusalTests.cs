@@ -282,5 +282,71 @@ namespace DwarfMapper.Generator.Tests.Views
             Assert.True(byId.Count == 0,
                 "A pair declared as both a map and a view reported these ids more than once: " + string.Join(", ", byId));
         }
+
+        /// <summary>
+        ///     A NESTED pair that is itself refused leaves the parent naming a view type nothing emits. DWARF102
+        ///     is ScopedToMethod, so the mapper still emits — which only holds if what it emits COMPILES, and
+        ///     `public InnerDtoView Inner => new InnerDtoView(_s.Inner)` beside no `InnerDtoView` is CS0246 in a
+        ///     file the consumer cannot edit. The parent has to be withdrawn with the child.
+        /// </summary>
+        [Fact]
+        public void A_view_whose_nested_view_was_refused_is_withdrawn_rather_than_left_dangling()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public struct DeepS { public int V { get; set; } }
+                                  public sealed class DeepDto { public int V { get; set; } }
+                                  public sealed class Inner { public DeepS Deep { get; set; } }
+                                  public sealed class InnerDto { public DeepDto Deep { get; set; } = new(); }
+                                  public sealed class Src { public int Id { get; set; } public Inner Inner { get; set; } = new(); }
+                                  public sealed class Dst { public int Id { get; set; } public InnerDto Inner { get; set; } = new(); }
+                                  [DwarfMapper]
+                                  [GenerateView<Src, Dst>]
+                                  public partial class M { }
+                                  """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+
+            Assert.Contains(diagnostics, d => d.Id == "DWARF102" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("SOURCE is a value type", StringComparison.Ordinal));
+            Assert.Contains(diagnostics, d => d.Id == "DWARF102" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("the view 'DstView' cannot be emitted", StringComparison.Ordinal));
+            Assert.DoesNotContain("InnerDtoView", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("ref struct DstView", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Two nested pairs with the SAME target collide on the view's name — a view is named after its
+        ///     target type — so the second is refused and only the first is emitted. Constructing the survivor
+        ///     with the other source's value is CS1503, which is why the withdrawal checks the nested view's
+        ///     SOURCE type and not merely that something of that name exists.
+        /// </summary>
+        [Fact]
+        public void Two_nested_pairs_sharing_a_target_withdraw_the_parent_rather_than_construct_the_wrong_view()
+        {
+            const string source = """
+                                  #nullable enable
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class Home { public string A { get; set; } = ""; }
+                                  public sealed class Office { public string A { get; set; } = ""; }
+                                  public sealed class AddressDto { public string A { get; set; } = ""; }
+                                  public sealed class Src { public Home H { get; set; } = new(); public Office W { get; set; } = new(); }
+                                  public sealed class Dst { public AddressDto H { get; set; } = new(); public AddressDto W { get; set; } = new(); }
+                                  [DwarfMapper]
+                                  [GenerateView<Src, Dst>]
+                                  public partial class M { }
+                                  """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
+
+            // The collision message names both pairs, and its remedy no longer offers [GenerateView(Name = ...)]
+            // as though a NESTED pair had an attribute to put it on.
+            var collision = Assert.Single(diagnostics.Where(d => d.Id == "DWARF102" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("would both be named", StringComparison.Ordinal)));
+            Assert.Contains("use Map for that pair", collision.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+
+            Assert.Contains(diagnostics, d => d.Id == "DWARF102" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("the view 'DstView' cannot be emitted", StringComparison.Ordinal));
+            Assert.DoesNotContain("ref struct DstView", generated, StringComparison.Ordinal);
+        }
     }
 }

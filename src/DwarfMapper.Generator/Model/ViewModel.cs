@@ -45,6 +45,13 @@ namespace DwarfMapper.Generator.Model
     ///     set rather than read off the member being emitted. Getting it wrong is CS7036 inside a
     ///     <c>.g.cs</c> the consumer cannot edit.
     /// </param>
+    /// <param name="NestedSourceTypeFullName">
+    ///     For a nested member, the source type the nested view is expected to read, <c>global::</c>-rooted.
+    ///     Carried so the post-drain prune can tell "the view named <c>AddressDtoView</c> exists" from "the view
+    ///     named <c>AddressDtoView</c> reads THIS source": a view's name is its target type's name, so two
+    ///     source types mapping to one target collide on it, and constructing the survivor with the other
+    ///     source's value is CS1503 in a <c>.g.cs</c> the consumer cannot edit.
+    /// </param>
     public sealed record ViewMemberModel(
         string Name,
         string TypeFullName,
@@ -52,7 +59,8 @@ namespace DwarfMapper.Generator.Model
         string? NestedViewTypeName = null,
         string? NestedSourceMember = null,
         bool NestedSourceIsNullable = false,
-        bool NestedViewNeedsOwner = false) : IEquatable<ViewMemberModel>;
+        bool NestedViewNeedsOwner = false,
+        string? NestedSourceTypeFullName = null) : IEquatable<ViewMemberModel>;
 
     /// <summary>
     ///     One <c>readonly ref struct</c> view to emit inside the mapper class: the create map's member

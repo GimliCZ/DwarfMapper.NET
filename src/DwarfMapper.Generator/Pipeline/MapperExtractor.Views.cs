@@ -140,7 +140,7 @@ namespace DwarfMapper.Generator.Pipeline
                 if (byName.TryGetValue(name, out var owner))
                 {
                     acc.Diagnostics.Add(ViewRefusal(loc,
-                        $"two views on this mapper would both be named '{name}': {key.Item1} -> {key.Item2} and {owner.Src} -> {owner.Tgt}. Give one of them [GenerateView(Name = \"...\")]"));
+                        $"two views on this mapper would both be named '{name}': {key.Item1} -> {key.Item2} and {owner.Src} -> {owner.Tgt}. A view is named after its TARGET type, so two source types mapping to one target collide. If both are DECLARED, give one of them [GenerateView(Name = \"...\")]; if either is reached only as a NESTED member there is no attribute on it to rename, so use Map for that pair"));
                     continue;
                 }
 
@@ -155,9 +155,76 @@ namespace DwarfMapper.Generator.Pipeline
                 }
             }
 
+            built = PruneDanglingNestedViews(built, acc, classLoc);
             foreach (var view in built) MergeReferencedHelpers(view, viewSynthesized, acc.Synthesized);
 
             acc.Views.AddRange(PropagateOwner(built));
+        }
+
+        /// <summary>
+        ///     Drops every view that names a nested view which is not there to be constructed, to a fixed point.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A parent's nested member is written when the pair is ENQUEUED; whether that pair yields a view
+        ///         is only known when it is DEQUEUED and resolved. Two things can leave the parent holding a
+        ///         reference to a view that never gets emitted, and both put a COMPILER error into a
+        ///         <c>.g.cs</c> beside the DWARF102 that explains the real problem:
+        ///     </para>
+        ///     <list type="bullet">
+        ///         <item>
+        ///             The nested pair is itself refused — its own nested member is a value type, say — so
+        ///             nothing named <c>InnerDtoView</c> is emitted and the parent's property is CS0246.
+        ///         </item>
+        ///         <item>
+        ///             Two nested pairs share a TARGET (<c>Home -&gt; AddressDto</c> and
+        ///             <c>Office -&gt; AddressDto</c>). They collide on the name, the second is refused, and the
+        ///             parent hands an <c>Office</c> to a constructor that takes a <c>Home</c> — CS1503. Which is
+        ///             why the check is name AND source type, not name alone.
+        ///         </item>
+        ///     </list>
+        ///     <para>
+        ///         DWARF102 is <c>ScopedToMethod</c>, so the mapper still emits everything else — that is the
+        ///         DWARF028/DWARF096 precedent and it is deliberate. It only holds if what is emitted COMPILES,
+        ///         which is what this pass is for. Transitive and iterated for the same reason
+        ///         <see cref="PropagateOwner" /> is: a dropped view may be some other view's child, and the
+        ///         nesting graph may be cyclic.
+        ///     </para>
+        /// </remarks>
+        private static List<ViewModel> PruneDanglingNestedViews(
+            List<ViewModel> built,
+            MapperAccumulators acc,
+            LocationInfo? classLoc)
+        {
+            var kept = new Dictionary<string, ViewModel>(StringComparer.Ordinal);
+            foreach (var view in built) kept[view.ViewTypeName] = view;
+
+            bool changed;
+            do
+            {
+                changed = false;
+                foreach (var view in kept.Values.ToList())
+                foreach (var member in view.Members)
+                {
+                    if (member.NestedViewTypeName is null)
+                    {
+                        continue;
+                    }
+
+                    if (kept.TryGetValue(member.NestedViewTypeName, out var child) && string.Equals(child.SourceTypeFullName, member.NestedSourceTypeFullName, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    acc.Diagnostics.Add(ViewRefusal(classLoc,
+                        $"the view '{view.ViewTypeName}' cannot be emitted: its member '{member.Name}' returns the nested view '{member.NestedViewTypeName}' over '{member.NestedSourceTypeFullName}', and no such view was built — the refusal that says why is reported separately. A view whose nested type is missing would not compile, so the whole view is withdrawn. Use Map for this pair"));
+                    kept.Remove(view.ViewTypeName);
+                    changed = true;
+                    break;
+                }
+            } while (changed);
+
+            return built.Where(view => kept.ContainsKey(view.ViewTypeName)).ToList();
         }
 
         /// <summary>
@@ -381,12 +448,14 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     var nestedName = nestedTarget.Name + "View";
-                    queue.Enqueue((sourceType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), nestedTarget, nestedName, loc, false));
+                    var nestedSource = sourceType.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+                    queue.Enqueue((nestedSource, nestedTarget, nestedName, loc, false));
                     viewMembers.Add(new ViewMemberModel(member.EmitTargetName,
                         nestedName,
                         NestedViewTypeName: nestedName,
                         NestedSourceMember: member.EmitSourceName,
-                        NestedSourceIsNullable: member.SourceIsNullableRef));
+                        NestedSourceIsNullable: member.SourceIsNullableRef,
+                        NestedSourceTypeFullName: nestedSource.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
                     continue;
                 }
 

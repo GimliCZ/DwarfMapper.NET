@@ -2030,7 +2030,14 @@ public partial class M { }
   by member, so there are no members to expose. **Fix:** use `Map`.
 - **Two views that would collide.** Two `[GenerateView]` over the same source type would both emit
   `View(TSource)` and differ only in return type (CS0111); two that would take the same type name are CS0102.
-  **Fix:** `[GenerateView<Src, Dst>(Name = "Row")]`, or a second mapper class.
+  A view is named after its **target** type, so this also catches two *nested* pairs that share one target —
+  `Home → AddressDto` and `Office → AddressDto` inside the same view. **Fix:** for two declared views,
+  `[GenerateView<Src, Dst>(Name = "Row")]` or a second mapper class; for a nested pair, which has no
+  attribute on it to rename, use `Map` for that pair.
+- **A nested view that could not itself be built.** A view whose member returns a nested view is withdrawn
+  along with it — otherwise the emitted property would name a type nothing declares. You get **two**
+  `dwarf102`s: the one that says why the nested pair was refused, and one naming the view that had to go with
+  it. **Fix:** the first message is the actionable one; fix that cause, or use `Map` for the outer pair.
 - **`[GenerateView]` on a co-located `[GenerateMap]` host.** That host's mapping is emitted into a separate
   generated `<Host>Mapper` type, so there is no class of yours for the view to be nested in. **Fix:** move the
   attribute to a `[DwarfMapper]` partial class.
