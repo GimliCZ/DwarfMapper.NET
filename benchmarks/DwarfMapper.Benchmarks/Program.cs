@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using AutoMapper;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
@@ -440,6 +441,63 @@ public sealed class AutoShareCopyDst
     public ImmutableArray<ShLoose> Badges { get; set; }
 }
 
+// ── Round 29 T3.2 — [MapDenseEnumKeys]: an enum-keyed dictionary indexed as an inline array.
+// Two pairs over ONE payload draw. The destination is a CLASS on both arms, deliberately: the headline
+// figure in the plan (0.09x memory) came from a probe that ALSO moved the destination from a class array to
+// a struct array, so it measures two changes at once. Here the only difference between the arms is what the
+// member IS — an [InlineArray(4)] struct that lives inside the destination object, against a
+// Dictionary<TEnum,int> that is a separate object with a bucket array and an entry array behind it. That
+// delta is this directive's own contribution and nothing else.
+//
+// DenseOre is 1-based, which is what Offset = 1 exists for: without it the array would need a fifth slot
+// for a value nothing ever uses.
+// CA1008 asks every enum for a zero member. This one deliberately has none: a 1-based enum with no "unset"
+// value is the shape Offset exists for, and adding a None = 0 would delete the very thing the pair measures
+// — the wasted slot at index 0 that Offset removes, and therefore the array's size.
+#pragma warning disable CA1008
+public enum DenseOre
+{
+    Iron = 1,
+    Copper = 2,
+    Mithril = 3,
+    Adamantine = 4
+}
+#pragma warning restore CA1008
+
+[InlineArray(4)]
+public struct DenseTally
+{
+    private int _e0;
+}
+
+public sealed class DenseSrc
+{
+    public int Id { get; set; }
+
+    public Dictionary<DenseOre, int> Yield { get; set; } = new();
+}
+
+public sealed class DenseDst
+{
+    public int Id { get; set; }
+
+    public DenseTally Yield { get; set; }
+}
+
+public sealed class DenseDictSrc
+{
+    public int Id { get; set; }
+
+    public Dictionary<DenseOre, int> Yield { get; set; } = new();
+}
+
+public sealed class DenseDictDst
+{
+    public int Id { get; set; }
+
+    public Dictionary<DenseOre, int> Yield { get; set; } = new();
+}
+
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
 [DwarfMapper]
 public partial class DwarfM
@@ -475,6 +533,12 @@ public partial class DwarfM
     public partial AutoShareDst MapAutoShare(AutoShareSrc s); // proven element → shared, no attribute
 
     public partial AutoShareCopyDst MapAutoShareCopy(AutoShareCopySrc s); // settable element → rebuilt
+
+    // Round 29 T3.2 — the dense fill and its dictionary twin. See the type declarations above.
+    [MapDenseEnumKeys(nameof(DenseDst.Yield), Offset = 1)]
+    public partial DenseDst MapDense(DenseSrc s); // indexed into an inline array
+
+    public partial DenseDictDst MapDenseDict(DenseDictSrc s); // the same entries, rebuilt as a Dictionary
 
     // Round 25 T4 — the four halves of the two ratio pairs. Each *Blit method takes a reinterpret; each
     // *Scalar method is the same shape with renamed members, so the by-name proof fails and the element
@@ -575,6 +639,10 @@ public class MapperBenchmarks
     private ShareCopySrc _shareCopy = null!;
     private AutoShareSrc _autoShare = null!;
     private AutoShareCopySrc _autoShareCopy = null!;
+
+    // Round 29 T3.2 — the two dense arms, over one draw.
+    private DenseSrc _dense = null!;
+    private DenseDictSrc _denseDict = null!;
     private WidenSrc _widen = null!;
 
     // Round 29 T0.2 — preallocated OUTSIDE the measured method, like every span-map destination: the
@@ -698,6 +766,21 @@ public class MapperBenchmarks
         _autoShareCopy = new AutoShareCopySrc
         {
             Badges = ImmutableArray.Create(looseBadges)
+        };
+        // Round 29 T3.2 — ONE draw, handed to both dense arms: what the arms differ in is the DESTINATION
+        // member's storage, so drawing twice would let the entry values vary between them and put noise in
+        // the one number the pins read. Every declared member is present, so the fill takes every slot and
+        // the dictionary carries the same four entries.
+        var denseYield = RealisticPayloads.EnumMap<DenseOre>(16);
+        _dense = new DenseSrc
+        {
+            Id = 1,
+            Yield = denseYield
+        };
+        _denseDict = new DenseDictSrc
+        {
+            Id = 1,
+            Yield = denseYield
         };
         // Distinct salt (12) so this draw is not a correlated copy of the Set/Imm draws above.
         _numList = new NumListSrc
@@ -1194,6 +1277,25 @@ public class MapperBenchmarks
     public ShareCopyDst MapShare_Copy_Dwarf()
     {
         return _dwarf.MapShareCopy(_shareCopy);
+    }
+
+    // ── Round 29 T3.2 — [MapDenseEnumKeys]: the inline array against the dictionary it replaces ────
+    // Both destinations are classes and both arms map the SAME four entries, so the allocation delta is the
+    // Dictionary the dense arm does not build — its object, its bucket array and its entry array — and
+    // nothing else. Allocation is what this feature sells and allocation is what this repository gates
+    // exactly, so both are pinned.
+    [Benchmark]
+    [BenchmarkCategory("DenseEnum")]
+    public DenseDst DenseEnum_Dwarf()
+    {
+        return _dwarf.MapDense(_dense);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("DenseEnum")]
+    public DenseDictDst DenseEnum_Dict_Dwarf()
+    {
+        return _dwarf.MapDenseDict(_denseDict);
     }
 
     [Benchmark]
