@@ -683,5 +683,70 @@ namespace DwarfMapper.Generator.Tests.Naming
                              """;
             GeneratorAssert.CompilesClean(s);
         }
+
+        /// <summary>
+        ///     A <c>[FlattenGraph]</c> whose node LEAF and EDGE members are keyword-named.
+        /// </summary>
+        /// <remarks>
+        ///     Not in the restored 36. It was found by the emission scan rather than by anyone enumerating
+        ///     positions — <c>MapperExtractor.Flatten.Directive.cs</c> writes <c>edge.Name</c> raw into the
+        ///     synthesized BFS helper — which is the argument for a scan over a population and against a list of
+        ///     scenarios. The edge name is emitted in BOTH directions in the SAME statement: <c>__n.@event</c> is
+        ///     a member access and needs the escape, while <c>__e_event</c> is a composed local and must not have
+        ///     it, on adjacent lines.
+        /// </remarks>
+        [Fact]
+        public void P37_flatten_graph_node_leaf_and_edge_names()
+        {
+            const string s = """
+                             using System.Collections.Generic;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Node { public int @class { get; set; } public Node @event { get; set; } public List<Node> @struct { get; set; } = new(); }
+                             public class NodeDto { public int @class { get; set; } public NodeDto @event { get; set; } }
+                             public class Root { public Node @class { get; set; } }
+                             public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                             [DwarfMapper]
+                             public partial class M
+                             {
+                                 [FlattenGraph("class", "Nodes")]
+                                 public partial RootDto Map(Root r);
+                             }
+                             """;
+            GeneratorAssert.CompilesClean(s);
+        }
+
+        /// <summary>
+        ///     The same, through the HETERO arm — a node hierarchy whose edge members are keyword-named.
+        /// </summary>
+        /// <remarks>
+        ///     A second construction site of the same statement shape, in
+        ///     <c>MapperExtractor.Flatten.Hetero.cs</c>. Probed separately rather than trusted to the
+        ///     homogeneous case, because "a fix applied to one of N identical construction sites" is the hazard
+        ///     an earlier audit in this project actually found.
+        /// </remarks>
+        [Fact]
+        public void P38_flatten_graph_hetero_edge_names()
+        {
+            const string s = """
+                             using System.Collections.Generic;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public abstract class Node { public int @class { get; set; } public Node @event { get; set; } }
+                             public sealed class Leaf : Node { public string @struct { get; set; } = ""; }
+                             public class NodeDto { public int @class { get; set; } }
+                             public class LeafDto : NodeDto { public string @struct { get; set; } = ""; }
+                             public class Root { public Node @class { get; set; } }
+                             public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                             [DwarfMapper]
+                             public partial class M
+                             {
+                                 [FlattenGraph("class", "Nodes")]
+                                 [MapDerivedType(typeof(Leaf), typeof(LeafDto))]
+                                 public partial RootDto Map(Root r);
+                             }
+                             """;
+            GeneratorAssert.CompilesClean(s);
+        }
     }
 }

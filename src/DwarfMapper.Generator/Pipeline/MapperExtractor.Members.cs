@@ -960,7 +960,7 @@ namespace DwarfMapper.Generator.Pipeline
             sb.AppendLine("        {");
             foreach (var arm in arms)
             {
-                sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).Append("(__s");
+                sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
                 if (arm.ConverterNeedsDepthCtx)
                 {
                     sb.Append(", ctx, depth + 1");

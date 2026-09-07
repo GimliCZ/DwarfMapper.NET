@@ -207,7 +207,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 acc.Synthesized[kv.Key] = kv.Value;
                             }
 
-                        sbArm.Append("            ").Append(leaf.Name).Append(" = ");
+                        sbArm.Append("            ").Append(Identifiers.Escape(leaf.Name)).Append(" = ");
                         AppendFlatNodeMemberExpr(sbArm,
                             "n",
                             leaf.Name,
@@ -226,7 +226,7 @@ namespace DwarfMapper.Generator.Pipeline
                             continue;
                         }
 
-                        sbArm.Append("            ").Append(edge.Name).AppendLine(" = null,");
+                        sbArm.Append("            ").Append(Identifiers.Escape(edge.Name)).AppendLine(" = null,");
                     }
 
                     sbArm.AppendLine("        };");

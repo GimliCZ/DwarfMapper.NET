@@ -389,7 +389,7 @@ namespace DwarfMapper.Generator.Pipeline
                             acc.Synthesized[kv.Key] = kv.Value;
                         }
 
-                    sb.Append("            ").Append(leaf.Name).Append(" = ");
+                    sb.Append("            ").Append(Identifiers.Escape(leaf.Name)).Append(" = ");
                     AppendFlatNodeMemberExpr(sb,
                         "n",
                         leaf.Name,
@@ -408,7 +408,7 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    sb.Append("            ").Append(edge.Name).AppendLine(" = null,");
+                    sb.Append("            ").Append(Identifiers.Escape(edge.Name)).AppendLine(" = null,");
                 }
 
                 sb.AppendLine("        };");
@@ -491,12 +491,20 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Enqueue reachable nodes via edge members of TNode
                 foreach (var edge in edgeMembers)
+                {
+                    // The SAME name, both directions, in one statement. `__n.@event` is a MEMBER ACCESS and takes the
+                    // escape; `__e_event` is a name this generator COMPOSES, and an @ inside an identifier is a
+                    // parse error rather than an escape. Bound to two locals so the two can never be confused for
+                    // one another — the family-G mistake, made once already this round in the facade's "To" + name.
+                    var edgeAccess = Identifiers.Escape(edge.Name);
+                    var edgeLocal = Identifiers.Unescaped(edge.Name);
+
                     if (edge.IsDictValue)
                     {
                         // SF-F3: Dictionary<K,V> where V is a node — traverse values, not keys.
-                        sb.Append("            if (__n.").Append(edge.Name)
-                            .Append(" is { } __d_").Append(edge.Name)
-                            .Append(") foreach (var __kv in __d_").Append(edge.Name)
+                        sb.Append("            if (__n.").Append(edgeAccess)
+                            .Append(" is { } __d_").Append(edgeLocal)
+                            .Append(") foreach (var __kv in __d_").Append(edgeLocal)
                             .AppendLine(
                                 ") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
                     }
@@ -506,17 +514,17 @@ namespace DwarfMapper.Generator.Pipeline
                             // SF-F4: edge typed as interface/base → use `is TNode` pattern to cast
                             // and filter to only concrete TNode values (safe: we're BFS-ing a TNode graph).
                         {
-                            sb.Append("            if (__n.").Append(edge.Name)
-                                .Append(" is ").Append(nodeFq).Append(" __e_").Append(edge.Name)
-                                .Append(" && __visited.Add(__e_").Append(edge.Name)
-                                .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                            sb.Append("            if (__n.").Append(edgeAccess)
+                                .Append(" is ").Append(nodeFq).Append(" __e_").Append(edgeLocal)
+                                .Append(" && __visited.Add(__e_").Append(edgeLocal)
+                                .Append(")) __queue.Enqueue(__e_").Append(edgeLocal).AppendLine(");");
                         }
                         else
                         {
-                            sb.Append("            if (__n.").Append(edge.Name)
-                                .Append(" is { } __e_").Append(edge.Name)
-                                .Append(" && __visited.Add(__e_").Append(edge.Name)
-                                .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                            sb.Append("            if (__n.").Append(edgeAccess)
+                                .Append(" is { } __e_").Append(edgeLocal)
+                                .Append(" && __visited.Add(__e_").Append(edgeLocal)
+                                .Append(")) __queue.Enqueue(__e_").Append(edgeLocal).AppendLine(");");
                         }
                     }
                     else
@@ -524,20 +532,21 @@ namespace DwarfMapper.Generator.Pipeline
                         if (edge.NeedsNodeCast)
                             // SF-F4: collection of interface/base elements → cast each.
                         {
-                            sb.Append("            if (__n.").Append(edge.Name)
-                                .Append(" is { } __c_").Append(edge.Name)
-                                .Append(") foreach (var __xi in __c_").Append(edge.Name)
+                            sb.Append("            if (__n.").Append(edgeAccess)
+                                .Append(" is { } __c_").Append(edgeLocal)
+                                .Append(") foreach (var __xi in __c_").Append(edgeLocal)
                                 .Append(") if (__xi is ").Append(nodeFq)
                                 .AppendLine(" __x && __visited.Add(__x)) __queue.Enqueue(__x);");
                         }
                         else
                         {
-                            sb.Append("            if (__n.").Append(edge.Name)
-                                .Append(" is { } __c_").Append(edge.Name)
-                                .Append(") foreach (var __x in __c_").Append(edge.Name)
+                            sb.Append("            if (__n.").Append(edgeAccess)
+                                .Append(" is { } __c_").Append(edgeLocal)
+                                .Append(") foreach (var __x in __c_").Append(edgeLocal)
                                 .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
                         }
                     }
+                }
 
                 sb.AppendLine("        }");
                 sb.AppendLine("        return __result;");

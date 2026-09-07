@@ -693,7 +693,11 @@ namespace DwarfMapper.Generator.Pipeline
             bool needsBang,
             bool resultNeedsBang = false)
         {
-            var access = paramName + "." + memberName;
+            // Escaped HERE, once, rather than at each of this helper's call sites: `memberName` is a member of
+            // the consumer's NODE type and `conv` may be a converter method the consumer declared, and both are
+            // written into the synthesized flat-node helper verbatim.
+            var access = paramName + "." + Identifiers.EscapePath(memberName);
+            conv = conv is null ? null : Identifiers.Escape(conv);
             // Round 29 T2.9: a user-declared converter DECLARED to return a nullable reference, feeding a DTO
             // member that forbids null. Every arm below writes the call, so every arm carries the suppression;
             // it is never true without DWARF107 having been reported for the same leaf.
