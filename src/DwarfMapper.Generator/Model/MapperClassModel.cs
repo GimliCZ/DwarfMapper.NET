@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
@@ -37,11 +37,6 @@ namespace DwarfMapper.Generator.Model
     ///     the ambient registration emitter also registers each declared object map under the common collection
     ///     shapes, so a facade call over a collection resolves without a separately declared collection pair.
     /// </param>
-    /// <param name="Views">
-    ///     The <c>readonly ref struct</c> views to emit inside this mapper class - one per
-    ///     <c>[GenerateView&lt;S,T&gt;]</c>, plus one per nested pair a view reaches. Flat and deduplicated by
-    ///     view type name; see <see cref="ViewModel" /> for why nested views are siblings rather than children.
-    /// </param>
     /// <param name="HandWrittenProvides">
     ///     Hand-written methods marked <c>[ProvidesMap]</c>: shapes the generator cannot express (an object that
     ///     HOLDS a collection mapped to the collection, say) which the author wants reachable through the ambient
@@ -60,8 +55,7 @@ namespace DwarfMapper.Generator.Model
         EquatableArray<string> ContainingTypes = default,
         EquatableArray<string> ConventionMethodNames = default,
         bool RegisterCollectionShapes = true,
-        EquatableArray<HandWrittenProvide> HandWrittenProvides = default,
-        EquatableArray<ViewModel> Views = default) : IEquatable<MapperClassModel>
+        EquatableArray<HandWrittenProvide> HandWrittenProvides = default) : IEquatable<MapperClassModel>
     {
         /// <summary>
         ///     Unique per generated file. Includes the containing types: <c>Outer.M</c> and a namespace-level <c>M</c>

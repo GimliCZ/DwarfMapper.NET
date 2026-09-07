@@ -36,35 +36,12 @@ namespace DwarfMapper.Generator.Tests
                 });
         }
 
-        /// <summary>
-        ///     Every depth-≤1 cell again with a <c>[GenerateView]</c> beside the map. A view is a new emission
-        ///     site per member — the property's declared type carries the nullable annotation, the body carries
-        ///     the null-forgiving <c>!</c> and the converter call — so the question this class asks is genuinely
-        ///     reopened by it rather than already answered by the map's own cells.
-        /// </summary>
-        public static IEnumerable<object[]> ViewCells()
-        {
-            return CombinatorialSchema.ViewMatrix()
-                .Select(c => new object[]
-                {
-                    c
-                });
-        }
-
         [Theory]
         [MemberData(nameof(AllCells))]
         public void Combinatorial_cell_emits_warning_free_code(MatrixCell cell)
         {
             ArgumentNullException.ThrowIfNull(cell);
             AssertClean(cell.Source, $"combinatorial cell [{cell.BasicType} / {cell.ShapeName} / {cell.Variant}]");
-        }
-
-        [Theory]
-        [MemberData(nameof(ViewCells))]
-        public void Combinatorial_cell_with_a_view_emits_warning_free_code(MatrixCell cell)
-        {
-            ArgumentNullException.ThrowIfNull(cell);
-            AssertClean(cell.Source, $"combinatorial view cell [{cell.BasicType} / {cell.ShapeName} / {cell.Variant}]");
         }
 
         [Theory]

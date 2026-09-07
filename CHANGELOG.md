@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
@@ -52,42 +52,6 @@ so a version with no section here ships with no notes.
   factory it replaced, so no fixture capability was lost.
 
 ### Added
-
-- **`[GenerateView<TSource, TTarget>]` — zero-copy DTO views.** The generator emits a nested
-  `public readonly ref struct <TTarget>View` on the mapper class whose properties evaluate the *same* member
-  resolution `Map` would — lazily, on access, against the source instance — plus a `View(TSource)` factory
-  beside them. Nothing is allocated and nothing is copied: a collection whose elements need no conversion is
-  handed back as the source collection itself, and a nested object member becomes a nested view rather than a
-  constructed DTO. `[MapProperty]` renames, `[MapIgnore]`, `[MapValue]`, `NullSubstitute`, `When =` and
-  `SkipNullSourceMembers` all reach it, because each is an expression; completeness is not weakened by
-  laziness, so an unmapped destination member is still `DWARF001`.
-
-  **The `ref struct` is the contract, not a limitation.** The compiler will not let a view be stored in a
-  field, boxed, captured by a lambda or held across an `await`, so it cannot outlive the source it borrows —
-  which is what makes reading through to a live source safe. **Consume a view at once; use `Map` where the
-  result is kept.** A source mutated after the view was created is visible through it: a view is a window,
-  not a snapshot.
-
-  Measured against map-then-consume (`Issues/round29/plan3-results.md`): **0.20× at 1k, 0.04× at 100k, zero
-  bytes allocated**. The zero is the view's own; a converter it calls may still allocate on its own account
-  (an `int → string` edge builds a string), and it does so once per read rather than once per map — so a view
-  read many times can cost more than one map, and the win is in consume-once-and-discard shapes.
-- **`DWARF102` (Error) — a member cannot be viewed without allocating.** Refuses the shapes a zero-copy view
-  cannot be: a collection whose elements need converting, a value-type source (the view would hold a copy,
-  so it would neither be zero-copy nor read through), an unflatten path, a collection/dictionary/scalar
-  target, two views that would collide on the `View(TSource)` factory or on a type name, `[GenerateView]` on
-  a co-located `[GenerateMap]` host, and a converter name declared both `static` and as an instance method.
-  Scoped to the view — the `Map` methods on the same mapper still generate. A view that reaches *itself* is
-  **not** refused: the property is an expression rather than a field, so the recursion is lazy and walking a
-  linked structure without materialising it is what the feature is best at. It also refuses a view whose name
-  is already taken by a type on the same mapper, and a view whose nested view could not itself be built (the
-  parent is withdrawn with the child rather than left naming a type nothing declares).
-- **`DWARF108` (Error) — `[GenerateView(Name = ...)]` is not a usable type name.** The view's name becomes the
-  nested type's name, in three positions (the declaration, its constructor, and the factory's return type), so
-  a value that is not a C# identifier made the generated file fail to parse: a `CS1001` inside a `.g.cs` the
-  consumer cannot edit, for an ordinary typing mistake. Refused **at the argument**, so the report points at
-  the text that is wrong. `Name = ""` no longer silently means "no name given".
-
 
 - **`DWARF107` (Warning) — a converter you declared returns a nullable reference, and its result is stored
   where null is forbidden.** `partial ChildDto? ToDto(Child c)` feeding a non-nullable `ChildDto Inner`,
@@ -267,6 +231,29 @@ so a version with no section here ships with no notes.
   generator's parked exception so a crash cannot make every assertion pass by reporting nothing.
   If Roslyn ever starts honouring pragmas here, the pragma test fails — and that failure is the signal to
   reword every message that currently routes around the limitation.
+
+### Removed
+
+- **`[GenerateView<TSource, TTarget>]` — the zero-copy view endpoint — was built, measured green, and then
+  withdrawn on 2026-09-07 before it ever shipped.** Nothing is being un-released: no version carried it, and
+  the two diagnostics it defined (`DWARF102`, `DWARF108`) were unshipped, so no consumer can be suppressing
+  or documenting either. It is recorded here because the reason is the interesting part, and because a
+  removed feature with no recorded rationale gets rebuilt.
+
+  It was withdrawn for its **failure mode**, not for a defect. A view evaluates each member *on access*, so
+  a source mutated between two property reads yields a combination of values that never existed at any
+  single instant — **silent wrong data**, in a library whose headline value is making silent mislinking
+  impossible. The `ref struct` that made it look safe gives the *lifetime* half of a Rust borrow and none of
+  the *exclusivity* half: it stops the view outliving its source and says nothing about who may write to
+  that source meanwhile, which is the half Rust's `&`/`&mut` distinction actually provides and C# has no way
+  to express. A disposed source is still a live reference, which no scoping rule can help with. And every
+  accepted precedent — `Span<T>`, `Utf8JsonReader`, `string_view` — is a view over a **buffer read one
+  element at a time**, where ours was a multi-member projection over a mutable object graph wearing a
+  DTO-shaped name that invites a consumer to read it as a snapshot. None of the three is diagnosable by a
+  generator, which is precisely why the answer had to be removal rather than a `DWARF###`.
+
+  **Use `Map` where the result is kept.** The full argument, and what a future proposal would have to answer,
+  is in `Issues/round29/WITHDRAWN-generated-views.md`.
 
 ### Fixed
 

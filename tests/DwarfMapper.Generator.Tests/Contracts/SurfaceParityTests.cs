@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 
 namespace DwarfMapper.Generator.Tests.Contracts
@@ -68,13 +68,13 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///     The ceiling on cells the instrument cannot pose a question about. Measured, stated, and SHRINK-ONLY:
         ///     raising it is how a coverage hole grows back one cell at a time with nobody the wiser.
         /// </summary>
-        // Re-measured 2026-09-07, in the commit that added the View endpoint: 44 -> 47, and the population was
-        // 44 before (the ceiling was exact), so the three arrivals are the whole movement. All three are the
-        // BARE form of an option bag at View - [DwarfMapper], [DwarfMapperOptions] and [DwarfMapperDefaults]
-        // written with no argument - which selects every option's default and so changes nothing at any
-        // endpoint. Silent by construction rather than by anything the generator decided, exactly as those same
-        // three bare cases already read at the other seven endpoints.
-        private const int UnaskableCellCeiling = 47;
+        // Re-measured 2026-09-07, in the commit that WITHDREW the View endpoint: 47 -> 44. Phase 1 had
+        // raised it to 47 for the three bare option-bag cells the endpoint added; those cells are gone with
+        // it. The number is the measurement and not a restore of the pre-view value: the population was
+        // counted at 44 in this commit (temporarily lowering the ceiling to 11 and reading the count the
+        // ratchet printed), which is the same 44 as before because the endpoint's arrivals were the whole
+        // of the movement either way.
+        private const int UnaskableCellCeiling = 44;
 
         /// <summary>
         ///     The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.
@@ -190,12 +190,13 @@ namespace DwarfMapper.Generator.Tests.Contracts
         private const int EmittedInvalidCodeCellCeiling = 0;
 
         /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
-        // Re-measured 2026-09-07, in the commit that added the View endpoint: 14 -> 16. Unlike the two ceilings
-        // above, 14 was NOT exact - the population under it was 12, so the old ceiling carried two of slack -
-        // and the four arrivals (NameConvention and NullCollections at View, each on [DwarfMapper] and on
-        // [DwarfMapperDefaults]) take it to 16. Setting the ceiling to the measurement removes the slack rather
-        // than keeping it: 16 is what is there.
-        private const int UnhonouredButLoudCellCeiling = 16;
+        // Re-measured 2026-09-07, in the commit that WITHDREW the View endpoint: 16 -> 12, and this one
+        // does NOT return to its pre-view value of 14. 14 carried two of slack — the population under it
+        // measured 12, which task 1.x recorded as one of the round's "a number quoted against a different
+        // population" findings — and Phase 1's own note stated the rule that resolves it: set the ceiling to
+        // the measurement rather than keeping the slack. Measured at 12 in this commit by the same method as
+        // the ceiling above. It stays above AssertRatchet's ten-wide floor, so the ratchet still bites.
+        private const int UnhonouredButLoudCellCeiling = 12;
 
         /// <summary>
         ///     The ceiling on cells excused as structural for one option of a bag. Shrink-only.
@@ -222,17 +223,12 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         judgement was made here instead, in a commit that carries the measurement.
         ///     </para>
         /// </summary>
-        // Re-measured 2026-09-07, in the commit that added the View endpoint: 13 -> 19, and the population was
-        // 13 before (the ceiling was exact), so the six arrivals are the whole movement. Five are [DwarfMapper]
-        // options at View that describe CONSTRUCTION - GenerateExtensions, RegisterCollectionShapes, MaxDepth,
-        // ReferenceHandling, OnCycle - and a view constructs nothing, so none of them has a referent there. The
-        // sixth is RegisterCollectionShapes again at the ASSEMBLY site ([DwarfMapperDefaults]), which is the one
-        // of the five that element also carries. Each states its reason in
-        // DeclaredDivergences.StructurallyInapplicable; see there for why this is a per-OPTION statement rather
-        // than a narrowing of [DwarfMapper]'s own AppliesTo - its CaseInsensitive, NullStrategy, EnumStrategy
-        // and AllowNonPublic DO reach a view, because a view's members are resolved by the create map's own
-        // resolver, so dropping the endpoint for the element would under-claim those to excuse these.
-        private const int StructurallyExcusedCellCeiling = 19;
+        // Re-measured 2026-09-07, in the commit that WITHDREW the View endpoint: 19 -> 13. The six cells
+        // Phase 1 added were all [DwarfMapper]/[DwarfMapperDefaults] options describing CONSTRUCTION at an
+        // endpoint that constructed nothing; with the endpoint gone they have no cell to excuse. Measured at
+        // 13 in this commit, which is again the pre-view value because the endpoint's arrivals were the
+        // whole movement.
+        private const int StructurallyExcusedCellCeiling = 13;
 
         /// <summary>
         ///     The number of FINDINGS recorded as unfixed divergences. Shrink-only.
@@ -514,23 +510,11 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         that says nothing can be done about it.
         ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
-        ///     <para>
-        ///         Re-measured 2026-09-07, in the commit that added the <c>View</c> endpoint. Both causes moved,
-        ///         and both movements are the endpoint arriving rather than a slot going missing.
-        ///         <c>registry-has-no-mapper-class</c> 48 -&gt; <b>51</b>: <c>[GenerateView]</c> is a new
-        ///         Class-site element, so its three cases (bare, <c>Name="probe"</c>, <c>x2</c>) join the
-        ///         Registry column, which has no mapper class for any of them.
-        ///         <c>no-mapping-method</c> 68 -&gt; <b>102</b>: the View endpoint declares no mapping METHOD
-        ///         either — <c>[GenerateView&lt;S,T&gt;]</c> on the class IS the declaration — so every
-        ///         Method-site case in the catalogue gains a third siteless column beside Registry's and the
-        ///         co-located host's. 34 Method-site cases, one per endpoint, exactly the 68/2 the other two
-        ///         causes already contributed each.
-        ///     </para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
-            ["registry-has-no-mapper-class"] = 51,
-            ["no-mapping-method"] = 102
+            ["registry-has-no-mapper-class"] = 48,
+            ["no-mapping-method"] = 68
         };
 
         /// <summary>

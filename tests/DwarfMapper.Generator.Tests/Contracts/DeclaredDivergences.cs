@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests.Contracts
 {
@@ -489,24 +489,6 @@ namespace DwarfMapper.Generator.Tests.Contracts
                 // them one is a feature with manifest, DWARF061 and DWARF063 consequences, and it is filed rather
                 // than smuggled in here. If it is ever built, this row starts describing something false and must
                 // be deleted — which is exactly why the count below exists.
-                // The VIEW endpoint. A view CONSTRUCTS nothing: each property is an expression evaluated on
-                // access against a source the view borrows, and the whole type is a `ref struct` the compiler
-                // will not let escape. Five class-level options describe construction, and none of them has a
-                // referent here — stated per option rather than by narrowing [DwarfMapper]'s own AppliesTo,
-                // because the SAME attribute's CaseInsensitive, NullStrategy, EnumStrategy and AllowNonPublic
-                // do reach a view (its members are resolved by the create map's own resolver), so dropping the
-                // endpoint for the element would under-claim four cells to excuse five.
-                [("GenerateExtensions", Endpoint.View)] =
-                    "a view is a `ref struct`; no `source.ToTarget()` extension can return one (a ref struct " + "cannot be a type argument, and the facade is generic), so there is no extension here to suppress",
-                [("RegisterCollectionShapes", Endpoint.View)] =
-                    "a view is a `ref struct` and cannot be boxed through the registry's Func<object, object>, " + "so a view produces no ambient registration rows for this option to add or withhold",
-                [("MaxDepth", Endpoint.View)] =
-                    "MaxDepth bounds RECURSION while a graph is being built. A view builds nothing: a nested " + "member is a property returning another view, so a self-referencing pair emits one type and " + "recurses only as far as the caller reads. There is no depth here to bound",
-                [("ReferenceHandling", Endpoint.View)] =
-                    "Preserve deduplicates two references to one source object onto one CONSTRUCTED target. A " + "view constructs no target, so two reads of one source member are the same source object " + "already — identity is preserved by not copying, which is the endpoint's whole premise",
-                [("OnCycle", Endpoint.View)] =
-                    "OnCycle chooses what to do when a cycle is reached WHILE BUILDING. A view builds nothing " + "and its recursion is lazy, so a cyclic pair is emitted and walked as far as the caller reads; " + "there is no point at which the generator must decide to throw or to null",
-
                 [("RegisterCollectionShapes", Endpoint.Registry)] =
                     "the [MapTo] front door emits an extension class and nothing else — no [assembly: " + "DwarfProvidesMap] and no DwarfMapperRegistry.Register call — so there are no ambient " + "registration rows here for this option to add or withhold (measured, A5)"
             };

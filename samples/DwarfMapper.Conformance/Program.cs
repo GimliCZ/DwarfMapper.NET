@@ -724,57 +724,8 @@ R.Check("F49 [MapTo] on a struct (named extension)", f49.ToF49D() is { Id: 3, Na
 R.Check("F49 [MapTo] on a struct (generic dispatch)", f49.MapTo<F49D>() is { Id: 3, Name: "runestone" });
 R.Check("F49 struct source is copied, not aliased", F49Copies());
 
-// F50 [GenerateView<S,T>] - the zero-copy view. Three observable runtime differences from Map, because
-// "it compiles" is not a conformance claim: the view AGREES with the map member for member, its collection
-// member is the SOURCE collection rather than a copy, and a source mutated afterwards is visible through it
-// (a view is a window, not a snapshot - which is exactly why the type is a `ref struct` that cannot be
-// stored). Every read happens inside these helpers: a `ref struct` cannot cross a lambda boundary, and that
-// refusal is the contract rather than an inconvenience.
-R.Check("F50 view agrees with the map member for member", F50Agrees());
-R.Check("F50 view hands back the SOURCE collection, not a copy", F50Aliases());
-R.Check("F50 view reads through to a mutated source", F50ReadsThrough());
-
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;
-
-static F50S F50Source()
-{
-    return new F50S
-    {
-        Id = 7,
-        Name = "Gimli",
-        Tags =
-        [
-            "deep", "bold"
-        ]
-    };
-}
-
-static bool F50Agrees()
-{
-    var m = new F50M();
-    var s = F50Source();
-    var dto = m.Map(s);
-    var view = m.View(s);
-    return view.Id == dto.Id && view.Name == dto.Name && view.Tags.Count == dto.Tags.Count;
-}
-
-static bool F50Aliases()
-{
-    var m = new F50M();
-    var s = F50Source();
-    // Map BUILDS a new list; the view hands back the one the source already holds.
-    return ReferenceEquals(m.View(s).Tags, s.Tags) && !ReferenceEquals(m.Map(s).Tags, s.Tags);
-}
-
-static bool F50ReadsThrough()
-{
-    var m = new F50M();
-    var s = F50Source();
-    var view = m.View(s);
-    s.Name = "Gimli, son of Gloin";
-    return view.Name == "Gimli, son of Gloin";
-}
 
 // A struct source is taken BY VALUE, so a destination already produced cannot see a later mutation. The one
 // behaviour F18's class source could never have shown.

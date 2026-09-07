@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 
@@ -691,28 +691,6 @@ namespace DwarfMapper.Generator.Tests
                 public class GmB { public int Id { get; set; } public int Score { get; set; } }
                 [DwarfMapper]
                 [GenerateMap<GmA, GmB>]
-                public partial class M { }
-                """);
-
-            // ── 17. [GenerateView<S,T>] — the zero-copy view, beside the map for the same pair ────
-            // Both attributes on one mapper on purpose: a view and a map over one pair share the mapper's
-            // synthesized helper table and its private members, and the interaction this matrix exists to
-            // catch is exactly that kind — a nested `ref struct` reaching an enclosing INSTANCE member
-            // unqualified is CS0120, and reaching a static one through an instance is CS0176. The converted
-            // member and the nested member are here because those are the two edges that name a helper.
-            yield return new FimMatrixCase("generate_view_attribute",
-                """
-                using System.Collections.Generic;
-                using DwarfMapper;
-                namespace Fim;
-                public enum GvKind { A, B }
-                public class GvInner { public string Label { get; set; } = ""; }
-                public class GvInnerDto { public string Label { get; set; } = ""; }
-                public class GvA { public int Id { get; set; } public GvKind Kind { get; set; } public GvInner? Inner { get; set; } public List<int> Tags { get; set; } = new(); }
-                public class GvB { public int Id { get; set; } public string Kind { get; set; } = ""; public GvInnerDto? Inner { get; set; } public IReadOnlyList<int> Tags { get; set; } = new List<int>(); }
-                [DwarfMapper]
-                [GenerateMap<GvA, GvB>]
-                [GenerateView<GvA, GvB>]
                 public partial class M { }
                 """);
         }

@@ -35,7 +35,7 @@
     "",
     "2026-09-03 (round 29, T0.2): two SpanBlit_* scenarios added, 55 -> 57 benchmarks. SpanBlit_Dwarf is the zero-alloc span map void Map(ReadOnlySpan<Vec3Src> src, Span<Vec3Dst> dst) taking the BlittableProof block copy (MemoryMarshal.Cast + CopyTo) into a preallocated destination array; SpanBlit_Scalar is its [StructLayout(Auto)] twin (Vec3Ren), which keeps the per-element loop \u2014 same pair-selection discipline as BlitRatio. Both pin at 0 B/op: every element is a value-type struct copied into a preallocated destination array, so neither path allocates anything, unlike the array/list blit rows above which allocate the destination array itself.",
     "",
-    "2026-09-07 (round 29, Phase 1): two View_* scenarios added, 57 -> 59 benchmarks. They are a PAIR and the pair is the measurement: both read the same six members of the same 1,000 VwOrder graphs into the same preallocated sink, and differ only in whether a VwOrderDto was built first. View_Dwarf pins at 0 B/op, which is the feature rather than a detail of it - a view that allocated anything would not be a view - and View_Map_Dwarf pins at 48,000 B, one 48-byte DTO per element. Read the TIME ratio with its population attached: 2.82 us against 6.04 us is 0.47x here, NOT the 0.20x / 0.04x of Issues/round29/plan3-results.md, because that probe's baseline built a FOUR-OBJECT destination graph per element while this one builds a single flat DTO. Same feature, a fairer and much less flattering baseline. What neither number claims is that a view is always free: a converter a view calls allocates on its own account, once per READ rather than once per map, so a view read many times can cost more than one Map. This pair has no converter, which is what makes it a clean measurement of the view itself."
+    "2026-09-07 (round 29, Phase 1 WITHDRAWN): the two View_* scenarios were removed with the [GenerateView] endpoint, 59 -> 57 benchmarks, and the View_Dwarf (0 B) and View_Map_Dwarf (48,000 B) pins went with them. The endpoint was withdrawn by owner ruling for its FAILURE MODE, not for a defect - a view evaluates each member on access, so a source mutated between two reads yields a record that never existed at any instant (Issues/round29/WITHDRAWN-generated-views.md). RE-MEASURED rather than restored to the pre-view 57: the smoke was re-run in this commit and reported 57/57 benchmarks executed with all 22 remaining pins exact-matched, so this 57 is a count taken AFTER the removal, not the number that happened to be there before it."
   ],
   "measuredWith": {
     "sdk": "10.0.101",
@@ -45,7 +45,7 @@
     "tree": "d7b60cd4ae425dfc735b66622c50f5e8f0babfdb plus the T8 smoke config committed together with this file",
     "job": "ShortRun via DWARF_BENCH_SMOKE=1, N=1000, seed RealisticPayloads.Seed=20260724"
   },
-  "totalBenchmarks": 59,
+  "totalBenchmarks": 57,
   "pins": {
     "Flat_Dwarf": 40,
     "Nested_Dwarf": 112,
@@ -68,8 +68,6 @@
     "NumList_Dwarf": 8112,
     "NestedFill_Dwarf": 8112,
     "SpanBlit_Dwarf": 0,
-    "View_Dwarf": 0,
-    "View_Map_Dwarf": 48000,
     "SpanBlit_Scalar": 0
   },
   "unstable": {}

@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper
 {
@@ -157,18 +157,12 @@ namespace DwarfMapper
         CoLocatedHost = 64,
 
         /// <summary>
-        ///     <c>[GenerateView&lt;S,T&gt;]</c> on the mapper class — the zero-copy <c>readonly ref struct</c>
-        ///     whose properties evaluate the create map's member resolution lazily against the source.
-        /// </summary>
-        View = 128,
-
-        /// <summary>
         ///     Every endpoint. This is the DEFAULT on purpose. Over-claiming fails (a claimed endpoint must be
         ///     honoured or refused) and under-claiming fails too (an unclaimed endpoint must be silent or
         ///     uncompilable), so there is no value of <see cref="DwarfSurfaceAttribute.AppliesTo" /> that passes
         ///     vacuously — a wrong default is always caught rather than quietly ratified.
         /// </summary>
-        All = CreateMap | UpdateInto | Projection | SpanMap | AsyncStream | Registry | CoLocatedHost | View
+        All = CreateMap | UpdateInto | Projection | SpanMap | AsyncStream | Registry | CoLocatedHost
     }
 
     /// <summary>

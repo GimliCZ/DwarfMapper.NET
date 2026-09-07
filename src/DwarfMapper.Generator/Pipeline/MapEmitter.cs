@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using System.Text;
@@ -50,11 +50,6 @@ namespace DwarfMapper.Generator.Pipeline
                 sb.AppendLine();
                 sb.Append(synth.Code);
             }
-
-            // Views come after the methods and the helpers they call, inside the same class body: a nested
-            // `ref struct` reaches its enclosing type's private members whatever the order, but reading the
-            // generated file top-down is easier when the helpers a property names are already above it.
-            foreach (var view in model.Views) ViewEmitter.Emit(sb, view, model.ClassName, "    ");
 
             foreach (var rt in model.RoundTrips)
             {
@@ -1415,11 +1410,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     method, or <c>"0"</c> from the public entry point). Only used when
         ///     <see cref="MemberMap.ConverterNeedsDepthCtx" /> is true.
         /// </param>
-        // internal, not private: ViewEmitter renders the SAME expression for a view's property body. A second
-        // implementation of "how is this member's value written" is how NullSubstitute, [MapValue] and the
-        // null-forgiving '!' would come to be right at one endpoint and wrong at another - the divergence class
-        // this round's surface matrix exists to make impossible.
-        internal static void AppendValueExpression(
+        private static void AppendValueExpression(
             StringBuilder sb,
             MemberMap member,
             string paramName,

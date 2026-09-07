@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests.Contracts
 {
@@ -66,9 +66,6 @@ namespace DwarfMapper.Generator.Tests.Contracts
 
         private const string NoMemberConfigOnRegistry =
             "the [MapTo] registry front door is a separate generator with its own DWARFR diagnostics and a " + "deliberately smaller feature set; it does not read the class-model mapper attributes";
-
-        private const string ViewHasNoConstructionMoment =
-            "a view CONSTRUCTS nothing — each property is an expression evaluated on access against the source — " + "so a directive about how the destination is built, or about a value it would otherwise keep, has no " + "moment to apply at";
 
         private const string CollectionOrGraphOnly =
             "applies to a collection/graph shape this endpoint does not construct";
@@ -143,17 +140,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
 
             // ── [RoundTrip] — needs a forward/back PAIR of create maps ────────────────────────────────────────
             new("RoundTrip", Endpoint.CreateMap, CellStatus.Honoured),
-            new("ReverseMap", Endpoint.CreateMap, CellStatus.Honoured),
-
-            // The VIEW endpoint. A view runs the create map's OWN member resolution, so every directive that
-            // resolves to an EXPRESSION reaches it unchanged — which is most of them, and the reason the view
-            // could be built out of the existing resolver rather than a second one. The shaped default in For()
-            // answers the rest with ViewHasNoConstructionMoment; these four are the cells where that default
-            // would be a lie.
-            new("MapProperty", Endpoint.View, CellStatus.Honoured),
-            new("MapIgnore", Endpoint.View, CellStatus.Honoured),
-            new("MapValue", Endpoint.View, CellStatus.Honoured),
-            new("MapNullSkip", Endpoint.View, CellStatus.Honoured)
+            new("ReverseMap", Endpoint.CreateMap, CellStatus.Honoured)
         ];
 
         /// <summary>
@@ -173,7 +160,6 @@ namespace DwarfMapper.Generator.Tests.Contracts
                 ["MapTo"] = (CellStatus.NotApplicable, SelectsEndpoint),
                 ["GenerateMap"] = (CellStatus.NotApplicable, SelectsEndpoint),
                 ["GenerateWrapperMap"] = (CellStatus.NotApplicable, SelectsEndpoint),
-                ["GenerateView"] = (CellStatus.NotApplicable, SelectsEndpoint),
                 ["DwarfMapperConstructor"] = (CellStatus.NotApplicable,
                     "placed on a TARGET TYPE's constructor, not on a mapping method"),
                 ["MapConstructor"] = (CellStatus.NotApplicable,
@@ -267,10 +253,6 @@ namespace DwarfMapper.Generator.Tests.Contracts
                     endpoint,
                     CellStatus.NotApplicable,
                     Reason: "the co-located host declares the pair; member config uses the pair-scoped forms"),
-                Endpoint.View => new ContractCell(usage,
-                    endpoint,
-                    CellStatus.NotApplicable,
-                    Reason: ViewHasNoConstructionMoment),
                 _ => new ContractCell(usage,
                     endpoint,
                     CellStatus.NotApplicable,

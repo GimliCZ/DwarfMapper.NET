@@ -1,5 +1,11 @@
 # Round 29 — Hardware Mode Implementation Plan
 
+> **WITHDRAWN, 2026-09-07: Phase 1 (`[GenerateView<TSource,TTarget>]`) is not part of this product.**
+> It was built, shipped green and then removed by owner ruling — for its failure mode, not for a defect.
+> Everything this plan says about views below is kept as history and must not be executed. The argument
+> that removed it, and what a future proposal would have to answer, is in
+> `Issues/round29/WITHDRAWN-generated-views.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give DwarfMapper the measured hardware-level wins from the round-29 research — zero-copy DTO views, a blitting span map, `Nullable<T>` on the blit proof, a transfer-model-to-struct diagnostic with a transitive code fix, dense enum-keyed members, shared immutable members, layout hygiene — without a single `unsafe` block or uninitialized allocation, and without moving any ratchet unmeasured.
@@ -380,7 +386,14 @@ git commit -m "feat(span-map): a layout-identical pair is one MemoryMarshal.Cast
 
 ---
 
-## Phase 1 — DTO views (`[GenerateView<TSource,TTarget>]`)
+## Phase 1 — DTO views (`[GenerateView<TSource,TTarget>]`) — WITHDRAWN 2026-09-07
+
+> **Do not implement this phase.** It was implemented (`c27ec58`..`9f937b8`), measured at 0 B/op, and
+> withdrawn by owner ruling on 2026-09-07: a view evaluates each member on access, so a source mutated
+> between two reads yields a record that never existed at any instant — silent wrong data, in a library
+> whose headline value is making silent mislinking impossible. `DWARF102` and `DWARF108` went with it and
+> are not allocated. See `Issues/round29/WITHDRAWN-generated-views.md`. The text below is the original
+> plan, kept so the log stays readable.
 
 Design (spec §11b.2, §12): a view is the create map's member resolution evaluated lazily. The generator emits, inside the mapper class, `public readonly ref struct <TTarget>View` holding a `TSource` reference, with one get-only property per resolved target member: identity members return `_s.Member`; scalar converters call the same synthesized/user converter the create map uses (`__DwarfMap_EnumStr_…(_s.X)`); a nested object member returns a nested view type (emitted the same way for the nested pair); a collection member whose elements need no conversion returns the source collection as-is; a collection member whose elements need conversion is refused with DWARF102 (v1) — the view never allocates, and a converted collection would. `[MapIgnore]`, `[MapProperty]` renames, `[MapValue]` constants, `NullSubstitute` all apply (they are expressions). Views are read-only; there is no ctor binding and no update-into. Measured expectation: 0.20× at 1k, 0.04× at 100k, 0 B (§12 A/C).
 

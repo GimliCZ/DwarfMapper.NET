@@ -1505,38 +1505,4 @@ namespace DwarfMapper.Conformance
 
         public string Name { get; set; } = "";
     }
-
-// ── F50 [GenerateView<S,T>] (the zero-copy view) ────────────────────────────
-// A nested `readonly ref struct` whose properties evaluate the same member resolution Map would, lazily,
-// against the source instance. The observable runtime differences from Map — which is what a conformance
-// feature must show, rather than that it compiles — are three: a collection member is the SOURCE collection
-// itself rather than a copy, a source mutated after the view was created is visible through it, and creating
-// and reading a view allocates nothing at all.
-//
-// Both attributes on one mapper on purpose: the feature's claim is that the view and the map AGREE member for
-// member, which cannot be checked without both.
-    public class F50S
-    {
-        public int Id { get; set; }
-
-        public string Name { get; set; } = "";
-
-        public List<string> Tags { get; set; } = [];
-    }
-
-    public class F50D
-    {
-        public int Id { get; set; }
-
-        public string Name { get; set; } = "";
-
-        public IReadOnlyList<string> Tags { get; set; } = new List<string>();
-    }
-
-    [DwarfMapper]
-    [GenerateMap<F50S, F50D>]
-    [GenerateView<F50S, F50D>]
-    public partial class F50M
-    {
-    }
 }

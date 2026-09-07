@@ -105,10 +105,8 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF099` | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations |
 | `DWARF100` | Info | Array or span pair narrowly missed the blittable fast path |
 | `DWARF101` | Info | Struct layout pads more than a quarter of its size |
-| `DWARF102` | Error | Member cannot be viewed without allocating |
 | `DWARF103` | Info | Collection element could be a struct |
 | `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive |
 | `DWARF107` | Warning | A converter's nullable return is stored where null is forbidden |
-| `DWARF108` | Error | [GenerateView(Name = ...)] is not a usable type name |
 
-102 diagnostics.
+100 diagnostics.

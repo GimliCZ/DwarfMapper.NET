@@ -1,4 +1,4 @@
-﻿# DwarfMapper.NET
+# DwarfMapper.NET
 
 [![CI](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/GimliCZ/DwarfMapper.NET/graph/badge.svg?branch=master)](https://codecov.io/gh/GimliCZ/DwarfMapper.NET)
@@ -827,7 +827,7 @@ verification.)
 feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies,
 `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus
 adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no
-silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **81 runtime assertions**. It doubles
+silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **78 runtime assertions**. It doubles
 as living documentation.
 
 ---

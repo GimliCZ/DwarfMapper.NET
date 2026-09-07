@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
@@ -91,11 +91,6 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<int, LocationInfo?> PublicMethodLocs,
             HashSet<string> LiveClassIgnores,
             List<(ITypeSymbol Src, ITypeSymbol Tgt, LocationInfo? Loc, List<string> IgnoreSources)> ElementPairsOwedCoverage,
-            Dictionary<ITypeSymbol, HashSet<string>> IgnorableNamesMemo,
-            // The [GenerateView<S,T>] views to emit inside this mapper class, root and nested, flat and
-            // deduplicated by view type name. Filled by ExtractViews AFTER the per-method loop and after
-            // ExtractGenerateMapPairs, because a view resolves its members through the same member resolution
-            // those endpoints do and must see the declared pairs they registered.
-            List<ViewModel> Views);
+            Dictionary<ITypeSymbol, HashSet<string>> IgnorableNamesMemo);
     }
 }

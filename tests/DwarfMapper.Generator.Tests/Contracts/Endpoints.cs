@@ -1,9 +1,9 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests.Contracts
 {
     /// <summary>
-    ///     The eight shapes through which DwarfMapper exposes a mapping. Each is a distinct code path with its own
+    ///     The seven shapes through which DwarfMapper exposes a mapping. Each is a distinct code path with its own
     ///     resolver or emitter, which is precisely why an option can reach one and not another.
     /// </summary>
     public enum Endpoint
@@ -27,14 +27,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
         Registry,
 
         /// <summary><c>[GenerateMap&lt;S,T&gt;]</c> on a plain class — the co-located host.</summary>
-        CoLocatedHost,
-
-        /// <summary>
-        ///     <c>[GenerateView&lt;S,T&gt;]</c> on the mapper class — the nested zero-copy
-        ///     <c>readonly ref struct</c>. Declares no mapping METHOD, so like the registry and the co-located
-        ///     host it carries member-form directives through the slot sites rather than on a method.
-        /// </summary>
-        View
+        CoLocatedHost
     }
 
     /// <summary>
@@ -203,7 +196,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
             // SurfaceProbeTests.BuildAt_never_returns_a_source_that_omits_the_rendered_attribute_text exists to
             // catch, and a caller that means "put this on a member" wants BuildAt's Property/Field site, which
             // routes through the slot markers.
-            if (endpoint is Endpoint.Registry or Endpoint.CoLocatedHost or Endpoint.View && !(string.IsNullOrEmpty(memberAttribute) && string.IsNullOrEmpty(extraMembers)))
+            if (endpoint is Endpoint.Registry or Endpoint.CoLocatedHost && !(string.IsNullOrEmpty(memberAttribute) && string.IsNullOrEmpty(extraMembers)))
             {
                 throw new ArgumentException(
                     $"{endpoint} declares no mapping method, so it can carry neither a method-level attribute nor " + "extra members. Use BuildAt with one of the slot sites (Property, Field, Struct, " + "Constructor), which splices at that site's marker.",
@@ -349,22 +342,6 @@ namespace DwarfMapper.Generator.Tests.Contracts
                                             }
                                             """,
 
-                // The view endpoint declares no mapping METHOD — the [GenerateView<S,T>] on the class IS the
-                // declaration — so, like the registry and the co-located host, a member-form attribute reaches it
-                // through the slot sites rather than on a method. The pair is the template's own, so `types` is
-                // honoured exactly as the method endpoints honour it.
-                Endpoint.View => $$"""
-                                  using System.Linq;
-                                  using DwarfMapper;
-                                  namespace Demo;
-                                  {{t}}
-                                  {{onClass}}
-                                  [GenerateView<Src, Dst>]
-                                  public partial class M
-                                  {
-                                  }
-                                  """,
-
                 _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint, "Unhandled endpoint")
             };
         }
@@ -416,8 +393,8 @@ namespace DwarfMapper.Generator.Tests.Contracts
             {
                 AttributeTargets.Class when endpoint is Endpoint.Registry
                     => "registry-has-no-mapper-class: intent lives on the source type",
-                AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost or Endpoint.View
-                    => "no-mapping-method: none of these endpoints declares one to annotate",
+                AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
+                    => "no-mapping-method: neither endpoint declares one to annotate",
 
                 AttributeTargets.Class or AttributeTargets.Method or AttributeTargets.Assembly => null,
                 _ => $"unmodelled-site: the endpoint templates model no {site} site at all"

@@ -1,4 +1,4 @@
-﻿<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 # How-to: deploy and optimize with DwarfMapper
 
 The deployment-and-efficiency companion to the migration guides. Where the per-library guides cover
@@ -107,35 +107,6 @@ the method signature that matches your access pattern:
 | Hot loop over a buffer, zero alloc | `partial void Map(ReadOnlySpan<Src> s, Span<Dst> d);` | element-wise into caller memory (`stackalloc`/pooled); no heap traffic |
 | Stream a large/async source | `partial IAsyncEnumerable<Dst> Map(IAsyncEnumerable<Src> s);` | `async` iterator, no buffering, back-pressure preserved |
 | Push mapping into the database | `partial IQueryable<Dst> Project(IQueryable<Src> q);` | emits `Select(...)` your ORM translates to SQL |
-| Read a DTO shape and discard it | `[GenerateView<Src,Dst>]` | a `readonly ref struct` evaluated on access; nothing is allocated and nothing is copied |
-
-### Zero-copy views: when the result is read and thrown away
-
-`[GenerateView<Src, Dst>]` on the mapper emits a nested `public readonly ref struct DstView` whose properties
-evaluate the *same* member resolution `Map` would — lazily, on access, against the source instance — plus a
-`View(Src)` factory beside them. Nothing is allocated and nothing is copied: a collection whose elements need
-no conversion is handed back as the source collection itself, and a nested object member becomes a nested
-view rather than a constructed DTO.
-
-**The `ref struct` is the contract, not a limitation.** The compiler will not let a view be stored in a
-field, boxed, captured by a lambda or held across an `await`, so it cannot outlive the source it borrows —
-which is what makes reading straight through to a live object safe. **Consume a view at once** — serialize
-it, render it, compare it — and use `Map` wherever the result is stored, returned or kept. It is a window,
-not a snapshot: mutate the source afterwards and the view shows the new value.
-
-Two things the headline number does not say, and both decide whether this is the right tool:
-
-- **The zero is the view's own.** A converter the view calls allocates whatever it allocates — an
-  `int → string` edge builds a string — and it does so once per **read** rather than once per map. A view
-  read many times can therefore cost *more* than one `Map`. The win is in read-once-and-discard shapes.
-- **The ratio depends on what you are comparing against.** The suite's pinned pair (`View_Dwarf` against
-  `View_Map_Dwarf`) measures **0.47×** at 1,000 elements with **0 bytes** against 48,000, mapping into a flat
-  six-member DTO. The 0.20× / 0.04× in `Issues/round29/plan3-results.md` is the same feature against a
-  destination that was a four-object graph per element. Both are true; they are different baselines.
-
-A shape a view cannot be — a collection whose elements need converting, a value-type source (the view would
-hold a copy), an unflatten path — is refused with `DWARF102` rather than quietly dropped, and the refusal
-takes only the view: the `Map` methods on the same mapper still generate.
 
 ### The fast-paths you get for free
 

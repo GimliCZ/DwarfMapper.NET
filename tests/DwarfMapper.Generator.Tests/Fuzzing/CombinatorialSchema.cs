@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using System.Text;
@@ -182,54 +182,6 @@ internal static class CombinatorialSchema
                     }
                 }
             }
-        }
-
-        /// <summary>
-        ///     Every depth-≤1 cell again, with <c>[GenerateView&lt;CmbSrc, CmbDst&gt;]</c> beside the map.
-        ///     <para>
-        ///         A SEPARATE enumeration rather than the view being folded into <see cref="DepthOneMatrix" />,
-        ///         and the reason is what consumes that one: <c>GoldenCorpus</c> pins the emitted text of every
-        ///         cell it yields, so adding a view there would move several hundred golden rows for a feature
-        ///         only one tier is asking about. This is read by
-        ///         <c>GeneratedCodeIsWarningFreeTests</c> alone, which is the tier whose question — "does the
-        ///         generator ever emit code that WARNS?" — the view genuinely reopens: every property is a new
-        ///         emission site for the nullable annotation, the null-forgiving <c>!</c> and the converter call.
-        ///     </para>
-        ///     <para>
-        ///         Cells whose view is REFUSED (a collection whose elements need converting, most of the
-        ///         type-divergent ones) still belong here and are not filtered out: DWARF102 is scoped to the
-        ///         view, so the map beside it is still emitted, and what this tier then measures is that the
-        ///         refusal path emits nothing that warns either.
-        ///     </para>
-        /// </summary>
-        public static IEnumerable<MatrixCell> ViewMatrix()
-        {
-            foreach (var cell in DepthOneMatrix())
-                yield return cell with
-                {
-                    ShapeName = cell.ShapeName + "+view", Source = WithView(cell.Source)
-                };
-        }
-
-        /// <summary>
-        ///     Adds the view declaration to a cell's mapper. A text edit rather than a flag threaded through
-        ///     four builders: there is exactly one line in every generated cell that declares the mapper class,
-        ///     and anchoring on it keeps this reversible and obvious. A cell that stops carrying that line makes
-        ///     this throw rather than silently yielding the un-viewed source, which would have made the whole
-        ///     tier pass by measuring the matrix it already measured.
-        /// </summary>
-        private static string WithView(string source)
-        {
-            const string anchor = "public partial class CmbMapper";
-            var at = source.IndexOf(anchor, StringComparison.Ordinal);
-            if (at < 0)
-            {
-                throw new InvalidOperationException(
-                    "A combinatorial cell declares no `public partial class CmbMapper`, so the view variant " +
-                    "would silently be the same source as the plain one.");
-            }
-
-            return source[..at] + "[global::DwarfMapper.GenerateView<CmbSrc, CmbDst>]" + Environment.NewLine + source[at..];
         }
 
         /// <summary>

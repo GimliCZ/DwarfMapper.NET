@@ -50,10 +50,25 @@ namespace DwarfMapper.Generator.Core
         ///         genuinely differ and the difference is measured, not assumed. As a MEMBER name a contextual
         ///         keyword needs nothing — <c>public int record { get; }</c> is fine — which is why
         ///         <see cref="Escape" /> deliberately leaves it alone and why widening it would churn every
-        ///         golden file for no gain. As a TYPE name it is not fine: of 29 contextual keywords run
-        ///         through the generator, five broke — <c>record</c>, <c>required</c>, <c>file</c>,
-        ///         <c>scoped</c> and <c>partial</c>, each of them something that may legally precede
-        ///         <c>struct</c>.
+        ///         golden file for no gain. As a TYPE name it is not fine: of the 46 contextual keywords
+        ///         Roslyn knows, SIX break one — <c>extension</c>, <c>file</c>, <c>partial</c>,
+        ///         <c>record</c>, <c>required</c> and <c>scoped</c> — and they do not break it the same way,
+        ///         which is the part worth writing down. <c>extension</c> (<c>CS9306</c>), <c>file</c>
+        ///         (<c>CS9056</c>), <c>required</c> (<c>CS9029</c>) and <c>scoped</c> (<c>CS9062</c>) are
+        ///         refused outright wherever the type is DECLARED. <c>record</c> and <c>partial</c> declare
+        ///         perfectly well — <c>readonly ref struct record { }</c> compiles — and break only where the
+        ///         name is READ as a modifier of what follows it, a return type (<c>public record Make()</c>
+        ///         parses as a positional record) being the usual site. So a check that looked only at the
+        ///         declaration would have called two of the six safe.
+        ///         <para>
+        ///             Re-measured 2026-09-07 against the live compiler, and it corrected the note it
+        ///             replaces twice over: that note said "of 29 contextual keywords, five broke", and both
+        ///             numbers were wrong — <c>extension</c> arrived with C# 14 and no hand-written list
+        ///             could have known. The sweep and the per-keyword codes are pinned in
+        ///             <c>tests/DwarfMapper.Generator.Tests/Core/IdentifiersTests.cs</c>, which enumerates
+        ///             <c>SyntaxFacts.GetContextualKeywordKinds()</c> rather than restating a list, so the
+        ///             next keyword the language adds fails a test instead of a consumer's build.
+        ///         </para>
         ///     </para>
         ///     <para>
         ///         Escaping rather than refusing, which is the whole point: <c>@</c> is C#'s own mechanism for
@@ -62,6 +77,16 @@ namespace DwarfMapper.Generator.Core
         ///         into the same tree as a good name and fails later in the binder, while <c>@scoped</c> cannot
         ///         be read as a modifier at all, so the ambiguity has nothing to bind. The <c>@</c> is syntax:
         ///         the type's name is still <c>scoped</c>, and a consumer may write it either way.
+        ///     </para>
+        ///     <para>
+        ///         NO PRODUCTION CALL SITE at present, and kept deliberately. Its only caller was the
+        ///         <c>[GenerateView]</c> endpoint, withdrawn 2026-09-07 (see
+        ///         <c>Issues/round29/WITHDRAWN-generated-views.md</c>) — but nothing about the helper was
+        ///         view-specific, and every remaining type-declaration position the generator writes (a mapper
+        ///         class name, a containing-type header) has the same exposure: a consumer may legally write
+        ///         <c>public partial class @record</c>, and <c>ISymbol.Name</c> hands back <c>record</c>.
+        ///         Deleting it would mean rediscovering the measurement above the next time one of those is
+        ///         escaped. Its tests execute it directly, so it is not untested dead code.
         ///     </para>
         /// </remarks>
         public static string EscapeTypeName(string name)

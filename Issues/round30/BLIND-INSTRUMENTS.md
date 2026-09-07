@@ -1,0 +1,79 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+
+# Round 30 — the instruments that are trusted for a dimension nobody checked they can see
+
+Carried out of round 29 on 2026-09-07. The head item below arrived attached to the `[GenerateView]`
+endpoint, which was withdrawn the same day
+(`Issues/round29/WITHDRAWN-generated-views.md`) — **the finding is not view-specific and must not leave with
+the feature.** It was recorded only in that task's report, which is not tracked by git; this file is its
+home.
+
+One disease, four instruments: *an instrument is cited for coverage it structurally cannot provide.* Each
+one below is green, correct about what it measures, and quoted for something else.
+
+---
+
+## 1 (head item) — the corpus cannot express a customized NESTED pair
+
+**Every nested pair in the entire generator corpus is an identity map.** `ViewMatrix`, `GoldenCorpus`, the
+`FeatureInteractionCompileMatrix` and the snapshot suite all put customization — converters, renames,
+directives — on the **OUTER** pair only, and generate identity members at every level below it.
+
+**How it was found, and why that matters.** Two defects in *new* code, in the nested-construction seam,
+survived **8,778 passing tests** and were caught by review instead:
+
+- a nested view needing the mapper instance was constructed without it (`CS7036` in the consumer's
+  `.g.cs`), because "needs the owner" was decided by the child's own resolution while the *parent* is what
+  writes the constructor call;
+- a parent left naming a nested view that was itself refused, so the emitted type referenced a type nothing
+  declared.
+
+Neither is subtle. Both were invisible because **no corpus case has an instance converter inside a nested
+pair**. This is the repository's own recorded `test-infra-holes` pattern in its strongest instance yet: the
+bug hid behind a corpus hole, not behind clever code, and the code was brand new.
+
+**It is a SCHEMA hole, not a missing case.** Adding four more shapes does not close it — the generators
+themselves only decorate the outer pair, so any number of generated cases stays blind. The fix is to teach
+`CombinatorialSchema` / `GoldenCorpus` / the FIM to place customization at depth, which moves the golden
+manifest and the compile matrix and therefore deserves to be its own measured change rather than a rider on
+a bug fix.
+
+**What it invalidates today:** "N warning-free cells" means *N cells of the shapes the schema generates*.
+It is not a statement about nesting. Any claim of nested-mapping coverage drawn from these four instruments
+should be read that way until the schema changes.
+
+---
+
+## 2 — the golden manifest and CompilerTests are both nullable-BLIND
+
+`GeneratorRunner` defaults to `NullableContextOptions.Disable`, so the golden manifest pins emissions
+produced with nullable reference types **off**; `DwarfMapper.CompilerTests` is nullable-disabled **and**
+errors-only. Both have been cited for coverage of nullable-annotated consumer code, which neither can see.
+The round-30 sweep must cover the verification **triad**, not the golden corpus alone.
+
+---
+
+## 3 — `DwarfMapper.NegativeCases` is the only thing pinning REMEDY WORDING
+
+…and only for the ids that happen to have a case. Combined with the golden manifest's opaque-hash,
+regenerate-on-move workflow, **a remedy sentence can be deleted from a diagnostic and the whole suite stays
+green.** Under the project's own mandate — tell the user, at the exact location, what is wrong and how to
+fix it — the remedy text *is* the product, and it is unprotected.
+
+---
+
+## 4 — the round-29 GC experiment was a NULL instrument
+
+`Issues/round29/PlanProbe2.cs` says in its own comment that both arrays are live in both arms and the
+difference is only which one the JIT keeps used. So "removing reference members did not speed the GC scan"
+is **not supported by that experiment**; the honest statement is "no gain measured, and this experiment
+cannot prove there is none". Recorded here because it is the same disease outside the test suite: a
+measurement quoted for a question it cannot answer.
+
+---
+
+## The shape to fix, not just the four instances
+
+Each of these is a *right* measurement quoted where a different population was assumed. The generalisable
+rule the round should mechanise: **a number in this repository carries its population in the same breath**,
+and an instrument that cannot see a dimension says so where it is cited, not only where it is defined.

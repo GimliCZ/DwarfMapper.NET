@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 
@@ -105,7 +105,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
                     $"EndpointSources.Build has no template for {endpoint}.");
             }
 
-            Assert.Equal(8, EndpointSources.All.Count);
+            Assert.Equal(7, EndpointSources.All.Count);
         }
 
         [Theory]
