@@ -77,3 +77,17 @@ measurement quoted for a question it cannot answer.
 Each of these is a *right* measurement quoted where a different population was assumed. The generalisable
 rule the round should mechanise: **a number in this repository carries its population in the same breath**,
 and an instrument that cannot see a dimension says so where it is cited, not only where it is defined.
+
+## ImmutabilityProof is outside every mutation leg (found 2026-09-07, round 29 task 3.1)
+
+`[MapShare]` decides whether a member's reference may be shared instead of copied. A wrong `true` from
+`ImmutabilityProof` silently couples two object graphs the consumer believes are independent — there is no
+diagnostic that recovers from it afterwards, and no test that would notice.
+
+**It sits inside no leg's `mutate` globs**, so not one mutant probes the proof's own branch conditions. The
+component whose wrong answer is worst is the one the mutation tier cannot see. That is this round's signature
+failure shape, found for the sixth time.
+
+Not fixed in round 29 because adding a file to a leg changes that leg's population and forces a re-run and a
+re-pin — and the pipeline leg's `break` currently sits 0.28 pp above its measurement, which is less than one
+mutant. Doing it carelessly turns a green gate red for reasons unrelated to the proof.
