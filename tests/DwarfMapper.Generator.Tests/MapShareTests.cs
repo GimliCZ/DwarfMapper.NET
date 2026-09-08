@@ -425,5 +425,41 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Contains("Items = Reverse(a.Items)", gen, StringComparison.Ordinal);
         }
+
+        // The four arms of DWARF104's "which modifier" message. The mutation leg found every one of them
+        // UNCOVERED: 293 mutants tested, and the four-way ternary that names the conflicting modifier had no
+        // test reaching it at all. The test above proves the AUTOMATIC path stands aside for a converter; none
+        // proved what happens when the caller ASKED for a share and also wrote a modifier, which is the case
+        // the diagnostic exists for. A guard nothing exercises is a guard nobody has checked fires.
+
+        [Theory]
+        [InlineData("Use = nameof(Reverse)", "Use=")]
+        [InlineData("When = nameof(Always)", "When=")]
+        [InlineData("NullSubstitute = \"none\"", "NullSubstitute=")]
+        [InlineData("StringFormat = \"G\"", "StringFormat=")]
+        public void MapShare_beside_a_modifier_names_that_modifier_in_the_refusal(string modifier, string named)
+        {
+            var src = $$"""
+                        public sealed class A { public ImmutableList<Badge> Items { get; init; } = null!; }
+                        public sealed class B { public ImmutableList<Badge> Items { get; init; } = null!; }
+                        [DwarfMapper] public partial class M
+                        {
+                            [MapShare("Items")]
+                            [MapProperty("Items", "Items", {{modifier}})]
+                            public partial B Map(A a);
+                            public static ImmutableList<Badge> Reverse(ImmutableList<Badge> s) => s.Reverse();
+                            public static bool Always(A a) => true;
+                        }
+                        """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(Shapes + src);
+
+            var d = Assert.Single(diagnostics, x => x.Id == "DWARF104");
+            var message = d.GetMessage(CultureInfo.InvariantCulture);
+
+            // The point of the arm is that it names the RIGHT modifier. A message that said "Use=" for every
+            // conflict would pass a test that only asserted the id, and would send the caller to the wrong
+            // line of their own source.
+            Assert.Contains(named, message, StringComparison.Ordinal);
+        }
     }
 }

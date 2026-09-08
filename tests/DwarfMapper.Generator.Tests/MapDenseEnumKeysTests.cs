@@ -556,5 +556,43 @@ namespace DwarfMapper.Generator.Tests
                                                    """,
                 "DWARF105");
         }
+
+        // The four arms of DWARF105's "which modifier" message, the dense twin of the DWARF104 theory in
+        // MapShareTests. Both were found uncovered by the mutation leg on 2026-09-08: 293 mutants, and the
+        // ternary naming the conflicting modifier had nothing reaching it.
+        //
+        // The stake is stated in the generator's own comment at the refusal site: "the dense path assigns
+        // kv.Value straight into a slot and calls nothing, so honouring it over a Use=/StringFormat=/When=/
+        // NullSubstitute= would DROP THAT MODIFIER SILENTLY". This diagnostic is the only thing standing
+        // between a caller who wrote both and a mapping that quietly ignores one of them.
+
+        [Theory]
+        [InlineData("Use = nameof(Same)", "Use=")]
+        [InlineData("When = nameof(Always)", "When=")]
+        [InlineData("NullSubstitute = \"none\"", "NullSubstitute=")]
+        [InlineData("StringFormat = \"G\"", "StringFormat=")]
+        public void MapDenseEnumKeys_beside_a_modifier_names_that_modifier_in_the_refusal(
+            string modifier,
+            string named)
+        {
+            var src = $$"""
+                        public sealed class A { public Dictionary<Platform, int> Counts { get; set; } = new(); }
+                        public sealed class B { public Counts3 Counts { get; set; } }
+                        [DwarfMapper] public partial class M
+                        {
+                            [MapDenseEnumKeys("Counts")]
+                            [MapProperty("Counts", "Counts", {{modifier}})]
+                            public partial B Map(A a);
+                            public static Counts3 Same(Dictionary<Platform, int> s) => default;
+                            public static bool Always(A a) => true;
+                        }
+                        """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(Shapes + src);
+
+            var d = Assert.Single(diagnostics, x => x.Id == "DWARF105");
+            var message = d.GetMessage(CultureInfo.InvariantCulture);
+
+            Assert.Contains(named, message, StringComparison.Ordinal);
+        }
     }
 }
