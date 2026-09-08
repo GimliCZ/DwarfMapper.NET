@@ -190,5 +190,40 @@ namespace DwarfMapper.Generator.Tests
             // The foreign attribute must not produce a Src->Dst map.
             Assert.DoesNotContain("Dst Map(", generated, StringComparison.Ordinal);
         }
+
+        // Round 29's two new attributes. These exist for the same reason every sibling above does: the
+        // generator reads them off SYMBOLS and never constructs one, so nothing else in the suite executes
+        // the constructor that stores the member name or the property that hands it back. The coverage floor
+        // caught exactly that — `DwarfMapper` fell to 90.2 % against a 91.2 % floor when the two attributes
+        // landed, with MapShareAttribute at 0 % — and the floor is not the kind of thing this repository
+        // lowers.
+
+        [Fact]
+        public void MapShareAttribute_exposes_the_member_it_was_given()
+        {
+            var attr = new MapShareAttribute("Badges");
+
+            Assert.Equal("Badges", attr.Member);
+        }
+
+        [Fact]
+        public void MapDenseEnumKeysAttribute_exposes_the_member_and_defaults_its_offset_to_zero()
+        {
+            var attr = new MapDenseEnumKeysAttribute("Counts");
+
+            Assert.Equal("Counts", attr.Member);
+
+            // Zero is the load-bearing default: the emitted index is `(int)kv.Key - offset`, so a
+            // non-zero default would silently shift every enum-keyed write by one slot.
+            Assert.Equal(0, attr.Offset);
+        }
+
+        [Fact]
+        public void MapDenseEnumKeysAttribute_carries_the_offset_it_was_set()
+        {
+            var attr = new MapDenseEnumKeysAttribute("Counts") { Offset = 1 };
+
+            Assert.Equal(1, attr.Offset);
+        }
     }
 }
