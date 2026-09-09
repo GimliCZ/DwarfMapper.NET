@@ -109,7 +109,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 242 | 78.28 % (2026-09-07, round-29 Phase 2 gate) | 0 | 0 | 0 | 100.00 % |
+| pipeline | `stryker-config.pipeline.json` | 304 | 89.80 % (2026-09-09, round-29 Phase 3 gate) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
 84.32 % → 87.04 %, and `break`/`low` moved 84 → 87 in `stryker-config.json` in the same commit, which is
@@ -120,22 +120,43 @@ that 393 mutants are killable today. The 41 survivors and 12 uncovered mutants o
 (BlittableProof 36 + 5, ConstructorSelector 4 + 7, EquatableArray 1) have **not** been dispositioned here;
 that is the next kill program's work, and `break` must not move again before it happens.
 
-**Pipeline denominator refreshed 2026-09-07** (round-29 Phase 2 gate): 239 → 242 scoreable, 76.99 % →
-78.28 % (191 killed, 0 timeout, 51 survived), and `break`/`low` moved 76 → 78 in
-`stryker-config.pipeline.json` in the same commit, which is what R1↔R3 requires. **Only the denominator
-moved.** No mutant was adjudicated: `provenEquivalent` stays 0, so the 100 % `rawCeiling` is not a claim
-that every mutant is killable — it is the arithmetic that follows from nothing having been proved
-equivalent yet, and every one of the **51 survivors is an open worklist item**. Read the ceiling as "no
-equivalence work has been done here", not as headroom. `break` must not move again before that work is.
-The raise itself was not optional: `gate-checks.ps1` throws once the floored score reaches `break + 1`
-(invariant R2), and the run was clean in the way R2's own error text asks about — the **Timeout bucket was
-zero**, so no timeout-counted-as-detected re-classification inflated it.
+**Pipeline denominator refreshed 2026-09-09** (round-29 Phase 3 gate): 242 -> 304 scoreable,
+78.28 % -> 89.80 % (273 killed, 0 timeout, 29 survived, 2 not covered by any test).
+The population grew because round 29's `[MapShare]` and `[MapDenseEnumKeys]` added code to
+`MapperExtractor.Members.Phases.cs`, which is one of this leg's three `mutate` files.
+
+**Unlike the generator row above, BOTH numbers moved here, and the score moved because of kills.** That is
+established by a mutant-by-mutant diff of the two reports over the identical 646-mutant population, not by
+comparing two headline percentages: every status change runs one way — **33 Survived → Killed and 9
+NoCoverage → Killed, and not one Killed → Survived.** Sixteen of the 42 sit on lines 365–367 and 403–405,
+the four-way ternaries the eight new tests target; the other 26 are spread across the file because those
+tests compile whole mapper sources and so drive the surrounding resolution phases too. The Timeout bucket
+is zero in both runs, which is the first thing invariant R2's own error text says to check.
+
+No mutant was adjudicated: `provenEquivalent` stays 0, so the 100 % `rawCeiling` is not a claim that every
+mutant is killable — it is the arithmetic that follows from nothing having been proved equivalent yet, and
+every one of the **29 survivors plus 2 uncovered mutants is an open worklist item**, all of them in
+`MapperExtractor.Members.Phases.cs`. Read the ceiling as "no equivalence work has been done here", not as
+headroom. **Actual headroom is two mutants:** `break` 89 requires 271 detected of 304 and 273 are, so a
+three-mutant regression reds the gate.
+
+The two remaining NoCoverage mutants are at lines 66 and 105 — deferrable-target selection and the
+group-naming fallback — **not** in the `[MapShare]` / `[MapDenseEnumKeys]` region. That was checked rather
+than assumed, because still-unexecuted code in a feature shipped this round would have been a blocker for
+the release rather than a worklist entry.
+
+The run that produced this row was itself a regression fix, and it is worth recording why. The first
+Phase 3 attempt scored 75.99 % against `break` 78 -- **below the floor** -- with 11 mutants NoCoverage,
+clustered on the four-way ternaries at lines 365, 367 and 405 that name which `[MapProperty]` modifier
+conflicts with a share or a dense fill. Those refusal messages had **never been executed** by any of the
+7,838 tests then green: both new features shipped with their "which modifier" branch untested, and only
+the mutation tier saw it. Eight `[Theory]` tests (four arms each, commit `7d50320`) closed it.
 
 One measurement worth recording beside the score, because it bounds what this leg can mean: the run created
-roughly **3,795 mutants and could test only 242** — 3,549 were dropped as "mutant caused compile errors" and
-4 as "could not be injected". About 94 % of what the pipeline globs generate never runs, so the score
-describes the ~6 % that compiles. That is not an error (an uncompilable mutant cannot be killed), but the
-leg's reach over the pipeline is far narrower than its `mutate` list suggests, and the gap should be
+roughly **15,029 mutants and could test only 302** -- the rest were dropped as compile errors or removed
+by the mutate filter. About 98 % of what the pipeline globs generate never runs, so the score
+describes the small fraction that compiles. That is not an error (an uncompilable mutant cannot be killed),
+but the leg's reach over the pipeline is far narrower than its `mutate` list suggests, and the gap should be
 quantified deliberately rather than rediscovered.
 
 Fuller arithmetic, carried from the research and updated by P5 (context, not gates — the figures below
@@ -225,14 +246,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "pipeline": {
       "config": "stryker-config.pipeline.json",
-      "scoreable": 242,
-      "measuredRawScore": 78.28,
-      "measuredOn": "2026-09-07",
+      "scoreable": 304,
+      "measuredRawScore": 89.80,
+      "measuredOn": "2026-09-09",
       "provenEquivalent": 0,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 100.0,
-      "rawCeilingFormula": "(242 - 0) / 242 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
+      "rawCeilingFormula": "(304 - 0) / 304 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
     }
   },
   "entries": [

@@ -91,3 +91,38 @@ failure shape, found for the sixth time.
 Not fixed in round 29 because adding a file to a leg changes that leg's population and forces a re-run and a
 re-pin — and the pipeline leg's `break` currently sits 0.28 pp above its measurement, which is less than one
 mutant. Doing it carelessly turns a green gate red for reasons unrelated to the proof.
+
+## The R3 ledger coupling checks consistency, not staleness (found 2026-09-09, round 29 Phase 3 gate)
+
+`RatchetInvariantScanTests.R3_the_equivalents_ledger_counts_are_exactly_pinned_and_every_entry_is_proof_anchored`
+is the guard that stops a mutation leg being re-measured without refreshing
+`Issues/ledgers/equivalent-mutants.md`. Its coupling assertion is:
+
+```csharp
+Assert.True((int)Math.Floor(measured) == breakValue, ...)
+```
+
+It reads `measuredRawScore` from the ledger and `break` from the leg's Stryker config, and requires the
+first to floor to the second. It caught a real defect once already (commit `fbaf1fc`, where `break` moved
+76 → 78 with the ledger left at 76.99).
+
+**But `scoreable` — the denominator — is cross-checked against nothing.** It is compared only to the
+`rawCeiling` computed from itself, which is circular. So a ledger row reading
+
+| pipeline | 242 scoreable | 78.28 % |
+
+passes R3 against `break: 78` **while describing a population that no longer exists**. The pipeline leg's
+scoreable population moved 242 → 304 when round 29 added `[MapShare]` and `[MapDenseEnumKeys]` to
+`MapperExtractor.Members.Phases.cs`; the row survives that unchanged, because 78.28 still floors to 78.
+
+The failure this permits is quiet and specific: the ceiling arithmetic, the survivor worklist counts, and
+every "N survivors are an open worklist item" sentence in the prose go stale together, and the one test
+whose job is to notice reads green. **`rawCeiling` being arithmetic over the pinned counts is not the same
+guarantee as the pinned counts being current.**
+
+The fix is a second anchor for the denominator — the leg's own most recent report JSON carries
+`killed + survived + timeout + noCoverage`, which is exactly `scoreable`, and it is a file on disk under
+`StrykerOutput/`. Anchoring the row to a named report (the way every adjudication entry is already anchored
+to a proof file) closes it. Not done in round 29: `StrykerOutput/` is git-ignored, so the anchor needs a
+retention decision — pin the report path and accept that CI cannot re-verify it, or copy the four counts
+into the ledger and check *those* sum to `scoreable`. The second is cheap and is the recommended shape.
