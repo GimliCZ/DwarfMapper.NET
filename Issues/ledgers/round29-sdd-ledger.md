@@ -777,3 +777,69 @@ That is the more useful result, because every collection map the generator emits
 so fusion buys 0.55x exactly where a mapper spends its time and NOTHING for a single-object map, which
 should be refused as dead weight. Fifth "right number, wrong population" of the round, and the first caught
 before it was reported as settled — the control existed only because it was asked for.
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+MAINTAINER RULINGS, 2026-09-09. (1) "all methods are verifyable. Build around a specialized testing case or
+corpus." (2) fusion scoped as proposed — ok. (3) push waits on a successful audit + coverage run, AND
+"today our coverage regressed, that should be considerate as a block."
+
+RULING 1 — DONE, commit 0f1f5d2.
+  MEASURED BEFORE BUILDING on a two-method probe rather than reasoning about Roslyn's lowering: variable
+  index -> InlineArrayAsSpan -> ReturnPtrToStack; CONSTANT index -> InlineArrayElementRef -> "All Classes
+  and Methods ... Verified", exit 0. The dense fill is now a switch over declared members with constant slots.
+  A SECOND PROPERTY FELL OUT AND IT IS WORTH MORE THAN THE FIRST: the wide-key hazard stopped being GUARDED
+  and became IMPOSSIBLE. The old shape cast to int after a long subtract and needed a range check because
+  (int)(E)0x1_0000_0001 is 1. A switch compares the key at its own width; there is no cast left to get wrong.
+  The test that pinned the guard now pins the ABSENCE of the arithmetic and is renamed to say so.
+  DELIBERATE BEHAVIOUR CHANGE: an UNDECLARED key that is arithmetically in range — a gap in a sparse enum —
+  used to write that slot silently and now throws, which is what the exception's sentence always said. New
+  sparse fixture + runtime test. (CA1027 forced High=3 rather than 2: 0 and 2 are both powers of two and the
+  analyzer then asks for [Flags], which this very feature refuses.)
+  ALIAS DEDUPE IS NOW LOAD-BEARING: one case label per NAME would be two labels for one constant = CS0152 in
+  a file the consumer cannot edit. Deduped by VALUE; the alias test pins exactly one label rather than
+  trusting CompilesClean.
+  THE SPECIALIZED CORPUS — and the design choice worth keeping: NOT a new hand-written corpus. The GOLDEN
+  FEATURE CORPUS is already gated for completeness, so EmittedIlIsVerifiableTests compiles all 35 cases into
+  ONE assembly (each rewritten into its own namespace) and verifies with ZERO permitted findings and NO
+  excuse list. Its sources are declarations and partial signatures, so every body is the generator's and a
+  finding is OURS BY CONSTRUCTION. It cannot fall behind the feature surface.
+  TWO CONTROLS, and the first one caught a real misconfiguration: a planted stackalloc MUST be reported, and
+  on the first attempt it was not — the ref pack turned every method into "Failed to load assembly
+  'System.Private.CoreLib'", which LOOKS like findings and is the tool resolving nothing. Fixed by pointing
+  at the RUNTIME directory. Plus a non-vacuity floor on the case count.
+  RED PROVEN BY SABOTAGE: reverting the constant index to Math.Max(0, n) reds the corpus naming
+  InlineArrayAsSpan — the exact finding that started this. Restored, green.
+  The gate-checks excuse is DELETED and the rule "no entry may name a method the generator emits" is written
+  above the list. DwarfMapper.Testing added as an ILVerify target (it SHIPS and was in none). ilverify now
+  installs in the PUSH-time CI job, not only nightly. Still uncovered and RECORDED: the two netstandard2.0
+  analyzer assemblies, which need a netstandard ref set.
+
+RULING 3 — THE BLOCK, DIAGNOSED AND ANSWERED, commit 452da4b.
+  LINE COVERAGE DID NOT REGRESS — it rose on all five assemblies. What fell was the MUTATION SHARE,
+  11.134 % -> 11.085 %, because Phase 4 put 189 lines of consumer-facing verification code into the one
+  package at 0 % mutation coverage. 100 % line-covered, 0 % mutation-covered. My own audit note had said this
+  "moves the package up the list"; it should have said "blocks".
+  Sixth leg, scoped to the five VERIFIER files (402 lines): 82.73 % (86 killed, 5 TIMEOUT, 17 survived, 2
+  uncovered of 110), 20:18. Testing 0 % -> 17.9 %, repo 11.1 % -> 12.0 %.
+  THE TIMEOUT BUCKET IS FIVE AND EVERY SIBLING'S IS ZERO. Read rather than waved at: all five REMOVE
+  TERMINATION (i++ -> i-- in three loops; two unbind StructuralComparer's recursion), and a non-terminating
+  mutant times out on every machine — so unlike a merely-slow mutant the classification is stable across
+  boxes. That is why 82.73 is pinned and not the timeout-free 78.18. Stated in the config AND the ledger
+  because the sibling rows cite a zero bucket as their evidence and this one cannot.
+  FOUR ARCHITECTURE TESTS WENT RED on the new leg, which is the discipline working. THREE OF THE PINS HAD
+  COMMENTS DISAGREEING WITH THEIR VALUES ("FOUR since round 27" against 5, "+ 4" against 5) — round 27 moved
+  the numbers and not the sentences. Corrected while moving them to 6.
+  THE SWEEP EARNED ITS KEEP AGAIN, and differently: the leg ended with an IOException (locked file) and left
+  a MUTATED DwarfMapper.Testing.dll — the first time the planted assembly was not the generator. This is the
+  second correction to the same memory in one day: not only "any run, completed or killed", but ANY PRODUCT
+  ASSEMBLY.
+
+THE AUDIT + COVERAGE RUN RULING 3 REQUIRES: HOUSEKEEPING PASSED at 452da4b with
+-Deep -Coverage -ILVerify -BenchSmoke. Locked-mode restore, full self-test suite, all five coverage floors
+(DwarfMapper 91.7/91.2, Generator 95.7/95.5, DocTooling 96.3/96.0, CodeFixes 96.8/96.2, Testing 96.6/96.4),
+full exhaustion, AOT publish+execute, ILVerify, and 28 allocation scenarios exact-matched over 63/63
+benchmarks.
+  ILVERIFY NOW READS THE WAY THE RULING ASKS FOR: "All Classes and Methods in DwarfMapper.dll Verified",
+  "All Classes and Methods in DwarfMapper.Testing.dll Verified", and the Gallery's THREE findings are all
+  DwarfMapper.Gallery.Ex18.Example::Run() — hand-written stackalloc in sample code, the one declared entry.
+  Not one finding is in generated code.
