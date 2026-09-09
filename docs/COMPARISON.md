@@ -201,7 +201,7 @@ because every one needed a multi-assembly, runtime-registry, real-consumer shape
 fabricated source and the mapped output, commit both, then replay against the new mapper. Committing the
 **source** rather than a seed is the load-bearing detail: it makes the comparison independent of the fixture
 generator, which will otherwise change under you mid-migration and silently reshuffle every input while still
-appearing to pass. `DwarfMapper.Testing`'s `ObjectFactory` and `GraphOracleComparer` are built for this.
+appearing to pass. `DwarfMapper.Testing`'s `ObjectFactoryV2` and `GraphOracleComparer` are built for this.
 
 ## Performance & memory
 

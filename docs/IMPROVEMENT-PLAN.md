@@ -148,7 +148,7 @@ diagnostics below (items 7/12/13/14) must take fresh IDs ≥ DWARF064. Reserved/
    member CS9035, `List<int?>` element-converter NRE) because the pools contain only mutable classes and
    one trivial struct. Route the new shapes through the same compile + `CrossTypeDiff` value oracle.
 11. **[PLANNED·M] Convert example-based parity/round-trip/update-into tests into metamorphic properties.**
-   ~25 feature tests assert a single hand-picked input each. Use `ObjectFactory` + `RoundTrip.Verify` to
+   ~25 feature tests assert a single hand-picked input each. Use `ObjectFactoryV2` + `RoundTrip.Verify` to
    assert round-trip idempotence over N random inputs, update-into idempotence (`Update(s, Map(s))` is a
    no-op), and identity value-preservation for all random inputs. Pin intentional non-round-trippable
    cases (enum by-name). Overlaps conceptually with items 5–6; sequence after them.

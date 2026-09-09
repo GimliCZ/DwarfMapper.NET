@@ -797,7 +797,7 @@ inverse → `DWARF020`; ambiguous inverse → `DWARF021`.
 When a round-trip check fails you get a **structural diff**, not "two objects differ somewhere": `RoundTrip.Verify`
 throws a `RoundTripException` that walks the two graphs and reports the **member path** that diverged with its *
 *expected vs. actual** value, plus the replay **seed** so you can reproduce the exact failing input (
-`ObjectFactory.Create<T>(seed)` rebuilds it). See *Verifying maps today* below.
+`ObjectFactoryV2.Create<T>(seed)` rebuilds it). See *Verifying maps today* below.
 
 ### Verifying maps today
 
@@ -817,7 +817,7 @@ public partial class Mapper
 <!-- endsnippet -->
 
 On a mismatch it throws with a structural diff (the differing member's path, expected vs. actual, and the replay seed).
-`ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The
+`ObjectFactoryV2.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The
 package is reflection-based and test-only — it is never AOT-published and does not affect the core library's
 reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc
 verification.)
