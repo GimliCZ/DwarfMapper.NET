@@ -898,12 +898,22 @@ ROUND CLOSE — THE COLLECTION SURFACE, RE-MEASURED AT THE OWNER'S SCALE, commit
   AHEAD at 10^6. I would have shipped a regression to fix a non-problem. Then the null-check probe refuted my
   SECOND candidate the same way: removing the callee's redundant ThrowIfNull buys nothing (inside the
   combined error at all three sizes, sign the wrong way round).
-  WHAT SURVIVED IS BETTER THAN WHAT I PROPOSED. The Array gap is real at every decade (8-29%) and the cost is
-  the LOOP'S OWN null ternary — removing it recovers ~9%, which accounts for the gap. And the generator
-  already disagrees with itself: the SYNTHESIZED element path emits no ternary for the identical shape. Two
-  paths, one question, and the slower one silently stores null! into an array whose element type forbids
-  null. Filed as Issues/round30/FINDING-array-null-ternary.md — de-silencing before performance, with a
-  behaviour change attached, so it opens round 30 rather than closing round 29.
+  A THIRD HYPOTHESIS DIED TOO, AND IT WAS MINE, AND THE OWNER CAUGHT IT: "Responses have been to this already
+  in past of git. search commits." The Array gap is real at every decade (8-29%) and the cost IS the loop's
+  own null ternary (~9%, which accounts for it). But I then claimed the generator disagreed with itself —
+  that the SYNTHESIZED element path emits no such test — and called it a de-silencing item. FALSE. The
+  synthesized helper opens with `if (s is null) return null!;` INSIDE its body: the same null-in-null-out
+  decision, differing only in where the test can live (a user-declared partial is the consumer's own method,
+  so the call site is the only place available). And the behaviour is a RULING, not an oversight: 6fa7308
+  introduced NullableProjectRefForgiving for exactly this cell so a failed Result<T>/Outcome<T> maps to null
+  instead of throwing, with the `!` keeping CS8601 out of a generated file no consumer pragma can reach;
+  9520b9a settles the neighbouring cell the other way on purpose. feat:NestedViaDeclaredMap already pins all
+  three arms. So the Array row is the MEASURED PRICE OF A CHOSEN SEMANTIC — we map a null element to null,
+  Mapperly dereferences it — and there is no version of closing it that keeps the behaviour.
+  I read one side of an emitted pair, found an asymmetry, and built a correctness argument without reading
+  the other side's body or searching for the commit that created it. Item A is WITHDRAWN before any work
+  started; what survives is one generator test documenting which arm this cell takes, and a sentence in
+  docs/COMPARISON.md saying the row is a trade rather than a loss.
   TWO PUBLISHED OVER-CLAIMS CORRECTED IN PLACE. docs/COMPARISON.md's "~1.8-2.0x faster than every competitor"
   carried no size qualifier; the lead is a CURVE (2.05-2.20x at N=100-1,000, 1.06x at the LOH cliff, 1.45x at
   10^6). And round 29's OWN sweep-results.md said "usage space: everywhere, no crossover" from a sweep that

@@ -122,13 +122,21 @@ This also closes a hypothesis before it cost anything: the proposed fix was to e
 `Issues/round26/FINDING-list-fill-strategy.md` had ALREADY measured that as a non-win for exactly this case
 (1.00x, then 0.92x). There was no gap, and the fix for it was already known not to work.
 
-### 4. The `Array` gap DOES exist, at every decade, and it is explained
+### 4. The `Array` gap DOES exist at every decade, and it is the measured price of a DECIDED behaviour
 
-Mapperly leads at all seven sizes, 8-29%. Cause identified by reading both generators' output and confirmed
-by a four-arm probe: a per-element null ternary that DwarfMapper's own synthesized element path does not
-emit and that Mapperly does not emit at all. Full write-up, including the arm that refutes the obvious fix,
-in `Issues/round30/FINDING-array-null-ternary.md`. It is a de-silencing item before it is a performance one
-- the null arm stores `null!` into an array whose element type forbids null.
+Mapperly leads at all seven sizes, 8-29%. A four-arm probe (`NullCheckProbeBenchmarks`) localises it to the
+per-element null test: removing it recovers ~9%, which accounts for the gap. Removing the CALLEE's
+`ThrowIfNull` recovers nothing (inside the combined error at all three sizes, sign inverted).
+
+**That test is not waste, and the first version of this section said it was.** DwarfMapper maps a null
+element to null; Mapperly's element method has no guard and would throw `NullReferenceException`. The
+behaviour was decided in `6fa7308` so that a failed `Result<T>`/`Outcome<T>` maps to null instead of
+throwing, with the `!` keeping CS8601 out of a generated file no consumer `#pragma` can reach. DwarfMapper's
+own synthesized element helper makes the SAME decision - `if (s is null) return null!;` inside the helper
+body - so there is no inconsistency between the two paths, only a difference in where the test can live.
+
+So the `Array` row is a **measured trade, not an inefficiency**, and there is no version of closing it that
+keeps the behaviour. `Issues/round30/FINDING-array-null-ternary.md` carries the withdrawal and the ruling.
 
 ## Rows that are NOT findings
 

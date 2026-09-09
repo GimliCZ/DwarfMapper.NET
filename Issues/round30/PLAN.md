@@ -16,37 +16,24 @@ re-proposed**:
 
 ---
 
-## A. The null-ternary de-silencing — highest value, and it is a correctness item
+## A. WITHDRAWN — the null ternary is a decided behaviour, not a defect
 
-**Evidence:** `Issues/round30/FINDING-array-null-ternary.md`. The generator emits two different element
-expressions for the same question depending on whether the element map is user-declared or synthesized:
+**Withdrawn 2026-09-09 before any work started**, after the owner pointed at the git history. `6fa7308`
+introduced `NullableProjectRefForgiving` for exactly this cell so that a failed `Result<T>`/`Outcome<T>`
+maps to null rather than throwing, and DwarfMapper's own synthesized element helper makes the same decision
+inside its body (`if (s is null) return null!;`). The two paths agree; my claim that they disagreed came
+from reading one side and not the other.
 
-```csharp
-__r.Add((__item is null ? null! : (FlatDst)MapFlat(__item)));   // user-declared -> tests, stores null!
-__r.Add(__DwarfMap_Obj_..._BDE0B74A(__item));                   // synthesized   -> calls through
-```
+The `Array` category's 8-29 % gap against Mapperly is therefore **the measured price of mapping a null
+element to null** where Mapperly dereferences it. See `Issues/round30/FINDING-array-null-ternary.md`.
 
-**Why it leads the round.** The user-declared arm stores `null!` into a collection whose element type
-forbids null: a silent null that surfaces later, elsewhere, in the consumer's code. That is the exact
-failure genre the standing goal names. It is *also* worth 8-29 % on every reference-element array, but the
-correctness argument is the one that ranks it.
+What survives is small and is documentation, not emission:
 
-**Order of work.**
-
-1. **Confirm the annotation, do not assume it.** The finding names a suspect — two different predicates for
-   "may be null" (`== Annotated` at `CollectionConverter.cs:296`/`:405` against `!= NotAnnotated` in
-   `SourceMayBeNullRef`) — and explicitly does not confirm it. A generator test asserting the emitted
-   element expression for `FlatSrc[] -> FlatDst[]` under `enable`, `disable`, and an explicit `FlatSrc?[]`
-   source is the instrument. **Nothing else in item A starts until this test exists and is read.**
-2. **Rule on the semantics.** Today: user-declared passes a null element through as null, synthesized
-   throws. They must agree. Both directions change observable behaviour for someone, so this is a ruling
-   with a documented rationale and a `CHANGELOG` entry, not a refactor.
-3. **Implement, with a RED regression test per branch** (nullable-annotated element, non-nullable element,
-   oblivious context).
-4. **The golden manifest moves.** Every collection with a user-declared element map re-emits. Expect a large
-   byte-identity diff and give it its own commit.
-5. **Re-measure `SweepArray_*`** and record whether the ~9 % predicted by `NullCheckProbeBenchmarks` is what
-   the generator change actually delivers. A prediction from a hand-written probe is not a result.
+1. **One generator test** documenting which arm `FlatSrc[] -> FlatDst[]` takes under `enable`, `disable`
+   and an explicit `FlatSrc?[]` source. Two predicates for "may be null" coexist in the pipeline
+   (`== Annotated` at `CollectionConverter.cs:296`/`:405` against `!= NotAnnotated` in `SourceMayBeNullRef`);
+   the test pins which one governs this cell so the next reader does not re-derive it from emitted code.
+2. **A sentence in `docs/COMPARISON.md`** saying the `Array` row is a trade rather than a loss.
 
 ## B. Map fusion — the emitter, now that the measurement is closed on the right population
 

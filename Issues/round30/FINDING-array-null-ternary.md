@@ -1,107 +1,102 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 
-# Finding: a collection element routed through a USER-DECLARED map pays a null ternary the synthesized path does not
+# WITHDRAWN as a defect: the per-element null ternary is a decided behaviour, and it was decided on purpose
 
-**Found 2026-09-09**, while sweeping the collection surface across seven decades at the owner's request.
-Filed rather than built, on the precedent of `Issues/round26/FINDING-list-fill-strategy.md`: this changes
-emission for every collection whose element map is user-declared, and it changes OBSERVABLE BEHAVIOUR on a
-null element, so it needs its own safety analysis and test pass rather than a closing commit.
+**Filed 2026-09-09, withdrawn the same day** after the owner pointed at the git history: *"Responses have
+been to this already in past of git. search commits."* They were right, and the ruling is explicit.
 
-## The gap it explains
+The measurement below stands. **The claim built on top of it does not**, and it was the important half.
 
-The `Array` category is the one place DwarfMapper trails a rival at every element count. Measured
-2026-09-09, all four libraries in one process, 5 warmup / 10 iterations (`CollectionSweepBenchmarks`):
+## What I claimed, and why it was wrong
 
-| N | 1 | 10 | 100 | 1,000 | 10,000 | 100,000 | 1,000,000 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Mapperly ÷ DwarfMapper | 0.71x | 0.85x | 0.92x | 0.86x | 0.72x | 0.88x | 0.92x |
-
-Reproduced in an earlier ShortRun pass of the same suite (0.81–1.02x). `List` and `Blit` show no such
-consistent trend, so this is specific to the shape, not to the machine or the run.
-
-## The mechanism, read from both generators' output
-
-Same file, `DwarfM.g.cs`, two collection helpers over reference elements whose element type is
-non-nullable-annotated in a `<Nullable>enable</Nullable>` project:
+I claimed the generator emits two different element expressions for the same question:
 
 ```csharp
-// element mapped by a USER-DECLARED partial method (ArraySrc.Items, ListSrc.Items -> MapFlat)
-__r.Add((__item is null ? null! : (global::FlatDst)MapFlat(__item)));
-
-// element mapped by a GENERATOR-SYNTHESIZED helper (NfOrder.Lines)
-__r.Add(__DwarfMap_Obj_global__NfLine_global__NfLineDto_BDE0B74A(__item));
+__r.Add((__item is null ? null! : (FlatDst)MapFlat(__item)));   // user-declared converter
+__r.Add(__DwarfMap_Obj_global__NfLine_global__NfLineDto_BDE0B74A(__item));  // synthesized converter
 ```
 
-**The two paths disagree about the same question.** One tests every element for null and stores `null!` on
-the null arm; the other calls straight through and lets the helper's own guard answer. Mapperly, for the
-identical shape, emits neither test:
+...and concluded that "two paths disagree about one question, and the slower one silently stores `null!`
+into an array whose element type forbids null" — a de-silencing item.
+
+**Both halves are false.** Reading the synthesized helper's body, which I had not done:
 
 ```csharp
-for (var i = 0; i < source.Length; i++) { target[i] = MapFlat(source[i]); }   // MapFlat has NO null guard
+private global::NfLineDto __DwarfMap_Obj_global__NfLine_global__NfLineDto_BDE0B74A(global::NfLine s)
+{
+    if (s is null) return null!;      // <- the SAME null-in, null-out decision
+    return new global::NfLineDto { ... };
+}
 ```
 
-## Measured: which of the two checks actually costs
+The two paths **agree exactly**. Both preserve a null element as null. They differ only in *where the test
+lives* — and that difference is forced: a synthesized helper's body is ours to shape, while a user-declared
+`public partial FlatDst MapFlat(FlatSrc s)` is the consumer's own method with the consumer's own signature,
+so the only place we can put the decision is the call site.
 
-`NullCheckProbeBenchmarks`, four hand-written arms over one payload draw, same process. `Current` replicates
-the emitted shape line for line; `Guarded` mirrors the emitted public partial method (`ThrowIfNull` then an
-object initializer); `Core` is what a non-validating inlinable core would be.
+## The ruling this re-litigated
 
-| N | Current | CoreCall (loop test kept, callee guard removed) | GuardOnly (loop test removed) | Unguarded (neither) |
+`6fa7308` — *"fix(null): guard the nested edge when its converter is a map method the USER declared —
+CS8604 in the consumer .g.cs, or a throw on every failed `Result<T>`"* — introduced
+`NullHandling.NullableProjectRefForgiving` for precisely this cell, and named the motivating shape:
+
+> Three arms — destination can hold null -> the existing `NullableProjectRef`; **destination cannot and the
+> source is not nullable-annotated either -> the new `NullableProjectRefForgiving`
+> (`x is null ? null! : Conv(x)`, the `Result<T>`/`Outcome<T>` shape whose Fail parks `default!`, where the
+> `!` is what keeps CS8601 out of the generated file)**; destination cannot and the source IS
+> nullable-annotated -> UNCHANGED, because that is the shape DWARF070 already names and lifting it would
+> swallow it.
+
+So the ternary exists so that **a failed `Result<T>` maps to null instead of throwing**, and the `!` keeps
+CS8601 out of a generated file where no consumer `#pragma`, `NoWarn` or `.editorconfig` can reach it. That
+is the same unsuppressible-warning constraint the corpus already gates. Removing the ternary would
+reintroduce the exact behaviour that commit was written to fix.
+
+`9520b9a` settles the neighbouring cell the same way and in the opposite direction — a *nullable-annotated*
+element into a non-nullable target throws loudly rather than passing null through — so the two cells are
+deliberately different, not accidentally inconsistent.
+
+The corpus already pins all of it: `feat:NestedViaDeclaredMap` covers all three arms on one pair.
+
+## What the measurement actually showed, restated honestly
+
+`NullCheckProbeBenchmarks`, four hand-written arms over one payload draw, same process:
+
+| N | Current | CoreCall (callee guard removed) | GuardOnly | Unguarded (no test anywhere) |
 |---:|---:|---:|---:|---:|
-| 100 | 564 ns | 567 (**1.007x**) | 514 (**0.911x**) | 513 (**0.911x**) |
-| 1,000 | 6,119 | 6,610 (1.080x) | 5,737 (**0.938x**) | 5,529 (0.904x) |
-| 10,000 | 70,846 | 71,843 (1.014x) | 65,316 (**0.922x**) | 62,424 (0.881x) |
+| 100 | 564 ns | 567 (1.007x) | 514 (0.911x) | 513 (0.911x) |
+| 1,000 | 6,119 | 6,610 (1.080x) | 5,737 (0.938x) | 5,529 (0.904x) |
+| 10,000 | 70,846 | 71,843 (1.014x) | 65,316 (0.922x) | 62,424 (0.881x) |
 
-**Two results, and the first one refutes the hypothesis this probe was built for.**
+1. **The callee's `ThrowIfNull` is free.** `Current` - `CoreCall` sits inside the combined standard error at
+   all three sizes and the sign is inverted. A private non-validating core buys nothing. (This was the
+   hypothesis the probe was built for; it is dead either way.)
+2. **The call-site test costs ~9 %** — and that is now correctly read as **the price of null-preservation,
+   not as waste.** `Unguarded` is not an available option: it is Mapperly's shape, and Mapperly's
+   `MapFlat` would throw a `NullReferenceException` on a null element rather than mapping it to null.
 
-1. **The callee's `ThrowIfNull` is free.** `Current` - `CoreCall` is inside the combined standard error at
-   all three sizes (-3.7 ns of 15.8; -491 of 849; -997 of 9,400), and the sign is the wrong way round. A
-   private non-validating core would buy NOTHING. That was the proposed fix; it is dead.
-2. **The loop's own ternary is the whole cost.** `GuardOnly` (loop test removed, callee guard kept) and
-   `Unguarded` (neither) measure the same 0.911x at N=100. Removing the ternary recovers **~9 %** — which is
-   the size of the Mapperly gap, so the mechanism accounts for the finding rather than merely accompanying
-   it.
+So the `Array` category's 8-29 % gap against Mapperly is **a semantic difference we chose**, measured. It is
+not an inefficiency, and there is no version of removing it that keeps the behaviour: moving the test into a
+wrapper just relocates the same branch and adds a call.
 
-## Why this is a correctness question before it is a performance one
+## What survives as work
 
-The null arm stores `null!` into `FlatDst[]` — an array whose element type forbids null. A consumer who
-receives a null element gets **a silent null in a collection typed as non-null**, discovered later and
-somewhere else. The synthesized path, for the identical situation, produces an `ArgumentNullException`
-naming the parameter at the moment the null is seen. Two paths, two behaviours, and the quiet one is the
-one that is also slower.
+Nothing in item A as originally written. Two smaller, genuinely open questions:
 
-That is a de-silencing item, not only an optimization.
+* **Is `NullableProjectRefForgiving` reached for a source element that is NOT nullable-annotated in a
+  `<Nullable>enable</Nullable>` project?** `6fa7308` says the arm is for "destination cannot [hold null] and
+  the source is not nullable-annotated either", so the emission observed here is exactly what the ruling
+  prescribes. Two different predicates for "may be null" do coexist in the pipeline
+  (`== Annotated` at `CollectionConverter.cs:296`/`:405` against `!= NotAnnotated` in `SourceMayBeNullRef`),
+  and whether that is deliberate is worth ONE generator test to document — not to change.
+* **Should `docs/COMPARISON.md` say this?** The `Array` row currently reads as a plain loss. It is a
+  measured trade: we map a null element to null; Mapperly dereferences it. A reader deciding between the
+  two libraries would want that sentence, and it is the sort of claim this repository normally makes.
 
-## The lead, stated as unconfirmed
+## The lesson, recorded because it is the fourth of its kind this round
 
-There are **two different definitions of "this reference may be null"** in the pipeline:
-
-| site | predicate | treats an OBLIVIOUS (`None`) annotation as |
-|---|---|---|
-| `CollectionConverter.cs:296`, `:405` | `NullableAnnotation == Annotated` | not nullable |
-| `MapperExtractor.Conversions.cs:1156` (`SourceMayBeNullRef`) | `NullableAnnotation != NotAnnotated` | **nullable** |
-
-The user-declared element path reaches its `NullHandling` through the second; the synthesized path does not
-emit a test at all. That asymmetry is the obvious suspect and it is **not confirmed** — no measurement here
-establishes which annotation the element symbol actually carries at that call site. Confirm it before
-changing either predicate; a generator test that asserts the emitted element expression for
-`FlatSrc[] -> FlatDst[]` under `enable`, `disable` and an explicitly `FlatSrc?[]` source is the instrument.
-
-## What a fix must decide, and why it is not a closing commit
-
-1. **Does a null element throw, or pass through as null?** Today: user-declared path passes null through,
-   synthesized path throws. They must agree, and choosing which one changes observable behaviour for
-   existing consumers either way.
-2. **Does the annotation decide it?** `Child?[]` genuinely may hold nulls and the lift is right there. The
-   question is only what happens for `Child[]` and for oblivious contexts.
-3. **The golden manifest moves.** Every collection with a user-declared element map re-emits, so the
-   byte-identity corpus and its snapshots move with it — a large, reviewable diff that wants its own commit.
-4. **A regression test per branch**, RED first, per the standing rule.
-
-## What is NOT the fix
-
-* A private non-validating core — measured above, buys nothing (result 1).
-* `SetCount` + span fill for reference elements — already measured as a non-win in
-  `Issues/round26/FINDING-list-fill-strategy.md` (1.00x, then 0.92x). The `List` category needs no work:
-  the seven-decade sweep puts it at parity with both rivals and AHEAD at N = 10^6 (1.24x Mapperly,
-  1.32x Mapster). The "1.13x behind Mapster" in `2026-08-24-premerge-full-sweep.md` does not reproduce.
+I read one side of an emitted pair, found an asymmetry, and built a correctness argument on it without
+reading the other side's body or searching for the commit that created it. The repository had already
+answered the question twice, in commit messages that name the exact shape. **Search the history before
+declaring an inconsistency** — the design memory's *"verify before declaring a limit"* applies to the
+generator's own decisions, not only to the runtime's.
