@@ -768,3 +768,12 @@ BYTE-IDENTICAL; only times move. So fusion is an unclaimed 0.55x-allocation win.
   nothing in it says the composed map is CORRECT to emit: hooks, [RoundTrip] over B, side-effecting
   converters, identity-preserving maps and a publicly reachable A->B all make B observable. THE WORK IS THE
   REFUSAL LIST, NOT THE EMITTER.
+
+CORRECTION TO THE FUSION SPIKE (3ba6579 -> the commit after it). The flat "the JIT does NOT elide" was WRONG:
+all three arms allocated inside a for loop. Straight-line arms, same work, one element: Chained_Straight
+72 B — NO FuseB, the JIT elided it — against its looped twin's 112 B. AggressiveInlining on both helpers
+moves nothing. The correct statement has a boundary: STRAIGHT-LINE ELIDES, A PER-ELEMENT LOOP DOES NOT.
+That is the more useful result, because every collection map the generator emits IS a per-element loop —
+so fusion buys 0.55x exactly where a mapper spends its time and NOTHING for a single-object map, which
+should be refused as dead weight. Fifth "right number, wrong population" of the round, and the first caught
+before it was reported as settled — the control existed only because it was asked for.
