@@ -35,28 +35,43 @@ namespace DwarfMapper.Generator.Tests
                                                             [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts")] public partial B Map(A a); }
                                                             """);
 
-            // The whole feature: a raw index, not a hash lookup, and not the dictionary helper.
+            // The whole feature: a raw index, not a hash lookup, and not the dictionary helper. The index is
+            // a COMPILE-TIME CONSTANT per declared member — see the verifiability test below for why it must
+            // be — so every slot appears literally.
             Assert.Contains("__DwarfDense_", gen, StringComparison.Ordinal);
-            Assert.Contains("__r[(int)__i] = __kv.Value;", gen, StringComparison.Ordinal);
+            Assert.Contains("switch (__kv.Key)", gen, StringComparison.Ordinal);
+            Assert.Contains("case global::Demo.Platform.Web:", gen, StringComparison.Ordinal);
+            Assert.Contains("__r[0] = __kv.Value;", gen, StringComparison.Ordinal);
+            Assert.Contains("__r[2] = __kv.Value;", gen, StringComparison.Ordinal);
             Assert.DoesNotContain("__DwarfMapDict", gen, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void The_index_is_computed_in_a_width_that_cannot_wrap_and_is_range_checked()
+        public void A_wide_key_cannot_reach_a_slot_because_the_emission_contains_no_cast_to_get_wrong()
         {
-            // The proof bounds the values the enum DECLARES. A dictionary can hold (Platform)999, and for an
-            // enum wider than int a bare (int) cast of such a key WRAPS into range — measured:
-            // (int)(E)0x1_0000_0001 is 1 — so the write would land in another key's slot with nothing thrown.
-            // The index is therefore computed in long and tested as an unsigned quantity, which catches both
-            // ends with one comparison.
+            // THIS INVARIANT CHANGED FROM "GUARDED" TO "IMPOSSIBLE" when the fill became a switch (the change
+            // that made the emitted code ILVerify-clean). The old shape cast the key to int after a long
+            // subtraction and needed a range check, because for an enum wider than int a bare (int) cast of
+            // (E)0x1_0000_0001 is 1 — measured — a legal index belonging to a different key. A switch compares
+            // the key AT ITS OWN WIDTH against declared constants, so such a value matches no case and falls to
+            // `default`. There is no cast left to get wrong, which is why this test now asserts the ABSENCE of
+            // the arithmetic rather than the presence of a guard around it.
             var gen = GeneratorAssert.CompilesClean(Shapes + """
                                                             public sealed class A { public Dictionary<Platform, int> Counts { get; set; } }
                                                             public sealed class B { public Counts3 Counts { get; set; } }
                                                             [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts")] public partial B Map(A a); }
                                                             """);
 
-            Assert.Contains("var __i = unchecked((long)__kv.Key - 0L);", gen, StringComparison.Ordinal);
-            Assert.Contains("if (unchecked((ulong)__i) >= 3UL)", gen, StringComparison.Ordinal);
+            // No index arithmetic and no cast of the key, anywhere in the emitted text.
+            Assert.DoesNotContain("(int)__i", gen, StringComparison.Ordinal);
+            Assert.DoesNotContain("(long)__kv.Key", gen, StringComparison.Ordinal);
+            Assert.DoesNotContain("(ulong)", gen, StringComparison.Ordinal);
+
+            // What replaces it: a switch over the declared members, and a default arm that still throws the
+            // diagnosable exception rather than letting an IndexOutOfRangeException escape a file the consumer
+            // cannot edit.
+            Assert.Contains("switch (__kv.Key)", gen, StringComparison.Ordinal);
+            Assert.Contains("default:", gen, StringComparison.Ordinal);
             Assert.Contains("global::System.ArgumentOutOfRangeException", gen, StringComparison.Ordinal);
         }
 
@@ -149,7 +164,13 @@ namespace DwarfMapper.Generator.Tests
                                                     [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts", Offset = 1)] public partial B Map(A a); }
                                                     """);
 
-            Assert.Contains("var __i = unchecked((long)__kv.Key - 1L);", gen, StringComparison.Ordinal);
+            // Offset no longer appears as a subtraction; it appears as the constant slot each declared member
+            // is given. Offset = 1 with a 1-based enum puts Web in slot 0 and Android in slot 2.
+            Assert.Contains("case global::Demo.Platform.Web:", gen, StringComparison.Ordinal);
+            Assert.Contains("__r[0] = __kv.Value;", gen, StringComparison.Ordinal);
+            Assert.Contains("case global::Demo.Platform.Android:", gen, StringComparison.Ordinal);
+            Assert.Contains("__r[2] = __kv.Value;", gen, StringComparison.Ordinal);
+            Assert.DoesNotContain("__kv.Key - 1L", gen, StringComparison.Ordinal);
 
             // And the same offset applied to a 0-based enum pushes its first member off the FRONT.
             var refused = GeneratorAssert.Reports(Shapes + """
@@ -190,6 +211,11 @@ namespace DwarfMapper.Generator.Tests
         {
             // Two names for one value is legal and common. It cannot produce two dictionary entries, and the
             // proof judges VALUES rather than names — confirmed here rather than reasoned about.
+            //
+            // SINCE THE FILL BECAME A SWITCH THIS IS LOAD-BEARING, not merely tidy: one `case` label per NAME
+            // would be two labels for one constant, which is CS0152 inside a file the consumer cannot edit.
+            // The emission deduplicates by value, and the assertions below pin that rather than trusting
+            // CompilesClean to notice.
             var gen = GeneratorAssert.CompilesClean("""
                                                     using DwarfMapper;
                                                     using System.Collections.Generic;
@@ -203,6 +229,12 @@ namespace DwarfMapper.Generator.Tests
                                                     """);
 
             Assert.Contains("__DwarfDense_", gen, StringComparison.Ordinal);
+
+            // Exactly ONE case label for value 0 — whichever name won — and none for the other.
+            var none = gen.Split(["case global::Demo.Platform.None:"], StringSplitOptions.None).Length - 1;
+            var dflt = gen.Split(["case global::Demo.Platform.Default:"], StringSplitOptions.None).Length - 1;
+            Assert.Equal(1, none + dflt);
+            Assert.Contains("__r[0] = __kv.Value;", gen, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -247,8 +279,13 @@ namespace DwarfMapper.Generator.Tests
                                                       [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts")] public partial B Map(A a); }
                                                       """);
 
-            Assert.Contains("var __i = unchecked((long)__kv.Key - 0L);", gen, StringComparison.Ordinal);
-            Assert.Contains("if (unchecked((ulong)__i) >= 3UL)", gen, StringComparison.Ordinal);
+            // Every width emits the SAME shape, because the switch compares the key at its own width and never
+            // converts it — which is precisely what makes the wide-enum case safe by construction rather than
+            // by a guard sized for one width.
+            Assert.Contains("switch (__kv.Key)", gen, StringComparison.Ordinal);
+            Assert.Contains("__r[0] = __kv.Value;", gen, StringComparison.Ordinal);
+            Assert.Contains("__r[2] = __kv.Value;", gen, StringComparison.Ordinal);
+            Assert.DoesNotContain("(long)__kv.Key", gen, StringComparison.Ordinal);
         }
 
         [Fact]

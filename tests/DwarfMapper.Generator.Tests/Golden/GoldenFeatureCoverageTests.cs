@@ -57,7 +57,7 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // pass on the helper existing at all; the subtraction is what the Offset argument decides,
                     // so this is the byte that moves if the directive's value is ever dropped on the way
                     // through.
-                    "MapDenseEnumKeys", "var __i = unchecked((long)__kv.Key - 1L);"
+                    "MapDenseEnumKeys", "switch (__kv.Key)"
                 },
                 {
                     "Flatten", "City = "

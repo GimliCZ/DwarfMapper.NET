@@ -59,6 +59,13 @@ jobs:
             exit 1
           fi
 
+      # ILVerify at PUSH time, not only nightly. EmittedIlIsVerifiableTests compiles the golden feature
+      # corpus into one assembly and requires ZERO unverifiable methods — the maintainer's ruling that every
+      # method DwarfMapper emits is verifiable. A rule enforced only in a nightly job is a rule a push can
+      # break for a day, and this one is about what ships into a consumer's assembly. Same pinned version as
+      # the deep-test job, for the same reason: the tool computing a gate's verdict must not move under it.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+
       # --locked-mode (round-22 S1): restore must resolve EXACTLY the committed packages.lock.json graphs
       # or fail NU1004 — the repeatable-restore proof. The flag here is self-documentation; the load-bearing
       # wiring is Directory.Build.props' RestoreLockedMode on '$(CI)' == 'true', which GitHub sets for every

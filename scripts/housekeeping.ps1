@@ -480,8 +480,16 @@ try {
         # Targets: the SHIPPED runtime, and the Gallery — a generated-consumer assembly whose IL contains
         # generator-emitted mapping code including the blit/SIMD paths (21_BlittableSimd, 22_Reinterpret).
         # The Gallery's bin dir doubles as its own dependency root (DwarfMapper.dll etc. are copied there).
+        # DwarfMapper.Testing added 2026-09-09 with the "all methods are verifiable" ruling: it is a SHIPPED
+        # PACKAGE, so its IL reaches consumers exactly as the runtime's does, and it was in no target. The
+        # generator and code-fix assemblies are deliberately still absent — they are netstandard2.0 and run in
+        # the consumer's BUILD rather than their program, so verifying them needs a netstandard reference pack
+        # and is a separate piece of work, named in Issues/round30/BLIND-INSTRUMENTS.md rather than assumed
+        # covered.
         $targets = @(
             @{ Dll = 'src/DwarfMapper/bin/Release/net10.0/DwarfMapper.dll'; ExtraRefs = @() }
+            @{ Dll = 'src/DwarfMapper.Testing/bin/Release/net10.0/DwarfMapper.Testing.dll'
+               ExtraRefs = @('src/DwarfMapper/bin/Release/net10.0/*.dll') }
             @{ Dll = 'samples/DwarfMapper.Gallery/bin/Release/net10.0/DwarfMapper.Gallery.dll'
                ExtraRefs = @('samples/DwarfMapper.Gallery/bin/Release/net10.0/*.dll') }
         )
@@ -639,6 +647,7 @@ try {
             -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
         Remove-PlantedMutants -Leg 'pipeline' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
+
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

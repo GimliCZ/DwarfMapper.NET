@@ -130,15 +130,24 @@ so a version with no section here ships with no notes.
   members are in range would prove nothing about the keys a dictionary can hold. Aliases (`None = 0,
   Default = 0`) are a non-case — the proof judges values, not names.
 
-  **One consumer-visible consequence, added 2026-09-09 after ILVerify was run over it for the first time.**
-  The emitted fill indexes the inline array at a *variable* index, and the C# compiler lowers that into a
-  helper it synthesises once per assembly in `<PrivateImplementationDetails>` — `InlineArrayAsSpan`, whose
-  body is a `MemoryMarshal.CreateSpan`. **ILVerify reports that helper as unverifiable IL** (`ReturnPtrToStack`),
-  so an assembly using `[MapDenseEnumKeys]` carries one unverifiable method it did not write. The generated
-  mapping method itself verifies clean, DwarfMapper writes no `unsafe`, and every consumer of the C# 12
-  `[InlineArray]` feature carries the same helper — but it is a fact about your assembly's IL and it is
-  stated here rather than left to be discovered. Constant-index access lowers to a different helper that
-  *does* verify, so a future emission shape can remove even this.
+  **The fill is a `switch` over the enum's declared members with constant slot indices**, not a computed
+  index. Two things follow, and the first is why it is written that way:
+
+  - **Every method DwarfMapper emits is verifiable IL.** Indexing an inline array at a *variable* index makes
+    the C# compiler synthesise `<PrivateImplementationDetails>::InlineArrayAsSpan`, whose body is a
+    `MemoryMarshal.CreateSpan` that ILVerify rejects (`ReturnPtrToStack`) — so an assembly using the feature
+    would carry an unverifiable method it did not write. A *constant* index lowers to `InlineArrayElementRef`
+    instead, which verifies. The whole golden feature corpus is now compiled into one assembly and verified
+    with **zero permitted findings** on every build.
+  - **The wide-key hazard stopped being guarded and became impossible.** The old shape cast the key to `int`
+    after a `long` subtraction and needed a range check, because `(int)(E)0x1_0000_0001` is `1` — a legal
+    index belonging to a different key. A `switch` compares the key at its own width against declared
+    constants, so such a value matches no case and falls to `default`. There is no cast left to get wrong.
+
+  **Behaviour change, deliberate:** a key that is *undeclared* but arithmetically inside the window — a gap in
+  a sparse enum, e.g. `(E)1` where the enum declares `0` and `3` — used to write the gap's slot silently. It
+  now throws the same `ArgumentOutOfRangeException`, which is what that exception's own sentence has always
+  said: *the enum declares no member with that value*. Declared members are unaffected.
 
 - **`DWARF092` also speaks for `[MapDenseEnumKeys]` now**, and it is the first directive on that id with
   **two** home endpoints: the create map and the update-into both resolve destination members one at a time

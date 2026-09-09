@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Generic;
 using System.Globalization;
 using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
@@ -247,17 +248,46 @@ namespace DwarfMapper.Generator.Pipeline
 
                 using (w.Block("foreach (var __kv in src)"))
                 {
-                    w.Line("var __i = unchecked((long)__kv.Key - " + off + "L);");
-                    using (w.Block("if (unchecked((ulong)__i) >= " + len + "UL)"))
+                    // A SWITCH ON THE ENUM WITH CONSTANT SLOT INDICES, not a computed index. Two reasons, and
+                    // the first is a hard requirement rather than a preference.
+                    //
+                    // (1) VERIFIABLE IL. Roslyn lowers an [InlineArray] element access at a VARIABLE index into
+                    //     <PrivateImplementationDetails>::InlineArrayAsSpan, whose body is a
+                    //     MemoryMarshal.CreateSpan that ILVerify reports as ReturnPtrToStack. A CONSTANT index
+                    //     lowers to InlineArrayElementRef / InlineArrayFirstElementRef instead, and those
+                    //     verify clean. Measured 2026-09-09 on a minimal probe: the two shapes side by side in
+                    //     one assembly produce exactly that difference, and the switch form alone verifies with
+                    //     "All Classes and Methods ... Verified". The ruling is that every method DwarfMapper
+                    //     emits is verifiable, so the computed index is not available to us.
+                    //
+                    // (2) THE WIDE-KEY HAZARD STOPS BEING GUARDED AND STARTS BEING IMPOSSIBLE. The old shape
+                    //     cast the key to int after a long subtraction, and the guard existed because
+                    //     (int)(E)0x1_0000_0001 is 1 — a legal index belonging to a different key. A switch
+                    //     compares the key at its own width against declared constants, so a value that would
+                    //     have truncated into range matches no case and falls to `default`. There is no cast
+                    //     left to get wrong.
+                    //
+                    // BEHAVIOUR CHANGE, deliberate and documented: a key that is UNDECLARED but arithmetically
+                    // inside the window — a gap in a sparse enum, e.g. (E)2 where the enum declares 1 and 3 —
+                    // used to write the gap's slot silently. It now throws, which is what the exception's own
+                    // sentence has always said ("the enum declares no member with that value").
+                    using (w.Block("switch (__kv.Key)"))
                     {
-                        w.Line("throw new global::System.ArgumentOutOfRangeException(nameof(src), __kv.Key,");
-                        w.Line("    \"DwarfMapper: dense enum key is outside the mapped range [" + off + ", " +
+                        foreach (var slot in DeclaredSlots(plan.KeyType, offset))
+                        {
+                            w.Line("case " + slot.MemberFq + ":");
+                            w.Line("    __r[" + slot.Index.ToString(CultureInfo.InvariantCulture) +
+                                   "] = __kv.Value;");
+                            w.Line("    break;");
+                        }
+
+                        w.Line("default:");
+                        w.Line("    throw new global::System.ArgumentOutOfRangeException(nameof(src), __kv.Key,");
+                        w.Line("        \"DwarfMapper: dense enum key is outside the mapped range [" + off + ", " +
                                upper + ") of '" + tgtFq.Replace("global::", "") +
                                "'. The enum declares no member with that value, so no compile-time proof could " +
                                "cover it.\");");
                     }
-
-                    w.Line("__r[(int)__i] = __kv.Value;");
                 }
 
                 w.Line("return __r;");
@@ -265,6 +295,66 @@ namespace DwarfMapper.Generator.Pipeline
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
+        }
+
+        /// <summary>One declared enum member and the constant array slot it writes.</summary>
+        private readonly struct DeclaredSlot
+        {
+            public DeclaredSlot(string memberFq, int index)
+            {
+                MemberFq = memberFq;
+                Index = index;
+            }
+
+            /// <summary>The member, fully qualified and keyword-escaped, as a <c>case</c> label.</summary>
+            public string MemberFq { get; }
+
+            /// <summary>Its slot: <c>value - offset</c>, inside <c>[0, Length)</c> because the proof said so.</summary>
+            public int Index { get; }
+        }
+
+        /// <summary>
+        ///     Every declared member of <paramref name="enumKey" /> paired with its constant slot, ordered by
+        ///     value and DEDUPLICATED BY VALUE.
+        /// </summary>
+        /// <remarks>
+        ///     Deduplication is not tidiness: an alias pair (<c>None = 0, Default = 0</c>) would emit two
+        ///     <c>case</c> labels for one constant and the consumer's build would fail with CS0152 inside a file
+        ///     they cannot edit. The proof already treats aliases as a non-case because it judges values rather
+        ///     than names; this is the same ruling carried into emission. Ordering is by value so the emitted
+        ///     text is a function of the symbol's contents rather than of member declaration order as Roslyn
+        ///     happens to return it.
+        /// </remarks>
+        private static IEnumerable<DeclaredSlot> DeclaredSlots(ITypeSymbol enumKey, int offset)
+        {
+            // The explicit comparer is what DeterminismSourceScanTests' D1 asks for, and it is honest
+            // rather than a way past the scan: the key is a long, so ordering is numeric and could not
+            // have been culture-sensitive — passing Comparer<long>.Default says that in the code instead
+            // of leaving a reader to work it out from the type argument.
+            var byValue = new SortedDictionary<long, string>(Comparer<long>.Default);
+            foreach (var member in enumKey.GetMembers())
+            {
+                if (!(member is IFieldSymbol field) || !field.IsConst || !field.HasConstantValue)
+                {
+                    continue;
+                }
+
+                if (!TryValueOf(field.ConstantValue, out var value, out _) || byValue.ContainsKey(value))
+                {
+                    continue;
+                }
+
+                // Built from the CONTAINING TYPE plus the escaped member name, not from the field's own
+                // FullyQualifiedFormat: that format omits the containing type for a field and yields a bare
+                // `Web`, which is CS0103 inside a file the consumer cannot edit (measured, not assumed — it
+                // was the first build error this change produced). Identifiers.Escape restores the `@` that
+                // ISymbol.Name strips, because this string is EMITTED. The refusal messages above deliberately
+                // use ToDisplayString for the opposite reason: they are read by a human.
+                byValue[value] = Fq(field.ContainingType) + "." + Identifiers.Escape(field.Name);
+            }
+
+            foreach (var pair in byValue)
+                yield return new DeclaredSlot(pair.Value, checked((int)(pair.Key - offset)));
         }
 
         /// <summary>The <c>KeyValuePair&lt;K,V&gt;</c> a source type yields, if it yields one.</summary>

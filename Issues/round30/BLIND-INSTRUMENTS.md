@@ -152,3 +152,46 @@ measures, and any failures it then finds are real defects needing triage rather 
 That is the round-30 task. Note before starting it that **PutPut does not hold for a conditional mapper**
 (`[MapNullSkip]`, `When=`), so the generator fuzz can only assert GetPut across its whole synthetic schema —
 PutPut needs the schema to say which cases are unconditional.
+
+## ILVerify was pointed at an INCIDENTAL corpus (found and closed 2026-09-09)
+
+The ILVerify stage's two targets were the shipped runtime and **the Gallery** — a corpus built to illustrate
+the documentation, which happens to contain generated code. Two consequences, and the second is the one that
+bit:
+
+1. **Its coverage of emitted constructs is whatever the docs happened to need.** Nothing said the Gallery
+   exercises every emission path, and nothing would have noticed if a new feature shipped without a Gallery
+   example.
+2. **It contains hand-written consumer code, so its findings need an excuse list** — a `stackalloc` demo in
+   `18_SpanMap.cs`. And an excuse list over a mixed corpus cannot distinguish "the consumer wrote something
+   unverifiable" from "we emitted something unverifiable". On 2026-09-09 an entry was added to it for
+   `<PrivateImplementationDetails>::InlineArrayAsSpan` **which was caused by generator-emitted code**, and the
+   entry read as reasonably as the `stackalloc` one beside it.
+
+**Closed by `EmittedIlIsVerifiableTests`**: the golden feature corpus — which the repository already gates for
+completeness — is compiled into one assembly, each case in its own namespace, and verified with **zero
+permitted findings and no excuse list at all**. Its sources are declarations and partial method signatures, so
+every method body in that assembly is the generator's and a finding there is ours by construction. A sabotage
+control (a planted `stackalloc`) proves the pipeline reports rather than being silently misconfigured — which
+it was on the first attempt, when a reference-pack mismatch turned every method into a load failure that
+*looked* like a finding.
+
+The Gallery stays a target, with its one hand-written excuse. The rule is now enforced where it cannot be
+diluted.
+
+**What this does not close:** the runtime assembly and the Gallery are verified as BUILT ARTEFACTS, so the
+corpus test and the stage measure two different things — the corpus verifies what the generator emits today
+from the golden sources, the stage verifies what actually shipped into a built DLL. Keeping both is
+deliberate; noticing that neither alone is sufficient is the point of this file.
+
+### Still outside every ILVerify target: the two netstandard2.0 assemblies
+
+`DwarfMapper.Generator` and `DwarfMapper.CodeFixes` ship inside the `DwarfMapper` package (as
+`analyzers/dotnet/cs/*.dll`) and are verified by nothing. They run in the consumer's **build** rather than
+their program, which is why they are not in the "IL that reaches a consumer's process" argument — but they
+are IL a consumer's machine loads and executes, from a package they installed.
+
+Not added with the other targets because ilverify resolves them against a **netstandard2.0** reference set,
+not the net10 pack every current target uses, and a target that cannot resolve its references reports load
+failures that look like findings — the exact confusion the corpus test's control was written to catch.
+Sizing that is round-30 work; recording it is not optional.

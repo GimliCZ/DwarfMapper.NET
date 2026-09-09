@@ -78,6 +78,45 @@ namespace DwarfMapper.IntegrationTests
         public partial DenseWideTarget Map(DenseWideSource s);
     }
 
+    /// <summary>
+    ///     A SPARSE enum: it declares 0 and 3 but neither 1 nor 2, so two slots belong to no key. The proof
+    ///     still passes — every DECLARED member is inside [0, 4) — which is exactly what makes this shape the
+    ///     one that distinguishes the old arithmetic fill from the switch that replaced it.
+    ///     <para>
+    ///         3 rather than 2 as the upper member on purpose: 0 and 2 are both powers of two, and CA1027 then
+    ///         asks for <c>[Flags]</c> — which this very feature refuses, because a flags enum's key space is
+    ///         the power set of its members.
+    ///     </para>
+    /// </summary>
+    public enum DenseSparse
+    {
+        Low = 0,
+        High = 3
+    }
+
+    [InlineArray(4)]
+    public struct DenseSparseSlots4
+    {
+        private int _e0;
+    }
+
+    public sealed class DenseSparseSource
+    {
+        public Dictionary<DenseSparse, int> Counts { get; set; } = new();
+    }
+
+    public sealed class DenseSparseTarget
+    {
+        public DenseSparseSlots4 Counts { get; set; }
+    }
+
+    [DwarfMapper]
+    public partial class DenseSparseMapper
+    {
+        [MapDenseEnumKeys(nameof(DenseSparseTarget.Counts))]
+        public partial DenseSparseTarget Map(DenseSparseSource s);
+    }
+
     [DwarfMapper]
     public partial class DenseStatsMapper
     {
@@ -166,6 +205,45 @@ namespace DwarfMapper.IntegrationTests
 
             Assert.Equal(0, dst.Counts[0]);
             Assert.Equal(0, dst.Counts[3]);
+        }
+
+        [Fact]
+        public void A_key_in_the_GAP_of_a_sparse_enum_throws_instead_of_writing_a_slot_that_belongs_to_nobody()
+        {
+            // A DELIBERATE BEHAVIOUR CHANGE, made when the fill became a switch so the emitted code would pass
+            // ILVerify. DenseSparse declares 0 and 2; (DenseSparse)1 is legal C#, is arithmetically inside the
+            // three-slot window, and is declared by nothing.
+            //
+            // The old arithmetic fill computed 1 - 0 = 1, found it in range, and wrote slot 1 SILENTLY — a slot
+            // no key names. The switch has no case for it, so it falls to `default` and throws the exception
+            // whose sentence has always described exactly this: "the enum declares no member with that value,
+            // so no compile-time proof could cover it."
+            var src = new DenseSparseSource
+            {
+                Counts = new Dictionary<DenseSparse, int>
+                {
+                    [(DenseSparse)1] = 7
+                }
+            };
+
+            var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new DenseSparseMapper().Map(src));
+            Assert.Contains("dense enum key is outside the mapped range", ex.Message, StringComparison.Ordinal);
+
+            // The declared members of the same enum still land where they should, so the refusal is about the
+            // undeclared key and not about the shape.
+            var ok = new DenseSparseMapper().Map(new DenseSparseSource
+            {
+                Counts = new Dictionary<DenseSparse, int>
+                {
+                    [DenseSparse.Low] = 5,
+                    [DenseSparse.High] = 9
+                }
+            });
+
+            Assert.Equal(5, ok.Counts[0]);
+            Assert.Equal(0, ok.Counts[1]);
+            Assert.Equal(0, ok.Counts[2]);
+            Assert.Equal(9, ok.Counts[3]);
         }
 
         [Fact]

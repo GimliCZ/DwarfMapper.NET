@@ -883,34 +883,18 @@ $script:IlVerifyKnownUnverifiable = [ordered]@{
     # generator-emitted Mapper::Map(ReadOnlySpan<int>, Span<long>) itself verifies clean.
     'DwarfMapper.Gallery.Ex18.Example::Run()' = 'stackalloc (localloc + cpblk) in hand-written sample code'
 
-    # THIS ONE IS NOT A SOURCE CONSTRUCT WE WROTE, and the distinction matters enough to spell out.
-    # Roslyn lowers an `[InlineArray]` element access at a VARIABLE index into a call to a helper it
-    # synthesises once per assembly in <PrivateImplementationDetails>; the helper's body is
-    # MemoryMarshal.CreateSpan over an Unsafe.As, which ILVerify cannot trace and reports as
-    # ReturnPtrToStack. Nothing in this repository writes `unsafe`, and every consumer of the C# 12
-    # feature carries the same helper.
+    # THE SECOND ENTRY THIS LIST BRIEFLY HELD IS GONE, AND THAT IS THE POINT OF RECORDING IT HERE.
+    # On 2026-09-09 ILVerify reported <PrivateImplementationDetails>::InlineArrayAsSpan in the Gallery, caused
+    # by the generator's own [MapDenseEnumKeys] fill indexing an inline array at a VARIABLE index. It was
+    # allowlisted with the reasoning spelled out. The maintainer's ruling was the opposite: ALL METHODS ARE
+    # VERIFIABLE. The fill was re-emitted as a switch over the enum's declared members with CONSTANT slot
+    # indices - which Roslyn lowers to InlineArrayElementRef / InlineArrayFirstElementRef, and those verify -
+    # so the excuse had nothing left to excuse and was deleted.
     #
-    # ATTRIBUTION, MEASURED RATHER THAN ASSUMED (2026-09-09): the Gallery assembly contains all three
-    # helpers — InlineArrayAsSpan, InlineArrayElementRef and InlineArrayFirstElementRef — and ILVerify
-    # flags ONLY AsSpan. The *ElementRef pair is what the sample's own constant-index reads
-    # (`report.Yield[0..3]` in 50_MapDenseEnumKeys.cs) lower to, and they verify clean. AsSpan is what a
-    # VARIABLE index lowers to, and the assembly's only variable index into an inline array is the
-    # generator's own dense fill, `__r[(int)__i] = __kv.Value`. So this finding is caused by
-    # GENERATOR-EMITTED CODE, not by hand-written sample code — the first time that has been true here.
-    # The emitted method __DwarfDense_* itself verifies clean; only the helper it calls does not.
-    #
-    # THE ROUND-30 ALTERNATIVE THAT FOLLOWS FROM THAT MEASUREMENT: because constant-index access
-    # verifies, emitting a `switch` over the enum's declared members with CONSTANT slot indices would
-    # make the generated path fully verifiable and drop the runtime range arithmetic (the default arm
-    # throws the same ArgumentOutOfRangeException). The range proof already enumerates every member, so
-    # the switch is generable today. Not done here: it moves the golden manifest.
-    #
-    # THE KEY IS TARGET-QUALIFIED, and that is not decoration. <PrivateImplementationDetails> is a
-    # compiler-synthesised name that is IDENTICAL IN EVERY ASSEMBLY, so a bare method key would excuse this
-    # helper wherever it appeared - including in src/DwarfMapper.dll, whose clean verification is the thing
-    # this stage most exists to protect. ilverify prints the target in the same bracket as the method, so
-    # scoping the key to the Gallery costs nothing and keeps the excuse where it was measured.
-    'DwarfMapper.Gallery.dll : <PrivateImplementationDetails>::InlineArrayAsSpan' = 'Roslyn lowering of [InlineArray] variable-index access ([MapDenseEnumKeys]) in the Gallery only'
+    # Nothing in this list may name a method the generator EMITS. The rule is enforced independently of this
+    # file by EmittedIlIsVerifiableTests, which compiles the whole golden feature corpus into one assembly and
+    # requires ZERO findings with no exceptions list at all - the Gallery needs one only because it also
+    # contains hand-written consumer code, which is what the surviving entry above is.
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
