@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
@@ -96,6 +96,30 @@ namespace DwarfMapper.Benchmarks
         {
             _src = RealisticPayloads.Elements<FzA>(N, 11);
             _one = RealisticPayloads.One<FzA>(12);
+
+            // THE ARMS MUST COMPUTE THE SAME THING, checked here rather than assumed. A fusion benchmark
+            // whose two paths disagree is not measuring a saving — it is measuring the cost of computing
+            // something else, which is exactly what the enum row did for months (a by-name switch against a
+            // by-value cast on reordered enums, published as a 3.98x Mapperly win; see
+            // benchmarks/results/2026-08-26-enum-strategy-like-for-like.md). Setup is not measured, so this
+            // costs the benchmark nothing and removes that failure mode.
+            //
+            // MapFusionEquivalenceTests is the real oracle — fuzzed, structural, with a sabotage control.
+            // This is the same premise re-checked against THIS harness's own payload draw, because the two
+            // use different types and a benchmark that quietly stopped agreeing would not fail that test.
+            foreach (var a in _src.Take(64).Append(_one))
+            {
+                var chained = this._m.MapBC(this._m.MapAB(a));
+                var direct = this._m.MapAC(a);
+                if (chained.Id != direct.Id || chained.Score != direct.Score ||
+                    chained.Extra != direct.Extra || !chained.Weight.Equals(direct.Weight))
+                {
+                    throw new InvalidOperationException(
+                        "FusionProbeBenchmarks: the chained and direct arms disagree, so every figure this " +
+                        "class produces compares two different operations. Fix the maps before reading a " +
+                        "single number from it.");
+                }
+            }
         }
 
         // ── In a per-element loop: the shape every collection map emits ──────────────────────────────
