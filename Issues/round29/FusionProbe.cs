@@ -17,6 +17,7 @@
 // heap footprint. That is a yes/no answer with no noise in it, which is a better instrument than a ratio
 // with a 60 % error bar.
 
+using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 
@@ -114,6 +115,55 @@ public class Fusion
 
         GC.KeepAlive(keep);
         return r;
+    }
+
+    // ── The loop question ────────────────────────────────────────────────────────────────────────────
+    // Every arm above allocates INSIDE a for loop, including N=1 (the JIT cannot see that r.Length is 1).
+    // .NET's object stack allocation has had a documented restriction on allocations inside loops, so a
+    // flat "the JIT does not elide" claim is not supported by a loop-only measurement. These arms are
+    // straight-line: one element, no loop, nothing the JIT has to reason about across iterations. If
+    // Chained_Straight still allocates 112 B, the claim holds unconditionally; if it reads 72 B, the true
+    // statement is the narrower "not inside a per-element loop" — which is still the case a mapper is in,
+    // but a materially different usage space and it must be written down as such.
+
+    [Benchmark(Baseline = true), BenchmarkCategory("noloop")]
+    public FuseC[] Chained_Straight()
+    {
+        var r = new FuseC[1];
+        r[0] = MapBToC(MapAToB(_src[0]));
+        return r;
+    }
+
+    [Benchmark, BenchmarkCategory("noloop")]
+    public FuseC[] Fused_Straight()
+    {
+        var a = _src[0];
+        var r = new FuseC[1];
+        r[0] = new FuseC { Id = a.Id, Score = a.Score, Weight = a.Weight, Extra = a.Extra };
+        return r;
+    }
+
+    // The second confounder: if the helpers are not inlined, B necessarily escapes into a call and no
+    // escape analysis can help. Forcing the inline rules that out — if the bytes do not move, non-inlining
+    // was never the reason.
+    [Benchmark, BenchmarkCategory("noloop")]
+    public FuseC[] Chained_StraightInlined()
+    {
+        var r = new FuseC[1];
+        r[0] = MapBToCInlined(MapAToBInlined(_src[0]));
+        return r;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FuseB MapAToBInlined(FuseA a)
+    {
+        return new FuseB { Id = a.Id, Score = a.Score, Weight = a.Weight, Extra = a.Extra };
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FuseC MapBToCInlined(FuseB b)
+    {
+        return new FuseC { Id = b.Id, Score = b.Score, Weight = b.Weight, Extra = b.Extra };
     }
 
     // Written as the generator writes them: small, non-virtual, trivially inlineable.
