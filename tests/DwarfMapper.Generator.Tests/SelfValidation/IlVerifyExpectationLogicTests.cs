@@ -45,9 +45,19 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     Show 'excuses-used'  { Assert-IlVerifyExcusesAllUsed -Known $Known -MatchedKeys @('Fake.A::Run()', 'Fake.B::Helper') }
                     Show 'excuse-stale'  { Assert-IlVerifyExcusesAllUsed -Known $Known -MatchedKeys @('Fake.A::Run()') }
                     Show 'all-stale'     { Assert-IlVerifyExcusesAllUsed -Known $Known -MatchedKeys @() }
+
+                    # A compiler-synthesised name is identical in every assembly, so an entry naming one must
+                    # carry the assembly or it excuses that method EVERYWHERE. Same method, two targets: the
+                    # Gallery-scoped entry must cover the Gallery finding and refuse the runtime's.
+                    $Scoped   = [ordered]@{ 'Gallery.dll : <PrivateImplementationDetails>::Helper' = 'gallery only' }
+                    $inGallery = @('[IL]: Error [ReturnPtrToStack]: [/p/Gallery.dll : <PrivateImplementationDetails>::Helper(!!0&)][offset 0x0C] no.')
+                    $inRuntime = @('[IL]: Error [ReturnPtrToStack]: [/p/DwarfMapper.dll : <PrivateImplementationDetails>::Helper(!!0&)][offset 0x0C] no.')
+
+                    Show 'scoped-hit'    { (Assert-IlVerifyFindingsExpected -Target 'Gallery.dll' -ErrorLines $inGallery -Known $Scoped) -join ',' }
+                    Show 'scoped-miss'   { Assert-IlVerifyFindingsExpected -Target 'DwarfMapper.dll' -ErrorLines $inRuntime -Known $Scoped }
                     """);
 
-                var cases = PwshBattery.Run(dir, 7, "the ILVerify expectation logic");
+                var cases = PwshBattery.Run(dir, 9, "the ILVerify expectation logic");
 
                 // Every finding covered: passes, and reports WHICH entries were used — the input the
                 // staleness half needs, so a check returning nothing would silently make it vacuous.
@@ -77,6 +87,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 Assert.DoesNotContain("Fake.A::Run()", cases["excuse-stale"], StringComparison.Ordinal);
                 Assert.Contains("Fake.A::Run()", cases["all-stale"], StringComparison.Ordinal);
                 Assert.Contains("Fake.B::Helper", cases["all-stale"], StringComparison.Ordinal);
+
+                // A target-qualified entry covers the assembly it names and NOT another. Without the
+                // qualification the same <PrivateImplementationDetails> helper would be excused in
+                // src/DwarfMapper.dll, whose clean verification is what this stage most exists to protect.
+                Assert.StartsWith("OK Gallery.dll", cases["scoped-hit"], StringComparison.Ordinal);
+                Assert.StartsWith("THREW", cases["scoped-miss"], StringComparison.Ordinal);
+                Assert.Contains("DwarfMapper.dll", cases["scoped-miss"], StringComparison.Ordinal);
             }
             finally
             {

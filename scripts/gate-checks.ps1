@@ -857,6 +857,10 @@ function Assert-NoMutatedProductBinaries {
 # backdated: the rule was missed because only one platform was measured, which is the same defect the
 # block above this one exists to record.
 #
+# (README.md reads 81,573 B in the DwarfMapper.Testing block above and 81,577 B here: 6e402db added 4 B
+# between the two measurements, renaming ObjectFactory to ObjectFactoryV2 twice. Both are correct as of
+# when they were taken.)
+#
 # Headroom to the first red byte: DwarfMapper (323 KB = 330,752 B) 953 B on Windows, 1,556 B on ubuntu.
 # DwarfMapper.Testing (53 KB = 54,272 B) 493 B on Windows, 720 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -900,13 +904,20 @@ $script:IlVerifyKnownUnverifiable = [ordered]@{
     # make the generated path fully verifiable and drop the runtime range arithmetic (the default arm
     # throws the same ArgumentOutOfRangeException). The range proof already enumerates every member, so
     # the switch is generable today. Not done here: it moves the golden manifest.
-    '<PrivateImplementationDetails>::InlineArrayAsSpan' = 'Roslyn lowering of [InlineArray] variable-index access ([MapDenseEnumKeys])'
+    #
+    # THE KEY IS TARGET-QUALIFIED, and that is not decoration. <PrivateImplementationDetails> is a
+    # compiler-synthesised name that is IDENTICAL IN EVERY ASSEMBLY, so a bare method key would excuse this
+    # helper wherever it appeared - including in src/DwarfMapper.dll, whose clean verification is the thing
+    # this stage most exists to protect. ilverify prints the target in the same bracket as the method, so
+    # scoping the key to the Gallery costs nothing and keeps the excuse where it was measured.
+    'DwarfMapper.Gallery.dll : <PrivateImplementationDetails>::InlineArrayAsSpan' = 'Roslyn lowering of [InlineArray] variable-index access ([MapDenseEnumKeys]) in the Gallery only'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # Per target: returns the excuse keys that matched, throws naming any finding no excuse covers. Matching
-# is an ordinal substring on the METHOD SIGNATURE, not a regex over the whole line, so an excuse cannot
-# widen by accident.
+# is an ordinal substring, not a regex, so an entry cannot widen through an unescaped metacharacter - and
+# an entry naming a COMPILER-SYNTHESISED method must include the assembly, because such a name is the same
+# in every assembly and would otherwise excuse it everywhere. See the InlineArrayAsSpan entry above.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 function Assert-IlVerifyFindingsExpected {
     param(
