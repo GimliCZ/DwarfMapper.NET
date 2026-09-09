@@ -130,6 +130,16 @@ so a version with no section here ships with no notes.
   members are in range would prove nothing about the keys a dictionary can hold. Aliases (`None = 0,
   Default = 0`) are a non-case — the proof judges values, not names.
 
+  **One consumer-visible consequence, added 2026-09-09 after ILVerify was run over it for the first time.**
+  The emitted fill indexes the inline array at a *variable* index, and the C# compiler lowers that into a
+  helper it synthesises once per assembly in `<PrivateImplementationDetails>` — `InlineArrayAsSpan`, whose
+  body is a `MemoryMarshal.CreateSpan`. **ILVerify reports that helper as unverifiable IL** (`ReturnPtrToStack`),
+  so an assembly using `[MapDenseEnumKeys]` carries one unverifiable method it did not write. The generated
+  mapping method itself verifies clean, DwarfMapper writes no `unsafe`, and every consumer of the C# 12
+  `[InlineArray]` feature carries the same helper — but it is a fact about your assembly's IL and it is
+  stated here rather than left to be discovered. Constant-index access lowers to a different helper that
+  *does* verify, so a future emission shape can remove even this.
+
 - **`DWARF092` also speaks for `[MapDenseEnumKeys]` now**, and it is the first directive on that id with
   **two** home endpoints: the create map and the update-into both resolve destination members one at a time
   and can emit the fill loop, while a projection is an expression tree with no statement for one to live in

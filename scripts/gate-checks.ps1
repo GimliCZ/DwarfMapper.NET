@@ -833,6 +833,91 @@ $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper.Testing' = 52
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# ILVerify expectations. The stage's rule is "any unverifiable IL fails, EXCEPT these exact methods" —
+# and the excuse list is the dangerous half, so both directions are checked and both live here where
+# GateBandLogicTests' sibling battery can drive them against fake inputs.
+#
+# NEVER a blanket suppression: each entry is ONE exact method whose unverifiable IL is accounted for.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$script:IlVerifyKnownUnverifiable = [ordered]@{
+    # samples/DwarfMapper.Gallery/18_SpanMap.cs lines 25-26: two `stackalloc` buffers in the sample's
+    # HAND-WRITTEN Run() — localloc at IL_0003/IL_002F plus the cpblk initializer copy at IL_001E —
+    # demonstrating the zero-alloc span overload. stackalloc is unverifiable IL by design. The
+    # generator-emitted Mapper::Map(ReadOnlySpan<int>, Span<long>) itself verifies clean.
+    'DwarfMapper.Gallery.Ex18.Example::Run()' = 'stackalloc (localloc + cpblk) in hand-written sample code'
+
+    # THIS ONE IS NOT A SOURCE CONSTRUCT WE WROTE, and the distinction matters enough to spell out.
+    # Roslyn lowers an `[InlineArray]` element access at a VARIABLE index into a call to a helper it
+    # synthesises once per assembly in <PrivateImplementationDetails>; the helper's body is
+    # MemoryMarshal.CreateSpan over an Unsafe.As, which ILVerify cannot trace and reports as
+    # ReturnPtrToStack. Nothing in this repository writes `unsafe`, and every consumer of the C# 12
+    # feature carries the same helper.
+    #
+    # ATTRIBUTION, MEASURED RATHER THAN ASSUMED (2026-09-09): the Gallery assembly contains all three
+    # helpers — InlineArrayAsSpan, InlineArrayElementRef and InlineArrayFirstElementRef — and ILVerify
+    # flags ONLY AsSpan. The *ElementRef pair is what the sample's own constant-index reads
+    # (`report.Yield[0..3]` in 50_MapDenseEnumKeys.cs) lower to, and they verify clean. AsSpan is what a
+    # VARIABLE index lowers to, and the assembly's only variable index into an inline array is the
+    # generator's own dense fill, `__r[(int)__i] = __kv.Value`. So this finding is caused by
+    # GENERATOR-EMITTED CODE, not by hand-written sample code — the first time that has been true here.
+    # The emitted method __DwarfDense_* itself verifies clean; only the helper it calls does not.
+    #
+    # THE ROUND-30 ALTERNATIVE THAT FOLLOWS FROM THAT MEASUREMENT: because constant-index access
+    # verifies, emitting a `switch` over the enum's declared members with CONSTANT slot indices would
+    # make the generated path fully verifiable and drop the runtime range arithmetic (the default arm
+    # throws the same ArgumentOutOfRangeException). The range proof already enumerates every member, so
+    # the switch is generable today. Not done here: it moves the golden manifest.
+    '<PrivateImplementationDetails>::InlineArrayAsSpan' = 'Roslyn lowering of [InlineArray] variable-index access ([MapDenseEnumKeys])'
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Per target: returns the excuse keys that matched, throws naming any finding no excuse covers. Matching
+# is an ordinal substring on the METHOD SIGNATURE, not a regex over the whole line, so an excuse cannot
+# widen by accident.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-IlVerifyFindingsExpected {
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ErrorLines,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Known
+    )
+    $matched = [System.Collections.Generic.List[string]]::new()
+    $unexpected = @()
+
+    foreach ($line in $ErrorLines) {
+        $hit = $null
+        foreach ($key in $Known.Keys) {
+            if ($line.Contains($key, [System.StringComparison]::Ordinal)) { $hit = $key; break }
+        }
+        if ($null -eq $hit) { $unexpected += $line } elseif (-not $matched.Contains($hit)) { $matched.Add($hit) }
+    }
+
+    if ($unexpected.Count -gt 0) {
+        throw ("ilverify: unexpected IL errors in ${Target}:`n" + ($unexpected -join "`n"))
+    }
+    return $matched.ToArray()
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# After every target: an excuse that matched NOTHING is an excuse outliving its case — the same failure
+# shape DocFenceScanTests' unconverted list and DocsTeachLiveApiTests' Foreign list are guarded against,
+# and the one this stage was missing. Checked ACROSS all targets, because an entry naming a method in the
+# Gallery legitimately matches nothing while the runtime assembly is being scanned.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-IlVerifyExcusesAllUsed {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Known,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$MatchedKeys
+    )
+    $stale = @($Known.Keys | Where-Object { $MatchedKeys -notcontains $_ })
+    if ($stale.Count -gt 0) {
+        throw ("ilverify: known-unverifiable entr(ies) that no finding matched: " + ($stale -join ', ') +
+               ". The construct they excuse is gone, so the excuse must go with it in the same commit - " +
+               "an allowance nothing exercises silently re-permits whatever next matches it.")
+    }
+}
+
 function Assert-PackageSizeWithinCeiling {
     param(
         [Parameter(Mandatory)][string]$PackageDir
