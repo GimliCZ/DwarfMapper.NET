@@ -825,11 +825,43 @@ function Assert-NoMutatedProductBinaries {
 # THIS IS AN OBSERVABILITY RATCHET, NOT A BUDGET. 49 -> 52 KB is what a measured 50 plus a real feature
 # costs; nothing about the design was shaped to fit under the old number.
 #
-# Headroom to the first red byte: DwarfMapper (322 KB = 329,728 B) 536 B on ubuntu, where it measures
-# 329,192 B = 321 KB - EXACTLY at its ceiling. DwarfMapper.Testing (53 KB = 54,272 B) 722 B on ubuntu.
+# ── AND THE PREDICTION IN THIS VERY BLOCK CAME TRUE THE SAME DAY ─────────────────────────────────────
+#
+# The paragraph above ended "DwarfMapper measures EXACTLY 321 KB on ubuntu, 536 B from red, so the next
+# README edit of any size reds it too". The next README edit was in the same session - the lens oracle's
+# own documentation section - and on WINDOWS it did exactly that. Re-measured at 23b392b:
+#
+#   DwarfMapper              ubuntu sdk:10.0.101  329,196 B = 321 KB   Windows 10.0.101  329,799 B = 322 KB
+#   DwarfMapper.Testing      ubuntu               53,552 B  =  52 KB   Windows            53,779 B =  52 KB
+#
+# The repo's rule is that the ceiling is the LARGER of the two, so DwarfMapper goes 321 -> 322. Windows
+# packs 603 B larger here (CRLF in README.md and the XML doc; every DLL is byte-identical), inside the
+# 200-330 B band the earlier comparisons recorded - so the direction was right and only the magnitude
+# was new.
+#
+# ENTRY BY ENTRY against a pack of the same tree with README.md reverted to 1a3c0f7, uncompressed:
+#
+#   README.md                                 80,105 -> 81,577   +1,472
+#   (DwarfMapper.nuspec, [Content_Types].xml, _rels/.rels, analyzers/.../DwarfMapper.CodeFixes.dll,
+#    analyzers/.../DwarfMapper.Generator.dll, lib/net10.0/DwarfMapper.dll and .xml are ALL byte-identical;
+#    the .psmdcp part is NuGet's random name, not payload.)
+#
+# ONE ROW, AND IT IS DOCUMENTATION. Nothing in the shipped code moved - which is the whole point of an
+# observability ratchet, and also the clearest possible argument for the round-30 item recorded in
+# Issues/round30/CI-NIGHTLY-REVIEW.md: a code-size gate that a prose edit can red is measuring the wrong
+# thing half the time. Either stop packing README.md or ceiling it separately.
+#
+# R1 SAYS THE RAISE BELONGS IN THE COMMIT THAT CAUSED THE GROWTH, AND IT DID NOT. e25620c added the
+# README section; at that point the package had only been measured in the container, where it still
+# passed at 321. The Windows red surfaced one commit later, at the rc pack. Stated rather than
+# backdated: the rule was missed because only one platform was measured, which is the same defect the
+# block above this one exists to record.
+#
+# Headroom to the first red byte: DwarfMapper (323 KB = 330,752 B) 953 B on Windows, 1,556 B on ubuntu.
+# DwarfMapper.Testing (53 KB = 54,272 B) 493 B on Windows, 720 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 321
+    'DwarfMapper'         = 322
     'DwarfMapper.Testing' = 52
 }
 

@@ -99,6 +99,16 @@ number and a *measured* one disagreed. `DwarfMapper` itself measures 329,192 B =
 ubuntu, sitting precisely on its ceiling with 536 B to the first red byte — so the same drift will red it on
 the next README edit of any size.
 
+**And the prediction in that last sentence came true within the hour.** The lens oracle's own README
+section (+1,472 B of prose) pushed `DwarfMapper` to 329,799 B = **322 KB on Windows** at the rc pack, while
+ubuntu measured 329,196 B = 321 KB for the identical tree. Ceiling raised 321 → 322, the larger of the two,
+per the repo's own rule. The entry-by-entry accounting against a pack of the same tree with `README.md`
+reverted is **one row**: `README.md 80,105 → 81,577`. Every DLL, the nuspec, `_rels/.rels` and
+`[Content_Types].xml` are byte-identical. **Nothing in the shipped code moved.**
+
+That is the clearest possible argument for item 2 below: a gate that a prose edit can red — while the code
+it claims to watch is byte-identical — is measuring the wrong thing half the time.
+
 Two things follow, both round-30 work:
 1. **Measure both ceilings in the container whenever either moves.** The provenance comment in
    `gate-checks.ps1` now carries an ubuntu figure for the first time; keeping it that way is the cheap half.
