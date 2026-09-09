@@ -37,6 +37,24 @@ $root = Split-Path -Parent $PSScriptRoot
 # failure directions without executing this script's stages.
 . (Join-Path $PSScriptRoot 'gate-checks.ps1')
 
+# -MutationLeg runs ONE leg through the mutation stage's exact block — the same fuse, the same four
+# post-leg proofs — instead of the two and a half hours all six take together. It exists because a leg's
+# FIRST pin must come from a housekeeping-driven run: a bare Invoke-StrykerLeg produces a score but runs
+# neither Assert-MutantsWereTested (which is what tells a real score from a VACUOUS one) nor either
+# decontamination sweep. Round 29's testing leg was pinned from such a run and had to be re-measured;
+# this switch is so the next one does not have to be.
+#
+# Resolved HERE, before any stage runs, for the reason Assert-StrykerConfigSane states about thresholds:
+# a typo should fail in milliseconds with its cause named, not after the restore, the build and the whole
+# self-test suite have spent ten minutes earning the right to discover it.
+$allLegs = @('generator', 'doc tooling', 'runtime', 'code fixes', 'pipeline', 'testing')
+$legs = if ($MutationLeg) { $MutationLeg } else { $allLegs }
+$unknown = @($legs | Where-Object { $allLegs -notcontains $_ })
+if ($unknown.Count) {
+    throw ('mutation: unknown -MutationLeg value(s) [' + ($unknown -join ', ') + ']. Known legs: ' +
+           ($allLegs -join ', ') + '.')
+}
+
 # -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
 # (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
 # cannot drift apart. It skips exhaustion and AOT (exhaustion is a default local stage, AOT has its own
@@ -552,27 +570,16 @@ try {
 
     if ($Mutation -or $MutationLeg) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
-        # All three configs sanity-checked up front: a break > low mistake in leg 3 should fail here, not
-        # after legs 1 and 2 have spent half an hour proving what was already known.
+        # ALL SIX configs sanity-checked up front — every leg's, not only the ones this invocation will
+        # run: a break > low mistake in leg 6 should fail here, not after legs 1 to 5 have spent two hours
+        # proving what was already known. (The sentence read "All three" against six calls; rounds 27 and
+        # 29 added legs and moved neither, the same slip as three pins this round.)
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.pipeline.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.testing.json'
-        # -MutationLeg runs ONE leg through this exact block — the same fuse, the same four post-leg
-        # proofs — instead of the two and a half hours all six take together. It exists because a leg's
-        # FIRST pin must come from a housekeeping-driven run: a bare Invoke-StrykerLeg produces a score
-        # but runs neither Assert-MutantsWereTested (which is what tells a real score from a VACUOUS one)
-        # nor either decontamination sweep. Round 29's testing leg was pinned from such a run and had to
-        # be re-measured; this switch is so the next one does not have to be.
-        $allLegs = @('generator', 'doc tooling', 'runtime', 'code fixes', 'pipeline', 'testing')
-        $legs = if ($MutationLeg) { $MutationLeg } else { $allLegs }
-        $unknown = @($legs | Where-Object { $allLegs -notcontains $_ })
-        if ($unknown.Count) {
-            throw ('mutation: unknown -MutationLeg value(s) [' + ($unknown -join ', ') + ']. Known legs: ' +
-                   ($allLegs -join ', ') + '.')
-        }
         if ($legs -contains 'generator') {
             $legStart = Get-Date
             # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
