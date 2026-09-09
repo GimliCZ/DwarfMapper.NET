@@ -877,3 +877,41 @@ RULING 3, PART TWO — THE PIN WAS TAKEN FROM A RUN THAT PROVED LESS THAN THE GA
   whose whole job is to name absence is the one branch never observed. First item on the kill programme's
   worklist; deliberately NOT fixed in this commit, because a kill moves the score and the pin was being
   re-measured.
+
+ROUND CLOSE — THE COLLECTION SURFACE, RE-MEASURED AT THE OWNER'S SCALE, commit 35d99a3.
+  Asked for: benchmarks re-measured across the requested decades with the blit included, array and list
+  investigated, and the fusion change measured. All four delivered; two of them by REFUTING what I had just
+  proposed, which is the part worth recording.
+  THE SUITE'S REAL DEFECT WAS NOT "TOO FEW BENCHMARKS". It was three axes with one point each: N was
+  [Params(1000)] and nothing else, every reference-element row used ONE class shape, and blittability was one
+  12-byte struct with one negative control. CollectionSweepBenchmarks is a SECOND class because the
+  allocation gate keys pins by METHOD NAME and asserts an exact row count — an N axis on the gated class
+  would emit seven rows per name, keep whichever landed last, and fail 441 != 63. Smoke verified untouched:
+  63/63 executed, 28 pins exact-matched.
+  MY OWN INSTRUMENT WAS INSUFFICIENT AND I CAUGHT IT BEFORE PUBLISHING. ShortRun produced an error LARGER
+  than the mean (63,045 +/- 66,874 ns at N=10,000). The GC counters named it: the destination crosses the
+  85 KB LOH threshold and Gen0=Gen1=Gen2, every collection a gen2 — a 132x jump for a 10x element count.
+  Re-run at 5 warmup / 10 iterations; the ShortRun pass is kept as the reason the job is what it is.
+  TWO HYPOTHESES KILLED BEFORE EITHER COST A COMMIT. H1 (the List gap is Add's bookkeeping) was already
+  refuted in Issues/round26/FINDING-list-fill-strategy.md — measured twice, with disassembly, reference
+  elements 1.00x then 0.92x. And the gap itself does not reproduce: seven decades put List at parity and
+  AHEAD at 10^6. I would have shipped a regression to fix a non-problem. Then the null-check probe refuted my
+  SECOND candidate the same way: removing the callee's redundant ThrowIfNull buys nothing (inside the
+  combined error at all three sizes, sign the wrong way round).
+  WHAT SURVIVED IS BETTER THAN WHAT I PROPOSED. The Array gap is real at every decade (8-29%) and the cost is
+  the LOOP'S OWN null ternary — removing it recovers ~9%, which accounts for the gap. And the generator
+  already disagrees with itself: the SYNTHESIZED element path emits no ternary for the identical shape. Two
+  paths, one question, and the slower one silently stores null! into an array whose element type forbids
+  null. Filed as Issues/round30/FINDING-array-null-ternary.md — de-silencing before performance, with a
+  behaviour change attached, so it opens round 30 rather than closing round 29.
+  TWO PUBLISHED OVER-CLAIMS CORRECTED IN PLACE. docs/COMPARISON.md's "~1.8-2.0x faster than every competitor"
+  carried no size qualifier; the lead is a CURVE (2.05-2.20x at N=100-1,000, 1.06x at the LOH cliff, 1.45x at
+  10^6). And round 29's OWN sweep-results.md said "usage space: everywhere, no crossover" from a sweep that
+  starts at N=10 — at N=1 the blit is 0.84x, a small LOSS. The sixth "right number, wrong population" error
+  of this round, made by the document that recorded the other five.
+  FUSION MEASURED AGAINST GENERATOR OUTPUT, which is what the owner asked for and what SPIKE-map-fusion.md's
+  own first caveat demanded. All six loop rows BYTE-IDENTICAL to the hand-written probe. The straight-line
+  arms answer more directly than the spike could — both allocate 40 B, exactly one FzC, so the chained path
+  allocates no intermediate at all. The boundary holds on the population it describes: fusion pays inside
+  element loops (1.79x, 0.55x allocation) and is dead weight in straight-line code. What still gates the
+  emitter is caveat (3), the refusal list for cases where B's construction is observable.
