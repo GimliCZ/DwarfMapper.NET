@@ -843,3 +843,37 @@ benchmarks.
   "All Classes and Methods in DwarfMapper.Testing.dll Verified", and the Gallery's THREE findings are all
   DwarfMapper.Gallery.Ex18.Example::Run() — hand-written stackalloc in sample code, the one declared entry.
   Not one finding is in generated code.
+
+RULING 3, PART TWO — THE PIN WAS TAKEN FROM A RUN THAT PROVED LESS THAN THE GATE DOES.
+  The 82.73 % above came from a bare `Invoke-StrykerLeg`. That call returns a score and executes NONE of the
+  four post-leg proofs the housekeeping block wraps around it — Assert-MutantsWereTested (the only thing that
+  distinguishes a real score from a VACUOUS run, which also exits 0), Assert-LegScoreWithinBand,
+  Remove-PlantedMutants, Assert-NoMutatedProductBinaries — and its Stryker build was the one that ended in an
+  IOException. Every sibling leg's pin cites a housekeeping-driven run; this one did not. A number taken that
+  way is a reading, not a measurement, and it should not have been committed as a pin.
+  FIXED AS A CAPABILITY, NOT AS A ONE-OFF SEQUENCE. `scripts/housekeeping.ps1 -MutationLeg <leg>` now runs one
+  leg through the IDENTICAL block — same fuse, same four proofs — instead of the ~2.5 h all six take. An
+  unknown leg name throws with the vocabulary named rather than exiting 0 having measured nothing. This is why
+  the direct call existed at all: there was no cheap way to run one leg honestly, so a shortcut got used.
+  RE-MEASURED: 82.73 % (86 killed / 5 Timeout / 17 Survived / 2 NoCoverage of 110), HOUSEKEEPING PASSED,
+  EXIT=0, and Assert-NoMutatedProductBinaries reports 44 product assemblies with none mutated. The two runs'
+  status distributions are IDENTICAL and THE FIVE TIMEOUTS ARE THE SAME FIVE MUTANTS (LensLaws:73, :107,
+  RoundTrip:30, StructuralComparer:46, :88), which turns the "they remove termination, so they time out on
+  every machine" argument from a reading into a repeated measurement.
+  M6 LOCKS IT: MutationMethodologyScanTests.M6 asserts three sets are one set — the $allLegs vocabulary, the
+  $legs guards, and the legs actually launched. RED proven both ways (unguard a leg -> fails; add a ghost name
+  to the vocabulary -> fails), housekeeping.ps1 restored byte-identical after each.
+  AN EXISTING ARCHITECTURE TEST CAUGHT THE CHANGE, AND WAS ITSELF SLIGHTLY WRONG.
+  MutationLaunchContractTests.Every_leg_passes_a_bounded_timeout_to_the_launcher red-flagged the COMMENT
+  explaining why the launcher must not be called directly — a check that forbade describing itself. Narrowed
+  to call sites (a line whose first non-space character is `#` is prose), and the narrowing was proven not to
+  gut it: deleting a real -TimeoutMinutes still reds. Its floor also read `>= 3` under a sentence saying "the
+  three mutation legs"; rounds 27 and 29 added legs and moved neither. Now 6 — the FOURTH pin this round found
+  with a comment disagreeing with its value.
+  THE 2 UNCOVERED ARE NOW NAMED RATHER THAN COUNTED, and the first version of that sentence was wrong.
+  They are StructuralComparer.cs:37 col 91 and :38 col 61 — both the `"<null>"` operand of a `??`. `Render`
+  IS executed (Render_produces_readable_lines), which is why the neighbouring literals on the same two lines
+  are Survived and not uncovered; what no test does is render a diff where a side is NULL. The one branch
+  whose whole job is to name absence is the one branch never observed. First item on the kill programme's
+  worklist; deliberately NOT fixed in this commit, because a kill moves the score and the pin was being
+  re-measured.

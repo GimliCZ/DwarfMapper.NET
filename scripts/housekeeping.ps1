@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # DwarfMapper LOCAL housekeeping — the heavy integrity checks kept OUT of CI on purpose (time/cost).
 # Run before a release or a large push. Each stage fails fast.
@@ -20,6 +20,8 @@ param(
     [switch]$SkipAot,
     [switch]$SkipExhaustion,
     [switch]$Mutation,
+    # One or more leg names instead of all six; see the selector in the mutation stage.
+    [string[]]$MutationLeg,
     [switch]$Heal,
     [switch]$Coverage,
     [switch]$ILVerify,
@@ -548,7 +550,7 @@ try {
             -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/blit-ratio-baseline.json')
     }
 
-    if ($Mutation) {
+    if ($Mutation -or $MutationLeg) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
         # All three configs sanity-checked up front: a break > low mistake in leg 3 should fail here, not
         # after legs 1 and 2 have spent half an hour proving what was already known.
@@ -558,54 +560,73 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.pipeline.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.testing.json'
-        $legStart = Get-Date
-        # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
-        # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
-        # in stryker-config.json was taken on a quiet box; a developer machine running an IDE is not one,
-        # and CI already allows this leg 200 minutes for the same reason. A fuse exists to catch a leg
-        # that will never finish -- sized so tightly that a busy machine trips it, it only teaches people
-        # to distrust it.
-        #
-        # 90, not 60, since 2026-09-06 (round-29 Phase 2 gate). The mutant population grew 258 -> 391 during
-        # the round-28 audit and the leg's measured wall-clock went with it: 51 minutes at 391 mutants on a
-        # quiet 12-core machine (stryker-config.json, RE-MEASURED 2026-09-02). A 60-minute fuse leaves nine
-        # minutes of headroom on a QUIET box and none at all on a busy one, which is the exact failure the
-        # paragraph above was written about. The re-measurement that justifies this number is in the same
-        # commit as the change, per invariant R1.
-        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 90
-        if ($legExit) { throw "mutation score below break threshold (generator)" }
-        Assert-MutantsWereTested -Leg 'generator' -Since $legStart
-        Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-            -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
-        Remove-PlantedMutants -Leg 'generator' -Root $root
-        Assert-NoMutatedProductBinaries -Leg 'generator' -Root $root
+        # -MutationLeg runs ONE leg through this exact block — the same fuse, the same four post-leg
+        # proofs — instead of the two and a half hours all six take together. It exists because a leg's
+        # FIRST pin must come from a housekeeping-driven run: a bare Invoke-StrykerLeg produces a score
+        # but runs neither Assert-MutantsWereTested (which is what tells a real score from a VACUOUS one)
+        # nor either decontamination sweep. Round 29's testing leg was pinned from such a run and had to
+        # be re-measured; this switch is so the next one does not have to be.
+        $allLegs = @('generator', 'doc tooling', 'runtime', 'code fixes', 'pipeline', 'testing')
+        $legs = if ($MutationLeg) { $MutationLeg } else { $allLegs }
+        $unknown = @($legs | Where-Object { $allLegs -notcontains $_ })
+        if ($unknown.Count) {
+            throw ('mutation: unknown -MutationLeg value(s) [' + ($unknown -join ', ') + ']. Known legs: ' +
+                   ($allLegs -join ', ') + '.')
+        }
+        if ($legs -contains 'generator') {
+            $legStart = Get-Date
+            # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
+            # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
+            # in stryker-config.json was taken on a quiet box; a developer machine running an IDE is not one,
+            # and CI already allows this leg 200 minutes for the same reason. A fuse exists to catch a leg
+            # that will never finish -- sized so tightly that a busy machine trips it, it only teaches people
+            # to distrust it.
+            #
+            # 90, not 60, since 2026-09-06 (round-29 Phase 2 gate). The mutant population grew 258 -> 391 during
+            # the round-28 audit and the leg's measured wall-clock went with it: 51 minutes at 391 mutants on a
+            # quiet 12-core machine (stryker-config.json, RE-MEASURED 2026-09-02). A 60-minute fuse leaves nine
+            # minutes of headroom on a QUIET box and none at all on a busy one, which is the exact failure the
+            # paragraph above was written about. The re-measurement that justifies this number is in the same
+            # commit as the change, per invariant R1.
+            $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 90
+            if ($legExit) { throw "mutation score below break threshold (generator)" }
+            Assert-MutantsWereTested -Leg 'generator' -Since $legStart
+            Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
+            Remove-PlantedMutants -Leg 'generator' -Root $root
+            Assert-NoMutatedProductBinaries -Leg 'generator' -Root $root
+        }
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
         # also provides.
-        Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
-        $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'doc tooling' -ConfigFile 'stryker-config.doctooling.json' -TimeoutMinutes 30
-        if ($legExit) { throw "mutation score below break threshold (doc tooling)" }
-        Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
-        Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-            -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
-        Remove-PlantedMutants -Leg 'doc tooling' -Root $root
-        Assert-NoMutatedProductBinaries -Leg 'doc tooling' -Root $root
+        if ($legs -contains 'doc tooling') {
+            Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
+            $legStart = Get-Date
+            $legExit = Invoke-StrykerLeg -Leg 'doc tooling' -ConfigFile 'stryker-config.doctooling.json' -TimeoutMinutes 30
+            if ($legExit) { throw "mutation score below break threshold (doc tooling)" }
+            Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
+            Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
+            Remove-PlantedMutants -Leg 'doc tooling' -Root $root
+            Assert-NoMutatedProductBinaries -Leg 'doc tooling' -Root $root
+        }
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
         # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
         # endpoint matrix to cross them against — so a surviving mutant is the only non-textual proof that a
         # case is untested.
-        Write-Host "== 4/4c Mutation testing (runtime assembly) ==" -ForegroundColor Cyan
-        $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'runtime' -ConfigFile 'stryker-config.runtime.json' -TimeoutMinutes 30
-        if ($legExit) { throw "mutation score below break threshold (runtime)" }
-        Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
-        Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-            -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
-        Remove-PlantedMutants -Leg 'runtime' -Root $root
-        Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
+        if ($legs -contains 'runtime') {
+            Write-Host "== 4/4c Mutation testing (runtime assembly) ==" -ForegroundColor Cyan
+            $legStart = Get-Date
+            $legExit = Invoke-StrykerLeg -Leg 'runtime' -ConfigFile 'stryker-config.runtime.json' -TimeoutMinutes 30
+            if ($legExit) { throw "mutation score below break threshold (runtime)" }
+            Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
+            Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
+            Remove-PlantedMutants -Leg 'runtime' -Root $root
+            Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
+        }
 
         # The CODE FIXES. Added round 27 after measuring what the other three legs do NOT cover: 15.3 % of
         # src/ sits inside any leg's globs, and this project sat at 88.8 % LINE coverage with 0 % mutation
@@ -615,15 +636,17 @@ try {
         # It is also the most literally user-facing code here: an analyzer reports a problem, and these
         # rewrite the consumer's own source to fix it. A code fix that produces subtly wrong code is worse
         # than one that fails loudly, and until this leg existed nothing proved the tests would notice.
-        Write-Host "== 4/4d Mutation testing (code fixes) ==" -ForegroundColor Cyan
-        $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'code fixes' -ConfigFile 'stryker-config.codefixes.json' -TimeoutMinutes 30
-        if ($legExit) { throw "mutation score below break threshold (code fixes)" }
-        Assert-MutantsWereTested -Leg 'code fixes' -Since $legStart
-        Assert-LegScoreWithinBand -Leg 'code fixes' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-            -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
-        Remove-PlantedMutants -Leg 'code fixes' -Root $root
-        Assert-NoMutatedProductBinaries -Leg 'code fixes' -Root $root
+        if ($legs -contains 'code fixes') {
+            Write-Host "== 4/4d Mutation testing (code fixes) ==" -ForegroundColor Cyan
+            $legStart = Get-Date
+            $legExit = Invoke-StrykerLeg -Leg 'code fixes' -ConfigFile 'stryker-config.codefixes.json' -TimeoutMinutes 30
+            if ($legExit) { throw "mutation score below break threshold (code fixes)" }
+            Assert-MutantsWereTested -Leg 'code fixes' -Since $legStart
+            Assert-LegScoreWithinBand -Leg 'code fixes' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
+            Remove-PlantedMutants -Leg 'code fixes' -Root $root
+            Assert-NoMutatedProductBinaries -Leg 'code fixes' -Root $root
+        }
 
         # ── 4/4e: the ROUND-27 MEMBER-RESOLUTION PHASES ──────────────────────────────────────────
         # The seam stage moved three giant methods into 13 new Pipeline/ files, and the brief asked for
@@ -636,18 +659,20 @@ try {
         # measured, and 10x158 minutes is past the six-hour ceiling GitHub Actions puts on a job. So the
         # remaining ten files are covered one area per leg, each sized to complete
         # (Issues/round27/AUDIT-mutation-scope.md).
-        Write-Host '== 4/4e Mutation testing (member-resolution phases) ==' -ForegroundColor Cyan
-        $legStart = Get-Date
-        # 90, not 60: MEASURED at 37 minutes, and the repo's precedent is ~2x measured (the generator leg
-        # runs 31 and is fused at 60). A 60-minute fuse was the first guess here and a contended run blew
-        # straight through it, reporting a HANG for a leg that was simply still working.
-        $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 90
-        if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
-        Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
-        Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-            -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
-        Remove-PlantedMutants -Leg 'pipeline' -Root $root
-        Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
+        if ($legs -contains 'pipeline') {
+            Write-Host '== 4/4e Mutation testing (member-resolution phases) ==' -ForegroundColor Cyan
+            $legStart = Get-Date
+            # 90, not 60: MEASURED at 37 minutes, and the repo's precedent is ~2x measured (the generator leg
+            # runs 31 and is fused at 60). A 60-minute fuse was the first guess here and a contended run blew
+            # straight through it, reporting a HANG for a leg that was simply still working.
+            $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 90
+            if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
+            Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
+            Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
+            Remove-PlantedMutants -Leg 'pipeline' -Root $root
+            Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
+        }
 
         # ── 4/4f: DwarfMapper.Testing's VERIFIERS ────────────────────────────────────────────────
         # Issues/round27/AUDIT-mutation-scope.md recorded this package at 0 % mutation coverage from round 27
@@ -663,15 +688,17 @@ try {
         #
         # ONE AREA again: the five verifier files, not the package. ObjectFactoryV2 (326 lines) and
         # GraphOracleComparer (394 lines) are fixture machinery and stay the named follow-on.
-        Write-Host '== 4/4f Mutation testing (testing-toolkit verifiers) ==' -ForegroundColor Cyan
-        $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 30
-        if ($legExit) { throw 'mutation score below break threshold (testing)' }
-        Assert-MutantsWereTested -Leg 'testing' -Since $legStart
-        Assert-LegScoreWithinBand -Leg 'testing' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-            -ConfigPath (Join-Path $root 'stryker-config.testing.json') -Since $legStart
-        Remove-PlantedMutants -Leg 'testing' -Root $root
-        Assert-NoMutatedProductBinaries -Leg 'testing' -Root $root
+        if ($legs -contains 'testing') {
+            Write-Host '== 4/4f Mutation testing (testing-toolkit verifiers) ==' -ForegroundColor Cyan
+            $legStart = Get-Date
+            $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 30
+            if ($legExit) { throw 'mutation score below break threshold (testing)' }
+            Assert-MutantsWereTested -Leg 'testing' -Since $legStart
+            Assert-LegScoreWithinBand -Leg 'testing' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                -ConfigPath (Join-Path $root 'stryker-config.testing.json') -Since $legStart
+            Remove-PlantedMutants -Leg 'testing' -Root $root
+            Assert-NoMutatedProductBinaries -Leg 'testing' -Root $root
+        }
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -397,6 +397,54 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 string.Join(", ", onDisk.Except(housekeeping)) + "]; housekeeping only: [" +
                 string.Join(", ", housekeeping.Except(onDisk)) + "]. A config housekeeping never launches is " +
                 "a leg no local run exercises.");
+        }
+
+        [Fact]
+        public void M6_every_leg_is_selectable_and_no_leg_runs_outside_the_selector()
+        {
+            // -MutationLeg exists so a leg's FIRST pin can come from a housekeeping-driven run — the same
+            // fuse and the same four post-leg proofs — without paying for the other five. Two ways it can
+            // rot, both silent:
+            //
+            //   * a leg named in $allLegs that no block reads: `-MutationLeg thatName` then runs NOTHING
+            //     and exits 0, which reads exactly like a leg that passed;
+            //   * a leg block with no guard: it runs on EVERY -MutationLeg invocation, so asking for one
+            //     leg silently spends an hour on another and the score read back may not be the one asked
+            //     for.
+            //
+            // Both are caught by asserting three sets are the same set: the vocabulary, the guards, and
+            // the legs actually launched.
+            var housekeeping = File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
+
+            var vocabulary = Regex.Match(housekeeping, @"\$allLegs\s*=\s*@\(([^)]*)\)");
+            Assert.True(vocabulary.Success,
+                "scripts/housekeeping.ps1 no longer declares $allLegs. That array is the -MutationLeg " +
+                "vocabulary and the only thing that rejects a misspelled leg name instead of silently " +
+                "running none of them.");
+
+            var declared = Regex.Matches(vocabulary.Groups[1].Value, @"'([^']+)'")
+                                .Select(m => m.Groups[1].Value)
+                                .ToHashSet(StringComparer.Ordinal);
+
+            var guarded = Regex.Matches(housekeeping, @"\$legs -contains '([^']+)'")
+                               .Select(m => m.Groups[1].Value)
+                               .ToHashSet(StringComparer.Ordinal);
+
+            var launched = Regex.Matches(housekeeping, @"Invoke-StrykerLeg -Leg '([^']+)'")
+                                .Select(m => m.Groups[1].Value)
+                                .ToHashSet(StringComparer.Ordinal);
+
+            Assert.True(declared.SetEquals(launched),
+                "the -MutationLeg vocabulary and the legs housekeeping launches disagree. vocabulary only: [" +
+                string.Join(", ", declared.Except(launched)) + "]; launched only: [" +
+                string.Join(", ", launched.Except(declared)) + "]. A name in the vocabulary that launches " +
+                "nothing makes `-MutationLeg <name>` exit 0 having measured nothing.");
+
+            Assert.True(launched.SetEquals(guarded),
+                "a mutation leg runs outside the -MutationLeg selector. launched: [" +
+                string.Join(", ", launched) + "]; guarded: [" + string.Join(", ", guarded) + "]. An " +
+                "unguarded leg runs whichever single leg was asked for AND itself, so the run costs what " +
+                "it was meant to save and the report read back may be the wrong leg's.");
         }
     }
 }

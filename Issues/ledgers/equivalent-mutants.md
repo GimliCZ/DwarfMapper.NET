@@ -140,13 +140,25 @@ in a `for` loop (`LensLaws` ×2, `RoundTrip` ×1) and two unbind `StructuralComp
 removes TERMINATION rather than merely slowing the code**, and a non-terminating mutant times out on every
 machine — so unlike a merely-slow mutant, this classification is stable across boxes. That is why 82.73 is
 pinned rather than the timeout-free 78.18 (86/110), and it is stated here because the sibling rows cite a
-zero bucket as their evidence and this one cannot.
+zero bucket as their evidence and this one cannot. **Re-measured 2026-09-09 through
+`scripts/housekeeping.ps1 -MutationLeg testing`** — the first run was a bare `Invoke-StrykerLeg`, which
+executes none of the four post-leg proofs and whose Stryker build had ended in an IOException. The second run
+reproduces the first exactly (86/5/17/2 of 110) **and the five timeouts are the same five mutants**, which
+makes the termination argument a repeated measurement rather than a reading.
 
 No mutant is adjudicated equivalent, so the 100 % `rawCeiling` is arithmetic over an empty adjudication, not
 a claim. The **17 survivors plus 2 uncovered are the first kill programme's worklist**: 15 in
 `StructuralComparer` (its float/double epsilon comparisons and its render formatting), one each in
 `LensLaws` and `RoundTrip` — both the `iterations` loop bound, where an off-by-one still verifies the same
-laws and may well prove equivalent when someone adjudicates it.
+laws and may well prove equivalent when someone adjudicates it. **The 2 uncovered are named rather than
+counted**, because "uncovered" in a 100 %-line-covered file is a claim that needs a location: both are string
+mutations on `StructuralComparer.cs:37-38`, and both are the `"<null>"` operand of a `??` — one for
+`d.Expected`, one for `d.Actual`. `Render` itself IS executed by `Render_produces_readable_lines`, which is
+why the neighbouring literals on the same two lines are Survived rather than uncovered; the `??` right-hand
+side is not, because that test's diff has a value on both sides. **No test renders a diff where a side is
+null**, so the one branch whose whole job is to name absence is the one branch never observed. That is the
+worklist's first item: render a null-vs-value diff and assert the text, which should also reach several of
+the 15 `StructuralComparer` survivors.
 
 **Pipeline denominator refreshed 2026-09-09** (round-29 Phase 3 gate): 242 -> 304 scoreable,
 78.28 % -> 89.80 % (273 killed, 0 timeout, 29 survived, 2 not covered by any test).
