@@ -32,9 +32,9 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | `DwarfMapper` (runtime) | 44 | 6 | 3,614 | 944 | **26.1 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
-| `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
+| `DwarfMapper.Testing` | 9 | **0** | 2,243 | 0 | **0 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **143** | **22** | **42,976** | **4,785** | **11.1 %** | |
+| **all** | **145** | **22** | **43,165** | **4,785** | **11.1 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -89,6 +89,21 @@ that leg already covers. The generator's share reads 7.1 % where it read 7.0 %, 
 it read 26.8 %, and the headline 11.1 % where it read 11.2 %. **The measurement is the whole table again,
 not an increment**, for the reason the block above gives: the line columns drift between re-measures and the
 file-count pin cannot see it.
+
+**Re-measured in full again 2026-09-09 (round 29, Phase 4)**, which added the lens-law oracle: two files in
+`DwarfMapper.Testing` — `LensLaws.cs` (the two verifiers, 140 lines) and `LensLawException.cs` (the informed
+dump, 49 lines), both **outside** every `mutate` glob, as the whole of that package always has been. File
+counts 7 → 9 for `DwarfMapper.Testing` and 143 → 145 overall; its line column 2,054 → 2,243, and the
+headline stays at 11.1 % because the denominator moved by 189 lines against 43,165. Its `line coverage`
+column is corrected from a stale 87.1 % to the enforced floor of 96.4 % in the same pass — the column had
+not been touched since the package was at 87.1 %, and nothing checks it, which is its own small instance of
+the disease this document exists to name.
+
+**`DwarfMapper.Testing` remains at 0 % mutation coverage**, and the new code does not change the argument
+for that: the package is test-only, never AOT-published, and its own suite is what verifies it. What DID
+change is the consequence of a wrong answer from it. `RoundTrip.Verify` and now `LensLaws` are the
+instruments consumers grade THEIR mappers with, so a verifier that silently passes is a verifier that
+certifies a broken map. That moves the package up the list in §2 below rather than settling it.
 
 **Neither the range proof nor the decision beside it is in a mutation leg**, which is the same sentence the
 block below writes about `ImmutabilityProof` and it is worse here: a wrong `true` from `DenseEnumProof`

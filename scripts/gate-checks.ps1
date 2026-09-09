@@ -785,12 +785,52 @@ function Assert-NoMutatedProductBinaries {
 # THIS IS AN OBSERVABILITY RATCHET, NOT A BUDGET. 315 -> 321 KB is what a real feature costs and the number
 # is re-measured rather than defended; nothing about the design was shaped to fit under the old ceiling.
 #
-# Headroom to the first red byte (322 KB = 329,728 B): 574 B on Windows. For DwarfMapper.Testing
-# (50 KB = 51,200 B): 144 B. Both ceilings are re-measured in this commit rather than merely carried.
+# ── RE-MEASURED 2026-09-09, AND FOR THE FIRST TIME IN THE CONTAINER CI ACTUALLY USES ────────────────
+#
+# The package-size job runs on ubuntu-latest with SDK 10.0.101 (.github/workflows/ci.yml, `package-size`),
+# nightly-cron only. Every ceiling before this one was measured on Windows and the ubuntu figure was
+# ARGUED - the round-29 ledger says so in as many words: "Ubuntu package size is INFERRED, not measured
+# (no container available)". It is measured now, in mcr.microsoft.com/dotnet/sdk:10.0.101, against a copy
+# of the tree with bin/obj excluded, and the argument was wrong in a way that mattered.
+#
+#   tree                       ubuntu sdk:10.0.101      Windows local 10.0.101
+#   HEAD, no lens oracle        51,376 B  = 50 KB        51,591 B  = 50 KB
+#   + the lens oracle           53,550 B  = 52 KB        53,770 B  = 52 KB
+#
+# TWO SEPARATE FACTS, AND ONLY ONE OF THEM IS THIS COMMIT'S DOING.
+#
+# (1) THE 49 KB CEILING WAS ALREADY RED AT HEAD, ON BOTH PLATFORMS. 50 > 49, so the nightly job fails
+#     today for reasons that predate the lens oracle. It was set at 8e11b52 (2026-09-06) as "re-measured
+#     on both platforms" and has drifted since; the package embeds README.md (81,573 B uncompressed, the
+#     single largest entry), so every documentation edit moves it and NOTHING RUNS THE GATE - the job is
+#     `schedule`/`workflow_dispatch` only, so a push-time red is structurally impossible to see. That is
+#     the CI-nightly finding recorded in Issues/round30/CI-NIGHTLY-REVIEW.md, not a consequence of this
+#     change, and it is stated here rather than absorbed silently into a raise.
+#
+# (2) THE LENS ORACLE ITSELF COSTS +2,174 B compressed (ubuntu; +2,179 B on Windows), measured A/B on the
+#     SAME tree, platform and SDK - pack twice, once with the two files removed and PublicAPI.Unshipped
+#     reset. Entry by entry, uncompressed:
+#
+#       lib/net10.0/DwarfMapper.Testing.dll     34,304 -> 35,840   +1,536
+#       lib/net10.0/DwarfMapper.Testing.xml     17,854 -> 24,584   +6,730
+#       (README.md, the nuspec, _rels/.rels and [Content_Types].xml are byte-identical; the .psmdcp part
+#        is NuGet's random name, not payload.)
+#
+#     SAME ENTRY SET - no new dependency, no new resource, nothing newly shipping, which is the class this
+#     gate exists to catch. The .xml row is four times the .dll row and that is deliberate: LensLaws'
+#     <remarks> state both laws, why the pre-existing destination is the whole point, and why PutPut does
+#     not hold for a conditional mapper. That page is what a consumer sees in IntelliSense at the moment
+#     they decide whether their mapper may assert the law, so it is shipped weight on purpose.
+#
+# THIS IS AN OBSERVABILITY RATCHET, NOT A BUDGET. 49 -> 52 KB is what a measured 50 plus a real feature
+# costs; nothing about the design was shaped to fit under the old number.
+#
+# Headroom to the first red byte: DwarfMapper (322 KB = 329,728 B) 536 B on ubuntu, where it measures
+# 329,192 B = 321 KB - EXACTLY at its ceiling. DwarfMapper.Testing (53 KB = 54,272 B) 722 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper'         = 321
-    'DwarfMapper.Testing' = 49
+    'DwarfMapper.Testing' = 52
 }
 
 function Assert-PackageSizeWithinCeiling {

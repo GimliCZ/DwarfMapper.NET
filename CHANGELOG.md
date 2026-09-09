@@ -53,6 +53,25 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DwarfMapper.Testing.LensLaws` fuzzes the two lens laws an update-into endpoint should satisfy, over a
+  destination that already holds data.** `RoundTrip.Verify` already checks *PutGet*
+  (`Back(Forward(x))` equals `x`); the bidirectional-transformation literature names two more, and both are
+  only observable when the destination is not empty:
+  - **`VerifyIdempotent`** (*GetPut*) — writing the same source twice equals writing it once.
+  - **`VerifyLastWriteWins`** (*PutPut*) — writing two sources in sequence equals writing only the last.
+
+  The pre-existing destination is the point. The generator's own idempotence fuzz updates into a freshly
+  constructed destination, where every member the mapper leaves alone is indistinguishable from one it writes
+  correctly, so no amount of it can see a partiality defect. A failure throws `LensLawException` carrying the
+  law, the diffs, and **one seed that replays the entire case** through two published salts
+  (`LensLaws.DestinationSeedSalt`, `LensLaws.SecondSourceSeedSalt`).
+
+  **`VerifyLastWriteWins` is opt-in per mapper, and deliberately so.** PutPut requires the set of members
+  written to be independent of the source's *values*, which a mapper using `[MapNullSkip]` or
+  `[MapProperty(When = ...)]` is documented not to be: a member the first source wrote and the second skipped
+  keeps the first source's value. That is a real PutPut violation and the correct behaviour for that
+  endpoint. `VerifyIdempotent` carries no such caveat and applies to conditional mappers too.
+
 - **A provably immutable collection is now SHARED rather than copied, automatically.** Where a member has the
   same type on both sides and that type cannot be mutated through any reference —
   `ImmutableArray<T>`, `ImmutableList<T>`, `ImmutableHashSet<T>`, `ImmutableDictionary<K,V>` and the rest of

@@ -35,7 +35,7 @@ standing instruction. Diagnosing the *current* failures needs the run output pas
 | **mutation** | **HIGH** | see below — both ratchets sit within one mutant of failing |
 | **cross-platform** | **MEDIUM** | the BCL layout table is x64-verified only |
 | **bench-wall-time-alert** | **MEDIUM** | the suite grew 57 → 59 benchmarks, and views add a category |
-| **package-size** | **LOW** | the ceiling rule already protects this — see below |
+| **package-size** | ~~LOW~~ **CONFIRMED RED (fixed)** | measured 2026-09-09: the Testing ceiling was already breached at HEAD on both platforms — see below |
 | **deep-test** | LOW | the 766-case exhaustion ran green locally on the tip |
 | **reproducible-build** | LOW | new files and doc comments, no build-input nondeterminism introduced |
 | **preview-sdk-canary** | LOW | tracks a preview SDK; largely independent of this round |
@@ -48,7 +48,11 @@ floor to equal the measurement. That leaves margins thinner than one mutant:
 | leg | break | measured | margin | one mutant is worth |
 |---|---|---|---|---|
 | generator | 87 | 87.04 % | **0.04 pp** | 1 / 409 = 0.24 pp |
-| pipeline | 78 | 78.28 % | **0.28 pp** | 1 / 242 = 0.41 pp |
+| pipeline | 89 | 89.80 % | **0.80 pp** | 1 / 304 = 0.33 pp |
+
+*(the pipeline row was `78 / 78.28 % / 0.28 pp / 242` when this was written; the Phase 3 gate re-measured it
+at 89.80 % over 304 scoreable and R2 forced the raise. Its margin is now **two mutants** rather than under
+one — better, and still the same structural exposure.)*
 
 **A single mutant changing verdict fails either gate.** And the gate's own error text names the mechanism by
 which that happens with no test having changed:
@@ -72,12 +76,36 @@ measurements**. If the cross-platform job includes an arm64 runner, those assert
 look at. They should hold — none of these types is expected to differ — but "should" is exactly what that
 task refused to assert without measuring, and the same standard applies here.
 
-### package-size — why it is low risk despite 563 B of headroom
+### package-size — MEASURED 2026-09-09, and the prediction below was wrong
 
-The repo's own rule sets the ceiling to **the larger of the Windows and container measurements**, and Windows
-packs measured 200–330 B larger at both prior comparisons (CRLF in the XML doc and nuspec; the DLLs are
-byte-identical). The current 318 KB ceiling was set from the Windows number, so the ubuntu measurement should
-land under it. Worth confirming, not worth worrying about.
+**This section predicted LOW risk. It was measured on 2026-09-09 in `mcr.microsoft.com/dotnet/sdk:10.0.101`,
+the image the job actually runs in, and `DwarfMapper.Testing` was ALREADY RED at HEAD — on both platforms.**
+
+| tree | ubuntu sdk:10.0.101 | Windows local 10.0.101 | ceiling then |
+|---|---:|---:|---:|
+| HEAD, before the Phase 4 lens oracle | 51,376 B = **50 KB** | 51,591 B = **50 KB** | 49 KB → **fails** |
+| after it | 53,550 B = 52 KB | 53,770 B = 52 KB | raised to 52 KB → passes |
+
+**The reasoning below is not wrong; the conclusion drawn from it was.** Windows does pack larger — 215 B
+larger here, inside the stated 200–330 B band — so the ceiling set from the Windows number *is* the safe
+direction, exactly as argued. What the argument could not see is that the number had gone stale since it was
+set: `8e11b52` pinned 49 KB on 2026-09-06, and the package **embeds `README.md`** (81,573 B uncompressed, its
+single largest entry), so every documentation edit moves it. The job is `schedule`/`workflow_dispatch` only,
+so a push can never surface the drift. **A gate that only ever runs at night, against a number measured on a
+different platform by hand, will be stale by the time anyone looks at it.**
+
+That is the finding this item was raised to produce, and it is the fourth time this round that a *predicted*
+number and a *measured* one disagreed. `DwarfMapper` itself measures 329,192 B = **exactly 321 KB** on
+ubuntu, sitting precisely on its ceiling with 536 B to the first red byte — so the same drift will red it on
+the next README edit of any size.
+
+Two things follow, both round-30 work:
+1. **Measure both ceilings in the container whenever either moves.** The provenance comment in
+   `gate-checks.ps1` now carries an ubuntu figure for the first time; keeping it that way is the cheap half.
+2. **Make README's contribution visible, or stop shipping it into the package.** A ceiling that a
+   documentation edit can red — with no gate running at the time of the edit — is measuring the wrong thing
+   half the time. Either exclude `README.md` from the packed payload and ceiling the code, or ceiling the two
+   separately so a doc edit reds a doc gate.
 
 Note also that the ceiling is an **observability ratchet, not a budget** (`gate-checks.ps1:606`). If it goes
 red the answer is to account for the growth entry-by-entry and re-measure in the same commit, not to shrink

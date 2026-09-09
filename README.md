@@ -822,6 +822,28 @@ package is reflection-based and test-only — it is never AOT-published and does
 reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc
 verification.)
 
+### Verifying an update-into map
+
+A mapper pair is a *lens*: `Map` reads a view out of the source, `Update(source, destination)` writes one back.
+`RoundTrip.Verify` checks the law the round-trip names (*PutGet*). `LensLaws` checks the two that are only
+visible when the destination **already holds data**:
+
+- `LensLaws.VerifyIdempotent<TSource, TDestination>(m.Update)` — *GetPut*: writing the same source twice equals
+  writing it once.
+- `LensLaws.VerifyLastWriteWins<TSource, TDestination>(m.Update)` — *PutPut*: writing two sources in sequence
+  equals writing only the last.
+
+The pre-existing destination is the point: update into a freshly constructed object and every member the mapper
+leaves alone looks exactly like one it wrote correctly. A failure throws `LensLawException` naming the law and
+carrying one seed that replays the whole case, through the published `LensLaws.DestinationSeedSalt` and
+`LensLaws.SecondSourceSeedSalt`.
+
+`VerifyLastWriteWins` is opt-in per mapper on purpose. *PutPut* requires the set of members written to be
+independent of the source's **values**, which a mapper using `[MapNullSkip]` or `[MapProperty(When = ...)]` is
+documented not to be — a member the first source wrote and the second skipped keeps the first source's value.
+That is a real violation and the right behaviour for that endpoint, so assert the law only where you mean it.
+`VerifyIdempotent` carries no such caveat and applies to conditional mappers too.
+
 **Conformance sample.** On top of the generator/integration test suite, [
 `samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every*
 feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies,

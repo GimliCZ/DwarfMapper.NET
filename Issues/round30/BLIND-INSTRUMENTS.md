@@ -126,3 +126,29 @@ The fix is a second anchor for the denominator — the leg's own most recent rep
 to a proof file) closes it. Not done in round 29: `StrykerOutput/` is git-ignored, so the anchor needs a
 retention decision — pin the report path and accept that CI cannot re-verify it, or copy the four counts
 into the ledger and check *those* sum to `scoreable`. The second is cheap and is the recommended shape.
+
+## The update-into idempotence fuzz uses a FRESH destination (found 2026-09-09, round 29 Phase 4)
+
+`MetamorphicPropertyFuzzTests.Update_into_is_idempotent` is the suite's only property check on the
+update-into endpoint. It builds its destination with
+
+```csharp
+var dst = Activator.CreateInstance(dstType)!;   // every member at its default
+```
+
+and then compares `dst` against the **source** after one write and after two.
+
+**A fresh destination cannot distinguish a member the mapper leaves alone from a member it writes
+correctly.** With every member at its default, "the mapper never touched this" and "the mapper wrote the
+right value" are the same observation whenever the default coincides — and where it does not, the member
+reads as a plain mismatch against the source rather than as evidence about the write set. Every partiality
+defect is outside what this instrument can see: a member dropped from the write set by a resolution bug, a
+directive that silently stops applying, an endpoint that quietly narrows what it assigns.
+
+The consumer-facing half is closed — `DwarfMapper.Testing.LensLaws` (round 29 Phase 4) fuzzes both GetPut
+and PutPut over a **populated** destination, and `Issues/round29/SPIKE-lens-laws.md` records the reasoning.
+The generator's own fuzz was left alone deliberately: pointing it at a populated destination changes what it
+measures, and any failures it then finds are real defects needing triage rather than a rider on a spike.
+That is the round-30 task. Note before starting it that **PutPut does not hold for a conditional mapper**
+(`[MapNullSkip]`, `When=`), so the generator fuzz can only assert GetPut across its whole synthetic schema —
+PutPut needs the schema to say which cases are unconditional.
