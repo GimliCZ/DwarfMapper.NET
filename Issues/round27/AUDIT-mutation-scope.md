@@ -32,9 +32,9 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | `DwarfMapper` (runtime) | 44 | 6 | 3,614 | 944 | **26.1 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
-| `DwarfMapper.Testing` | 9 | **0** | 2,243 | 0 | **0 %** | 96.4 % |
+| `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **145** | **22** | **43,165** | **4,785** | **11.1 %** | |
+| **all** | **145** | **27** | **43,165** | **5,187** | **12.0 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -98,6 +98,22 @@ headline stays at 11.1 % because the denominator moved by 189 lines against 43,1
 column is corrected from a stale 87.1 % to the enforced floor of 96.4 % in the same pass — the column had
 not been touched since the package was at 87.1 %, and nothing checks it, which is its own small instance of
 the disease this document exists to name.
+
+**`DwarfMapper.Testing` is no longer at 0 %, as of 2026-09-09** (round 29, after the maintainer named the
+regression below as a release block). `stryker-config.testing.json` covers the five VERIFIER files —
+`LensLaws`, `LensLawException`, `RoundTrip`, `RoundTripException`, `StructuralComparer`, 402 lines — and the
+package reads **17.9 %**. The whole-repository share moves **11.1 % → 12.0 %**.
+
+**What forced it, stated as the regression it was.** Round 29's Phase 4 added 189 lines to this package, and
+because the package sat in no leg, the repository's mutation share fell **11.134 % → 11.085 %**. Line
+coverage rose on all five assemblies that day; the number that fell was this one, and it fell precisely
+because the new code was consumer-facing verification code in the one package no leg could see. A 0.049 pp
+regression is small; being unable to see it at all was the actual problem.
+
+**Scope is the verifiers, not the package**, on the pipeline leg's one-area precedent. `ObjectFactoryV2`
+(326 lines) and `GraphOracleComparer` (394 lines) are FIXTURE machinery: a wrong answer there produces a
+fixture nobody asked for, which a test notices. A wrong answer from a VERIFIER certifies a broken map, which
+nothing notices. They remain the named follow-on.
 
 **`DwarfMapper.Testing` remains at 0 % mutation coverage**, and the new code does not change the argument
 for that: the package is test-only, never AOT-published, and its own suite is what verifies it. What DID

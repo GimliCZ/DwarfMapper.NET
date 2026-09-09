@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-  # Both added for the NIGHTLY TIER — the `mutation` matrix (all five Stryker legs) and the `deep-test` job
+  # Both added for the NIGHTLY TIER — the `mutation` matrix (all six Stryker legs) and the `deep-test` job
   # (deep suite + coverage floors + ILVerify) — which is far too slow to gate a push; see each job's own
   # comment. Those are the ONLY jobs guarded to these two events; every other job keeps running exactly when
   # it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which is harmless
@@ -159,7 +159,7 @@ jobs:
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Mutation testing: ALL THREE legs, nightly ─────────────────────────────────────────────────────────
-  # One matrix, five configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
+  # One matrix, six configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
   # (stryker-config.json), the DOCUMENTATION PIPELINE (stryker-config.doctooling.json), the CODE FIXES
   # (stryker-config.codefixes.json) and the ROUND-27 EXTRACTED PIPELINE (stryker-config.pipeline.json). The runtime leg
   # ran here first (it previously ran in NO job at all — a config someone had to remember to invoke via
@@ -218,6 +218,13 @@ jobs:
           - leg: pipeline     # measured 37:00 (2026-08-27, 12 cores, 236 tested mutants)
             config: stryker-config.pipeline.json
             timeout: 350
+          # Round-29 testing-toolkit VERIFIERS. Added because DwarfMapper.Testing sat at 0 % mutation
+          # coverage while Phase 4 put 189 lines of consumer-facing verification code into it — a verifier
+          # that silently passes certifies a broken map. Scoped to the five verifier files, not the package:
+          # ObjectFactoryV2 and GraphOracleComparer are fixture machinery and are the named follow-on.
+          - leg: testing      # measured 20:18 (2026-09-09, 12 cores, 110 scoreable of 1,176 created)
+            config: stryker-config.testing.json
+            timeout: 200
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

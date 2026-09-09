@@ -110,6 +110,7 @@ recomputes the ceilings in the same commit.
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
 | pipeline | `stryker-config.pipeline.json` | 304 | 89.80 % (2026-09-09, round-29 Phase 3 gate) | 0 | 0 | 0 | 100.00 % |
+| testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
 84.32 % → 87.04 %, and `break`/`low` moved 84 → 87 in `stryker-config.json` in the same commit, which is
@@ -119,6 +120,33 @@ rows below are untouched — no mutant was re-adjudicated, retired or newly prov
 that 393 mutants are killable today. The 41 survivors and 12 uncovered mutants of the 2026-09-06 run
 (BlittableProof 36 + 5, ConstructorSelector 4 + 7, EquatableArray 1) have **not** been dispositioned here;
 that is the next kill program's work, and `break` must not move again before it happens.
+
+
+**Testing leg added 2026-09-09**, and it is the first row here whose reason is a REGRESSION rather than a
+kill programme. `Issues/round27/AUDIT-mutation-scope.md` had recorded `DwarfMapper.Testing` at 0 % mutation
+coverage since round 27, on the argument that the package is test-only and never AOT-published. Round 29's
+Phase 4 added 189 lines of **consumer-facing verification code** to it (`LensLaws`, `LensLawException`), and
+the repository's mutation share fell **11.134 % → 11.085 %** — a real regression that nothing could see,
+because the package sat in no leg. The maintainer named it a release block; this row is the answer.
+
+Scoped to the five VERIFIER files (402 lines), not the package: a wrong answer from `ObjectFactoryV2` makes
+a fixture nobody asked for, which a test notices; a wrong answer from `RoundTrip.Verify` or `LensLaws`
+**certifies a broken map**, which nothing notices. Whole-repository share now **11.1 % → 12.0 %**.
+
+**This row's Timeout bucket is FIVE, and every sibling row's is zero.** The distinction matters because a
+Timeout counts as *detected*, so the score would move on a re-classification with no test having changed —
+`gate-checks.ps1`'s own R2 error text says to check this first. All five were read: three are `i++` → `i--`
+in a `for` loop (`LensLaws` ×2, `RoundTrip` ×1) and two unbind `StructuralComparer`'s recursion. **Every one
+removes TERMINATION rather than merely slowing the code**, and a non-terminating mutant times out on every
+machine — so unlike a merely-slow mutant, this classification is stable across boxes. That is why 82.73 is
+pinned rather than the timeout-free 78.18 (86/110), and it is stated here because the sibling rows cite a
+zero bucket as their evidence and this one cannot.
+
+No mutant is adjudicated equivalent, so the 100 % `rawCeiling` is arithmetic over an empty adjudication, not
+a claim. The **17 survivors plus 2 uncovered are the first kill programme's worklist**: 15 in
+`StructuralComparer` (its float/double epsilon comparisons and its render formatting), one each in
+`LensLaws` and `RoundTrip` — both the `iterations` loop bound, where an off-by-one still verifies the same
+laws and may well prove equivalent when someone adjudicates it.
 
 **Pipeline denominator refreshed 2026-09-09** (round-29 Phase 3 gate): 242 -> 304 scoreable,
 78.28 % -> 89.80 % (273 killed, 0 timeout, 29 survived, 2 not covered by any test).
@@ -243,6 +271,17 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "probablyEquivalent": 1,
       "rawCeiling": 87.57,
       "rawCeilingFormula": "(177 - 22) / 177"
+    },
+    "testing": {
+      "config": "stryker-config.testing.json",
+      "scoreable": 110,
+      "measuredRawScore": 82.73,
+      "measuredOn": "2026-09-09",
+      "provenEquivalent": 0,
+      "ruledInPractice": 0,
+      "probablyEquivalent": 0,
+      "rawCeiling": 100.0,
+      "rawCeilingFormula": "(110 - 0) / 110 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
     },
     "pipeline": {
       "config": "stryker-config.pipeline.json",

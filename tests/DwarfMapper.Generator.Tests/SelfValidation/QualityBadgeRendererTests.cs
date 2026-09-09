@@ -73,12 +73,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var legs = QualityBadgeRenderer.ParseLedgerRows(File.ReadAllText(
                 Path.Combine(RepoLayout.Root, "Issues", "ledgers", "equivalent-mutants.md")));
 
-            Assert.Equal(["generator", "doctooling", "runtime", "codefixes", "pipeline"],
+            Assert.Equal(["generator", "doctooling", "runtime", "codefixes", "pipeline", "testing"],
                 legs.Select(l => l.Name).ToArray());
             Assert.Equal(
                 [
                     "stryker-config.json", "stryker-config.doctooling.json", "stryker-config.runtime.json",
-                    "stryker-config.codefixes.json", "stryker-config.pipeline.json"
+                    "stryker-config.codefixes.json", "stryker-config.pipeline.json",
+                    "stryker-config.testing.json"
                 ],
                 legs.Select(l => l.ConfigFile).ToArray());
             Assert.All(legs, l => Assert.InRange(l.RawScore, 1.0, 100.0));
@@ -89,7 +90,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             var ex = Assert.Throws<InvalidOperationException>(() => QualityBadgeRenderer.ParseLedgerRows("| leg | scoreable |\n|---|---|\n| generator | 201 |\n"));
 
-            Assert.Contains("parsed 0 mutation leg row(s), expected 5", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("parsed 0 mutation leg row(s), expected 6", ex.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -161,8 +162,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var rows = QualityBadgeRenderer.RenderRows();
             var badges = rows.Where(r => r.StartsWith("[![", StringComparison.Ordinal)).ToList();
 
-            // + 4: one badge per mutation leg, four of them since the code-fix leg landed.
-            Assert.Equal(FlooredAssemblies.Length + 5, badges.Count);
+            // + 6: one badge per mutation leg, six of them since round 29 added the testing-toolkit
+            // verifier leg. (The comment read "+ 4" against a value of 5 — the round-27 pipeline leg
+            // moved the number and not the sentence; the same slip as the two leg-count pins.)
+            Assert.Equal(FlooredAssemblies.Length + 6, badges.Count);
             Assert.All(badges,
                 b =>
                 {

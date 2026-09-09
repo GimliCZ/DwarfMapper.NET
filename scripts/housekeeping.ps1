@@ -557,6 +557,7 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.pipeline.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.testing.json'
         $legStart = Get-Date
         # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
         # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
@@ -648,6 +649,29 @@ try {
         Remove-PlantedMutants -Leg 'pipeline' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
 
+        # ── 4/4f: DwarfMapper.Testing's VERIFIERS ────────────────────────────────────────────────
+        # Issues/round27/AUDIT-mutation-scope.md recorded this package at 0 % mutation coverage from round 27
+        # onward, on the argument that it is test-only and never AOT-published. That argument covers the
+        # FIXTURE BUILDERS. It does not cover the VERIFIERS: RoundTrip.Verify, LensLaws and StructuralComparer
+        # are what a CONSUMER grades their own mappers with, so one that silently passes certifies a broken
+        # map — the same "instrument trusted for coverage it cannot provide" shape round 29 recorded seven
+        # times.
+        #
+        # What forced it: round 29 Phase 4 added 189 lines here (LensLaws + LensLawException), moving the
+        # repository's mutation share 11.134 % -> 11.085 %. A real regression, and caused precisely by adding
+        # consumer-facing verification code to the one package no leg could see.
+        #
+        # ONE AREA again: the five verifier files, not the package. ObjectFactoryV2 (326 lines) and
+        # GraphOracleComparer (394 lines) are fixture machinery and stay the named follow-on.
+        Write-Host '== 4/4f Mutation testing (testing-toolkit verifiers) ==' -ForegroundColor Cyan
+        $legStart = Get-Date
+        $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 30
+        if ($legExit) { throw 'mutation score below break threshold (testing)' }
+        Assert-MutantsWereTested -Leg 'testing' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'testing' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.testing.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'testing' -Root $root
+        Assert-NoMutatedProductBinaries -Leg 'testing' -Root $root
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green
