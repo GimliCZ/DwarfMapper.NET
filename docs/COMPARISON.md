@@ -305,10 +305,17 @@ reproduce locally. Codegen mappers (DwarfMapper / Mapperly) cluster at hand-writ
   code is the same direct-assignment shape — with **zero allocation overhead** (the destination object is the
   only allocation). On the 1000-object array it and
   Mapperly co-lead (4.55 µs vs 4.47 µs — within run-to-run noise), both ahead of the runtime mappers.
-- On the **blittable struct array it is ~1.8–2.0× faster than every competitor** — the `MemoryMarshal.Cast`
-  block-copy (reinterpret) path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
-  (This session's measurement: **0.59 µs vs 1.08–1.18 µs** for the others — decisive, with allocations
-  identical across all four libraries.)
+- On the **blittable struct array at N = 1000 it is ~1.8–2.0× faster than every competitor** — the
+  `MemoryMarshal.Cast` block-copy (reinterpret) path that none of Mapperly / Mapster / AutoMapper have (they
+  copy field-by-field). (This session's measurement: **0.59 µs vs 1.08–1.18 µs** for the others — decisive,
+  with allocations identical across all four libraries.)
+  **The size qualifier is not decoration.** A seven-decade sweep of the same shape
+  ([`2026-09-09-collection-decade-sweep.md`](../benchmarks/results/2026-09-09-collection-decade-sweep.md))
+  shows the lead is a CURVE with its peak near this size: ~2.05–2.20× at N = 100–1,000, **1.06×** at
+  N = 10,000 where the destination array crosses the Large Object Heap threshold and GC dominates every
+  library equally, recovering to **1.45×** at N = 10⁶. At **N = 1 the fast path is a small loss** (0.84×
+  against its own scalar twin — the `Cast` + `CopyTo` setup is not amortised by one element). So this
+  figure describes a thousand-element copy and must not be quoted as a property of the path.
 - On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/

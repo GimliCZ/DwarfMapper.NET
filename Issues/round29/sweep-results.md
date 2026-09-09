@@ -28,9 +28,23 @@ to them**.
 | 100,000 | 1,110.6 µs | 693.7 µs | **0.63** |
 | 1,000,000 | 5,509.6 µs | 3,593.3 µs | **0.65** |
 
-**Usage space: everywhere. There is no crossover, so there is no threshold to set.** The blit wins at
-every decade from ten elements to a million, never loses, and holds roughly 0.6x once past the smallest
-sizes. **This validates the current always-on design and removes the need for a length gate on this path.**
+**Usage space: everywhere from ten elements up. There is no crossover IN THIS RANGE, so there is no
+threshold to set within it.** The blit wins at every decade from ten elements to a million, never loses, and
+holds roughly 0.6x once past the smallest sizes. **This validates the current always-on design and removes
+the need for a length gate on this path.**
+
+> **CORRECTED 2026-09-09.** The sentence above originally read *"Usage space: everywhere. There is no
+> crossover, so there is no threshold to set"* — an unqualified claim about all sizes, drawn from a sweep
+> that **starts at N = 10**. Extending the same comparison down one decade
+> ([`benchmarks/results/2026-09-09-collection-decade-sweep.md`](../../benchmarks/results/2026-09-09-collection-decade-sweep.md))
+> measured **0.84x at N = 1** — the blit is slightly SLOWER with a single element (8.4 ns against the scalar
+> twin's 7.0 ns, err +/-6%), because `MemoryMarshal.Cast` + `CopyTo` has setup that one element cannot
+> amortise. **There is a crossover and it is below ten.**
+>
+> The conclusion about the CODE survives: 1.4 ns is not worth a runtime length check, and a compile-time
+> gate cannot know N. What did not survive is the word "everywhere", which claimed a range the measurement
+> never covered — the same "right number, wrong population" error this round recorded five times, made once
+> more by the document that recorded them.
 
 It also corrects a two-point reading: the earlier suite showed `SpanMap_Blit` at 0.21x (1k) and 0.98x
 (100k), which looked like a win that evaporates above cache. Swept properly, the blit does not evaporate.

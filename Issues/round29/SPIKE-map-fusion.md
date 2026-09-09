@@ -151,4 +151,45 @@ pair inside a loop; a fused single-object map should be refused as dead weight.
 The work is not the emitter. It is (a) the refusal list above and (b) the shape test that decides a call site
 is inside an element loop, and both should be specified before a line of emission is written.
 
-Re-measure against generated output before quoting any figure from this file.
+## RE-MEASURED AGAINST GENERATED OUTPUT, 2026-09-09 - caveat (1) is closed
+
+Caveat (1) above said the probe measured hand-written `private static` methods and that a real emitted pair
+is a `public partial` method on a mapper class, so the inlining that makes `B` a candidate might not happen
+identically. `FusionProbeBenchmarks` in the benchmark project runs the identical arms through a real
+`[DwarfMapper]` mapper whose `MapAB`, `MapBC` and `MapAC` bodies the generator wrote.
+
+**Every allocation figure is byte-identical to the hand-written probe.** Not close - the same numbers.
+
+| arm | N | hand-written spike | GENERATED maps | mean (generated) |
+|---|---:|---:|---:|---:|
+| `Chained` | 1 | 112 B | **112 B** | 11.76 ns |
+| `Fused` / `Direct` | 1 | 72 B | **72 B** | 7.46 ns |
+| `ChainedEscaping` | 1 | 144 B | **144 B** | 13.78 ns |
+| `Chained` | 1,000 | 88,024 B | **88,024 B** | 7,760.7 ns |
+| `Fused` / `Direct` | 1,000 | 48,024 B | **48,024 B** | 4,345.5 ns |
+| `ChainedEscaping` | 1,000 | 96,048 B | **96,048 B** | 11,722.1 ns |
+
+The straight-line arms confirm the other half, and more directly than the spike could: these return the
+object rather than a one-element array, so the number IS the intermediate question.
+
+| arm | allocated | mean |
+|---|---:|---:|
+| `Fuse_Chained_Straight` (A -> B -> C, no loop) | **40 B** | 4.02 ns |
+| `Fuse_Direct_Straight` (A -> C) | **40 B** | 4.13 ns |
+
+40 B is exactly one `FzC` (16 header + int + long + double + int = 40). **The chained straight-line path
+allocates no `FzB` at all** - the JIT stack-allocated it - and the two arms are equal in time to within
+noise. Fusion buys precisely nothing there.
+
+So the boundary holds on generator output exactly as it held on the stand-ins: **inside a per-element loop,
+fusion removes one allocation per element and measures 1.79x faster at N = 1,000 (0.55x allocation); in
+straight-line code the runtime has already done it and a fused emission would be dead weight.**
+
+The recommendation is unchanged and is now measured on the population it describes. What remains before any
+emitter is written is still caveat (3) - the refusal list for cases where `B`'s construction is observable
+(hooks, `[RoundTrip]` verifiers, side-effecting converters, identity-keyed reference maps) - and caveat (4),
+the private-chain requirement.
+
+Re-measure against generated output before quoting any figure from this file. The tables above are that
+re-measurement; the ones before them are the hand-written probe and are kept because the agreement between
+the two is the result.

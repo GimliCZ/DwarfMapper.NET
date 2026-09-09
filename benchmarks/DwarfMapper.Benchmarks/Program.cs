@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
@@ -17,9 +17,21 @@ using Mapster;
 // `--filter`, `--anyCategories` and `--job` do nothing and the FULL suite runs every time — a targeted
 // re-measurement of one category quietly becomes a ~40-minute sweep, and the operator has no signal that
 // their filter was dropped. This cost several timed-out runs before it was spotted.
-BenchmarkRunner.Run<MapperBenchmarks>(
-    Environment.GetEnvironmentVariable("DWARF_BENCH_SMOKE") == "1" ? SmokeConfig.Create() : null,
-    args);
+// SMOKE MODE RUNS THE GATED CLASS AND ONLY THE GATED CLASS. `-BenchSmoke` passes no filter, so whatever
+// this line reaches is what the nightly pays for and what Assert-BenchAllocationsPinned counts. Routing
+// smoke through the switcher would silently pull CollectionSweepBenchmarks' seven-decade sweep into every
+// nightly and break the exact benchmark-count check the same night.
+if (Environment.GetEnvironmentVariable("DWARF_BENCH_SMOKE") == "1")
+{
+    BenchmarkRunner.Run<MapperBenchmarks>(SmokeConfig.Create(), args);
+}
+else
+{
+    // Outside smoke, both classes are reachable: `-- --filter *CollectionSweep*` selects the usage-space
+    // sweep, and with no filter the switcher asks. MapperBenchmarks stays FIRST so an unfiltered
+    // non-interactive run still names the gated suite first in the menu it prints.
+    BenchmarkSwitcher.FromTypes([typeof(MapperBenchmarks), typeof(CollectionSweepBenchmarks), typeof(NullCheckProbeBenchmarks), typeof(FusionProbeBenchmarks)]).Run(args);
+}
 
 /// <summary>
 ///     Deep-tier smoke configuration (round-21 T8), activated by <c>DWARF_BENCH_SMOKE=1</c> — an env var
