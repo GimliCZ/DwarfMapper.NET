@@ -542,6 +542,7 @@ measured. Every pathway below is a way of taking (partial) ownership of a layout
    composed map and never allocate the intermediate. Also the update-into form of the same idea: mapping
    into an existing struct array (`Span<TDto>`) is copy elision of the result buffer; section 9 measured it at
    0.14 ns/elem.
+   **ANSWERED 2026-09-09 - `Issues/round29/SPIKE-map-fusion.md`. The JIT does NOT elide the intermediate**, at N=1 or N=1000, and the same bytes come back in-process and out-of-process: the chained path allocates exactly one `B` per element more than the fused path (112 vs 72 B at N=1; 88,024 vs 48,024 B at N=1000), and an escaping control confirms the instrument can tell the two cases apart. 0.55x allocation at N=1000. So fusion is an UNCLAIMED WIN rather than something .NET 10's widened escape analysis already gives away - and the work is the REFUSAL LIST (hooks, `[RoundTrip]`, side-effecting converters, identity-preserving maps, and any publicly reachable `A->B`), not the emitter.
 9. **Databases: late materialization and projection pushdown.** Do not build the row until you know which
    columns the consumer needs. **Pathway: consumer-driven projection** — the `.Project` endpoint already does
    this for `IQueryable`; the in-memory analogue is a generated *partial* transfer model per call site (only
