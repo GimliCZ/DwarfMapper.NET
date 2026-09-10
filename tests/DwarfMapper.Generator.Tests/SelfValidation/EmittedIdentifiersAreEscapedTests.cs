@@ -188,11 +188,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         private const int MinimumWriteCallsScanned = 1500;
 
         /// <summary>
-        ///     Measured 2026-09-07: 77 escaped names (an <c>Emit*</c> sibling or an <c>Identifiers.*</c> call)
-        ///     reach a writer. This is the floor that distinguishes "the scan found no violation" from "the scan
-        ///     found nothing at all" — the failure mode this round has now recorded five times.
+        ///     Measured 2026-09-10 (was 77 as of 2026-09-07): 75 escaped names (an <c>Emit*</c> sibling or an
+        ///     <c>Identifiers.*</c> call) reach a writer. Re-pinned by round 30's coverage sweep, which deleted
+        ///     <c>MapEmitter.cs</c>'s dead "legacy flat Members path" projection arm — genuinely unreachable
+        ///     (<c>method.Members</c> is always empty for a projection method model) and never entered by any
+        ///     test — taking its two <c>member.EmitTargetName</c>/<c>member.EmitSourceName</c> call sites with
+        ///     it. This is the floor that distinguishes "the scan found no violation" from "the scan found
+        ///     nothing at all" — the failure mode this round has now recorded five times.
         /// </summary>
-        private const int MinimumEscapedEmissionSites = 77;
+        private const int MinimumEscapedEmissionSites = 75;
 
         [Fact]
         public void The_emitting_population_is_the_union_of_both_discriminators()

@@ -368,24 +368,22 @@ namespace DwarfMapper.Generator.Pipeline
 
                     sb.AppendLine(");");
                 }
-                else if (projMembers.Count > 0)
+                else
                 {
                     // Member-init projection with inline expression fragments (Plan 19D recursive resolver).
+                    // Round 30: this used to be two arms — this one for projMembers.Count > 0, and a
+                    // "legacy flat Members path" for Count == 0 that looped over method.Members instead of
+                    // projMembers. method.Members is Array.Empty for EVERY projection method model (the
+                    // MapMethodModel constructor in MapperExtractor.Phases.cs passes
+                    // EquatableArray.From(Array.Empty<MemberMap>()) unconditionally for a projection pair),
+                    // so that second loop could never iterate and the two arms emitted byte-identical text
+                    // for Count == 0 (a destination with no public settable member and no explicit map).
+                    // One arm, reachable-and-tested at both Count == 0 and Count > 0, replaces the dead one.
                     sb.AppendLine("new " + method.ElementTargetTypeFullName);
                     sb.Append(indent).AppendLine("    {");
                     foreach (var pm in projMembers)
                         sb.Append(indent).Append("        ").Append(pm.EmitTargetName)
                             .Append(" = ").Append(pm.InlineExpr).AppendLine(",");
-                    sb.Append(indent).AppendLine("    });");
-                }
-                else
-                {
-                    // Fallback: legacy flat Members path (backward compat / error-case placeholder).
-                    sb.AppendLine("new " + method.ElementTargetTypeFullName);
-                    sb.Append(indent).AppendLine("    {");
-                    foreach (var member in method.Members)
-                        sb.Append(indent).Append("        ").Append(member.EmitTargetName)
-                            .Append(" = __s.").Append(member.EmitSourceName).AppendLine(",");
                     sb.Append(indent).AppendLine("    });");
                 }
 
@@ -1243,13 +1241,17 @@ namespace DwarfMapper.Generator.Pipeline
             var arms = method.DerivedTypeArms;
             var hasAfter = method.AfterHooks.Count > 0;
 
-            // Determine ctx var and depth arg for this dispatch method.
-            // isPublicWithCtx: public method that creates __dwarf_ctx.
-            // isSynthesizedRecursive: private recursion-capable (unlikely for a dispatch method but safe).
-            var isSynthesizedRecursive = !method.IsPartial && method.IsRecursionCapable;
-            var isPublicWithCtx = method.IsPartial && method.IsRecursionCapable;
-            var ctxVarName = isPublicWithCtx ? "__dwarf_ctx" : "ctx";
-            var depthPassFwd = isSynthesizedRecursive ? "depth + 1" : "0";
+            // Determine ctx var for this dispatch method. EmitMethod's general preamble computes both
+            // isPublicWithCtx (public method, creates __dwarf_ctx) AND isSynthesizedRecursive (private
+            // synthesized helper, recursion-capable) because most methods can be either shape — but a
+            // [MapDerivedType] dispatch method never can: MapperExtractor.Phases.cs's ONE construction
+            // site for a DerivedTypeArms-bearing model hardcodes IsPartial: true (it is always the
+            // user-declared public partial method carrying the attribute; no pass ever changes IsPartial
+            // after construction, only IsRecursionCapable, via the later whole-graph recursion-capability
+            // fixup). So "isSynthesizedRecursive" here is unconditionally false and "depth + 1" can never
+            // be the depth argument passed to an arm's converter — round 30 coverage sweep, confirmed with
+            // a self-referential arm probe before simplifying away the dead half of this ternary pair.
+            var ctxVarName = method.IsRecursionCapable ? "__dwarf_ctx" : "ctx";
 
             // Before hooks (if any)
             foreach (var before in method.EmitBeforeHooks)
@@ -1281,7 +1283,10 @@ namespace DwarfMapper.Generator.Pipeline
                     .Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
                 if (arm.ConverterNeedsDepthCtx)
                 {
-                    sb.Append(", ").Append(ctxVarName).Append(", ").Append(depthPassFwd);
+                    // Always depth 0: this dispatch method is never itself a synthesized recursive helper
+                    // (see the ctxVarName comment above), so it is always the first tracked call — the
+                    // shape "depth + 1" exists for is unreachable here.
+                    sb.Append(", ").Append(ctxVarName).Append(", 0");
                 }
 
                 sb.AppendLine("),");

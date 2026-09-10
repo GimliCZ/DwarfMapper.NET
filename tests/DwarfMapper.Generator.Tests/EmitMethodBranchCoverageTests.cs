@@ -38,12 +38,13 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
-        public void Projection_destination_with_no_public_settable_members_falls_back_to_the_flat_Members_path()
+        public void Projection_destination_with_no_public_settable_members_emits_an_empty_object_initializer()
         {
             // ProjectionMembers.Count == 0 with no Error means the destination genuinely has nothing to
-            // assign (no public settable member and no explicit map) — the "legacy flat Members path"
-            // (also empty, since method.Members is always Array.Empty for a projection method) rather than
-            // the constructor- or member-init-projection branches above it.
+            // assign (no public settable member and no explicit map). This used to be a THIRD emitter arm
+            // (a "legacy flat Members path" looping over method.Members, always empty for a projection
+            // method and so behaviourally dead) — removed; the member-init projection arm now handles
+            // Count == 0 by producing an empty initializer body directly.
             const string src = """
                                using DwarfMapper; using System.Linq;
                                namespace Demo;
@@ -107,6 +108,85 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("if (src.Note is not null) __dwarf_target.Note = ", generated, StringComparison.Ordinal);
             Assert.Contains("Plain(__dwarf_target);", generated, StringComparison.Ordinal);
             Assert.Contains("SourceAndRef(src, ref __dwarf_target);", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        [Fact]
+        public void CtorArgs_with_init_members_defers_When_and_SkipIfSourceNull_members_out_of_the_initializer_block()
+        {
+            // hasCtorArgs && hasInitMembers: the ordinary construction path's object-initializer block
+            // (`new T(name: s.Name) { ... }`) must skip any member that is UnflattenIntermediateFqn,
+            // When-guarded, or SkipIfSourceNull — each is assigned afterward, by EmitDeferredAssignments,
+            // not inline — while a plain settable member with none of those still gets its initializer
+            // entry, so the empty-initializer shape from the abandoned factory-path fixture (all members
+            // deferred) is NOT this branch's only reachable state.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src
+                               {
+                                   public string Name { get; set; } = "";
+                                   public int Score { get; set; }
+                                   public string? Note { get; set; }
+                                   public int Count { get; set; }
+                               }
+                               public class Dst
+                               {
+                                   public Dst(string name) { Name = name; }
+                                   public string Name { get; }
+                                   public int Score { get; set; }
+                                   public string Note { get; set; } = "";
+                                   public int Count { get; set; }
+                               }
+                               [DwarfMapper(SkipNullSourceMembers = true)]
+                               public partial class M
+                               {
+                                   [MapProperty(nameof(Src.Score), nameof(Dst.Score), When = nameof(IsActive))]
+                                   public partial Dst Map(Src s);
+                                   private static bool IsActive(Src s) => true;
+                               }
+                               """;
+            var (diag, generated) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+            // SkipNullSourceMembers only converts REFERENCE-type (or nullable-value) source members into a
+            // SkipIfSourceNull deferral (MapperExtractor.Members.Phases.cs) — Count (int, a non-nullable
+            // value type) is neither, so it stays a plain initializer entry alongside the ctor arg.
+            Assert.Contains("new global::Demo.Dst(", generated, StringComparison.Ordinal);
+            Assert.Contains("name: s.Name)", generated, StringComparison.Ordinal);
+            Assert.Contains("Count = s.Count,", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("Score = s.Score,", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("Note = s.Note,", generated, StringComparison.Ordinal);
+            Assert.Contains("if (IsActive(s)) __dwarf_target.Score = s.Score;", generated, StringComparison.Ordinal);
+            Assert.Contains("if (s.Note is not null) __dwarf_target.Note = s.Note;", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        [Fact]
+        public void MapDerivedType_arm_that_is_self_referential_threads_the_dispatch_methods_own_ctx_and_depth_zero()
+        {
+            // Dog/DogDto is self-referential through Pup, so the synthesized arm converter is
+            // recursion-capable (ConverterNeedsDepthCtx) — EmitDerivedDispatchBody's arm-emission branch.
+            // Unlike EmitMethod's general preamble, a dispatch method is NEVER itself a synthesized
+            // recursion-capable private helper (see the comment on EmitDerivedDispatchBody's ctxVarName),
+            // so the call is always `(__s, __dwarf_ctx, 0)` — never `(__s, ctx, depth + 1)`.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; public Dog? Pup { get; set; } }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; public DogDto? Pup { get; set; } }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                               }
+                               """;
+            var (diag, generated) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Contains("var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(64);", generated, StringComparison.Ordinal);
+            Assert.Contains("__s, __dwarf_ctx, 0)", generated, StringComparison.Ordinal);
             GeneratorAssert.EmitsCompilableCode(src);
         }
     }
