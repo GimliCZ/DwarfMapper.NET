@@ -334,5 +334,64 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
             Assert.Contains("Finish(n, __dwarf_target);", generated, StringComparison.Ordinal);
         }
+
+        // ── 17. SetNull + an [AfterMap] hook that takes the target BY REF ────────────────────
+        // EmitSetNullGuardedBody's `if (after.TargetByRef) sb.Append("ref ");` (MapEmitter.cs:1214)
+        // had zero executions before this. TargetByRef is set from the hook's own declared
+        // RefKind (MapperExtractor.Phases.cs, the applicableAfter loop) independent of whether the
+        // destination is a value type — the sibling check just above it skips the hook entirely
+        // only for a STRUCT target passed WITHOUT ref (mutations would be lost); a `ref`-typed
+        // CLASS destination parameter is unusual but legal C#, and nothing gates TargetByRef to
+        // value types. Confirmed reachable rather than assumed dead, per the coverage sweep's
+        // "every branch reachable-and-tested or removed" rule — round 30's deferred question.
+        [Fact]
+        public void SetNull_after_hook_takes_the_target_by_ref()
+        {
+            var src = SelfRefNode +
+                      """
+                      [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                      public partial class M
+                      {
+                          public partial NodeDto Map(Node n);
+                          [AfterMap] private static void Finish(ref NodeDto d) { }
+                      }
+                      """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("Finish(ref __dwarf_target);", generated, StringComparison.Ordinal);
+        }
+
+        // ── 18. SetNull + ctor args + init members, ONE of them DEFERRED ─────────────────────
+        // The hasCtorArgs && hasInitMembers loop's deferred-member skip
+        // (`if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
+        // member.SkipIfSourceNull) continue;`) had zero executions: test 12's sole init member
+        // (Next) was never deferred. SkipNullSourceMembers defers a simple, nullable-source,
+        // post-construction-settable member so the emitter guards it separately
+        // (EmitDeferredAssignments) instead of assigning it inline in the initializer block —
+        // exactly the case this branch exists to skip past. Tag is deferred; Next (the recursive
+        // back-edge) carries its own synthesized call expression and is not.
+        [Fact]
+        public void SetNull_ctor_args_plus_deferred_member_skips_it_in_the_initializer_block()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class SnCtorDeferred    { public int V { get; set; } public SnCtorDeferred? Next { get; set; } public string? Tag { get; set; } }
+                               public record SnCtorDeferredDto(int V) { public SnCtorDeferredDto? Next { get; set; } public string? Tag { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull, SkipNullSourceMembers = true)]
+                               public partial class M { public partial SnCtorDeferredDto Map(SnCtorDeferred n); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("new global::Demo.SnCtorDeferredDto(", generated, StringComparison.Ordinal);
+            // Next is assigned inline, inside the initializer block (never deferred: it carries the
+            // recursive nested-call expression, not a plain member copy).
+            Assert.Contains("Next = ", generated, StringComparison.Ordinal);
+            // Tag is deferred: guarded and assigned OUTSIDE the initializer block, after
+            // construction — not inline as a comma-separated initializer member.
+            Assert.Contains("if (n.Tag is not null) __dwarf_target.Tag = n.Tag;", generated,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("Tag = n.Tag,", generated, StringComparison.Ordinal);
+        }
     }
 }
