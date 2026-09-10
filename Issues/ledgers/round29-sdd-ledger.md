@@ -925,3 +925,54 @@ ROUND CLOSE — THE COLLECTION SURFACE, RE-MEASURED AT THE OWNER'S SCALE, commit
   allocates no intermediate at all. The boundary holds on the population it describes: fusion pays inside
   element loops (1.79x, 0.55x allocation) and is dead weight in straight-line code. What still gates the
   emitter is caveat (3), the refusal list for cases where B's construction is observable.
+
+ROUND 29 CLOSED DOWN 2026-09-10. Branch pushed, PR open, nothing local.
+
+THE PR PHASE, which is where the round earned the rest of its findings.
+  CI WENT RED ON THE FIRST RUN and it was my defect: EmittedIlIsVerifiableTests failed twice with "ilverify
+  is not on PATH". The test fails LOUDLY rather than skipping, by design; what was wrong is that round 29
+  installed the tool in build-test and deep-test only, while FOUR jobs reach it (roslyn-forward-compat and
+  preview-sdk-canary filter Category!=SurfaceMatrix, cross-platform does not filter at all). Fixed in
+  ef4bd27, and the regression guard it shipped without followed in 8d71929 — an architecture test asserting
+  every job that can reach the test installs the tool, RED-proven by deleting the install from
+  roslyn-forward-compat alone and watching it name that exact job.
+  THE NIGHTLY TIER IS NOW OPT-IN ON A PR: label `full-ci` (35f5407). A label rather than plain pull_request
+  because the mutation matrix budgets up to 350 min per leg across six legs; a label rather than
+  workflow_dispatch because a dispatch runs against a BRANCH, not the merge result the reviewer approves.
+
+CODECOV'S 86 LINES, reproduced locally first (41 uncovered + 45 partial, matching its count and per-file
+split) so the work targeted the same measurement rather than a proxy. Six of nine files covered. The lines
+were not arbitrary: they were REFUSAL and TERMINATION arms — the immutability refusals decide whether a
+share is allowed and a share wrongly allowed aliases mutable state into a consumer's graph; the dense-enum
+arms decide which SLOT INDEX a member writes to; the layout guards are what make the walk terminate. Each
+set got a control so a pass means the arm fired.
+  AND A NEGATIVE RESULT WORTH MORE THAN THE COVERAGE: the code-fix accessor guard is unreachable THROUGH THE
+  DIAGNOSTIC — the classifier declines a model with a computed property before the fix is offered,
+  established by two experiments rather than assumed. Defensive, not untested. Eight lines are deliberately
+  left with reasons in Issues/round30/CODECOV-round29-patch.md; a guard whose input no caller can produce is
+  defensive, and manufacturing the impossible state is how a coverage number stops meaning anything.
+
+A REAL SILENCE FOUND AND FIXED (53cd56e): [MapShare] on a span or async-stream map was discarded WITHOUT A
+WORD — the member COPIED instead of shared, correct code and not the aliasing the caller asked for. Round 29
+shipped [MapShare] and [Reinterpret] together and gave the element-wise gate an arm for one of them. RED
+proven by probe (<NOTHING> -> DWARF090). The corpus then forced two corrections that improved the fix: my
+first version put both on DWARF092 and the negative-case corpus refused it, because [Reinterpret] was
+ALREADY on DWARF090 and I had produced a duplicate id; then SurfaceParityTests required the attribute's own
+AppliesTo claim to grow, because making a cell REFUSE makes it LIVE.
+
+WHAT THE ROUND REFUTED, counted because it is the honest measure of it: the List gap (does not exist), the
+callee-guard hypothesis (probe said no, sign inverted), "usage space: everywhere" (there IS a crossover
+below N=10), the null-ternary "defect" (a ruling, and git said so), my own claim that the blit refusal
+controls did not exist (27 of them did), and — on returning to round 30 — map fusion's EMISSION SITE, which
+does not exist at all: MemberMap.ConverterMethod is a single string?, so no emitter can chain two maps, and
+624 generated files contain zero A->B->C. Six proposals killed by evidence, four of them mine.
+
+STATE AT CLOSE: whole solution green at 9,275 tests. feat/round29-hardware-mode pushed and even with origin;
+master untouched at 0c30156 awaiting the PR merge. feat/round30 rebased onto it with four commits (blit
+Pack/FieldOffset refusals, the fusion observability criterion, the FusedChat consumer validation, the last
+three PROVE rows). FusedChat — a real 32-project consumer — builds and passes 707 tests on rc11 with zero
+DWARF diagnostics.
+INTERRUPTED AND CLEANED: the testing mutation leg was mid-run when time ran out. Stryker was stopped and
+Remove-PlantedMutants + Assert-NoMutatedProductBinaries ran — 41 product assemblies, none mutated. The
+StructuralComparer null-render tests (99e38c0) are therefore committed but their effect on the leg's 82.73 %
+is UNMEASURED; re-run `housekeeping.ps1 -MutationLeg testing` before moving that pin.
