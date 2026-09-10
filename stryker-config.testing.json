@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/Schemas/stryker-config.json",
+  "comment": "Mutation testing for DwarfMapper.Testing's VERIFIERS. WHY THIS LEG EXISTS, and why it is the sixth rather than the first: Issues/round27/AUDIT-mutation-scope.md has recorded DwarfMapper.Testing at 0 % mutation coverage since round 27, and the argument for leaving it there was that the package is test-only and never AOT-published. That argument covers the FIXTURE BUILDERS. It does not cover the VERIFIERS. RoundTrip.Verify, LensLaws and StructuralComparer are the instruments a CONSUMER grades their own mappers with, so a verifier that silently passes certifies a broken map - which is the same 'instrument trusted for coverage it cannot provide' shape round 29 recorded seven times. Round 29's Phase 4 added 189 lines to this package (LensLaws + LensLawException), which moved the whole repository's mutation share 11.134 % -> 11.085 %: a real regression, caused by adding consumer-facing verification code to the one package no leg could see. This leg is that regression's answer. SCOPE: the five verifier files only, on the pipeline leg's precedent of taking ONE AREA rather than a whole project. ObjectFactoryV2 (326 lines) and GraphOracleComparer (394 lines) are FIXTURE machinery, out of scope here and named in the audit as the follow-on. break/low are pinned to the FIRST MEASURED score, floored, exactly as the pipeline and CodeFixes legs were; raise them only by killing survivors, never by re-running until a run is lucky. MEASURED 2026-09-09 on 12 cores: 91 detected of 110 scoreable = 82.73 % (86 killed, 5 TIMEOUT, 17 survived, 2 not covered by any test), 20:18 wall-clock, 1,176 mutants created of which 927 were filtered out-of-leg and 137 rolled back as compile errors. break/low pinned to 82, high 85. THE TIMEOUT BUCKET IS NOT ZERO, WHICH THIS REPOSITORY TREATS AS THE FIRST THING TO CHECK - a Timeout counts as DETECTED, so a re-classification would move the score with no test having changed (gate-checks.ps1 says so in the R2 error text). Every one of the five was read rather than assumed, and all five REMOVE TERMINATION rather than merely slowing the code down: three are `i++` -> `i--` in a `for` loop (LensLaws x2, RoundTrip x1) and two unbound StructuralComparer's recursion (`depth - 1` instead of `depth + 1`, and a statement mutation deleting the depth guard). A non-terminating mutant times out on every machine, so this classification is stable across boxes in a way a merely-slow mutant's would not be - which is why the measured 82.73 is taken as the pin rather than the timeout-free 78.18 (86/110). Recording the distinction because the sibling legs' comments record a ZERO timeout bucket as their evidence, and this leg cannot make that claim. THE 17 SURVIVORS ARE THE FIRST KILL PROGRAMME'S WORKLIST: 15 in StructuralComparer (its float/double epsilon comparisons and its render formatting), 1 in LensLaws and 1 in RoundTrip (both the `iterations` loop bound, where an off-by-one still verifies the same laws). Raise break only by killing them. RE-MEASURED 2026-09-09 11:45-12:06 THROUGH scripts/housekeeping.ps1 -MutationLeg testing, because the first measurement above came from a bare Invoke-StrykerLeg: that call returns a score and executes NONE of the four post-leg proofs the housekeeping block wraps it in (Assert-MutantsWereTested, which is the only thing that distinguishes a real score from a VACUOUS run that also exits 0; Assert-LegScoreWithinBand; Remove-PlantedMutants; Assert-NoMutatedProductBinaries), and its Stryker build had ended in an IOException that left a mutated DwarfMapper.Testing.dll behind. The second run reproduces the first EXACTLY - 86 killed / 5 Timeout / 17 Survived / 2 NoCoverage of 110, 82.73 % - and the five timeouts are the SAME FIVE MUTANTS, which turns the termination argument above from a reading into a repeated measurement. HOUSEKEEPING PASSED, and Assert-NoMutatedProductBinaries confirmed 44 product assemblies under tests/**/bin with none mutated. -MutationLeg was added in the same commit so a leg's FIRST pin never again comes from a run that proves less than the gate does.",
+  "stryker-config": {
+    "project": "DwarfMapper.Testing.csproj",
+    "mutate": [
+      "**/LensLaws.cs",
+      "**/LensLawException.cs",
+      "**/RoundTrip.cs",
+      "**/RoundTripException.cs",
+      "**/StructuralComparer.cs"
+    ],
+    "additional-timeout": 120000,
+    "thresholds": {
+      "high": 85,
+      "low": 82,
+      "break": 82
+    },
+    "project-info": {
+      "name": "github.com/GimliCZ/DwarfMapper.NET",
+      "module": "testing"
+    },
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
+  }
+}

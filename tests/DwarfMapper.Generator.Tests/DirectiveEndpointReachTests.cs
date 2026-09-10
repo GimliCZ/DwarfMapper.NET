@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using Microsoft.CodeAnalysis;
@@ -769,5 +769,68 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(2, reported.Count);
         }
+        // ── Round 29's other two directives, added 2026-09-10 ────────────────────────────────────────────
+        // Round 29 shipped three method-level directives and gave this family an arm for ONE of them.
+        // [MapShare] and [Reinterpret] were discarded in silence at every endpoint that does not read them --
+        // verified by probe before the arms were written: the generator reported NOTHING at all.
+
+        /// <summary>
+        ///     <c>[MapShare]</c> on a span map does not reach it, and now says so under <c>DWARF090</c> — the
+        ///     same gate its sibling <c>[Reinterpret]</c> already used. Silently the member was COPIED instead
+        ///     of shared: correct code, and not the aliasing the caller asked for, which is the worst kind of
+        ///     silence because nothing fails and their assumption about reference identity is simply false.
+        /// </summary>
+        [Fact]
+        public void A_share_written_on_a_span_map_is_refused_and_names_the_endpoint()
+        {
+            var diagnostic = GeneratorAssert.Reports("""
+                                                     using System;
+                                                     using System.Collections.Generic;
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public sealed class Badge { public int Id { get; } public Badge(int id) { Id = id; } }
+                                                     public sealed class Src { public IReadOnlyList<Badge> Items { get; set; } = []; }
+                                                     public sealed class Dst { public IReadOnlyList<Badge> Items { get; set; } = []; }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         public partial Dst Map(Src s);
+
+                                                         [MapShare(nameof(Dst.Items))]
+                                                         public partial void MapSpan(ReadOnlySpan<Src> src, Span<Dst> dst);
+                                                     }
+                                                     """, "DWARF090");
+
+            var message = Assert.Single(diagnostic).GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+
+            Assert.Contains("[MapShare(\"Items\")]", message, StringComparison.Ordinal);
+            Assert.Contains("MapSpan", message, StringComparison.Ordinal);
+            Assert.Contains("does not reach", message, StringComparison.Ordinal);
+            Assert.Contains("DECLARED create map", message, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Its home endpoints stay silent, which is what makes the refusal above a statement about the
+        ///     ENDPOINT rather than about the directive.
+        /// </summary>
+        [Fact]
+        public void A_share_on_a_create_map_is_not_reported()
+        {
+            GeneratorAssert.DoesNotReport("""
+                                          using System.Collections.Generic;
+                                          using DwarfMapper;
+                                          namespace Demo;
+                                          public sealed class Badge { public int Id { get; } public Badge(int id) { Id = id; } }
+                                          public sealed class Src { public IReadOnlyList<Badge> Items { get; set; } = []; }
+                                          public sealed class Dst { public IReadOnlyList<Badge> Items { get; set; } = []; }
+                                          [DwarfMapper]
+                                          public partial class M
+                                          {
+                                              [MapShare(nameof(Dst.Items))]
+                                              public partial Dst Map(Src s);
+                                          }
+                                          """, "DWARF090");
+        }
+
     }
 }

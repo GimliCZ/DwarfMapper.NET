@@ -234,6 +234,56 @@ namespace DwarfMapper.Generator.Tests.Contracts
                                                                     public sealed class Dst { public int Id { get; set; } public uint[] Data { get; set; } = System.Array.Empty<uint>(); }
                                                                     """;
 
+        // An IReadOnlyList<T> of the SAME element type on both sides. Two things make this the shape [MapShare]
+        // needs and no other fixture is: the member types are identical (a share performs no conversion, so a
+        // differing pair could never be shared), and the declared type is an INTERFACE — which the immutability
+        // proof refuses on principle, because a List<T> behind IReadOnlyList<T> is still a List<T> at run time.
+        // That refusal is exactly what leaves the automatic path silent here and the attribute with something to
+        // force, so the cell measures the directive rather than the shape.
+        //
+        // The element is a sealed get-only class rather than a string or an int: a provably-mutable element would
+        // make [MapShare] report DWARF104 instead of acting, and the cell would read Refused for a reason that
+        // has nothing to do with the endpoint under test.
+        [SurfaceProbe("shareable-readonly-member")]
+        private static readonly string ShareableReadOnlyMember = """
+                                                                 public sealed class Badge { public Badge(string n) { Name = n; } public string Name { get; } }
+                                                                 public sealed class Src { public int Id { get; set; } public System.Collections.Generic.IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
+                                                                 public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
+                                                                 """;
+
+        // An enum-keyed dictionary on the source and an [InlineArray] struct on the destination — the one shape
+        // [MapDenseEnumKeys] has anything to say about. The default flat DTO pair has neither, so the sampled
+        // argument would name a member the directive could never apply to and the cell would measure the
+        // instrument rather than the generator, exactly as it did for [Reinterpret] and [MapShare].
+        //
+        // EXACTLY ONE dense-able member, and that is a measured decision rather than a stylistic one. An
+        // earlier draft declared two (`Counts` and `Errors`) so that the multiplicity axis would rotate onto a
+        // second REAL application — and it made every single-application cell decide nothing: the fixture's
+        // baseline cannot compile (see below), one directive clears only one of the two members, the mapper
+        // still fails, and the output is byte-identical to the broken baseline. Thirteen cells landed in
+        // SurfaceParityTests' UnhonouredButLoud population, which may only shrink. With one dense member the
+        // ctor and Offset cases CLEAR the baseline and read Honoured, and the ×2 case renders
+        // [MapDenseEnumKeys("Counts")] + [MapDenseEnumKeys("Id")] — a second application on an int member,
+        // which is DWARF105 and therefore a real answer rather than a byte-identical repeat. That is the same
+        // residual [MapShare]'s fixture carries, and it is preferred to a cell that decides nothing.
+        //
+        // This fixture's baseline does NOT compile, and cannot: a Dictionary has no conversion to an
+        // [InlineArray] struct and there is not meant to be one — the directive is the only thing that maps one
+        // into the other. It is named in SurfaceFixtureBaselineTests.BaselineIsBrokenByDesign with the id it
+        // fails with (DWARF005), which is why that list carries an id per entry rather than assuming DWARF001.
+        //
+        // DenseKey is 1-based over an array of three, so BOTH the ctor case (Offset = 0, filling slots 1..2)
+        // and the Offset property case (Offset = 1, filling slots 0..1) are provable. A fixture where only one
+        // of them fits would report the property cell as Refused for a reason that has nothing to do with the
+        // endpoint under test.
+        [SurfaceProbe("dense-enum-keyed-member")]
+        private static readonly string DenseEnumKeyedMember = """
+                                                              public enum DenseKey { Web = 1, Ios = 2 }
+                                                              [System.Runtime.CompilerServices.InlineArray(3)] public struct DenseSlots3 { private int _e0; }
+                                                              public sealed class Src { public int Id { get; set; } public System.Collections.Generic.Dictionary<DenseKey, int> Counts { get; set; } = new(); }
+                                                              public sealed class Dst { public int Id { get; set; } public DenseSlots3 Counts { get; set; } }
+                                                              """;
+
         // A real base/derived HIERARCHY on both sides, which is the only shape [MapDerivedType] has anything to
         // say about: it registers a dispatch arm from a DERIVED source type to a DERIVED destination type on a
         // method whose parameter is the base. Against the flat pair the sampled arguments were

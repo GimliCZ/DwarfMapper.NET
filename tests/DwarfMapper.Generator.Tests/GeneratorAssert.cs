@@ -36,6 +36,22 @@ namespace DwarfMapper.Generator.Tests
             string source,
             NullableContextOptions nullable = NullableContextOptions.Disable)
         {
+            var (_, generated) = CompilesCleanWithDiagnostics(source, nullable);
+            return generated;
+        }
+
+        /// <summary>
+        ///     <see cref="CompilesClean" />, but also returns the generator's OWN diagnostics (not just the
+        ///     compile-error check) for a caller that needs to assert something about them too — e.g. that a
+        ///     specific non-error diagnostic (a Warning/Info near-miss explanation) is present or absent. Runs
+        ///     the generator exactly ONCE: round 29 T0.2b review fix round 1 found a test that called
+        ///     <see cref="CompilesClean" /> for the generated text and then <c>GeneratorTestHarness.Run</c> again,
+        ///     on the same source, just to get the diagnostics — this is the one-run alternative to that.
+        /// </summary>
+        public static (IReadOnlyList<Diagnostic> Diagnostics, string Generated) CompilesCleanWithDiagnostics(
+            string source,
+            NullableContextOptions nullable = NullableContextOptions.Disable)
+        {
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, nullable);
 
             var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
@@ -46,7 +62,7 @@ namespace DwarfMapper.Generator.Tests
             Assert.True(compileErrors.Length == 0,
                 "The generator ACCEPTED this source but the code it emitted does not compile:\n  " + Describe(compileErrors) + "\n\n--- generated ---\n" + generated + "\n\n--- source ---\n" + source);
 
-            return generated;
+            return (diagnostics, generated);
         }
 
         /// <summary>

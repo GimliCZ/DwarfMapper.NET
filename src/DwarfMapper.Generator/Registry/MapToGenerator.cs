@@ -287,7 +287,7 @@ namespace DwarfMapper.Generator.Registry
                     }
 
                     resolver.ClearRefusalReported();
-                    var expr = resolver.Resolve(src.Type, w.Type, "source." + src.Sym.Name, w.Name);
+                    var expr = resolver.Resolve(src.Type, w.Type, "source." + Identifiers.Escape(src.Sym.Name), w.Name);
                     if (expr is null)
                     {
                         // Silent when the refusal already said why (see Resolver.RefusalReported): the types are
@@ -509,7 +509,7 @@ namespace DwarfMapper.Generator.Registry
                             using (w.Indent())
                             {
                                 foreach (var a in t.Assignments)
-                                    w.Line(a.DestMember + " = " + a.Expr + ",");
+                                    w.Line(a.EmitDestMember + " = " + a.Expr + ",");
                             }
 
                             w.Line("};");
@@ -528,7 +528,21 @@ namespace DwarfMapper.Generator.Registry
         }
 
         // ── equatable, symbol-free model (cache-safe) ───────────────────────────────
-        internal sealed record Assignment(string DestMember, string Expr) : IEquatable<Assignment>;
+        /// <param name="DestMember">
+        ///     The destination member's own name, unescaped — it is compared against the source member's name
+        ///     and against the resolver's refusal bookkeeping, so it stays the name Roslyn gave.
+        /// </param>
+        internal sealed record Assignment(string DestMember, string Expr) : IEquatable<Assignment>
+        {
+            /// <summary><see cref="DestMember" /> as it must be written into emitted C#.</summary>
+            /// <remarks>
+            ///     The <c>[MapTo]</c> registry is a SECOND shipped generator with its own emission, and it has
+            ///     been outside every scan in this repository — which is why a member the consumer called
+            ///     <c>@class</c> emitted <c>class = source.class,</c> here long after the class model stopped
+            ///     doing so.
+            /// </remarks>
+            public string EmitDestMember => Identifiers.Escape(DestMember);
+        }
 
         internal sealed record TargetPlan(string TargetFqn, string MethodName, EquatableArray<Assignment> Assignments)
             : IEquatable<TargetPlan>;
@@ -720,7 +734,7 @@ namespace DwarfMapper.Generator.Registry
                     }
 
                     ClearRefusalReported();
-                    var expr = Resolve(sm.Type, w.Type, "s." + sm.Symbol.Name, w.Name);
+                    var expr = Resolve(sm.Type, w.Type, "s." + Identifiers.Escape(sm.Symbol.Name), w.Name);
                     if (expr is null)
                     {
                         // Same rule one level down — and the level that made the cascade visible: a recursive
@@ -762,7 +776,7 @@ namespace DwarfMapper.Generator.Registry
                     bodyWriter.Line("{");
                     using (bodyWriter.Indent())
                     {
-                        foreach (var m in members) bodyWriter.Line($"{m.Name} = {m.Expr},");
+                        foreach (var m in members) bodyWriter.Line($"{Identifiers.Escape(m.Name)} = {m.Expr},");
                     }
 
                     bodyWriter.Line("};");

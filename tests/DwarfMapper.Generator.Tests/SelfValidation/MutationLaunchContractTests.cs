@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Tests.Contracts;
@@ -65,13 +65,23 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void Every_leg_passes_a_bounded_timeout_to_the_launcher()
         {
-            var src = Housekeeping();
-            var calls = Regex.Matches(src, @"Invoke-StrykerLeg(?<args>[^\r\n]*)", RegexOptions.ExplicitCapture);
+            // Call sites only. A PowerShell COMMENT naming the launcher is prose, not a launch, and reading
+            // it as one made this test fail on a sentence explaining why the launcher must not be called
+            // directly (2026-09-09) — a check that forbids describing itself. The exclusion is narrow: a
+            // line whose first non-space character is `#`. A commented-out launch is likewise not a launch.
+            var calls = Housekeeping()
+                        .Split('\n')
+                        .Where(l => !l.TrimStart().StartsWith('#'))
+                        .Select(l => Regex.Match(l, @"Invoke-StrykerLeg(?<args>[^\r\n]*)", RegexOptions.ExplicitCapture))
+                        .Where(m => m.Success)
+                        .ToList();
 
-            Assert.True(calls.Count >= 3,
-                $"expected at least the three mutation legs to call Invoke-StrykerLeg; found {calls.Count}");
+            // SIX since round 29 added the testing-toolkit verifier leg. The floor read 3 under a sentence
+            // saying "the three mutation legs"; rounds 27 and 29 added legs and moved neither.
+            Assert.True(calls.Count >= 6,
+                $"expected at least the six mutation legs to call Invoke-StrykerLeg; found {calls.Count}");
 
-            foreach (Match c in calls)
+            foreach (var c in calls)
             {
                 Assert.Contains("-TimeoutMinutes", c.Groups["args"].Value, StringComparison.Ordinal);
             }

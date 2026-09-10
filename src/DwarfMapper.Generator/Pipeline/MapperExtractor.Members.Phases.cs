@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -166,7 +167,11 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    acc.Result.Add(new MemberMap(mvTgt, "", ValueExpression: mv.Use + "()"));
+                    // Escaped HERE rather than at the emitter, because what goes into the model is a finished C#
+                    // EXPRESSION that MapEmitter appends verbatim — the model-transitive shape the b888cc3 defect
+                    // had. `Use` names a method the consumer declared, so it may legally be `@class`, and the
+                    // attribute carries the bare `class` that ISymbol.Name would also have given.
+                    acc.Result.Add(new MemberMap(mvTgt, "", ValueExpression: Identifiers.Escape(mv.Use) + "()"));
                 }
                 else
                 {
@@ -326,6 +331,103 @@ namespace DwarfMapper.Generator.Pipeline
                     ? new HashSet<string>(acc.Synthesized.Keys, StringComparer.Ordinal)
                     : null;
 
+                // The share, on a [MapProperty] rename. Skipped when the caller named a converter or a format:
+                // both TRANSFORM the value, and a share performs no conversion at all, so honouring the share
+                // over them would drop the transform silently. See TryPlanShare.
+                // Every [MapProperty] modifier that does something to the value or to the ASSIGNMENT. Use= and
+                // StringFormat= transform the value; NullSubstitute= and When= are read further down, in Phase
+                // 8, which a share reaching `continue` above them would never get to.
+                //
+                // That last clause is the whole reason this is a set rather than the two-way test it started
+                // as: with only Use=/StringFormat= here, `[MapProperty("Items","Items", When = nameof(P))]` on
+                // a provable member emitted an UNCONDITIONAL assignment and the predicate vanished — the exact
+                // defect the EndpointContractMatrix preamble was written about ("each bound their rename, so
+                // completeness was satisfied, and then the modifier was dropped"), which that matrix cannot see
+                // here because its fixture has no collection member.
+                var hasExtras = lookups.ExtrasByTarget.TryGetValue(tgtName, out var shareExtras) &&
+                                (shareExtras.HasNullSub || shareExtras.When is not null);
+                var modifiesTheAssignment = useMethod is not null ||
+                                            (req.StringFormats is not null && req.StringFormats.ContainsKey(tgtName)) ||
+                                            hasExtras;
+
+                // Standing aside for the modifier is right; standing aside SILENTLY is the other half of the
+                // same mistake. A caller who wrote both wrote one directive that does nothing, which is the
+                // "accepted it, changed nothing, said nothing" shape this round exists to remove. Stated once
+                // here and applied to BOTH directives below: the AUTOMATIC share falls through to the copy with
+                // no diagnostic — the modifier is honoured there, exactly as it was yesterday — and only the
+                // caller who ASKED for a share or a dense fill is told.
+                // The dense fill, on a [MapProperty] rename, and gated by the SAME set the share is: a directive
+                // that transforms the value cannot both apply and be bypassed. The dense path assigns kv.Value
+                // straight into a slot and calls nothing, so honouring it over a Use=/StringFormat=/When=/
+                // NullSubstitute= would drop that modifier silently — the T3.1 blocker, one member over.
+                if (modifiesTheAssignment && req.DenseEnumMembers.ContainsKey(tgtName))
+                {
+                    var whichDense = useMethod is not null ? "Use=" :
+                        hasExtras && shareExtras.When is not null ? "When=" :
+                        hasExtras ? "NullSubstitute=" : "StringFormat=";
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DenseEnumInvalid,
+                        req.Location,
+                        $"[MapDenseEnumKeys] member '{tgtName}' also carries a [MapProperty] that modifies its " +
+                        $"assignment ({whichDense}); the dense fill writes each dictionary value straight into " +
+                        "its slot and calls nothing, so the two cannot both apply — remove one of them",
+                        MemberName: tgtName));
+                }
+
+                if (!modifiesTheAssignment && req.DenseEnumMembers.TryGetValue(tgtName, out var explicitDenseOffset))
+                {
+                    if (TryPlanDense(srcMatch,
+                            tgtType,
+                            explicitDenseOffset,
+                            acc.Synthesized,
+                            req.Location,
+                            tgtName,
+                            acc.Diagnostics,
+                            out var explicitDenseConv))
+                    {
+                        // SourceIsNullableRef is deliberately NOT set. It exists to make the emitter append a
+                        // `!` for a converter whose parameter cannot take null; this helper's parameter IS
+                        // nullable and it answers null itself, exactly as the collection and dictionary helpers
+                        // do — which is also why `__DwarfDense_` does not carry the `__DwarfMap_` prefix that
+                        // drives GeneratedNames.IsSynthesized.
+                        acc.Result.Add(new MemberMap(tgtName, srcName, explicitDenseConv));
+                    }
+
+                    // Refused OR planned, the member is settled here. A refusal is a DWARF105 ERROR, so falling
+                    // through to the ordinary resolver would add a second, unrelated diagnostic about a mapper
+                    // that is not going to be emitted anyway.
+                    continue;
+                }
+
+                if (modifiesTheAssignment && req.ShareMembers.Contains(tgtName))
+                {
+                    var which = useMethod is not null ? "Use=" :
+                        hasExtras && shareExtras.When is not null ? "When=" :
+                        hasExtras ? "NullSubstitute=" : "StringFormat=";
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                        req.Location,
+                        $"[MapShare] member '{tgtName}' also carries a [MapProperty] that modifies its " +
+                        $"assignment ({which}); a share assigns the source reference and nothing else, so the " +
+                        "two cannot both apply — remove one of them",
+                        MemberName: tgtName));
+                }
+
+                if (!modifiesTheAssignment &&
+                    TryPlanShare(srcMatch,
+                        tgtType,
+                        req.Options.NullAsNull,
+                        req.ShareMembers.Contains(tgtName),
+                        req.Location,
+                        tgtName,
+                        acc.Diagnostics,
+                        out var explicitSharePlan))
+                {
+                    acc.Result.Add(new MemberMap(tgtName,
+                        srcName,
+                        ShareEmptyFallback: explicitSharePlan.EmptyFallback,
+                        ShareGuardsDefault: explicitSharePlan.GuardsDefault));
+                    continue;
+                }
+
                 if (TryResolveConversion(req.Compilation,
                         srcMatch,
                         tgtType,
@@ -471,6 +573,17 @@ namespace DwarfMapper.Generator.Pipeline
                         NullRefIntoNonNullable: nullSubLit is null && IsDirectNullRefAssign(conv, nullH, srcMatch, tgtType),
                         // Same nested nullable→non-nullable forgiveness as the auto-match path; skipped when
                         // NullSubstitute already handled the null.
+                        // Round 29 T2.9, on every converter-bearing member site: the converter's own RETURN
+                        // annotation. Skipped when NullSubstitute already coalesced the null away, for the same
+                        // reason the argument half is.
+                        ConverterReturnIsNullableRef: nullSubLit is null &&
+                                                      ForgiveConverterNullableReturn(conv,
+                                                          tgtType,
+                                                          req.AutoCandidates,
+                                                          req.AllMethods,
+                                                          tgtName,
+                                                          req.Location,
+                                                          acc.Diagnostics),
                         ConverterParamIsNonNullableRef: nullSubLit is null &&
                                                         ForgiveNestedNullableArg(conv,
                                                             srcMatch,
@@ -595,7 +708,7 @@ namespace DwarfMapper.Generator.Pipeline
                             target.Name,
                             acc.Diagnostics,
                             out var epConv,
-                            out _,
+                            out var epNull,
                             out var epNeedsCtx,
                             req.Options.AutoNest,
                             req.NestedRegistry,
@@ -606,8 +719,42 @@ namespace DwarfMapper.Generator.Pipeline
                             reservedConverters: lookups.ReservedConverters) &&
                         !epNeedsCtx)
                     {
-                        var valueExpr = epConv is null ? ep.Name : epConv + "(" + ep.Name + ")";
-                        acc.Result.Add(new MemberMap(target.Name, "", ValueExpression: valueExpr));
+                        // The extra parameter is carried as a source ACCESS, not as a finished ValueExpression:
+                        // ValueExpression short-circuits the emitter before any null handling is read, which is
+                        // how this site came to emit `Count = count` for `int? -> int` (CS0266, a compile ERROR
+                        // in the consumer's .g.cs), `ToDto(inner)` for `Child? -> ChildDto` (CS8604) and
+                        // `Inner = inner` for `Child? -> Child` (CS8601). Its nullability metadata is resolved
+                        // by exactly the helpers every other member edge uses, so the four emitters keep
+                        // answering the extra parameter the same way they answer a source member — the parameter
+                        // is just where the value is read FROM.
+                        acc.Result.Add(new MemberMap(target.Name,
+                            "",
+                            epConv,
+                            epNull,
+                            false, // !epNeedsCtx is in the guard above: an extra parameter never threads (ctx, depth).
+                            SourceMayBeNullRef(ep.Type!),
+                            NullRefIntoNonNullable: IsDirectNullRefAssign(epConv, epNull, ep.Type!, target.Type),
+                            ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(epConv,
+                                target.Type,
+                                req.AutoCandidates,
+                                req.AllMethods,
+                                target.Name,
+                                req.Location,
+                                acc.Diagnostics),
+                            ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(epConv,
+                                ep.Type!,
+                                target.Type,
+                                req.AutoCandidates,
+                                req.AllMethods,
+                                ep.Name,
+                                req.Location,
+                                acc.Diagnostics,
+                                NullSourceKind.MappingParameter),
+                            // Escaped for the same reason the signature fragment is: this string is emitted as
+                            // C# (`Class = @class`), so a parameter the user spelled `@class` must keep its `@`.
+                            // It is also what DWARF070 and the ThrowIfNull message name the parameter by, which
+                            // is why they read '@class' rather than 'class' for that (rare) spelling.
+                            SourceAccessExpression: Identifiers.Escape(ep.Name)));
                         acc.HandledTargets.Add(target.Name);
                         acc.ConsumedExtraParams.Add(ep.Name);
                         continue;
@@ -664,6 +811,13 @@ namespace DwarfMapper.Generator.Pipeline
                                 SourceMayBeNullRef(fm.LeafType),
                                 NullRefIntoNonNullable:
                                 IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type),
+                                ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(fconv,
+                                    target.Type,
+                                    req.AutoCandidates,
+                                    req.AllMethods,
+                                    target.Name,
+                                    req.Location,
+                                    acc.Diagnostics),
                                 ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(fconv,
                                     fm.LeafType,
                                     target.Type,
@@ -711,6 +865,13 @@ namespace DwarfMapper.Generator.Pipeline
                         ta.ElementType.IsUnmanagedType &&
                         BlittableProof.SameBytesIgnoringNames(sa.ElementType, ta.ElementType))
                     {
+                        // DWARF106 (round 29, T0.2c review fix 3). Everywhere else the blit now yields to a
+                        // conversion the user wrote; [Reinterpret] is the one place it does not, because it
+                        // names THIS member explicitly while an auto-adopted converter is ambient. Honouring
+                        // the explicit instruction is right — saying nothing about it is not. The two facts sit
+                        // in different files and no other diagnostic relates them, so the bypass is reported,
+                        // informationally, naming what is not being called and how to get it called.
+                        ReportReinterpretBypass(req, lookups, acc, target.Name, sa.ElementType, ta.ElementType);
                         var blit = CollectionConverter.SynthesizeBlit(acc.Synthesized,
                             source.Type,
                             sa.ElementType,
@@ -743,6 +904,47 @@ namespace DwarfMapper.Generator.Pipeline
                         req.Location,
                         target.Name,
                         MemberName: target.Name));
+                    continue;
+                }
+
+                // [MapDenseEnumKeys]. Decided BEFORE the resolver runs, for the reason the share states below:
+                // resolving first would synthesize a dictionary helper nothing then calls, and the aggregate
+                // emitter writes every helper the table holds.
+                if (req.DenseEnumMembers.TryGetValue(target.Name, out var denseOffset))
+                {
+                    if (TryPlanDense(source.Type,
+                            target.Type,
+                            denseOffset,
+                            acc.Synthesized,
+                            req.Location,
+                            target.Name,
+                            acc.Diagnostics,
+                            out var denseConv))
+                    {
+                        // No SourceIsNullableRef — see the explicit site above.
+                        acc.Result.Add(new MemberMap(target.Name, source.Name, denseConv));
+                    }
+
+                    // Settled either way — see the explicit site above for why a refusal does not fall through.
+                    continue;
+                }
+
+                // [MapShare], and the automatic share the immutability proof authorises. Decided BEFORE the
+                // resolver runs, not after: resolving first would synthesize a __DwarfMapColl_* helper that
+                // nothing then calls, and the aggregate emitter writes every helper the table holds.
+                if (TryPlanShare(source.Type,
+                        target.Type,
+                        req.Options.NullAsNull,
+                        req.ShareMembers.Contains(target.Name),
+                        req.Location,
+                        target.Name,
+                        acc.Diagnostics,
+                        out var sharePlan))
+                {
+                    acc.Result.Add(new MemberMap(target.Name,
+                        source.Name,
+                        ShareEmptyFallback: sharePlan.EmptyFallback,
+                        ShareGuardsDefault: sharePlan.GuardsDefault));
                     continue;
                 }
 
@@ -785,6 +987,14 @@ namespace DwarfMapper.Generator.Pipeline
                         needsCtx,
                         SourceMayBeNullRef(source.Type),
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
+                        ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(
+                            conv,
+                            target.Type,
+                            req.AutoCandidates,
+                            req.AllMethods,
+                            target.Name,
+                            req.Location,
+                            acc.Diagnostics),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(
                             conv,
                             source.Type,

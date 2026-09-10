@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Tests.Framework;
 using Microsoft.CodeAnalysis;
@@ -30,6 +30,9 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "SpanMap", "for (int __i = 0; __i < src.Length; __i++)"
                 },
                 {
+                    "SpanMapBlit", "MemoryMarshal.Cast"
+                },
+                {
                     "AsyncStream", "await foreach"
                 },
                 {
@@ -41,6 +44,20 @@ namespace DwarfMapper.Generator.Tests.Golden
                     // base, so it cannot appear unless the heterogeneous path actually ran. A marker both cases
                     // satisfy would advertise coverage this case does not add.
                     "HeteroFlattenGraph", "__DwarfMap_FlatNodeDispatch_"
+                },
+                {
+                    // The ASSERTED share, and deliberately not the proven one. `Proven = a.Proven ?? …` is what
+                    // the automatic path emits with no attribute in sight, so a marker matching it would pass
+                    // whether [MapShare] was read or not. `Asserted` is an IReadOnlyList the proof refuses on
+                    // principle: the only way that member reaches a bare assignment is the attribute firing.
+                    "MapShare", "Asserted = a.Asserted ?? global::System.Array.Empty<global::Demo.Badge>()"
+                },
+                {
+                    // The emitted ARITHMETIC, not the helper's name. A marker matching "__DwarfDense_" would
+                    // pass on the helper existing at all; the subtraction is what the Offset argument decides,
+                    // so this is the byte that moves if the directive's value is ever dropped on the way
+                    // through.
+                    "MapDenseEnumKeys", "switch (__kv.Key)"
                 },
                 {
                     "Flatten", "City = "
@@ -92,6 +109,55 @@ namespace DwarfMapper.Generator.Tests.Golden
                 },
                 {
                     "RegistryInheritedSource", "Id = source.Id"
+                },
+                {
+                    // The lift the payload edge was missing. Deliberately the FORGIVING spelling: the plain
+                    // `is null ? null :` arm is also reachable from several already-pinned shapes, whereas
+                    // `is null ? null! :` can only be emitted by the arm where both ends are non-nullable-
+                    // annotated and the converter is a user-declared map — the one this case exists for.
+                    "NestedViaDeclaredMap", "is null ? null! : ToDto("
+                },
+                {
+                    "WrapperMapPayloadEdge", "value: src.Value is null ? null : ToDto(src.Value)"
+                },
+                {
+                    // The extra parameter read as a source ACCESS rather than handed over as a finished
+                    // expression. `lifted is null ? null :` can only be emitted when the null-handling decision
+                    // reaches the Phase 5 member — the whole of task 2.7's second defect — and `lifted` is a
+                    // parameter name, so no source-member edge can produce this text by accident.
+                    "NullableExtraParameter", "Lifted = lifted is null ? null : ToDto(lifted)"
+                },
+                {
+                    // The '?' surviving into the implementing half of the user's partial. `Map(global::Demo.A? a)`
+                    // cannot be produced by the annotation-stripping format that site used before, and the pair's
+                    // typeof registration in the same run proves the OTHER string stayed unannotated.
+                    "NullableSourceParameter", "Map(global::Demo.A? a)"
+                },
+                {
+                    // The '?' surviving into the RETURN slot of the user's partial. The generic form is the one
+                    // the compiler is loud about (CS8819 + CS8619), and `List<global::Demo.B?>` cannot be
+                    // produced by the annotation-stripping format that slot used before task 2.8; the `new
+                    // global::Demo.B` in the same file proves the identity string kept its own spelling.
+                    "NullableReturnType", "public partial global::System.Collections.Generic.List<global::Demo.B?> Many("
+                },
+                {
+                    // The async-stream element edge reading its null decision. The lift with the destination
+                    // element cast is what the shared CollectionConverter.ElementExpr writes and what the
+                    // hand-written `yield return Conv(__item)` could not produce at all.
+                    "AsyncStreamNullableElement", "yield return (__item is null ? null : (global::Demo.ChildDto?)ToDto(__item))"
+                },
+                {
+                    // The COLLECTION element forgiving a user-declared converter's argument. `ToDto(__item!)`
+                    // could not be emitted before task 2.9 at all: the '!' was gated on IsSynthesized, which is
+                    // false for a method the user declared, and no synthesized helper is ever spelled `ToDto`.
+                    // The dictionary value in the same case proves the twin builder answers identically.
+                    "ElementViaDeclaredMap", "ToDto(__item!)"
+                },
+                {
+                    // The CALL's result forgiven, which nothing before task 2.9 could emit: the '!' after the
+                    // closing paren exists only on the return-side arm, and the `Free` member in the same case
+                    // (a nullable destination) proves it is not sprayed on every call.
+                    "NullableReturnConverter", "Strict = a.Strict is null ? null! : ToDto(a.Strict)!"
                 }
             };
         }

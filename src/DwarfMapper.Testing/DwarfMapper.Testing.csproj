@@ -6,7 +6,8 @@
         <Description>DwarfMapper testing toolkit — seeded fixture builders, property-based fuzzer, round-trip verifier, and mapping-aware informed dumps for verifying DwarfMapper maps. Reflection-based and test-only; never AOT-published.</Description>
         <!-- CA5394: System.Random is intentional — seeded determinism is the feature, not crypto. -->
         <!-- CA1510: ThrowIfNull style rule; explicit pattern is fine here. -->
-        <!-- CA1032: RoundTripException always requires diff data; parameterless/string ctors would produce useless objects. -->
+        <!-- CA1032: RoundTripException and LensLawException always require diff data; parameterless/string ctors
+         would produce useless objects. -->
         <NoWarn>$(NoWarn);CA5394;CA1510;CA1032</NoWarn>
         <!-- Deep-tier hook: structural pack validation only. NO PackageValidationBaselineVersion here -
              DwarfMapper.Testing has never been published to nuget.org (verified 2026-08-21), so there is
@@ -16,11 +17,15 @@
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
         <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all"/>
-        <!-- No BannedApiAnalyzers here: reflection is this package's product (seeded fuzzing,
-             structural comparison), so the runtime's reflection ban list must not apply. -->
+        <!-- Round 29: BannedApiAnalyzers now applies here too, but scoped to THIS project's own
+             BannedSymbols.txt (the round-29 no-unsafe/no-uninitialized-memory/no-parallelism rule only —
+             reflection is still this package's product, and the runtime's reflection ban list lives in
+             src/DwarfMapper/BannedSymbols.txt, a separate file this project never references). -->
+        <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all"/>
     </ItemGroup>
     <ItemGroup>
         <AdditionalFiles Include="PublicAPI.Shipped.txt"/>
         <AdditionalFiles Include="PublicAPI.Unshipped.txt"/>
+        <AdditionalFiles Include="BannedSymbols.txt"/>
     </ItemGroup>
 </Project>

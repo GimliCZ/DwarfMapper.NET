@@ -1,0 +1,5 @@
+T:System.Runtime.CompilerServices.Unsafe;round 29: no unsafe code in shipped assemblies
+M:System.GC.AllocateUninitializedArray``1(System.Int32,System.Boolean);round 29: no uninitialized memory
+M:System.Runtime.InteropServices.MemoryMarshal.CreateSpan``1(``0@,System.Int32);round 29: no spans over object interiors
+M:System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan``1(``0@,System.Int32);round 29: no spans over object interiors
+T:System.Threading.Tasks.Parallel;round 29: the mapper never touches the thread pool

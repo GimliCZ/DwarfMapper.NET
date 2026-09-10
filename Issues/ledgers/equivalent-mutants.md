@@ -105,13 +105,102 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 338 | 84.32 % (2026-08-27, round-27 battery) | 16 | 0 | 0 | 95.26 % |
+| generator | `stryker-config.json` | 409 | 87.04 % (2026-09-06, round-29 Phase 2 gate) | 16 | 0 | 0 | 96.08 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 239 | 76.99 % (2026-08-27, first measurement) | 0 | 0 | 0 | 100.00 % |
+| pipeline | `stryker-config.pipeline.json` | 304 | 89.80 % (2026-09-09, round-29 Phase 3 gate) | 0 | 0 | 0 | 100.00 % |
+| testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
-Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
+**Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
+84.32 % → 87.04 %, and `break`/`low` moved 84 → 87 in `stryker-config.json` in the same commit, which is
+what R1↔R3 requires and what forced this row to move with it. **Only the denominator moved.** The 16 proven
+rows below are untouched — no mutant was re-adjudicated, retired or newly proved by this run, so the
+`rawCeiling` is fresh arithmetic over a stale adjudication and should be read as a bound, not as a claim
+that 393 mutants are killable today. The 41 survivors and 12 uncovered mutants of the 2026-09-06 run
+(BlittableProof 36 + 5, ConstructorSelector 4 + 7, EquatableArray 1) have **not** been dispositioned here;
+that is the next kill program's work, and `break` must not move again before it happens.
+
+
+**Testing leg added 2026-09-09**, and it is the first row here whose reason is a REGRESSION rather than a
+kill programme. `Issues/round27/AUDIT-mutation-scope.md` had recorded `DwarfMapper.Testing` at 0 % mutation
+coverage since round 27, on the argument that the package is test-only and never AOT-published. Round 29's
+Phase 4 added 189 lines of **consumer-facing verification code** to it (`LensLaws`, `LensLawException`), and
+the repository's mutation share fell **11.134 % → 11.085 %** — a real regression that nothing could see,
+because the package sat in no leg. The maintainer named it a release block; this row is the answer.
+
+Scoped to the five VERIFIER files (402 lines), not the package: a wrong answer from `ObjectFactoryV2` makes
+a fixture nobody asked for, which a test notices; a wrong answer from `RoundTrip.Verify` or `LensLaws`
+**certifies a broken map**, which nothing notices. Whole-repository share now **11.1 % → 12.0 %**.
+
+**This row's Timeout bucket is FIVE, and every sibling row's is zero.** The distinction matters because a
+Timeout counts as *detected*, so the score would move on a re-classification with no test having changed —
+`gate-checks.ps1`'s own R2 error text says to check this first. All five were read: three are `i++` → `i--`
+in a `for` loop (`LensLaws` ×2, `RoundTrip` ×1) and two unbind `StructuralComparer`'s recursion. **Every one
+removes TERMINATION rather than merely slowing the code**, and a non-terminating mutant times out on every
+machine — so unlike a merely-slow mutant, this classification is stable across boxes. That is why 82.73 is
+pinned rather than the timeout-free 78.18 (86/110), and it is stated here because the sibling rows cite a
+zero bucket as their evidence and this one cannot. **Re-measured 2026-09-09 through
+`scripts/housekeeping.ps1 -MutationLeg testing`** — the first run was a bare `Invoke-StrykerLeg`, which
+executes none of the four post-leg proofs and whose Stryker build had ended in an IOException. The second run
+reproduces the first exactly (86/5/17/2 of 110) **and the five timeouts are the same five mutants**, which
+makes the termination argument a repeated measurement rather than a reading.
+
+No mutant is adjudicated equivalent, so the 100 % `rawCeiling` is arithmetic over an empty adjudication, not
+a claim. The **17 survivors plus 2 uncovered are the first kill programme's worklist**: 15 in
+`StructuralComparer` (its float/double epsilon comparisons and its render formatting), one each in
+`LensLaws` and `RoundTrip` — both the `iterations` loop bound, where an off-by-one still verifies the same
+laws and may well prove equivalent when someone adjudicates it. **The 2 uncovered are named rather than
+counted**, because "uncovered" in a 100 %-line-covered file is a claim that needs a location: both are string
+mutations on `StructuralComparer.cs:37-38`, and both are the `"<null>"` operand of a `??` — one for
+`d.Expected`, one for `d.Actual`. `Render` itself IS executed by `Render_produces_readable_lines`, which is
+why the neighbouring literals on the same two lines are Survived rather than uncovered; the `??` right-hand
+side is not, because that test's diff has a value on both sides. **No test renders a diff where a side is
+null**, so the one branch whose whole job is to name absence is the one branch never observed. That is the
+worklist's first item: render a null-vs-value diff and assert the text, which should also reach several of
+the 15 `StructuralComparer` survivors.
+
+**Pipeline denominator refreshed 2026-09-09** (round-29 Phase 3 gate): 242 -> 304 scoreable,
+78.28 % -> 89.80 % (273 killed, 0 timeout, 29 survived, 2 not covered by any test).
+The population grew because round 29's `[MapShare]` and `[MapDenseEnumKeys]` added code to
+`MapperExtractor.Members.Phases.cs`, which is one of this leg's three `mutate` files.
+
+**Unlike the generator row above, BOTH numbers moved here, and the score moved because of kills.** That is
+established by a mutant-by-mutant diff of the two reports over the identical 646-mutant population, not by
+comparing two headline percentages: every status change runs one way — **33 Survived → Killed and 9
+NoCoverage → Killed, and not one Killed → Survived.** Sixteen of the 42 sit on lines 365–367 and 403–405,
+the four-way ternaries the eight new tests target; the other 26 are spread across the file because those
+tests compile whole mapper sources and so drive the surrounding resolution phases too. The Timeout bucket
+is zero in both runs, which is the first thing invariant R2's own error text says to check.
+
+No mutant was adjudicated: `provenEquivalent` stays 0, so the 100 % `rawCeiling` is not a claim that every
+mutant is killable — it is the arithmetic that follows from nothing having been proved equivalent yet, and
+every one of the **29 survivors plus 2 uncovered mutants is an open worklist item**, all of them in
+`MapperExtractor.Members.Phases.cs`. Read the ceiling as "no equivalence work has been done here", not as
+headroom. **Actual headroom is two mutants:** `break` 89 requires 271 detected of 304 and 273 are, so a
+three-mutant regression reds the gate.
+
+The two remaining NoCoverage mutants are at lines 66 and 105 — deferrable-target selection and the
+group-naming fallback — **not** in the `[MapShare]` / `[MapDenseEnumKeys]` region. That was checked rather
+than assumed, because still-unexecuted code in a feature shipped this round would have been a blocker for
+the release rather than a worklist entry.
+
+The run that produced this row was itself a regression fix, and it is worth recording why. The first
+Phase 3 attempt scored 75.99 % against `break` 78 -- **below the floor** -- with 11 mutants NoCoverage,
+clustered on the four-way ternaries at lines 365, 367 and 405 that name which `[MapProperty]` modifier
+conflicts with a share or a dense fill. Those refusal messages had **never been executed** by any of the
+7,838 tests then green: both new features shipped with their "which modifier" branch untested, and only
+the mutation tier saw it. Eight `[Theory]` tests (four arms each, commit `7d50320`) closed it.
+
+One measurement worth recording beside the score, because it bounds what this leg can mean: the run created
+roughly **15,029 mutants and could test only 302** -- the rest were dropped as compile errors or removed
+by the mutate filter. About 98 % of what the pipeline globs generate never runs, so the score
+describes the small fraction that compiles. That is not an error (an uncompilable mutant cannot be killed),
+but the leg's reach over the pipeline is far narrower than its `mutate` list suggests, and the gap should be
+quantified deliberately rather than rediscovered.
+
+Fuller arithmetic, carried from the research and updated by P5 (context, not gates — the figures below
+predate the 2026-09-06 denominator refresh above and are kept for their reasoning, not their totals): the generator leg's
 *realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
 mutants T3 judged dead-code-question (BlittableProof L30's short-circuited conjunct, ConstructorSelector
 L281/L285) plus the L88 flag question cap the currently killable set at the 3 named real holes
@@ -153,14 +242,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
   "legs": {
     "generator": {
       "config": "stryker-config.json",
-      "scoreable": 338,
-      "measuredRawScore": 84.32,
-      "measuredOn": "2026-08-27",
+      "scoreable": 409,
+      "measuredRawScore": 87.04,
+      "measuredOn": "2026-09-06",
       "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 95.26,
-      "rawCeilingFormula": "(338 - 16) / 338 — the denominator is still the 2026-08-27 run; the sort comparator's own mutants leave it at the next re-measure (see 'Rows retired on 2026-09-01')"
+      "rawCeiling": 96.08,
+      "rawCeilingFormula": "(409 - 16) / 409 — denominator refreshed from the round-29 Phase 2 gate run (StrykerOutput/2026-09-06.21-10-32, 356 killed of 409 scoreable), which is also the run that moved break 84 -> 87. The 16 proven rows are UNCHANGED: this re-measure moved the denominator, not the adjudication, and no row was added, retired or re-proved here — re-adjudication needs its own case analysis (invariant R3)."
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -195,16 +284,27 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "rawCeiling": 87.57,
       "rawCeilingFormula": "(177 - 22) / 177"
     },
-    "pipeline": {
-      "config": "stryker-config.pipeline.json",
-      "scoreable": 239,
-      "measuredRawScore": 76.99,
-      "measuredOn": "2026-08-27",
+    "testing": {
+      "config": "stryker-config.testing.json",
+      "scoreable": 110,
+      "measuredRawScore": 82.73,
+      "measuredOn": "2026-09-09",
       "provenEquivalent": 0,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 100.0,
-      "rawCeilingFormula": "(239 - 0) / 239 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
+      "rawCeilingFormula": "(110 - 0) / 110 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
+    },
+    "pipeline": {
+      "config": "stryker-config.pipeline.json",
+      "scoreable": 304,
+      "measuredRawScore": 89.80,
+      "measuredOn": "2026-09-09",
+      "provenEquivalent": 0,
+      "ruledInPractice": 0,
+      "probablyEquivalent": 0,
+      "rawCeiling": 100.0,
+      "rawCeilingFormula": "(304 - 0) / 304 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
     }
   },
   "entries": [

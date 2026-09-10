@@ -10,6 +10,14 @@ namespace DwarfMapper.Generator.Pipeline
     /// <summary>
     ///     Proves whether two distinct unmanaged structs are byte-identical in layout AND field-name-aligned,
     ///     so a positional reinterpret equals DwarfMapper's name-based mapping. Recurses through nested structs.
+    ///     <para>
+    ///         Five of its helpers — <see cref="PrimitiveSize" />, <see cref="InstanceFields" />,
+    ///         <see cref="IsSourceSequential" />, <see cref="FieldsSpanPartialDeclarations" /> and
+    ///         <see cref="InlineArrayLength" /> — are visible to the assembly rather than private because
+    ///         <see cref="LayoutHygiene" /> measures the same layouts for <c>DWARF101</c> (round 29,
+    ///         <c>T0.3</c>). They encode the CLR's rules for a Sequential struct, and a second copy of those
+    ///         rules would be free to drift from this proof without a single test noticing.
+    ///     </para>
     /// </summary>
     internal static class BlittableProof
     {
@@ -17,6 +25,16 @@ namespace DwarfMapper.Generator.Pipeline
         {
             // Identity is the existing Clone() memmove, not a reinterpret.
             if (SymbolEqualityComparer.Default.Equals(src, dst))
+            {
+                return false;
+            }
+
+            // A TOP-LEVEL Nullable<T> element/pair can never be the type argument this proof's callers cast
+            // over: MemoryMarshal.Cast<TFrom, TTo> is constrained `where : struct`, and C# refuses a
+            // Nullable<T> as that argument (CS0453) even though Nullable<T> itself satisfies `unmanaged`. The
+            // recursive NESTED unwrap inside LayoutIdentical (an optional FIELD keeping its enclosing struct's
+            // blit) is unaffected — only the pair CanReinterpret itself is asked to bless is refused here.
+            if (IsNullableValueType(src) || IsNullableValueType(dst))
             {
                 return false;
             }
@@ -44,6 +62,13 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         public static bool SameBytesIgnoringNames(ITypeSymbol src, ITypeSymbol dst)
         {
+            // Same top-level refusal as CanReinterpret, and for the same reason: a Nullable<T> pair cannot be
+            // the type argument its caller casts over (CS0453), whatever [Reinterpret] asserts about the bytes.
+            if (IsNullableValueType(src) || IsNullableValueType(dst))
+            {
+                return false;
+            }
+
             return LayoutIdentical(src, dst, byBytesOnly: true);
         }
 
@@ -55,7 +80,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         costs an exotic opt-in; allowing them would make the proof depend on the wrong machine.
         ///     </para>
         /// </summary>
-        private static int PrimitiveSize(ITypeSymbol t)
+        public static int PrimitiveSize(ITypeSymbol t)
         {
             return t.SpecialType switch
             {
@@ -149,6 +174,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///         The name-mismatch case is the one this exists for. Such a pair is byte-identical and one rename
         ///         away from the fast path, and nothing in the build would otherwise say so.
         ///     </para>
+        ///     <para>
+        ///         A one-sided <c>Nullable&lt;T&gt;</c> is the one field-TYPE difference that still gets reported:
+        ///         once the optional wrapper is stripped the two sides are byte-identical, so the pair is one
+        ///         <c>?</c> away from the fast path in exactly the sense the name-mismatch case is one rename away.
+        ///     </para>
         /// </summary>
         public static bool TryExplainNearMiss(ITypeSymbol src, ITypeSymbol dst, out string reason)
         {
@@ -156,6 +186,16 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Identity already takes the Clone() memmove; there is no fast path being missed.
             if (SymbolEqualityComparer.Default.Equals(src, dst))
+            {
+                return false;
+            }
+
+            // A top-level Nullable<T> pair is a categorical refusal, not a near-miss: even where the bytes
+            // agree, CanReinterpret still refuses it (MemoryMarshal.Cast's `struct` constraint refuses
+            // Nullable<T> — CS0453), so there is no fast path this pair is "close to" for the near-miss
+            // message to explain. The NESTED case (a field that is Nullable<T> on one side only) is a
+            // genuine near-miss and is handled below, inside the per-field loop.
+            if (IsNullableValueType(src) || IsNullableValueType(dst))
             {
                 return false;
             }
@@ -208,11 +248,28 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Types must line up positionally for this to be a near-miss at all; if they do not, the pair is
             // simply two different structs and the element loop is the right answer.
+            //
+            // One exception, checked ahead of the general refusal: a member that is Nullable<T> on exactly one
+            // side, where the OTHER side's type is itself layout-identical to T. That pair genuinely is one `?`
+            // away from the fast path — unwrap the optional and the bytes agree — so it is reported here, before
+            // the ordinary "field types differ" gate would silence it. A one-sided Nullable<T> whose T does NOT
+            // match (e.g. `long?` against `int`) is still a real conversion, not a near-miss, and stays silent:
+            // the LayoutIdentical check on the unwrapped types is what tells the two apart.
             for (var i = 0; i < fa.Count; i++)
+            {
+                var aIsNullable = fa[i].Type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
+                var bIsNullable = fb[i].Type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
+                if (aIsNullable != bIsNullable && LayoutIdentical(Unwrap(fa[i].Type), Unwrap(fb[i].Type)))
+                {
+                    reason = $"member '{fa[i].Name}' is Nullable<T> on one side only — an optional nested member has to be optional on both sides to keep the same bytes";
+                    return true;
+                }
+
                 if (!LayoutIdentical(fa[i].Type, fb[i].Type))
                 {
                     return false;
                 }
+            }
 
             // Only now, with the shapes known to align, is there a fast path worth explaining the absence of.
             if (!a.Locations.Any(l => l.IsInSource))
@@ -322,6 +379,16 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
+            // Nullable<T> is {bool hasValue; T value}, sequential, unmanaged when T is (C# 8 rule); two Nullable<T>
+            // instantiations have the same layout exactly when their T's do. The metadata-struct rule below would refuse
+            // it (no source to read [StructLayout] from), so it is decided here, by the proof over T — measured in
+            // Issues/round29 §10: an optional nested member keeps the root blit at 0.15x / 0.06x.
+            if (a is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nna &&
+                b is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nnb)
+            {
+                return LayoutIdentical(nna.TypeArguments[0], nnb.TypeArguments[0], byBytesOnly);
+            }
+
             if (IsPrimitive(a) || IsPrimitive(b))
             {
                 // The automatic blit demands the SAME TYPE: int -> uint is a conversion the mapper should
@@ -403,6 +470,26 @@ namespace DwarfMapper.Generator.Pipeline
             return true;
         }
 
+        /// <summary>
+        ///     True when <paramref name="t" /> is itself a <c>Nullable&lt;T&gt;</c> instantiation. Used to refuse
+        ///     a pair at the TOP LEVEL — see <see cref="CanReinterpret" />, <see cref="SameBytesIgnoringNames" />
+        ///     and <see cref="TryExplainNearMiss" /> — where blessing it would hand a caller a type argument
+        ///     <c>MemoryMarshal.Cast</c>'s <c>struct</c> constraint refuses (CS0453). A NESTED field of this type
+        ///     is a different question, answered by unwrapping inside <see cref="LayoutIdentical" />'s recursion.
+        /// </summary>
+        private static bool IsNullableValueType(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
+        }
+
+        /// <summary>The type argument of <c>Nullable&lt;T&gt;</c>, or <paramref name="t" /> itself when it is not one.</summary>
+        private static ITypeSymbol Unwrap(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
+                ? n.TypeArguments[0]
+                : t;
+        }
+
         private static bool IsPrimitive(ITypeSymbol t)
         {
             return t.SpecialType is
@@ -414,7 +501,7 @@ namespace DwarfMapper.Generator.Pipeline
                 or SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Char;
         }
 
-        private static List<IFieldSymbol> InstanceFields(INamedTypeSymbol t)
+        public static List<IFieldSymbol> InstanceFields(INamedTypeSymbol t)
         {
             var fields = new List<IFieldSymbol>();
             foreach (var m in t.GetMembers())
@@ -453,7 +540,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         member order is layout, and there is nothing left to be uncertain about.
         ///     </para>
         /// </summary>
-        private static bool FieldsSpanPartialDeclarations(INamedTypeSymbol t, List<IFieldSymbol> fields)
+        public static bool FieldsSpanPartialDeclarations(INamedTypeSymbol t, List<IFieldSymbol> fields)
         {
             if (t.DeclaringSyntaxReferences.Length <= 1)
             {
@@ -496,7 +583,7 @@ namespace DwarfMapper.Generator.Pipeline
             return declaration is null ? null : (reference.SyntaxTree, declaration.Span);
         }
 
-        private static bool IsSourceSequential(INamedTypeSymbol t, out int pack, out int size)
+        public static bool IsSourceSequential(INamedTypeSymbol t, out int pack, out int size)
         {
             pack = 0;
             size = 0;
@@ -542,7 +629,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <see cref="System.Runtime.InteropServices.StructLayoutAttribute.Size" /> — it changes the bytes
         ///     without changing the field list, and two such structs share a layout only when their counts agree.
         /// </summary>
-        private static int InlineArrayLength(INamedTypeSymbol t)
+        public static int InlineArrayLength(INamedTypeSymbol t)
         {
             foreach (var attr in t.GetAttributes())
                 if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.CompilerServices.InlineArrayAttribute" &&

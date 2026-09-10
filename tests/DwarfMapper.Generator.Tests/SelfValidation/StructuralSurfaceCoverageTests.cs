@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Reflection;
 
@@ -29,7 +29,18 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // emitter and the three aggregate gates skip it while every class-level analysis still sees the
         // declaration. No new user-facing shape, so no anchor tests are owed; the behaviour it governs is
         // pinned by CompletenessScopedRefusalTests.
-        private const int MapMethodModelBoolFlagBaseline = 16;
+        // 16 -> 17: `SpanMapBlits` (round 29, T0.2). An INTERNAL CODEGEN FLAG on the EXISTING `IsSpanMap` mode,
+        // not a new mode of its own — nothing in a method's signature distinguishes a blitting span map from
+        // any other; it is set from the BlittableProof verdict on the already-resolved element pair. No new
+        // user-facing shape, so no SignatureTriggeredModes entry; the behaviour it governs is anchored by
+        // SpanMapBlitTests.cs (generator) and SpanMapBlitRuntimeTests.cs (runtime).
+        // 17 -> 18: `ReturnIsNullableRef` (round 29, T2.8). NOT a map mode: it changes nothing about what the
+        // method IS or how its body is emitted, and no signature shape turns it on — it records whether the
+        // user DECLARED a nullable reference return, and its single reader is the ambient registration, whose
+        // shipped Func<object, object> cannot carry a null and therefore coalesces to a loud throw. Anchored by
+        // ConsumerReportedEmissionWarningsTests (both directions: the guard is emitted for the declared shape
+        // and for no other) and by the NullableReturnType feature and golden cases.
+        private const int MapMethodModelBoolFlagBaseline = 18;
         private static readonly Assembly GeneratorAssembly = typeof(DwarfGenerator).Assembly;
 
         // The signature-triggered map modes, each mapped to the test files that must exercise it. There is no

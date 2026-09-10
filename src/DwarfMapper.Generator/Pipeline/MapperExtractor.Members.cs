@@ -140,7 +140,16 @@ namespace DwarfMapper.Generator.Pipeline
             // only whether a same-named source member existed, never whether the mapper had disowned it — so
             // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
             // which is the DESTINATION set.
-            HashSet<string>? ignoredSourceMembers = null)
+            HashSet<string>? ignoredSourceMembers = null,
+            // Destination members the caller asked to SHARE with [MapShare], read by TryPlanShare. Optional, and
+            // an absent list means "the caller forced nothing" rather than "no share at all": the AUTOMATIC share
+            // is a property of the TYPES and needs no directive, exactly as the blit needs no [Reinterpret].
+            List<string>? shareMembers = null,
+            // Destination members the caller asked to fill densely with [MapDenseEnumKeys], each with its
+            // Offset, read by TryPlanDense. Optional, and an absent list means "the caller asked for nothing":
+            // unlike the share there is NO automatic path here, because whether a member should BE an inline
+            // array is a declaration the consumer writes, not a fact the generator can prove.
+            List<(string Member, int Offset)>? denseEnumMembers = null)
         {
             // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
             // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -234,6 +243,24 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
+            // Where THIS call's diagnostics start. `diagnostics` is the mapper CLASS's list and every method on
+            // the class appends to it, so the dense post-pass — which reads the list back to avoid reporting a
+            // second, vaguer refusal about a member it already refused precisely — must not see another
+            // method's entries. A member named on two methods is two independent questions.
+            var diagnosticsStart = diagnostics.Count;
+
+            // Validated BEFORE resolution, like its [Reinterpret] and [MapShare] twins: a name matching no
+            // writable member, a name already claimed by [MapIgnore] or [MapValue], and two applications naming
+            // one member are all refusals that must not wait for a member match that will never happen.
+            var denseEnumDirectives = ValidateDenseEnumDirectives(denseEnumMembers ?? [],
+                targetType,
+                compilation,
+                options.AllowNonPublic,
+                ignores,
+                mapValues,
+                location,
+                diagnostics);
+
             // Three bundles over the parameters and locals above -- NOT copies of them: every field below is the
             // same instance this method keeps using, so a pass that mutates through a bundle is doing exactly what
             // it did when it was inline. The split is request / derived / filled, and which side a name falls on
@@ -250,6 +277,8 @@ namespace DwarfMapper.Generator.Pipeline
                 enumPolicy,
                 nullStrategy,
                 reinterpretMembers,
+                new HashSet<string>(shareMembers ?? [], StringComparer.Ordinal),
+                denseEnumDirectives,
                 consumedCtorParams,
                 requiredMustInitialize,
                 nestedRegistry,
@@ -331,6 +360,43 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
+            // The same rule for [MapShare], and for the same reason: a directive naming a member that does not
+            // exist is a typo, and a typo that copies silently is exactly the "accepted it, changed nothing, said
+            // nothing" shape. Kept beside its [Reinterpret] twin rather than in TryPlanShare, because TryPlanShare
+            // is only ever called for a member that WAS matched — a name matching nothing never reaches it.
+            if (shareMembers is not null && shareMembers.Count > 0)
+            {
+                var shareWritable =
+                    new HashSet<string>(WritableMembers(targetType, compilation, options.AllowNonPublic).Select(m => m.Name),
+                        StringComparer.Ordinal);
+                foreach (var sm in shareMembers)
+                    if (ignores.Contains(sm))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm));
+                    }
+                    else if (mapValues is not null &&
+                             mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
+                    {
+                        // [MapValue] claims the member before auto-matching ever looks at it, so the share would
+                        // never be consulted — and the member IS writable, so the name check below would pass it
+                        // in silence. Named here because "the caller wrote a directive that did nothing" is the
+                        // failure this id exists for, not merely the mutable-shape one.
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                            location,
+                            $"[MapShare] member '{sm}' is also assigned by [MapValue], which supplies the value " +
+                            "outright; there is no source reference left to share — remove one of them",
+                            MemberName: sm));
+                    }
+                    else if (!shareWritable.Contains(sm))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                            location,
+                            $"[MapShare] member '{sm}' does not name a writable destination member of " +
+                            $"'{targetType.ToDisplayString()}'",
+                            MemberName: sm));
+                    }
+            }
+
             // Phase 5: an additional parameter that matched no destination member is a suggestion (DWARF047).
             if (extraParams is not null)
             {
@@ -353,14 +419,22 @@ namespace DwarfMapper.Generator.Pipeline
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a
             // converter, SkipNullSourceMembers), so the diagnostic only fires when the null genuinely survives to
             // the destination. Ordered by target name to keep generator output deterministic.
+            // SourceAccessExpression first: a Phase 5 extra parameter has no SourceName (it is not a member of
+            // the source type), and reporting an empty '{0}' would name nothing at all. It also decides WHICH
+            // noun the message uses, and so which remedies it offers — see NullSourceLabel.
             foreach (var m in result.Where(m => m.NullRefIntoNonNullable)
                          .OrderBy(m => m.TargetName, StringComparer.Ordinal))
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    m.SourceName));
+                    NullSourceLabel(m.SourceAccessExpression ?? m.SourceName,
+                        m.SourceAccessExpression is not null ? NullSourceKind.MappingParameter : NullSourceKind.SourceMember)));
 
             ReportUnguardedFlattenHops(flattenInfos, consumedFlattenRoots, location, diagnostics);
+
+            // A directive that named a real member which resolution never offered it. Last, so that every pass
+            // has had its chance to fire the directive before it is reported as having done nothing.
+            ReportUnappliedDenseEnumDirectives(denseEnumDirectives, result, location, diagnostics, diagnosticsStart);
 
             return result;
         }
@@ -629,6 +703,16 @@ namespace DwarfMapper.Generator.Pipeline
                                 allMethods,
                                 explicitInfo.Source,
                                 location,
+                                diagnostics),
+                            // Round 29 T2.9: the converter's RETURN annotation, on the constructor-argument
+                            // path too — `new Dst(inner: ToDto(s.Inner))` is CS8604 when ToDto returns
+                            // ChildDto? and the parameter is ChildDto.
+                            ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(eConv,
+                                param.Type,
+                                autoCandidates,
+                                allMethods,
+                                param.Name,
+                                location,
                                 diagnostics)));
                         consumedParams.Add(param.Name);
                     }
@@ -710,6 +794,13 @@ namespace DwarfMapper.Generator.Pipeline
                             allMethods,
                             srcMember.Name,
                             location,
+                            diagnostics),
+                        ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(conv,
+                            param.Type,
+                            autoCandidates,
+                            allMethods,
+                            param.Name,
+                            location,
                             diagnostics)));
                     consumedParams.Add(param.Name);
                 }
@@ -726,7 +817,7 @@ namespace DwarfMapper.Generator.Pipeline
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    a.SourceName));
+                    NullSourceLabel(a.SourceName)));
 
             ctorArgs = args.ToArray();
             return allOk;
@@ -939,7 +1030,7 @@ namespace DwarfMapper.Generator.Pipeline
             sb.AppendLine("        {");
             foreach (var arm in arms)
             {
-                sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).Append("(__s");
+                sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
                 if (arm.ConverterNeedsDepthCtx)
                 {
                     sb.Append(", ctx, depth + 1");

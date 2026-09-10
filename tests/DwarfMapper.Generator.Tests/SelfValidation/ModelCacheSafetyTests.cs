@@ -56,6 +56,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public void Every_model_member_type_is_cache_safe()
         {
             var violations = new List<string>();
+            var skippedComputed = 0;
 
             foreach (var type in ModelTypes())
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -65,11 +66,25 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     continue; // compiler-generated record member
                 }
 
+                if (IsComputed(type, prop))
+                {
+                    skippedComputed++;
+                    continue;
+                }
+
                 if (!IsCacheSafe(prop.PropertyType, out var why))
                 {
                     violations.Add($"{type.Name}.{prop.Name} : {Pretty(prop.PropertyType)} — {why}");
                 }
             }
+
+            // Non-vacuity: the computed exclusion must be excluding something. If the models ever stop carrying
+            // derived Emit* properties this counter goes to zero, and the exclusion has become an unexercised
+            // branch that would quietly swallow the next real violation whose shape happens to match it.
+            Assert.True(skippedComputed > 0,
+                "The computed-property exclusion matched NOTHING. Either the models lost every derived property " +
+                "(delete the exclusion) or IsComputed has stopped recognising them (fix it) — a filter that " +
+                "matches nothing is indistinguishable from a filter that matches everything.");
 
             Assert.True(violations.Count == 0,
                 "Incremental-cache-UNSAFE members found in pipeline models. Each breaks value equality and " +
@@ -77,6 +92,32 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "type (primitive/enum/string, EquatableArray<T>, another Model record, or a documented value " +
                 "type):\n  " +
                 string.Join("\n  ", violations));
+        }
+
+        /// <summary>
+        ///     Whether <paramref name="prop" /> is DERIVED — it computes its value from the record's other
+        ///     members and stores nothing.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A record's synthesized <c>Equals</c> compares its FIELDS. A property with no backing field
+        ///         contributes no field, so it cannot affect value equality and cannot disable the incremental
+        ///         cache whatever its type — <c>MapperClassModel.EmitContainingTypes</c> yields
+        ///         <c>IEnumerable&lt;string&gt;</c> and is exactly as cache-safe as the
+        ///         <c>EquatableArray&lt;string&gt;</c> it reads.
+        ///     </para>
+        ///     <para>
+        ///         The discriminator is the BACKING FIELD, not <c>CanWrite</c>, and the difference is the whole
+        ///         point: a get-only AUTO-property (<c>public List&lt;T&gt; Items { get; } = new();</c>) is also
+        ///         unwritable, does have a backing field, and its <c>List&lt;T&gt;</c> IS compared by reference
+        ///         in the generated <c>Equals</c> — so excluding on <c>!CanWrite</c> would have opened exactly
+        ///         the hole this file exists to close.
+        ///     </para>
+        /// </remarks>
+        private static bool IsComputed(Type type, PropertyInfo prop)
+        {
+            return type.GetField($"<{prop.Name}>k__BackingField",
+                BindingFlags.NonPublic | BindingFlags.Instance) is null;
         }
 
         private static bool IsCacheSafe(Type type, out string why)

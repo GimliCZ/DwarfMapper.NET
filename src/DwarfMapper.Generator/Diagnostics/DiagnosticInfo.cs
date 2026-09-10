@@ -46,13 +46,45 @@ namespace DwarfMapper.Generator.Diagnostics
         // spelling is what the remedy it prints has to carry. Every other pipeline descriptor either has one
         // placeholder or has its caller build the whole string (DWARF067–069). Null means the message has one
         // placeholder. A plain string, like MemberName, so the record stays value-equatable for the cache.
-        string? MessageArg2 = null)
+        string? MessageArg2 = null,
+        // The type a code fix should REWRITE, as its DocumentationCommentId ("T:Demo.OrderDto"). Only DWARF103
+        // sets it. A doc-comment id rather than a display string because it round-trips:
+        // DocumentationCommentId.GetFirstSymbolForDeclarationId hands the fix back the very symbol the
+        // classifier judged, so the rewrite cannot land on a different type of the same name.
+        string? TransferModelId = null,
+        // The transfer models that type INLINES, transitively, pipe-separated as DocumentationCommentIds; null
+        // when it inlines none. These are not a convenience: the classifier costs a nested shaped model at its
+        // own struct size rather than at pointer width, so the size DWARF103 PRINTS is only true if these are
+        // converted alongside the root. A fix that rewrote the root alone would retroactively falsify a number
+        // already in front of the consumer, which is why they travel together and are applied as one change.
+        // A plain string, like MemberName and SourcePair, so the record stays value-equatable for the cache.
+        string? NestedTransferModelIds = null,
+        // The would-be struct's size in bytes, invariant-formatted. Only DWARF103 sets it, and the code fix
+        // reads it for exactly one decision: whether the type it just wrote is over the 64-byte line and so
+        // earns a `consider passing it by 'in'` note. Handed over rather than parsed back out of the message
+        // for ruling 1's reason — the message prints this number, and a fix reading it there would break the
+        // day the wording moves, silently.
+        string? TransferModelSize = null)
     {
         /// <summary>Property bag key under which <see cref="MemberName" /> reaches a CodeFixProvider.</summary>
         public const string MemberPropertyKey = "Member";
 
         /// <summary>Property bag key under which <see cref="SourcePair" /> reaches a CodeFixProvider.</summary>
         public const string SourcePairPropertyKey = "SourcePair";
+
+        /// <summary>Property bag key under which <see cref="TransferModelId" /> reaches a CodeFixProvider.</summary>
+        public const string TransferModelIdPropertyKey = "TransferModelId";
+
+        /// <summary>
+        ///     Property bag key under which <see cref="NestedTransferModelIds" /> reaches a CodeFixProvider.
+        ///     Absent, rather than present and empty, when the type inlines no transfer model — so "no nested
+        ///     models" and "an older generator that did not carry them" stay the same reading, which is the
+        ///     conservative one: the fix converts the root only.
+        /// </summary>
+        public const string NestedTransferModelIdsPropertyKey = "NestedTransferModelIds";
+
+        /// <summary>Property bag key under which <see cref="TransferModelSize" /> reaches a CodeFixProvider.</summary>
+        public const string TransferModelSizePropertyKey = "TransferModelSize";
 
         public bool IsError => (SeverityOverride ?? Descriptor.DefaultSeverity) == DiagnosticSeverity.Error;
 
@@ -68,6 +100,21 @@ namespace DwarfMapper.Generator.Diagnostics
             if (SourcePair is not null)
             {
                 properties = properties.Add(SourcePairPropertyKey, SourcePair);
+            }
+
+            if (TransferModelId is not null)
+            {
+                properties = properties.Add(TransferModelIdPropertyKey, TransferModelId);
+            }
+
+            if (NestedTransferModelIds is not null)
+            {
+                properties = properties.Add(NestedTransferModelIdsPropertyKey, NestedTransferModelIds);
+            }
+
+            if (TransferModelSize is not null)
+            {
+                properties = properties.Add(TransferModelSizePropertyKey, TransferModelSize);
             }
 
             if (properties.Count == 0)

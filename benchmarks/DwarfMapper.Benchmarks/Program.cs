@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using AutoMapper;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
@@ -16,9 +17,21 @@ using Mapster;
 // `--filter`, `--anyCategories` and `--job` do nothing and the FULL suite runs every time — a targeted
 // re-measurement of one category quietly becomes a ~40-minute sweep, and the operator has no signal that
 // their filter was dropped. This cost several timed-out runs before it was spotted.
-BenchmarkRunner.Run<MapperBenchmarks>(
-    Environment.GetEnvironmentVariable("DWARF_BENCH_SMOKE") == "1" ? SmokeConfig.Create() : null,
-    args);
+// SMOKE MODE RUNS THE GATED CLASS AND ONLY THE GATED CLASS. `-BenchSmoke` passes no filter, so whatever
+// this line reaches is what the nightly pays for and what Assert-BenchAllocationsPinned counts. Routing
+// smoke through the switcher would silently pull CollectionSweepBenchmarks' seven-decade sweep into every
+// nightly and break the exact benchmark-count check the same night.
+if (Environment.GetEnvironmentVariable("DWARF_BENCH_SMOKE") == "1")
+{
+    BenchmarkRunner.Run<MapperBenchmarks>(SmokeConfig.Create(), args);
+}
+else
+{
+    // Outside smoke, both classes are reachable: `-- --filter *CollectionSweep*` selects the usage-space
+    // sweep, and with no filter the switcher asks. MapperBenchmarks stays FIRST so an unfiltered
+    // non-interactive run still names the gated suite first in the menu it prints.
+    BenchmarkSwitcher.FromTypes([typeof(MapperBenchmarks), typeof(CollectionSweepBenchmarks), typeof(NullCheckProbeBenchmarks), typeof(FusionProbeBenchmarks)]).Run(args);
+}
 
 /// <summary>
 ///     Deep-tier smoke configuration (round-21 T8), activated by <c>DWARF_BENCH_SMOKE=1</c> — an env var
@@ -367,6 +380,136 @@ public sealed class ImmDst
     public ImmutableArray<int> V { get; set; }
 }
 
+// ── Round 29 T3.1 — [MapShare]: the source reference assigned instead of the collection rebuilt.
+// Four types rather than two mapper methods over one pair, because the directive is per-method and naming the
+// same pair twice is a different question (DWARF060/094) from the one measured here.
+//
+// ShBadge is SEALED with nothing but get-only members, so the immutability proof accepts it; ShLoose has a
+// setter, so the proof disproves it. That is the only difference between the two arms below, and it is what
+// decides whether the collection is shared or rebuilt — the elements themselves are reference-copied either
+// way, so the allocation delta is the CONTAINER and nothing else.
+public sealed class ShBadge
+{
+    public ShBadge(string name, int weight)
+    {
+        Name = name;
+        Weight = weight;
+    }
+
+    public string Name { get; }
+
+    public int Weight { get; }
+}
+
+public sealed class ShLoose
+{
+    public string Name { get; set; } = "";
+
+    public int Weight { get; set; }
+}
+
+// The FORCED arm. IReadOnlyList<T> is an interface, which the automatic proof refuses on principle, so
+// [MapShare] is the only thing that can share it — and its twin below is the identical shape without the
+// attribute, which is what the helper it replaces costs.
+public sealed class ShareSrc
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+public sealed class ShareDst
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+public sealed class ShareCopySrc
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+public sealed class ShareCopyDst
+{
+    public IReadOnlyList<ShBadge> Badges { get; set; } = Array.Empty<ShBadge>();
+}
+
+// The AUTOMATIC arm. Same ImmutableArray<T> storage on both sides of both pairs; only the ELEMENT's
+// provability differs, so this pair measures what the proof itself is worth with no attribute in sight.
+public sealed class AutoShareSrc
+{
+    public ImmutableArray<ShBadge> Badges { get; set; }
+}
+
+public sealed class AutoShareDst
+{
+    public ImmutableArray<ShBadge> Badges { get; set; }
+}
+
+public sealed class AutoShareCopySrc
+{
+    public ImmutableArray<ShLoose> Badges { get; set; }
+}
+
+public sealed class AutoShareCopyDst
+{
+    public ImmutableArray<ShLoose> Badges { get; set; }
+}
+
+// ── Round 29 T3.2 — [MapDenseEnumKeys]: an enum-keyed dictionary indexed as an inline array.
+// Two pairs over ONE payload draw. The destination is a CLASS on both arms, deliberately: the headline
+// figure in the plan (0.09x memory) came from a probe that ALSO moved the destination from a class array to
+// a struct array, so it measures two changes at once. Here the only difference between the arms is what the
+// member IS — an [InlineArray(4)] struct that lives inside the destination object, against a
+// Dictionary<TEnum,int> that is a separate object with a bucket array and an entry array behind it. That
+// delta is this directive's own contribution and nothing else.
+//
+// DenseOre is 1-based, which is what Offset = 1 exists for: without it the array would need a fifth slot
+// for a value nothing ever uses.
+// CA1008 asks every enum for a zero member. This one deliberately has none: a 1-based enum with no "unset"
+// value is the shape Offset exists for, and adding a None = 0 would delete the very thing the pair measures
+// — the wasted slot at index 0 that Offset removes, and therefore the array's size.
+#pragma warning disable CA1008
+public enum DenseOre
+{
+    Iron = 1,
+    Copper = 2,
+    Mithril = 3,
+    Adamantine = 4
+}
+#pragma warning restore CA1008
+
+[InlineArray(4)]
+public struct DenseTally
+{
+    private int _e0;
+}
+
+public sealed class DenseSrc
+{
+    public int Id { get; set; }
+
+    public Dictionary<DenseOre, int> Yield { get; set; } = new();
+}
+
+public sealed class DenseDst
+{
+    public int Id { get; set; }
+
+    public DenseTally Yield { get; set; }
+}
+
+public sealed class DenseDictSrc
+{
+    public int Id { get; set; }
+
+    public Dictionary<DenseOre, int> Yield { get; set; } = new();
+}
+
+public sealed class DenseDictDst
+{
+    public int Id { get; set; }
+
+    public Dictionary<DenseOre, int> Yield { get; set; } = new();
+}
+
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
 [DwarfMapper]
 public partial class DwarfM
@@ -393,6 +536,22 @@ public partial class DwarfM
     public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
     public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
 
+    // Round 29 T3.1 — the share and its copying twin, in both modes. See the type declarations above.
+    [MapShare(nameof(ShareDst.Badges))]
+    public partial ShareDst MapShare(ShareSrc s); // IReadOnlyList<T> shared on the caller's assertion
+
+    public partial ShareCopyDst MapShareCopy(ShareCopySrc s); // the same shape, rebuilt
+
+    public partial AutoShareDst MapAutoShare(AutoShareSrc s); // proven element → shared, no attribute
+
+    public partial AutoShareCopyDst MapAutoShareCopy(AutoShareCopySrc s); // settable element → rebuilt
+
+    // Round 29 T3.2 — the dense fill and its dictionary twin. See the type declarations above.
+    [MapDenseEnumKeys(nameof(DenseDst.Yield), Offset = 1)]
+    public partial DenseDst MapDense(DenseSrc s); // indexed into an inline array
+
+    public partial DenseDictDst MapDenseDict(DenseDictSrc s); // the same entries, rebuilt as a Dictionary
+
     // Round 25 T4 — the four halves of the two ratio pairs. Each *Blit method takes a reinterpret; each
     // *Scalar method is the same shape with renamed members, so the by-name proof fails and the element
     // loop is emitted. One pair per blit EMITTER: SynthesizeBlit (array→array, which enum arrays also use)
@@ -401,6 +560,12 @@ public partial class DwarfM
 
     public partial BlitScalarDst MapBlitScalar(BlitSrc s);
     public partial BlitListScalarDst MapBlitListScalar(BlitSrc s);
+
+    // Round 29 T0.2 — the span-map blit's own ratio pair, same shape as the two above: the FAST span map
+    // reinterprets (MemoryMarshal.Cast + CopyTo), the SCALAR span map targets Vec3Ren (the same
+    // [StructLayout(Auto)] twin that defeats the array blit above), so it keeps the per-element loop.
+    public partial void MapSpanBlit(ReadOnlySpan<Vec3Src> src, Span<Vec3Dst> dst);
+    public partial void MapSpanBlitScalar(ReadOnlySpan<Vec3Src> src, Span<Vec3Ren> dst);
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
@@ -480,7 +645,22 @@ public class MapperBenchmarks
     private NfOrder _nestedFill = null!;
     private NumListSrc _numList = null!;
     private SetSrc _set = null!;
+
+    // Round 29 T3.1 — the four share arms. Built once in [GlobalSetup] like every other payload.
+    private ShareSrc _share = null!;
+    private ShareCopySrc _shareCopy = null!;
+    private AutoShareSrc _autoShare = null!;
+    private AutoShareCopySrc _autoShareCopy = null!;
+
+    // Round 29 T3.2 — the two dense arms, over one draw.
+    private DenseSrc _dense = null!;
+    private DenseDictSrc _denseDict = null!;
     private WidenSrc _widen = null!;
+
+    // Round 29 T0.2 — preallocated OUTSIDE the measured method, like every span-map destination: the
+    // benchmark measures the mapping call, not the buffer's own allocation, and the 0 B pin depends on it.
+    private Vec3Dst[] _spanBlitDst = null!;
+    private Vec3Ren[] _spanBlitScalarDst = null!;
 
     [Params(1000)]
     public int N { get; set; }
@@ -548,6 +728,8 @@ public class MapperBenchmarks
         {
             Items = RealisticPayloads.Elements<Vec3Src>(N, 4)
         };
+        _spanBlitDst = new Vec3Dst[N];
+        _spanBlitScalarDst = new Vec3Ren[N];
         _widen = new WidenSrc
         {
             V = RealisticPayloads.Elements<int>(N, 5)
@@ -570,6 +752,47 @@ public class MapperBenchmarks
         _imm = new ImmSrc
         {
             V = RealisticPayloads.Elements<int>(N, 11)
+        };
+        // Round 29 T3.1 — the four share arms. ONE draw, handed to all four: the arms differ in what the
+        // generator decides about the element TYPE, so drawing four independent payloads would let element
+        // content vary between them and put noise in the one number the pins read.
+        var shareBadges = RealisticPayloads.Elements<ShBadge>(N, 15);
+        var looseBadges = Array.ConvertAll(shareBadges,
+            b => new ShLoose
+            {
+                Name = b.Name,
+                Weight = b.Weight
+            });
+        _share = new ShareSrc
+        {
+            Badges = new List<ShBadge>(shareBadges)
+        };
+        _shareCopy = new ShareCopySrc
+        {
+            Badges = new List<ShBadge>(shareBadges)
+        };
+        _autoShare = new AutoShareSrc
+        {
+            Badges = ImmutableArray.Create(shareBadges)
+        };
+        _autoShareCopy = new AutoShareCopySrc
+        {
+            Badges = ImmutableArray.Create(looseBadges)
+        };
+        // Round 29 T3.2 — ONE draw, handed to both dense arms: what the arms differ in is the DESTINATION
+        // member's storage, so drawing twice would let the entry values vary between them and put noise in
+        // the one number the pins read. Every declared member is present, so the fill takes every slot and
+        // the dictionary carries the same four entries.
+        var denseYield = RealisticPayloads.EnumMap<DenseOre>(16);
+        _dense = new DenseSrc
+        {
+            Id = 1,
+            Yield = denseYield
+        };
+        _denseDict = new DenseDictSrc
+        {
+            Id = 1,
+            Yield = denseYield
         };
         // Distinct salt (12) so this draw is not a correlated copy of the Set/Imm draws above.
         _numList = new NumListSrc
@@ -871,6 +1094,26 @@ public class MapperBenchmarks
         return _auto.Map<BlitDst>(_blit);
     }
 
+    // ── Round 29 T0.2 — the span map's own blit vs its scalar (element-loop) twin ────
+    // Same _blit.Items payload as the array Blit category above and the same ratio-pair discipline as
+    // BlitRatio: FAST is the MemoryMarshal.Cast + CopyTo block copy, SCALAR is the per-element loop the fast
+    // path replaces, same process, same destination size, only the destination buffer's layout differs.
+    [Benchmark]
+    [BenchmarkCategory("SpanBlit")]
+    public int SpanBlit_Dwarf()
+    {
+        _dwarf.MapSpanBlit(_blit.Items, _spanBlitDst);
+        return _spanBlitDst.Length;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("SpanBlit")]
+    public int SpanBlit_Scalar()
+    {
+        _dwarf.MapSpanBlitScalar(_blit.Items, _spanBlitScalarDst);
+        return _spanBlitScalarDst.Length;
+    }
+
     // ── Primitive widening array (DwarfMapper's Vector.Widen vs element loop) ────
     [Benchmark]
     [BenchmarkCategory("Widen")]
@@ -1026,5 +1269,58 @@ public class MapperBenchmarks
     public ImmDst Immutable_Dwarf()
     {
         return _dwarf.MapImmutable(_imm);
+    }
+
+    // ── Round 29 T3.1 — [MapShare]: the reference assigned against the collection rebuilt ────
+    // Two pairs, each a share and its copying twin over the SAME payload, so the delta is the container the
+    // share does not build. MapShare_* is the FORCED mode (an interface the proof refuses; the attribute is
+    // the only thing that can share it); AutoShare_* is the AUTOMATIC one (identical ImmutableArray storage
+    // on both pairs, and only the element's provability differs). Allocation is what this feature saves and
+    // allocation is what this repository gates exactly, so all four are pinned.
+    [Benchmark]
+    [BenchmarkCategory("MapShare")]
+    public ShareDst MapShare_Dwarf()
+    {
+        return _dwarf.MapShare(_share);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("MapShare")]
+    public ShareCopyDst MapShare_Copy_Dwarf()
+    {
+        return _dwarf.MapShareCopy(_shareCopy);
+    }
+
+    // ── Round 29 T3.2 — [MapDenseEnumKeys]: the inline array against the dictionary it replaces ────
+    // Both destinations are classes and both arms map the SAME four entries, so the allocation delta is the
+    // Dictionary the dense arm does not build — its object, its bucket array and its entry array — and
+    // nothing else. Allocation is what this feature sells and allocation is what this repository gates
+    // exactly, so both are pinned.
+    [Benchmark]
+    [BenchmarkCategory("DenseEnum")]
+    public DenseDst DenseEnum_Dwarf()
+    {
+        return _dwarf.MapDense(_dense);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("DenseEnum")]
+    public DenseDictDst DenseEnum_Dict_Dwarf()
+    {
+        return _dwarf.MapDenseDict(_denseDict);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("AutoShare")]
+    public AutoShareDst AutoShare_Dwarf()
+    {
+        return _dwarf.MapAutoShare(_autoShare);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("AutoShare")]
+    public AutoShareCopyDst AutoShare_Copy_Dwarf()
+    {
+        return _dwarf.MapAutoShareCopy(_autoShareCopy);
     }
 }

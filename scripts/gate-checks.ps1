@@ -531,9 +531,418 @@ function Assert-NoMutatedProductBinaries {
 # `-Nightly` included, can see this red. A local pack + Assert-PackageSizeWithinCeiling under -Nightly would
 # close that hole; it is the one gate the script does not mirror.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-06 (round-29 Phase 2 gate, task 2.10), at commit f216f33, SDK 10.0.101, Release,
+# -p:EnablePackageValidation=false, CI=true, both environments packing the SAME tree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  316,155 B -> floor(316155/1024) = 308 KB   (was 282)
+#            DwarfMapper.Testing...nupkg    51,032 B -> floor( 51032/1024) =  49 KB   (was  47)
+#   ubuntu   DwarfMapper.1.0.2-rc.1.nupkg  315,638 B -> 308 KB   (the gate's own environment: a
+#            DwarfMapper.Testing...nupkg    50,840 B ->  49 KB    mcr.microsoft.com/dotnet/sdk:10.0.101
+#                                                                 container, locked restore, from a clean
+#                                                                 `git worktree add` of the same commit)
+# The two platforms agree on the KB this time — they straddled the boundary at the round-28 measurement —
+# so the "larger measurement" rule and the "same tree green wherever the gate runs" rule pick the same
+# number: 308 and 49. Headroom to the first red byte (309 KB = 316,416 B): 261 B on Windows, 778 B on
+# ubuntu. For DwarfMapper.Testing (50 KB = 51,200 B): 168 B and 360 B.
+#
+# WHERE THE ~27 KB WENT, entry by entry (deflated bytes, the rc7 pack of 2026-09-02 -> this tree; raw sizes
+# in the same order). Measured by diffing the two .nupkg central directories, not estimated:
+#   analyzers/.../DwarfMapper.Generator.dll   192,441 -> 211,433   (raw 583,680 -> 639,488)  +18,992
+#   analyzers/.../DwarfMapper.CodeFixes.dll    11,192 ->  17,230   (raw  24,576 ->  36,864)   +6,038
+#   README.md                                  25,328 ->  27,595   (raw  74,568 ->  80,105)   +2,267
+#   lib/net10.0/DwarfMapper.dll                18,079 ->  18,063   (raw unchanged at 42,496)     -16
+#   DwarfMapper.nuspec                            761 ->     773                                  +12
+#   (total 287,591 -> 314,885 deflated = +27,294; the .psmdcp part is NuGet's random name, not payload)
+# The Generator growth is round 29's pipeline work — TransferModelShape/LayoutHygiene, DWARF101, DWARF103,
+# DWARF106, DWARF107, the DWARF070 extension and roughly sixteen fixed emission sites. The CodeFixes growth
+# is one new provider, ConvertToRecordStructCodeFixProvider. The README growth is the transfer-model-struct
+# sections and the regenerated quality badges. SAME FIVE ENTRIES AS BEFORE: no new dependency, no new
+# resource, nothing newly shipping that should not — none of the class this gate exists to catch — so this
+# is a raise with its reason, not a finding against the package. DwarfMapper.xml is byte-identical to rc7's
+# and no longer appears in the delta at all.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-07, in the commit that WITHDREW the [GenerateView] endpoint (round 29 Phase 1;
+# Issues/round29/WITHDRAWN-generated-views.md). SDK 10.0.101, Release, -p:EnablePackageValidation=false,
+# CI=true, packed from this worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  316,224 B -> floor(316224/1024) = 308 KB   (was 318)
+#            DwarfMapper.Testing...nupkg    51,039 B -> floor( 51039/1024) =  49 KB   (UNCHANGED)
+# 316,224 is the LARGER of two packs taken in this session (316,223 and 316,224), so the number below does
+# not rest on a single sample. ONLY WINDOWS WAS MEASURED and the ceiling is stated with that limit: no
+# ubuntu container was available here. It is the safe direction — Windows measured the LARGER of the two at
+# every round-28/29 pairing (287,189 vs 286,985; 316,155 vs 315,638, a ~200-500 B CRLF-vs-LF difference in
+# DwarfMapper.xml and the nuspec) — and applying that offset puts ubuntu near 315,700 B, the same 308 KB.
+# The nightly `package-size` job is the only place this gate runs at all.
+#
+# THE CEILING CAME DOWN, 318 -> 308, and it did NOT come down to where it started. Entry by entry against
+# the LAST PRE-VIEW LOCAL PACK (the 8e11b52 tree, 316,131 B, whose table the Phase 1 note recorded), raw /
+# deflated bytes:
+#   analyzers/.../DwarfMapper.Generator.dll   639,488 / 211,436 -> 639,488 / 211,491   +55
+#   DwarfMapper.nuspec                          1,370 /     746 ->   1,417 /     776   +30
+#   analyzers/.../DwarfMapper.CodeFixes.dll    36,864 /  17,227 ->  36,864 /  17,236    +9
+#   lib/net10.0/DwarfMapper.dll                42,496 /  18,066 ->  42,496 /  18,066     0
+#   lib/net10.0/DwarfMapper.xml               168,571 /  38,638 -> 168,571 /  38,638     0
+#   README.md                                  80,105 /  27,595 ->  80,105 /  27,595     0
+#   _rels/.rels                                   505 /     287 ->     505 /     285    -2
+#   (total deflated +92, and 316,131 + 92 = 316,223 exactly; the .psmdcp part is NuGet's random name,
+#    not payload, and is excluded)
+#
+# THE READING THAT SURVIVES THE NUMBERS, and the reason this paragraph is longer than the table. Two rows
+# moved with their RAW SIZE UNCHANGED. That is NOT "compression noise": deflate is deterministic, so a
+# different compressed size means different bytes, and it is worth naming which:
+#   * Generator.dll (+55). The generator is not back to its pre-view self: it KEEPS Identifiers.EscapeTypeName
+#     and the doc comment carrying that helper's measurement, which the pre-view tree never had. Measured,
+#     not assumed — `git diff f216f33 -- src/DwarfMapper.Generator/` is exactly that one added method. A
+#     method's worth of IL and metadata fits inside the PE's existing file-alignment padding, so the RAW
+#     size cannot show it and only the compressed size can. NOT ALL 55 BYTES ARE THAT METHOD, though: the
+#     next row shows an assembly with byte-identical SOURCE moving 9 bytes across the same two packs, so
+#     whatever did that is in this row too. The split is not pinned here and is not worth pinning.
+#   * nuspec (+47 raw). NuGet embeds `<repository branch=... commit=... />`. So the nuspec's SIZE tracks the
+#     BRANCH NAME and its BYTES track the COMMIT SHA: this package can never be byte-identical across two
+#     commits however unchanged the code, and it changes size if the branch is renamed. The baseline's
+#     shorter element is the same cause the Phase 1 note named for its own odd rows — THE BASELINE CAME FROM
+#     A DIFFERENT CHECKOUT (there, a `C:/dmbase` worktree whose path leaks into the PE; here, visible in
+#     plain text instead of inside a PE).
+#   * CodeFixes.dll (+9) with `git diff f216f33 -- src/DwarfMapper.CodeFixes/` EMPTY — byte-identical source,
+#     different bytes out. Same reading: THE BASELINE WAS BUILT SOMEWHERE ELSE. Which PE bytes carry that
+#     difference is deliberately NOT claimed: `CI=true` sets ContinuousIntegrationBuild, so paths are mapped
+#     out, and the control below shows one assembly reproducing byte-for-byte across the two packs — so a
+#     bare "the path leaks into the PE" would be contradicted by this session's own evidence. The nuspec
+#     row above is where the differing checkout is visible in plain text, and it is the strongest thing in
+#     this block; the honest statement here is that the baseline's build environment differed and the
+#     channel is unpinned.
+#   * .rels (-2). Its only variable content is the random .psmdcp part name NuGet generates per pack, so a
+#     byte here is not attributable to the tree at all.
+# THE CONTROL that makes those four legible: DwarfMapper.dll, DwarfMapper.xml and README.md came out
+# BYTE-IDENTICAL to the baseline. The runtime source IS identical to the pre-view tree
+# (`git diff f216f33 -- src/DwarfMapper/` is empty) and the deterministic build reproduced it exactly. A
+# comparison in which nothing matched would prove nothing about the rows that moved.
+#
+# THE OPERATIONAL CONCLUSION, now with a demonstration in each direction: ASSUME ANY CHANGE MOVES THIS
+# NUMBER AND RE-MEASURE; do not reason about which way it went. Phase 1 DELETED two predicates and a
+# paragraph and the package GREW 145 B. This commit deleted ~1,100 lines of generator and the package
+# landed 92 B ABOVE the tree that never had them. Same entries as before either way: no new dependency, no
+# new resource, nothing newly shipping — none of the class this gate exists to catch.
+#
+# Headroom to the first red byte (309 KB = 316,416 B): 192 B on Windows. That is TIGHT and deliberately so
+# — R1 forbids a cushion — and it is 192 B against a pack-to-pack drift measured at 1 byte in this session
+# (the Phase 1 note measured a 3-byte spread over four packs). For DwarfMapper.Testing (50 KB = 51,200 B):
+# 161 B, and its 49 KB is re-measured in this commit, not merely carried.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-07, in the commit that made the generator structurally incapable of emitting a broken
+# identifier (round 29, task 1.y). SDK 10.0.101, Release, -p:EnablePackageValidation=false, packed twice
+# from this worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  317,532 B -> floor(317532/1024) = 310 KB   (was 308)
+#            DwarfMapper.Testing...nupkg    51,060 B -> floor( 51060/1024) =  49 KB   (UNCHANGED)
+# 317,532 is the LARGER of two packs in this session (317,531 and 317,532), so the number does not rest on
+# a single sample. ONLY WINDOWS WAS MEASURED, stated with that limit exactly as the previous block states
+# it: no ubuntu container was available here. Windows has measured the LARGER of the pair at every
+# round-28/29 pairing (287,189 vs 286,985; 316,155 vs 315,638 — a ~200-500 B CRLF-vs-LF difference in
+# DwarfMapper.xml and the nuspec), so applying that offset puts ubuntu near 317,000-317,300 B, which is
+# 309 KB. The ceiling takes the LARGER of the two, 310, per the rule the round-28 block states: the same
+# tree must be green wherever the gate is run, and 309 would be red on every Windows pack.
+#
+# WHERE THE ~1.2 KB WENT, entry by entry, against a pack of cce2977 (the [GenerateView]-withdrawal commit,
+# this task's parent) taken from a `git worktree add` in the SAME session so the toolchain is held fixed.
+# Deflated bytes, measured by diffing the two .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   211,522 -> 212,763   +1,241
+#   DwarfMapper.nuspec                            745 ->     776      +31
+#   lib/net10.0/DwarfMapper.dll                18,106 ->  18,084      -22
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,275 ->  17,254      -21
+#   (total +1,229; 316,303 + 1,229 = 317,532 exactly. The .psmdcp part is NuGet's random name, not payload.)
+#
+# THE READING. One row carries the change and it is the expected one: Generator.dll +1,241 B for the Emit*
+# computed properties on six model records, Identifiers.Unescaped, and the ~40 emission sites rewritten to
+# go through them — plus their doc comments, which are the measurement this task exists to stop being
+# rediscovered. SAME FOUR ENTRIES AS BEFORE: no new dependency, no new resource, nothing newly shipping
+# that should not, which is the class this gate exists to catch. The two NEGATIVE rows are the previous
+# block's own finding restated: the baseline was built in a DIFFERENT CHECKOUT (a temporary worktree, whose
+# detached HEAD also explains the nuspec's `<repository commit=.../>` moving 31 B), and DwarfMapper.dll's
+# source is untouched by this task — `git diff cce2977 -- src/DwarfMapper/` is empty — so a 22-byte move
+# there is the same unpinned build-environment channel, not payload.
+#
+# Headroom to the first red byte (311 KB = 318,464 B): 932 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 140 B, and its 49 KB is re-measured in this commit rather than merely carried.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED 2026-09-07, in the commit that added [MapShare] and the immutability proof (round 29, task
+# 3.1). SDK 10.0.101, Release, -p:EnablePackageValidation=false, packed twice from this worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  322,630 B -> floor(322630/1024) = 315 KB   (was 310)
+#            DwarfMapper.Testing...nupkg    51,060 B -> floor( 51060/1024) =  49 KB   (UNCHANGED)
+# 322,630 is the LARGER of two packs in this session (322,629 and 322,630). ONLY WINDOWS WAS MEASURED, and
+# that limit is stated exactly as the two blocks above state it: no ubuntu container was available here.
+# Windows has measured the LARGER of the pair at every round-28/29 pairing (a ~200-500 B CRLF-vs-LF
+# difference in DwarfMapper.xml and the nuspec), so ubuntu lands near 322,100-322,400 B, which is 314 KB.
+# The ceiling takes the LARGER of the two, 315, per the round-28 rule: the same tree must be green wherever
+# the gate is run, and 314 would be red on every Windows pack.
+#
+# WHERE THE 5,200 B WENT, entry by entry, against a pack of 3c2c1ef (this task's parent) taken from a
+# `git worktree add` in the SAME session so the toolchain is held fixed. Deflated bytes, from the two
+# .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   212,737 -> 216,730   +3,993
+#   lib/net10.0/DwarfMapper.xml                38,638 ->  39,649   +1,011
+#   lib/net10.0/DwarfMapper.dll                18,064 ->  18,201     +137
+#   DwarfMapper.nuspec                            744 ->     776      +32
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,231 ->  17,257      +26
+#   _rels/.rels                                   285 ->     286       +1
+#   (README.md, [Content_Types].xml and the .psmdcp are byte-identical; total +5,200, and
+#    317,430 + 5,200 = 322,630 exactly.)
+#
+# THE READING. Two rows carry the change and both are the expected ones. Generator.dll +3,993 B is
+# ImmutabilityProof.cs (the deep-immutability proof), MapperExtractor.Share.cs (the per-member decision),
+# the DWARF104 descriptor with its message and help text — descriptor strings are payload, not comments —
+# and the emitter's guard branch. DwarfMapper.xml +1,011 B is MapShareAttribute's own XML documentation,
+# whose <remarks> spell out the three tiers and what the caller is asserting; that page is what a consumer
+# sees in IntelliSense, so it is shipped weight on purpose. DwarfMapper.dll +137 B is the attribute type
+# itself: a sealed class, one constructor, one property. SAME NINE ENTRIES AS BEFORE — no new dependency,
+# no new resource, nothing newly shipping, which is the class this gate exists to catch.
+#
+# The three small rows are the previous block's own finding restated rather than re-derived: the baseline
+# was packed in a DIFFERENT CHECKOUT (a detached-HEAD worktree, which is also why the nuspec's
+# `<repository commit=.../>` moves 32 B), and `git diff 3c2c1ef HEAD -- src/DwarfMapper.CodeFixes/` is
+# EMPTY — so CodeFixes.dll's +26 B is that unpinned build-environment channel, not payload.
+#
+# Headroom to the first red byte (316 KB = 323,584 B): 954 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 140 B, and its 49 KB is re-measured in this commit rather than merely carried.
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# RE-MEASURED AGAIN 2026-09-07, in the commit that fixed the dropped [MapProperty] modifier and the two
+# refusals that were not true (round 29, task 3.1, review round). The block above was measured one commit
+# earlier, and this file's own rule is to ASSUME ANY CHANGE MOVES THIS NUMBER AND RE-MEASURE rather than
+# reason about which way it went - so it was packed again, twice, on the same SDK 10.0.101 / Release /
+# -p:EnablePackageValidation=false:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  322,694 B -> floor(322694/1024) = 315 KB   (UNCHANGED)
+#            DwarfMapper.Testing...nupkg    51,057 B -> floor( 51057/1024) =  49 KB   (UNCHANGED)
+# 322,694 is the LARGER of the two packs in this session (322,693 and 322,694). ONLY WINDOWS, with the same
+# stated limit and the same CRLF-vs-LF reasoning as the block above.
+#
+# THE +64 B, entry by entry against that block's own 322,630 measurement. Deflated bytes, from the two
+# .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   216,730 -> 216,807     +77
+#   _rels/.rels                                   286 ->     287      +1
+#   lib/net10.0/DwarfMapper.xml                39,649 ->  39,649       0
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,257 ->  17,253      -4
+#   lib/net10.0/DwarfMapper.dll                18,201 ->  18,194      -7
+#   DwarfMapper.nuspec                            776 ->     773      -3
+#   (README.md, [Content_Types].xml and the .psmdcp are byte-identical; total +64, and
+#    322,630 + 64 = 322,694 exactly.)
+#
+# THE READING. One row carries the change and it is the only one that could: Generator.dll +77 B is the
+# widened modifier gate in ResolveExplicitMaps (the `hasExtras` lookup and the `which` ternary), the
+# collection/dictionary check moved ahead of the proof, the cycle guard keyed on the constructed type, and
+# the four new message literals - descriptor and message strings are payload, not comments. SAME NINE
+# ENTRIES AS BEFORE. The four small rows are noise on channels this file has already characterised: no
+# source under src/DwarfMapper/ or src/DwarfMapper.CodeFixes/ changed in that commit
+# (`git diff 7e112c7 HEAD -- src/DwarfMapper/ src/DwarfMapper.CodeFixes/` is empty), and the nuspec moves
+# with the `<repository commit=.../>` sha, which is a different sha by construction.
+#
+# Headroom to the first red byte (316 KB = 323,584 B): 890 B on Windows. For DwarfMapper.Testing
+# (50 KB = 51,200 B): 143 B. Both ceilings are re-measured in this commit rather than merely carried.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# RE-MEASURED 2026-09-07, in the commit that added [MapDenseEnumKeys] and the dense-enum range proof
+# (round 29, task 3.2). SDK 10.0.101, Release, -p:EnablePackageValidation=false, packed twice from this
+# worktree:
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  329,154 B -> floor(329154/1024) = 321 KB   (was 315)
+#            DwarfMapper.Testing...nupkg    51,056 B -> floor( 51056/1024) =  49 KB   (UNCHANGED)
+# 329,154 is the LARGER of the two packs in this session (329,153 and 329,154). ONLY WINDOWS WAS MEASURED,
+# and that limit is stated exactly as the three blocks above state it: no ubuntu container was available
+# here. Windows has measured the LARGER of the pair at every round-28/29 pairing (a ~200-500 B CRLF-vs-LF
+# difference in DwarfMapper.xml and the nuspec), so ubuntu lands near 328,650-328,950 B, which is still
+# 321 KB. The ceiling takes the LARGER of the two per the round-28 rule: the same tree must be green
+# wherever the gate is run.
+#
+# WHERE THE 6,534 B WENT, entry by entry, against a pack of aa6eb7a (this task's parent) taken from a
+# `git worktree add` in the SAME session so the toolchain is held fixed. Deflated bytes, from the two
+# .nupkg central directories:
+#   analyzers/.../DwarfMapper.Generator.dll   216,800 -> 221,835   +5,035
+#   lib/net10.0/DwarfMapper.xml                39,649 ->  40,930   +1,281
+#   lib/net10.0/DwarfMapper.dll                18,177 ->  18,348     +171
+#   DwarfMapper.nuspec                            746 ->     775      +29
+#   analyzers/.../DwarfMapper.CodeFixes.dll    17,230 ->  17,249      +19
+#   _rels/.rels                                   287 ->     286       -1
+#   (README.md and [Content_Types].xml are byte-identical; the .psmdcp part is NuGet's random name, not
+#    payload, and its 642 B moves from one name to the other. Total +6,534, and
+#    322,620 + 6,534 = 329,154 exactly.)
+#
+# THE READING. Two rows carry the change and both are the expected ones. Generator.dll +5,035 B is
+# DenseEnumProof.cs (the range proof over every declared enum member and the helper it authorises),
+# MapperExtractor.DenseEnum.cs (the per-member decision plus the directive's own name/duplicate/conflict
+# validation), the two resolution sites, the new DWARF092 arm for this directive, and the DWARF105
+# descriptor with its message and help text - descriptor and message strings are payload, not comments,
+# and this feature's refusals carry a sentence each by design. DwarfMapper.xml +1,281 B is
+# MapDenseEnumKeysAttribute's own XML documentation, whose <remarks> state what is proven, what is
+# caller-visible at run time and why [Flags] is refused; that page is what a consumer sees in IntelliSense,
+# so it is shipped weight on purpose. DwarfMapper.dll +171 B is the attribute type itself: a sealed class,
+# one constructor, one property, one settable int. SAME NINE ENTRIES AS BEFORE - no new dependency, no new
+# resource, nothing newly shipping, which is the class this gate exists to catch.
+#
+# The two small rows are the previous blocks' own finding restated rather than re-derived: the baseline was
+# packed in a DIFFERENT CHECKOUT (a detached-HEAD worktree, which is also why the nuspec's
+# `<repository commit=.../>` moves 29 B), and `git diff aa6eb7a -- src/DwarfMapper.CodeFixes/` is EMPTY -
+# so CodeFixes.dll's +19 B is that unpinned build-environment channel, not payload.
+#
+# THIS IS AN OBSERVABILITY RATCHET, NOT A BUDGET. 315 -> 321 KB is what a real feature costs and the number
+# is re-measured rather than defended; nothing about the design was shaped to fit under the old ceiling.
+#
+# ── RE-MEASURED 2026-09-09, AND FOR THE FIRST TIME IN THE CONTAINER CI ACTUALLY USES ────────────────
+#
+# The package-size job runs on ubuntu-latest with SDK 10.0.101 (.github/workflows/ci.yml, `package-size`),
+# nightly-cron only. Every ceiling before this one was measured on Windows and the ubuntu figure was
+# ARGUED - the round-29 ledger says so in as many words: "Ubuntu package size is INFERRED, not measured
+# (no container available)". It is measured now, in mcr.microsoft.com/dotnet/sdk:10.0.101, against a copy
+# of the tree with bin/obj excluded, and the argument was wrong in a way that mattered.
+#
+#   tree                       ubuntu sdk:10.0.101      Windows local 10.0.101
+#   HEAD, no lens oracle        51,376 B  = 50 KB        51,591 B  = 50 KB
+#   + the lens oracle           53,550 B  = 52 KB        53,770 B  = 52 KB
+#
+# TWO SEPARATE FACTS, AND ONLY ONE OF THEM IS THIS COMMIT'S DOING.
+#
+# (1) THE 49 KB CEILING WAS ALREADY RED AT HEAD, ON BOTH PLATFORMS. 50 > 49, so the nightly job fails
+#     today for reasons that predate the lens oracle. It was set at 8e11b52 (2026-09-06) as "re-measured
+#     on both platforms" and has drifted since; the package embeds README.md (81,573 B uncompressed, the
+#     single largest entry), so every documentation edit moves it and NOTHING RUNS THE GATE - the job is
+#     `schedule`/`workflow_dispatch` only, so a push-time red is structurally impossible to see. That is
+#     the CI-nightly finding recorded in Issues/round30/CI-NIGHTLY-REVIEW.md, not a consequence of this
+#     change, and it is stated here rather than absorbed silently into a raise.
+#
+# (2) THE LENS ORACLE ITSELF COSTS +2,174 B compressed (ubuntu; +2,179 B on Windows), measured A/B on the
+#     SAME tree, platform and SDK - pack twice, once with the two files removed and PublicAPI.Unshipped
+#     reset. Entry by entry, uncompressed:
+#
+#       lib/net10.0/DwarfMapper.Testing.dll     34,304 -> 35,840   +1,536
+#       lib/net10.0/DwarfMapper.Testing.xml     17,854 -> 24,584   +6,730
+#       (README.md, the nuspec, _rels/.rels and [Content_Types].xml are byte-identical; the .psmdcp part
+#        is NuGet's random name, not payload.)
+#
+#     SAME ENTRY SET - no new dependency, no new resource, nothing newly shipping, which is the class this
+#     gate exists to catch. The .xml row is four times the .dll row and that is deliberate: LensLaws'
+#     <remarks> state both laws, why the pre-existing destination is the whole point, and why PutPut does
+#     not hold for a conditional mapper. That page is what a consumer sees in IntelliSense at the moment
+#     they decide whether their mapper may assert the law, so it is shipped weight on purpose.
+#
+# THIS IS AN OBSERVABILITY RATCHET, NOT A BUDGET. 49 -> 52 KB is what a measured 50 plus a real feature
+# costs; nothing about the design was shaped to fit under the old number.
+#
+# ── AND THE PREDICTION IN THIS VERY BLOCK CAME TRUE THE SAME DAY ─────────────────────────────────────
+#
+# The paragraph above ended "DwarfMapper measures EXACTLY 321 KB on ubuntu, 536 B from red, so the next
+# README edit of any size reds it too". The next README edit was in the same session - the lens oracle's
+# own documentation section - and on WINDOWS it did exactly that. Re-measured at 23b392b:
+#
+#   DwarfMapper              ubuntu sdk:10.0.101  329,196 B = 321 KB   Windows 10.0.101  329,799 B = 322 KB
+#   DwarfMapper.Testing      ubuntu               53,552 B  =  52 KB   Windows            53,779 B =  52 KB
+#
+# The repo's rule is that the ceiling is the LARGER of the two, so DwarfMapper goes 321 -> 322. Windows
+# packs 603 B larger here (CRLF in README.md and the XML doc; every DLL is byte-identical), inside the
+# 200-330 B band the earlier comparisons recorded - so the direction was right and only the magnitude
+# was new.
+#
+# ENTRY BY ENTRY against a pack of the same tree with README.md reverted to 1a3c0f7, uncompressed:
+#
+#   README.md                                 80,105 -> 81,577   +1,472
+#   (DwarfMapper.nuspec, [Content_Types].xml, _rels/.rels, analyzers/.../DwarfMapper.CodeFixes.dll,
+#    analyzers/.../DwarfMapper.Generator.dll, lib/net10.0/DwarfMapper.dll and .xml are ALL byte-identical;
+#    the .psmdcp part is NuGet's random name, not payload.)
+#
+# ONE ROW, AND IT IS DOCUMENTATION. Nothing in the shipped code moved - which is the whole point of an
+# observability ratchet, and also the clearest possible argument for the round-30 item recorded in
+# Issues/round30/CI-NIGHTLY-REVIEW.md: a code-size gate that a prose edit can red is measuring the wrong
+# thing half the time. Either stop packing README.md or ceiling it separately.
+#
+# R1 SAYS THE RAISE BELONGS IN THE COMMIT THAT CAUSED THE GROWTH, AND IT DID NOT. e25620c added the
+# README section; at that point the package had only been measured in the container, where it still
+# passed at 321. The Windows red surfaced one commit later, at the rc pack. Stated rather than
+# backdated: the rule was missed because only one platform was measured, which is the same defect the
+# block above this one exists to record.
+#
+# (README.md reads 81,573 B in the DwarfMapper.Testing block above and 81,577 B here: 6e402db added 4 B
+# between the two measurements, renaming ObjectFactory to ObjectFactoryV2 twice. Both are correct as of
+# when they were taken.)
+#
+# Headroom to the first red byte: DwarfMapper (323 KB = 330,752 B) 953 B on Windows, 1,556 B on ubuntu.
+# DwarfMapper.Testing (53 KB = 54,272 B) 493 B on Windows, 720 B on ubuntu.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 282
-    'DwarfMapper.Testing' = 47
+    'DwarfMapper'         = 322
+    'DwarfMapper.Testing' = 52
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# ILVerify expectations. The stage's rule is "any unverifiable IL fails, EXCEPT these exact methods" —
+# and the excuse list is the dangerous half, so both directions are checked and both live here where
+# GateBandLogicTests' sibling battery can drive them against fake inputs.
+#
+# NEVER a blanket suppression: each entry is ONE exact method whose unverifiable IL is accounted for.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$script:IlVerifyKnownUnverifiable = [ordered]@{
+    # samples/DwarfMapper.Gallery/18_SpanMap.cs lines 25-26: two `stackalloc` buffers in the sample's
+    # HAND-WRITTEN Run() — localloc at IL_0003/IL_002F plus the cpblk initializer copy at IL_001E —
+    # demonstrating the zero-alloc span overload. stackalloc is unverifiable IL by design. The
+    # generator-emitted Mapper::Map(ReadOnlySpan<int>, Span<long>) itself verifies clean.
+    'DwarfMapper.Gallery.Ex18.Example::Run()' = 'stackalloc (localloc + cpblk) in hand-written sample code'
+
+    # THE SECOND ENTRY THIS LIST BRIEFLY HELD IS GONE, AND THAT IS THE POINT OF RECORDING IT HERE.
+    # On 2026-09-09 ILVerify reported <PrivateImplementationDetails>::InlineArrayAsSpan in the Gallery, caused
+    # by the generator's own [MapDenseEnumKeys] fill indexing an inline array at a VARIABLE index. It was
+    # allowlisted with the reasoning spelled out. The maintainer's ruling was the opposite: ALL METHODS ARE
+    # VERIFIABLE. The fill was re-emitted as a switch over the enum's declared members with CONSTANT slot
+    # indices - which Roslyn lowers to InlineArrayElementRef / InlineArrayFirstElementRef, and those verify -
+    # so the excuse had nothing left to excuse and was deleted.
+    #
+    # Nothing in this list may name a method the generator EMITS. The rule is enforced independently of this
+    # file by EmittedIlIsVerifiableTests, which compiles the whole golden feature corpus into one assembly and
+    # requires ZERO findings with no exceptions list at all - the Gallery needs one only because it also
+    # contains hand-written consumer code, which is what the surviving entry above is.
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Per target: returns the excuse keys that matched, throws naming any finding no excuse covers. Matching
+# is an ordinal substring, not a regex, so an entry cannot widen through an unescaped metacharacter - and
+# an entry naming a COMPILER-SYNTHESISED method must include the assembly, because such a name is the same
+# in every assembly and would otherwise excuse it everywhere. See the InlineArrayAsSpan entry above.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-IlVerifyFindingsExpected {
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ErrorLines,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Known
+    )
+    $matched = [System.Collections.Generic.List[string]]::new()
+    $unexpected = @()
+
+    foreach ($line in $ErrorLines) {
+        $hit = $null
+        foreach ($key in $Known.Keys) {
+            if ($line.Contains($key, [System.StringComparison]::Ordinal)) { $hit = $key; break }
+        }
+        if ($null -eq $hit) { $unexpected += $line } elseif (-not $matched.Contains($hit)) { $matched.Add($hit) }
+    }
+
+    if ($unexpected.Count -gt 0) {
+        throw ("ilverify: unexpected IL errors in ${Target}:`n" + ($unexpected -join "`n"))
+    }
+    return $matched.ToArray()
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# After every target: an excuse that matched NOTHING is an excuse outliving its case — the same failure
+# shape DocFenceScanTests' unconverted list and DocsTeachLiveApiTests' Foreign list are guarded against,
+# and the one this stage was missing. Checked ACROSS all targets, because an entry naming a method in the
+# Gallery legitimately matches nothing while the runtime assembly is being scanned.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-IlVerifyExcusesAllUsed {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Known,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$MatchedKeys
+    )
+    $stale = @($Known.Keys | Where-Object { $MatchedKeys -notcontains $_ })
+    if ($stale.Count -gt 0) {
+        throw ("ilverify: known-unverifiable entr(ies) that no finding matched: " + ($stale -join ', ') +
+               ". The construct they excuse is gone, so the excuse must go with it in the same commit - " +
+               "an allowance nothing exercises silently re-permits whatever next matches it.")
+    }
 }
 
 function Assert-PackageSizeWithinCeiling {

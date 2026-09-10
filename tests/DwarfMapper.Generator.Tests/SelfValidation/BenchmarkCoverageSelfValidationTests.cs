@@ -44,6 +44,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             ["nullable"] = null,
             ["nullable_ref"] = null,
 
+            // `CmbStEl_X_Src?[]` → `CmbStEl_X_Dst?[]`. It shares the Array category's emitted fill loop; what it
+            // adds is the per-element HasValue/.Value LIFT, whose cost is a branch and a copy of a small struct.
+            // The Array benchmark measures the loop itself, and a second array row differing only by the lift
+            // would measure the branch predictor rather than the mapper. Declared as a gap, not as "free": if
+            // the hardware-mode work ever gives the array arm a vectorised form, the lifted element is the shape
+            // that cannot take it and would then be worth its own row.
+            ["nullable_struct_array"] = null,
+
             // Collection families that all go through the same emitted fill loops as List/array, but with
             // different allocation strategies (pre-sized vs builder vs frozen). ISSUE-019 lived in exactly this
             // blind spot, so "similar to List" is not evidence they are free. HashSet and ImmutableArray now HAVE

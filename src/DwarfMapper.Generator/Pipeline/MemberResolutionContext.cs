@@ -62,6 +62,15 @@ namespace DwarfMapper.Generator.Pipeline
             EnumPolicy EnumPolicy,
             NullStrategy NullStrategy,
             List<string> ReinterpretMembers,
+            // Destination members carrying an explicit [MapShare]. Empty, never null: "the caller forced nothing"
+            // is a real answer every pass reads the same way, and a nullable set here would put a `?? false` at
+            // each of them.
+            HashSet<string> ShareMembers,
+            // Destination members carrying a [MapDenseEnumKeys], mapped to the Offset each one declared. Empty,
+            // never null, for ShareMembers' reason; a DICTIONARY rather than a set because the directive carries
+            // a value the emitted arithmetic depends on, and validation has already refused two applications
+            // naming one member.
+            Dictionary<string, int> DenseEnumMembers,
             HashSet<string>? ConsumedCtorParams,
             HashSet<string>? RequiredMustInitialize,
             NestedMappingRegistry? NestedRegistry,

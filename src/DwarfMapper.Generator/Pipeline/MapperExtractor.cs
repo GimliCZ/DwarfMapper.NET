@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Core;
@@ -375,7 +375,14 @@ namespace DwarfMapper.Generator.Pipeline
             // while the parameter list that answer cost us goes away.
             var decls = new MapperDeclarations(classSymbol, allMethods, mapperMethods, classIgnores,
                 classIgnoreSources, mapperReservedConverters, valueProviders, pairProps, pairIgnores,
-                pairValues, pairConstructors, pairNullSkips, beforeHookDefs, afterHookDefs);
+                pairValues, pairConstructors, pairNullSkips, beforeHookDefs, afterHookDefs, genPairs);
+
+            // Round 29 T0.2c: the array/list blit decision lives inside TryResolveConversion, which is handed a
+            // pair of types and never sees `decls` — so the ONE question "does a pair-scoped directive or hook
+            // customize this element pair?" travels to it on the registry, which is the collaborator both sides
+            // already share and is scoped to exactly this extraction. Wired here, next to `decls`, because this
+            // is the single site where every value it reads is decided.
+            nestedRegistry.SetPairCustomizationRule((s, t) => DescribeElementPairCustomization(decls, genComp, s, t));
 
             var policy = new MapperPolicy(allowNonPublic, caseInsensitive, classAutoNest, explicitOnly,
                 ignoreObsolete, implicitConversions, isPreserveMode, isSetNullMode, skipNullSrc, maxDepth,
@@ -1046,6 +1053,31 @@ namespace DwarfMapper.Generator.Pipeline
                     "this method's loop calls and the forced blit runs per element through it.",
                     "The directive is honoured at the create-map and update-into endpoints, which is why its " + "silence here is worth saying out loud — and the create map also VALIDATES it (DWARF022 for " + "a member that is not an unmanaged array on both sides, or names no writable destination " + "member at all); nothing validated it here either.");
 
+            // The METHOD-scoped [MapShare], through ReadShareMembers -- the reader the create-map and
+            // update-into branches resolve with, so an application whose single argument is not a string yields
+            // no directive and reaches neither the model nor a message.
+            //
+            // ADDED 2026-09-10, and the gap it closes is exactly its sibling's. Round 29 shipped [MapShare] and
+            // [Reinterpret] together and gave this gate an arm for ONE of them; a [MapShare] on a span or
+            // async-stream map was discarded IN SILENCE -- verified by probe before this was written, the
+            // generator reported nothing at all. The member was COPIED instead of shared, which is correct code
+            // and not the aliasing the caller asked for: nothing fails, and their assumption about reference
+            // identity is simply false. That is the worst shape of silence this gate exists to remove.
+            //
+            // ReportWithFix rather than Report, for [Reinterpret]'s reason: [MapShare] has no pair-scoped twin,
+            // so "write it pair-scoped on the mapper class" would name a form that does not exist.
+            foreach (var member in ReadShareMembers(method))
+                ReportWithFix($"[MapShare(\"{member}\")] on this mapping method",
+                    "[MapShare] has no pair-scoped form, so the remedy is a DECLARED create map rather than a " +
+                    $"re-scoped attribute: put [MapShare(\"{member}\")] on a `partial {tgt} <Name>({src} s)` " +
+                    "on this mapper class. An element-wise map resolves its element pair through a declared " +
+                    "mapping method where one exists rather than synthesizing one, so that create map is what " +
+                    "this method's loop calls and the share happens per element through it.",
+                    "The directive is honoured at the create-map and update-into endpoints, which is why its " +
+                    "silence here is worth saying out loud -- and those endpoints also PROVE it (DWARF104 for a " +
+                    "member whose reachable graph is provably mutable, which no assertion may override); " +
+                    "nothing proved it here either.");
+
             return false;
 
             void Report(string written, string remedy, string elsewhere)
@@ -1224,6 +1256,40 @@ namespace DwarfMapper.Generator.Pipeline
                         "List<T> on both sides, has differing element types, or names a key the element type " +
                         "does not have); nothing validated it here either.",
                         MapEndpointKind.UpdateInto);
+            }
+
+            // ── An arm whose home is BOTH member-resolving endpoints, skipped at the other three ─────────────
+            //
+            // [MapDenseEnumKeys] fills a destination member with a LOOP that indexes a fixed-size inline array,
+            // and only the create map and the update-into resolve destination members one at a time. Read
+            // through ReadDenseEnumKeys — the reader both of those branches read with — so this reports exactly
+            // the applications they would have acted on.
+            //
+            // carriedByTheAdoptedSibling is FALSE at the element-wise endpoints, on [MapCollectionKey]'s
+            // reasoning rather than [FlattenGraph]'s: what a span or async-stream loop adopts is a mapping for
+            // the ELEMENT pair, and this directive configures a member of the pair the method itself names. The
+            // adopted sibling's own [MapDenseEnumKeys] would arrive; this method's does not, and saying it did
+            // would prescribe a remedy that changes nothing.
+            if (endpoint is not (MapEndpointKind.CreateMap or MapEndpointKind.UpdateInto))
+            {
+                foreach (var (denseMember, denseOffset) in ReadDenseEnumKeys(method))
+                    Report(
+                        denseOffset == 0
+                            ? $"[MapDenseEnumKeys(\"{denseMember}\")]"
+                            : $"[MapDenseEnumKeys(\"{denseMember}\", Offset = {denseOffset})]",
+                        $"A dense fill writes an enum-keyed dictionary into the [InlineArray] member " +
+                        $"'{denseMember}' by INDEXING it — a loop, one entry at a time — and only an endpoint " +
+                        "that resolves destination members one at a time emits one. A projection is translated " +
+                        "into an expression tree, which has no statement for a loop to live in; a span map and " +
+                        "an async stream map each element through a mapper for the element pair and read no " +
+                        "per-member directive at all. Here the directive is discarded and the member is " +
+                        "resolved as if it had never been written — and a dictionary into an inline array is " +
+                        "no conversion at all, so what the caller actually gets is the ordinary refusal for a " +
+                        "member that cannot be mapped. The home endpoints also PROVE this directive (DWARF105 " +
+                        "for an enum member that would index outside the array); nothing proved it here " +
+                        "either.",
+                        MapEndpointKind.CreateMap,
+                        false);
             }
 
             void Report(

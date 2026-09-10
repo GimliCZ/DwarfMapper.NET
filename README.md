@@ -695,9 +695,12 @@ public partial class Mapper
 ```
 <!-- endsnippet -->
 
-Each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). The destination must be a writable
-`Span<D>` (source may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws
-`ArgumentException` — never a silent truncation.
+When the element pair is proven layout-identical (the same fast path as the array/list blit above), the body is one
+`MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy; otherwise each element runs through the full conversion
+pipeline (`dst[i] = convert(src[i])`). A pair that narrowly misses the block copy — byte-identical but for the field
+names, say — gets `DWARF100` explaining exactly what to change. The destination must be a writable `Span<D>` (source
+may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a
+silent truncation.
 
 ### Async streaming
 
@@ -794,7 +797,7 @@ inverse → `DWARF020`; ambiguous inverse → `DWARF021`.
 When a round-trip check fails you get a **structural diff**, not "two objects differ somewhere": `RoundTrip.Verify`
 throws a `RoundTripException` that walks the two graphs and reports the **member path** that diverged with its *
 *expected vs. actual** value, plus the replay **seed** so you can reproduce the exact failing input (
-`ObjectFactory.Create<T>(seed)` rebuilds it). See *Verifying maps today* below.
+`ObjectFactoryV2.Create<T>(seed)` rebuilds it). See *Verifying maps today* below.
 
 ### Verifying maps today
 
@@ -814,10 +817,32 @@ public partial class Mapper
 <!-- endsnippet -->
 
 On a mismatch it throws with a structural diff (the differing member's path, expected vs. actual, and the replay seed).
-`ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The
+`ObjectFactoryV2.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The
 package is reflection-based and test-only — it is never AOT-published and does not affect the core library's
 reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc
 verification.)
+
+### Verifying an update-into map
+
+A mapper pair is a *lens*: `Map` reads a view out of the source, `Update(source, destination)` writes one back.
+`RoundTrip.Verify` checks the law the round-trip names (*PutGet*). `LensLaws` checks the two that are only
+visible when the destination **already holds data**:
+
+- `LensLaws.VerifyIdempotent<TSource, TDestination>(m.Update)` — *GetPut*: writing the same source twice equals
+  writing it once.
+- `LensLaws.VerifyLastWriteWins<TSource, TDestination>(m.Update)` — *PutPut*: writing two sources in sequence
+  equals writing only the last.
+
+The pre-existing destination is the point: update into a freshly constructed object and every member the mapper
+leaves alone looks exactly like one it wrote correctly. A failure throws `LensLawException` naming the law and
+carrying one seed that replays the whole case, through the published `LensLaws.DestinationSeedSalt` and
+`LensLaws.SecondSourceSeedSalt`.
+
+`VerifyLastWriteWins` is opt-in per mapper on purpose. *PutPut* requires the set of members written to be
+independent of the source's **values**, which a mapper using `[MapNullSkip]` or `[MapProperty(When = ...)]` is
+documented not to be — a member the first source wrote and the second skipped keeps the first source's value.
+That is a real violation and the right behaviour for that endpoint, so assert the law only where you mean it.
+`VerifyIdempotent` carries no such caveat and applies to conditional mappers too.
 
 **Conformance sample.** On top of the generator/integration test suite, [
 `samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every*
@@ -864,6 +889,66 @@ See [`docs/RELEASING.md`](docs/RELEASING.md) for step-by-step verification (fing
 - **Blittable fast-path:** a whole array of layout-identical unmanaged elements is copied whole-span via
   `MemoryMarshal.Cast<TSrc, TDest>` (and `Vector.Widen` for primitive widening) — whole-array only, not member-run
   coalescing.
+
+### Transfer models as structs
+
+The largest speed-up available to a mapped collection is not in the copy — it is in **where the copy lands**. A
+collection of class elements allocates one heap object per element (allocation, zeroing, an object header, a write
+barrier, eventual Gen1/Gen2 promotion); the same collection of `readonly record struct` elements is **one** allocation.
+`DWARF103` finds the element types where that swap is safe, prints the size you would get, and the IDE lightbulb
+performs the rewrite — the element type and every transfer model it inlines, transitively. `DWARF101` names a field
+order that packs such a struct.
+
+**Read the methodology before the numbers, because it is short and it bounds them.** BenchmarkDotNet 0.14.0, AMD Ryzen
+5 5600, Windows 10, .NET 10.0.11, `Job=short` with **3 iterations** — one machine, one OS, x64. At that iteration count
+the *absolute* error bars are wide (on several rows the reported error approaches or exceeds the mean), while the
+*ratios* are stable (`RatioSD` 0.00–0.08 on the rows quoted here, 0.11 at worst across the study, at N = 100,000).
+**Treat the order of magnitude as the finding and the
+precise percentage as noise.** Raw output in [`Issues/round29/`](Issues/round29/); the full caveats, including what
+these probes are *not*, are in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+**What the code fix delivers**, N = 100,000, ratios against the class-shaped baseline (lower is faster). The fix
+converts the *destination* type, which is the **gather** column; the **blit** column additionally needs the source to
+be structs, which is a change on the other side of the mapping that the fix does not make:
+
+| Shape | Baseline (classes) | Gather (target converted) | Blit (both sides) | Allocated | Source |
+|---|---:|---:|---:|---|---|
+| 4-class DTO tree → nested structs | 20.0 ms | **1.80 ms** (0.09x) | 0.92 ms (0.05x) | 18.4 → 6.4 MB (0.35x) | `plan-results.md`, `D_tree` |
+| DTO with an optional nested member | 14.6 ms | **1.59 ms** (0.11x) | 0.92 ms (0.06x) | 10.4 → 4.8 MB (0.46x) | `plan2-results.md`, `A_optional` |
+| 40-byte struct repacked to 24 (`DWARF101`) | 812 µs | — | **500 µs** (0.62x) | 4.0 → 2.4 MB (0.60x) | `plan2-results.md`, `D_layout` |
+
+At N = 1,000 the first two are 0.30x rather than 0.09x/0.11x: the win grows with N because what it removes is an
+allocation per element. Larger results still — a shared-arena result shape (0.17x) and `readonly ref struct` views over
+the source (0.04x, zero allocation) — were measured in the same study and **DwarfMapper does not emit either**; they
+are listed, with that caveat attached, in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md#2b-changes-to-your-own-types-that-dwarfmapper-does-not-make).
+
+**And what measured *slower*.** These are published here rather than in an appendix because they are the reason this
+round shipped two diagnostics and a code fix instead of a vectorized copy path — ratios above 1.00 are **slower** than
+the plain scalar loop they would have replaced:
+
+| Idea | N = 1,000 | N = 100,000 | Verdict |
+|---|---:|---:|---|
+| Column transpose, then SIMD, for mixed field widths | **2.93x slower** | **1.82x slower** | rejected |
+| 12-byte struct permuted by byte shuffle | **2.21x slower** | **1.35x slower** | rejected |
+| 16-byte struct permuted by one byte shuffle | 0.77x | 0.95x | inside the noise; not built |
+| `TensorPrimitives` widening | 0.60x | 0.97x | helps only while the buffer is cache-resident |
+| Span blit vs the element loop | 0.21x | 0.98x | real for small buffers, bandwidth-bound above L2 |
+| Span over a *class's* field block instead of converting it | 0.68x | 1.00x | ~1 ns/element, and silently wrong on an auto-layout class |
+| Dropping reference members to speed the GC scan | 1.04x | 1.13x | no gain measured — and the probe could not isolate the variable |
+
+Two results worth stating in prose, because both catch people out:
+
+- **A single `string` leaf in an otherwise blittable gather costs 33–55 %** — 1.55x at N = 1,000 and 1.33x at
+  N = 100,000, pairwise against the same struct holding an integer id (`plan2-results.md`, `C_gather`). A reference
+  field means a GC write barrier per element store and keeps the whole destination array GC-scannable.
+- **Removing reference members did not make the GC scan cheaper — and that experiment cannot prove it would not.**
+  The forced-collection probe reports 1.13x (the reference-free arm marginally *slower*), but both arrays were alive
+  in both arms, so it measured a full GC with the whole fixture live and isolated nothing. It is reported as a null
+  instrument rather than as a negative finding; see [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+Every hazard of converting a class to a `readonly record struct` — aliasing, `default` for `null`, `Nullable<T>`
+boxing, `CS1612`, value equality, `[JsonConstructor]`, EF Core — is tabulated under
+[`DWARF103`](docs/diagnostics.md#dwarf103), with the four that the compiler does **not** catch marked as such.
 
 ---
 
@@ -953,8 +1038,10 @@ README.md
 - **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
 - **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity
   preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
-- **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no
-  allocation), with a defensive length guard (too-small destination throws, never silent truncation)
+- **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps into a caller buffer (no allocation),
+  with a defensive length guard (too-small destination throws, never silent truncation) — a single
+  `MemoryMarshal.Cast(src).CopyTo(dst)` block copy when the element pair is proven layout-identical, the
+  element-by-element loop otherwise (`DWARF100` on a near miss)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs.
   Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [
   `docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison, [
@@ -1057,13 +1144,14 @@ Generated from the gates' own files, never hand-typed — see `QualityBadgeRende
 [![coverage DwarfMapper.CodeFixes](https://img.shields.io/badge/coverage%20DwarfMapper.CodeFixes-96.2%25-brightgreen)](scripts/housekeeping.ps1)
 [![coverage DwarfMapper.Testing](https://img.shields.io/badge/coverage%20DwarfMapper.Testing-96.4%25-brightgreen)](scripts/housekeeping.ps1)
 
-[![mutation generator](https://img.shields.io/badge/mutation%20generator-84.32%25-brightgreen)](stryker-config.json)
+[![mutation generator](https://img.shields.io/badge/mutation%20generator-87.04%25-brightgreen)](stryker-config.json)
 [![mutation doctooling](https://img.shields.io/badge/mutation%20doctooling-95.85%25-brightgreen)](stryker-config.doctooling.json)
 [![mutation runtime](https://img.shields.io/badge/mutation%20runtime-97.60%25-brightgreen)](stryker-config.runtime.json)
 [![mutation codefixes](https://img.shields.io/badge/mutation%20codefixes-87.01%25-brightgreen)](stryker-config.codefixes.json)
-[![mutation pipeline](https://img.shields.io/badge/mutation%20pipeline-76.99%25-brightgreen)](stryker-config.pipeline.json)
+[![mutation pipeline](https://img.shields.io/badge/mutation%20pipeline-89.80%25-brightgreen)](stryker-config.pipeline.json)
+[![mutation testing](https://img.shields.io/badge/mutation%20testing-82.73%25-brightgreen)](stryker-config.testing.json)
 
-<sub>Coverage figures are the enforced per-assembly line-coverage floors from [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1); mutation figures are the RAW measured scores from [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md), gated at break 84 (generator), break 95 (doctooling), break 97 (runtime), break 87 (codefixes), break 76 (pipeline). Every number here is read from those files and byte-compared by the doc suite, so a stale badge is a failing build rather than a quiet lie. Each score describes only the files its own leg names, which is a minority of `src/`; [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there.</sub>
+<sub>Coverage figures are the enforced per-assembly line-coverage floors from [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1); mutation figures are the RAW measured scores from [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md), gated at break 87 (generator), break 95 (doctooling), break 97 (runtime), break 87 (codefixes), break 89 (pipeline), break 82 (testing). Every number here is read from those files and byte-compared by the doc suite, so a stale badge is a failing build rather than a quiet lie. Each score describes only the files its own leg names, which is a minority of `src/`; [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there.</sub>
 <!-- endtable -->
 
 ## Name

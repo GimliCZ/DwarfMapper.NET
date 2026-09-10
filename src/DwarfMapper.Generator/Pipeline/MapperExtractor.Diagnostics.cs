@@ -152,6 +152,32 @@ namespace DwarfMapper.Generator.Pipeline
             };
         }
 
+        /// <summary>
+        ///     The declared return type as it must be WRITTEN into the implementing half of a user's partial —
+        ///     annotations included. <see cref="MapMethodModel.ReturnTypeFullName" /> cannot carry them: it is also
+        ///     the <c>new …()</c> target, the <c>typeof(…)</c> operand and the registry key (see
+        ///     <see cref="MapMethodModel.ReturnTypeSignature" /> for the measurement). <c>null</c> for a void
+        ///     method, where there is no return slot to match.
+        /// </summary>
+        private static string? DeclaredReturnSignature(IMethodSymbol method)
+        {
+            return method.ReturnsVoid
+                ? null
+                : method.ReturnType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat);
+        }
+
+        /// <summary>
+        ///     Whether the method's declared return is a nullable REFERENCE type — the fact the ambient
+        ///     registration needs, since its shipped delegate type is <c>Func&lt;object, object&gt;</c>. Asked of
+        ///     the TOP-LEVEL annotation only: <c>List&lt;Dst?&gt;</c> is a non-null list and registers unchanged.
+        /// </summary>
+        private static bool DeclaresNullableRefReturn(IMethodSymbol method)
+        {
+            return !method.ReturnsVoid &&
+                   method.ReturnType.IsReferenceType &&
+                   method.ReturnType.NullableAnnotation == NullableAnnotation.Annotated;
+        }
+
         private static List<RoundTripPair> CollectRoundTrips(
             INamedTypeSymbol classSymbol,
             Compilation compilation,

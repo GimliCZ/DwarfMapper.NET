@@ -40,6 +40,8 @@ namespace DwarfMapper.Generator.Pipeline
         public const string Flatten = "FlattenAttribute";
         public const string FlattenGraph = "FlattenGraphAttribute";
         public const string Reinterpret = "ReinterpretAttribute";
+        public const string MapShare = "MapShareAttribute";
+        public const string MapDenseEnumKeys = "MapDenseEnumKeysAttribute";
         public const string AutoNest = "AutoNestAttribute";
         public const string MapDerivedType = "MapDerivedTypeAttribute";
         public const string DwarfMapperConstructor = "DwarfMapperConstructorAttribute";
@@ -69,6 +71,8 @@ namespace DwarfMapper.Generator.Pipeline
         public const string FlattenFqn = Ns + "." + Flatten;
         public const string FlattenGraphFqn = Ns + "." + FlattenGraph;
         public const string ReinterpretFqn = Ns + "." + Reinterpret;
+        public const string MapShareFqn = Ns + "." + MapShare;
+        public const string MapDenseEnumKeysFqn = Ns + "." + MapDenseEnumKeys;
         public const string AutoNestFqn = Ns + "." + AutoNest;
         public const string MapDerivedTypeFqn = Ns + "." + MapDerivedType;
         public const string DwarfMapperConstructorFqn = Ns + "." + DwarfMapperConstructor;

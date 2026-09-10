@@ -42,6 +42,14 @@ namespace DwarfMapper.Generator.Tests
             return Verify(GoldenFeature("SpanMap"));
         }
 
+        // Round 29 T0.2 fix-round-1: a layout-identical struct-element span map, the shape that reaches the
+        // blit fast path — Snap_Golden_SpanMap above is an int -> long widen and never exercises it.
+        [Fact]
+        public Task Snap_Golden_SpanMapBlit()
+        {
+            return Verify(GoldenFeature("SpanMapBlit"));
+        }
+
         [Fact]
         public Task Snap_Golden_AsyncStream()
         {

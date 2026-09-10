@@ -22,6 +22,7 @@ namespace DwarfMapper.DocTooling
             "docs/options.md",
             "docs/COMPARISON.md",
             "docs/CORRECTNESS.md",
+            "docs/PERFORMANCE.md",
             "docs/MIGRATION.md",
             "docs/howto/README.md",
             "docs/howto/ambient-cross-assembly-maps.md",

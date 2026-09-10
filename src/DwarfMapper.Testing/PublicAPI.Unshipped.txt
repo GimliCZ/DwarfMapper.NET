@@ -1,1 +1,12 @@
 #nullable enable
+DwarfMapper.Testing.LensLawException
+DwarfMapper.Testing.LensLawException.Diffs.get -> System.Collections.Generic.IReadOnlyList<DwarfMapper.Testing.MemberDiff!>!
+DwarfMapper.Testing.LensLawException.Iteration.get -> int
+DwarfMapper.Testing.LensLawException.Law.get -> string!
+DwarfMapper.Testing.LensLawException.LensLawException(string! law, int seed, int iteration, System.Collections.Generic.IReadOnlyList<DwarfMapper.Testing.MemberDiff!>! diffs) -> void
+DwarfMapper.Testing.LensLawException.Seed.get -> int
+DwarfMapper.Testing.LensLaws
+const DwarfMapper.Testing.LensLaws.DestinationSeedSalt = 1597882590 -> int
+const DwarfMapper.Testing.LensLaws.SecondSourceSeedSalt = 723417623 -> int
+static DwarfMapper.Testing.LensLaws.VerifyIdempotent<TSource, TDestination>(System.Action<TSource, TDestination>! update, int seed = 12345, int iterations = 100) -> void
+static DwarfMapper.Testing.LensLaws.VerifyLastWriteWins<TSource, TDestination>(System.Action<TSource, TDestination>! update, int seed = 12345, int iterations = 100) -> void

@@ -80,6 +80,70 @@ namespace DwarfMapper.Generator.Model
     ///     never forgiven — dropping a null it was written to accept. Set only for the user-declared converter path;
     ///     synthesized helpers keep flowing through <c>IsSynthesized</c>.
     /// </param>
+    /// <param name="ConverterReturnIsNullableRef">
+    ///     When <c>true</c>, <see cref="ConverterMethod" /> is a user-declared map/converter method whose RETURN is
+    ///     a nullable-annotated reference, and the destination this member writes into is NOT — so the call's
+    ///     result must be null-forgiven (<c>Conv(s.X)!</c>) or the C# compiler raises CS8600/CS8601/CS8603/CS8604
+    ///     from inside the generated file. The mirror of <see cref="ConverterParamIsNonNullableRef" />, which
+    ///     carried only the ARGUMENT side: <c>partial ChildDto? ToDto(Child c)</c> feeding a non-nullable
+    ///     <c>ChildDto Inner</c> emitted <c>Inner = s.Inner is null ? null! : ToDto(s.Inner)</c> — the null arm
+    ///     forgiven, the call not (round 29 task 2.8 concern 1, fixed by task 2.9).
+    ///     <para>
+    ///         Unlike the argument side, this forgiveness genuinely STORES a null in a slot whose type forbids it —
+    ///         the argument side only defers to the callee's own <c>ArgumentNullException.ThrowIfNull</c>. That is
+    ///         why it is never set without <c>DWARF107</c> being reported at the same moment, by the one decision
+    ///         in <c>MapperExtractor.ForgiveConverterNullableReturn</c>.
+    ///     </para>
+    /// </param>
+    /// <param name="SourceAccessExpression">
+    ///     When non-null, the member's value is read from this raw C# expression instead of
+    ///     <c>param.Member</c> — and, unlike <see cref="ValueExpression" />, the converter and
+    ///     <see cref="NullHandling" /> still apply ON TOP of it. Set for a <b>Phase 5 extra parameter</b>, whose
+    ///     value is a bare identifier in scope rather than a member of the source object.
+    ///     <para>
+    ///         WHY IT IS NOT <see cref="ValueExpression" />. The extra-parameter phase used to hand the emitter a
+    ///         finished <c>Conv(p)</c> string, which short-circuits <c>AppendValueExpression</c> before any
+    ///         null handling is consulted — so a nullable extra parameter was emitted bare: <c>Count = count</c>
+    ///         for <c>int? → int</c> (CS0266, a compile ERROR in the consumer's .g.cs), <c>ToDto(inner)</c> for
+    ///         <c>Child? → ChildDto</c> (CS8604) and <c>Inner = inner</c> for <c>Child? → Child</c> (CS8601).
+    ///         Carrying the ACCESS rather than the finished value lets the extra parameter flow through the one
+    ///         emitter switch every other edge reads, instead of re-spelling <c>null</c> / <c>null!</c> / <c>!</c>
+    ///         at a fifth site.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="SourceName" /> stays empty, exactly as it was: every pass that treats
+    ///         <see cref="SourceName" /> as a path into the SOURCE TYPE (the <c>SkipNullSourceMembers</c> marking,
+    ///         the consumed-source-member analysis, flatten-root accounting) must keep skipping this member — a
+    ///         parameter named <c>inner</c> is not the source member <c>inner</c>.
+    ///     </para>
+    /// </param>
+    /// <param name="ShareEmptyFallback">
+    ///     When non-null, this member is <b>SHARED</b> rather than copied — <c>[MapShare]</c>, or the automatic
+    ///     share the immutability proof authorises — and this is the allocation-free expression standing in for
+    ///     the empty collection the helper it replaces would have built.
+    ///     <para>
+    ///         The guard is not optional politeness. The collection helper this replaces begins
+    ///         <c>if (src is null) return Empty;</c> (<c>NullCollectionStrategy.AsEmpty</c>, the default), so a
+    ///         bare <c>t.M = s.M</c> would quietly turn "no source collection" from an empty collection into a
+    ///         null — a behaviour change the caller never asked for, in the one direction this feature must never
+    ///         move. And the annotation cannot be trusted to make the guard unnecessary: as
+    ///         <see cref="DwarfMapper.Generator.Core.TypeFacts.CanBeNull" /> says, a non-nullable-annotated
+    ///         reference is a promise the CALLER makes to the compiler, and generated code is public API reachable
+    ///         from assemblies that made no such promise.
+    ///     </para>
+    ///     <para>
+    ///         Costs nothing: every expression this carries names a cached singleton
+    ///         (<c>ImmutableArray&lt;T&gt;.Empty</c>, <c>Array.Empty&lt;T&gt;()</c>), never an allocation. A type
+    ///         with no such singleton is not shared at all — a share whose empty case allocates is a share whose
+    ///         worst case is the copy it replaced.
+    ///     </para>
+    /// </param>
+    /// <param name="ShareGuardsDefault">
+    ///     Which guard <see cref="ShareEmptyFallback" /> is written with: <c>true</c> emits
+    ///     <c>s.M.IsDefault ? Empty : s.M</c>, <c>false</c> emits <c>s.M ?? Empty</c>. The <c>true</c> case is
+    ///     <c>ImmutableArray&lt;T&gt;</c>, a struct that is never null and can still wrap a null array — <c>is
+    ///     null</c> against it is CS0037, so the two forms are not interchangeable.
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -95,7 +159,11 @@ namespace DwarfMapper.Generator.Model
         bool NullRefIntoNonNullable = false,
         string? UpsertKeyMember = null,
         string? UpsertKeyTypeFqn = null,
-        bool ConverterParamIsNonNullableRef = false) : IEquatable<MemberMap>
+        bool ConverterParamIsNonNullableRef = false,
+        string? SourceAccessExpression = null,
+        bool ConverterReturnIsNullableRef = false,
+        string? ShareEmptyFallback = null,
+        bool ShareGuardsDefault = false) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.
@@ -110,5 +178,32 @@ namespace DwarfMapper.Generator.Model
 
         /// <summary><see cref="SourceName" /> as it must be written into emitted C#. See <see cref="EmitTargetName" />.</summary>
         public string EmitSourceName => Identifiers.EscapePath(SourceName);
+
+        /// <summary>
+        ///     <see cref="ConverterMethod" /> as it must be written into emitted C# — the name is emitted as a
+        ///     CALL, and it may be a consumer's own method (a discovered user conversion, a
+        ///     <c>[MapProperty(Use = …)]</c> target) rather than a synthesized one.
+        /// </summary>
+        /// <remarks>
+        ///     The raw field remains the call-graph edge label: <c>MapperExtractor</c> matches it against
+        ///     <see cref="MapMethodModel.MethodName" /> by ordinal equality to find self-recursion, to inject the
+        ///     depth companion, and to re-synthesize helpers, so escaping it in place would make those edges miss.
+        /// </remarks>
+        public string? EmitConverterMethod =>
+            ConverterMethod is null ? null : Identifiers.Escape(ConverterMethod);
+
+        /// <summary>
+        ///     <see cref="WhenPredicate" /> as it must be written into emitted C# — a
+        ///     <c>[MapProperty(When = …)]</c> predicate, emitted as the condition of an <c>if</c>.
+        /// </summary>
+        public string? EmitWhenPredicate =>
+            WhenPredicate is null ? null : Identifiers.Escape(WhenPredicate);
+
+        /// <summary>
+        ///     <see cref="UpsertKeyMember" /> as it must be written into emitted C# — a
+        ///     <c>[MapCollectionKey]</c> key member, read off both the source and the target element.
+        /// </summary>
+        public string? EmitUpsertKeyMember =>
+            UpsertKeyMember is null ? null : Identifiers.EscapePath(UpsertKeyMember);
     }
 }

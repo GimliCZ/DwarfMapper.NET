@@ -306,7 +306,16 @@ namespace DwarfMapper.Generator.Pipeline
                     uNullH,
                     uNeedsCtx,
                     SourceMayBeNullRef(uSrc!),
-                    UnflattenIntermediateFqn: rootFqn));
+                    UnflattenIntermediateFqn: rootFqn,
+                    // Round 29 T2.9: the unflatten leaf writes its converter's result into a member of the
+                    // intermediate, and answers the RETURN question the same way every other member edge does.
+                    ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(uConv,
+                        leafType,
+                        autoCandidates,
+                        allMethods,
+                        tgtName,
+                        location,
+                        diagnostics)));
                 handledTargets.Add(rootName);
                 unflattenRoots.Add(rootName);
             }
@@ -371,7 +380,12 @@ namespace DwarfMapper.Generator.Pipeline
             // report through — so a refusal names exactly the applications this apply path would have acted on.
             foreach (var (collectionMember, keyMember) in ReadCollectionKeys(method))
             {
-                var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.EmitTargetName, collectionMember));
+                // The RAW name, not EmitTargetName: `collectionMember` is the string the consumer wrote in the
+                // attribute, so it is `event` and never `@event`. Matching the escaped form made
+                // [MapCollectionKey("event", …)] report DWARF074 "is not a mapped destination member" against a
+                // member that plainly was one — the mirror image of the emission defect, an escape leaking into
+                // a COMPARISON, and reachable only for a keyword-named member (every other name is identity).
+                var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.TargetName, collectionMember));
                 if (idx < 0)
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid,
@@ -676,9 +690,18 @@ namespace DwarfMapper.Generator.Pipeline
             string memberName,
             string? conv,
             NullHandling nh,
-            bool needsBang)
+            bool needsBang,
+            bool resultNeedsBang = false)
         {
-            var access = paramName + "." + memberName;
+            // Escaped HERE, once, rather than at each of this helper's call sites: `memberName` is a member of
+            // the consumer's NODE type and `conv` may be a converter method the consumer declared, and both are
+            // written into the synthesized flat-node helper verbatim.
+            var access = paramName + "." + Identifiers.EscapePath(memberName);
+            conv = conv is null ? null : Identifiers.Escape(conv);
+            // Round 29 T2.9: a user-declared converter DECLARED to return a nullable reference, feeding a DTO
+            // member that forbids null. Every arm below writes the call, so every arm carries the suppression;
+            // it is never true without DWARF107 having been reported for the same leaf.
+            var resultBang = resultNeedsBang ? "!" : "";
             if (conv is not null)
             {
                 // The null handling must reach the flat-node emitter too: a converter does NOT make it moot
@@ -691,26 +714,33 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     case NullHandling.NullableProject:
                         sb.Append(access).Append(".HasValue ? ")
-                            .Append(conv).Append('(').Append(access).Append(".Value) : null");
+                            .Append(conv).Append('(').Append(access).Append(".Value)").Append(resultBang).Append(" : null");
                         return;
 
                     case NullHandling.NullableProjectRef:
                         sb.Append(access).Append(" is null ? null : ")
-                            .Append(conv).Append('(').Append(access).Append(')');
+                            .Append(conv).Append('(').Append(access).Append(')').Append(resultBang);
+                        return;
+
+                    // Same lift, null-forgiven: the destination member's annotation forbids the preserved null,
+                    // and the plain form would be CS8601 inside the generated file.
+                    case NullHandling.NullableProjectRefForgiving:
+                        sb.Append(access).Append(" is null ? null! : ")
+                            .Append(conv).Append('(').Append(access).Append(')').Append(resultBang);
                         return;
 
                     case NullHandling.ThrowIfNull:
                         sb.Append(conv).Append('(').Append(access)
                             .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
-                            .Append(memberName).Append("' was null\")").Append(')');
+                            .Append(memberName).Append("' was null\")").Append(')').Append(resultBang);
                         return;
 
                     case NullHandling.ValueOrDefault:
-                        sb.Append(conv).Append('(').Append(access).Append(".GetValueOrDefault())");
+                        sb.Append(conv).Append('(').Append(access).Append(".GetValueOrDefault())").Append(resultBang);
                         return;
                 }
 
-                sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')');
+                sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')').Append(resultBang);
             }
             else
             {
@@ -745,17 +775,80 @@ namespace DwarfMapper.Generator.Pipeline
         ///     non-nullable ref parameter (CS8604) — recovering, via <see cref="ConverterParamIsNonNullableRef" />,
         ///     the fact the bare <c>IsSynthesized</c> proxy discarded. A null-tolerant user converter (nullable
         ///     parameter) is not forgiven and keeps its null.
+        ///     <para>
+        ///         Round 29 T2.9: the user-declared arm FORGAVE and said nothing, which is the one thing the
+        ///         coupling contract on <see cref="ForgiveNestedNullableArg" /> forbids — a null the DTO member's
+        ///         annotation forbids was silenced inside a <c>__DwarfMap_FlatNode_*</c> helper with no signal
+        ///         anywhere. DWARF070 is reported here, on the same annotation-strict gate every other edge uses
+        ///         (<see cref="NullRefIntoNonNullableRef" />), so the EMITTED text is unchanged and only the
+        ///         signal is added. The <c>IsSynthesized</c> arm keeps its long-standing silence deliberately: that
+        ///         helper is null-TOLERANT (<c>if (s is null) return null!;</c>), so the null is preserved rather
+        ///         than smuggled past a converter that would reject it — the class-wide exception recorded by
+        ///         T2.6/T2.7/T2.8 and carried into this task's report rather than changed underneath it.
+        ///     </para>
         /// </summary>
         private static bool FlatLeafNeedsBang(
             string? conv,
             ITypeSymbol leafType,
             ITypeSymbol dtoMemberType,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            string leafName,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
         {
-            return conv is null
-                ? NullRefIntoNonNullableRef(leafType, dtoMemberType)
-                : GeneratedNames.IsSynthesized(conv) || (SourceMayBeNullRef(leafType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods));
+            if (conv is null)
+            {
+                // Round 29 T2.9 audit: the DIRECT-assign arm forgave and said nothing too — `Name = n.Name!`
+                // for a `string?` leaf into a non-nullable DTO member, since audit R7 (4190ace, 2026-07-25)
+                // introduced the '!'.
+                // Same shape, same gate and same report as the member path's own raw-assign
+                // (MemberMap.NullRefIntoNonNullable / MapperExtractor.Members' DWARF070 loop).
+                if (NullRefIntoNonNullableRef(leafType, dtoMemberType))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
+                        location,
+                        NullSourceLabel(leafName)));
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (NullRefIntoNonNullableRef(leafType, dtoMemberType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
+                    location,
+                    NullSourceLabel(leafName)));
+            }
+
+            return GeneratedNames.IsSynthesized(conv) || (SourceMayBeNullRef(leafType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods));
+        }
+
+        /// <summary>
+        ///     The RETURN-side twin of <see cref="FlatLeafNeedsBang" />: whether the flat-node leaf's converter is
+        ///     declared to hand back a nullable reference the DTO member cannot hold. Reports DWARF107 when it
+        ///     does, through the one shared decision, so the [FlattenGraph] path cannot answer this differently
+        ///     from the member and element paths.
+        /// </summary>
+        private static bool FlatLeafResultNeedsBang(
+            string? conv,
+            ITypeSymbol dtoMemberType,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            string dtoMemberName,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
+        {
+            return ForgiveConverterNullableReturn(conv,
+                dtoMemberType,
+                autoCandidates,
+                allMethods,
+                dtoMemberName,
+                location,
+                diagnostics);
         }
     }
 }

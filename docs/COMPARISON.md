@@ -69,8 +69,21 @@ A capability, testing, performance, and **migration-ease** comparison against th
 
 **Differentiators only DwarfMapper has:** the blittable SIMD fast-path, zero-alloc `Span<T>` mapping,
 heterogeneous `[FlattenGraph]` degradation, a *non-optional* completeness build-error gate, `[RoundTrip]`
-verification, and uniform "never a silent StackOverflow" across direct/collection/dictionary cycles in
-every reference mode.
+verification, uniform "never a silent StackOverflow" across direct/collection/dictionary cycles in
+every reference mode, and two directives that remove an allocation rather than speeding one up:
+
+* **`[MapShare]`** — assign the source reference instead of copying, for a collection the automatic
+  immutability proof cannot see through. Measured **24 B/op against the copying twin's 8,080 B**, because
+  the collection is not built at all. Refused outright where the graph is provably mutable (`DWARF104`):
+  no assertion makes a settable member unsettable.
+* **`[MapDenseEnumKeys]`** — fill an `[InlineArray]` member from an enum-keyed dictionary by index, one
+  slot per declared member. **40 B/op against the dictionary twin's 384 B**; the slots live inside the
+  destination object, so the dictionary and its bucket and entry arrays are never allocated. A key that
+  would index outside the array is a build error (`DWARF105`), not a silent write.
+
+Both are gated by exact allocation pins rather than described — see
+[`allocation-baseline.json`](../benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json) — and both are
+demonstrated in the gallery (`49_MapShare.cs`, `50_MapDenseEnumKeys.cs`).
 
 **Where DwarfMapper is the stricter one, and where that costs you.** The last two rows are the only ones on
 which DwarfMapper is deliberately *less* capable than an oracle. A value the author did not declare an answer
@@ -201,7 +214,7 @@ because every one needed a multi-assembly, runtime-registry, real-consumer shape
 fabricated source and the mapped output, commit both, then replay against the new mapper. Committing the
 **source** rather than a seed is the load-bearing detail: it makes the comparison independent of the fixture
 generator, which will otherwise change under you mid-migration and silently reshuffle every input while still
-appearing to pass. `DwarfMapper.Testing`'s `ObjectFactory` and `GraphOracleComparer` are built for this.
+appearing to pass. `DwarfMapper.Testing`'s `ObjectFactoryV2` and `GraphOracleComparer` are built for this.
 
 ## Performance & memory
 
@@ -305,10 +318,25 @@ reproduce locally. Codegen mappers (DwarfMapper / Mapperly) cluster at hand-writ
   code is the same direct-assignment shape — with **zero allocation overhead** (the destination object is the
   only allocation). On the 1000-object array it and
   Mapperly co-lead (4.55 µs vs 4.47 µs — within run-to-run noise), both ahead of the runtime mappers.
-- On the **blittable struct array it is ~1.8–2.0× faster than every competitor** — the `MemoryMarshal.Cast`
-  block-copy (reinterpret) path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
-  (This session's measurement: **0.59 µs vs 1.08–1.18 µs** for the others — decisive, with allocations
-  identical across all four libraries.)
+- On the **blittable struct array at N = 1000 it is ~1.8–2.0× faster than every competitor** — the
+  `MemoryMarshal.Cast` block-copy (reinterpret) path that none of Mapperly / Mapster / AutoMapper have (they
+  copy field-by-field). (This session's measurement: **0.59 µs vs 1.08–1.18 µs** for the others — decisive,
+  with allocations identical across all four libraries.)
+  **The size qualifier is not decoration.** A seven-decade sweep of the same shape
+  ([`2026-09-09-collection-decade-sweep.md`](../benchmarks/results/2026-09-09-collection-decade-sweep.md))
+  shows the lead is a CURVE with its peak near this size: ~2.05–2.20× at N = 100–1,000, **1.06×** at
+  N = 10,000 where the destination array crosses the Large Object Heap threshold and GC dominates every
+  library equally, recovering to **1.45×** at N = 10⁶. At **N = 1 the fast path is a small loss** (0.84×
+  against its own scalar twin — the `Cast` + `CopyTo` setup is not amortised by one element). So this
+  figure describes a thousand-element copy and must not be quoted as a property of the path.
+- On the **reference-element array (`Child[]→ChildDto[]`) Mapperly leads by 8-29 % at every element count
+  from 1 to 10⁶** ([`2026-09-09-collection-decade-sweep.md`](../benchmarks/results/2026-09-09-collection-decade-sweep.md)),
+  and the cause is a deliberate difference in what the two libraries DO, not in how fast they do it.
+  DwarfMapper tests each element and maps a null element to null; Mapperly's element method carries no guard
+  and dereferences it. Measured cost of that guarantee: **~9 %** (`NullCheckProbeBenchmarks`; removing the
+  callee's own `ThrowIfNull` recovers nothing, so the whole difference is the element test). **It is a trade,
+  not a deficiency** — and the behaviour is ruled, not incidental, so that a failed `Result<T>` maps to null
+  instead of throwing (`ElementNullArmTests` pins all four cells).
 - On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/

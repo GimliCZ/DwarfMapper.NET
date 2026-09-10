@@ -129,8 +129,12 @@ When the layout allows it, the generator beats even a hand-written name-based co
 - **SIMD widening.** A lossless primitive widen array (`int[]→long[]` and the other six `Vector.Widen`
   pairs) is vectorized behind a hardware-acceleration guard with a scalar tail — bit-for-bit identical to
   the scalar widen, purely a throughput win.
+- **Span-map blit.** The same layout-identical proof applies to `void Map(ReadOnlySpan<Src> s, Span<Dst> d)`:
+  when the element pair qualifies, the length-checked body is one `MemoryMarshal.Cast<Src, Dst>(s).CopyTo(d)`
+  block copy into the buffer you already own — zero allocation either way, and `DWARF100` explains a near
+  miss the same way it does for the array/list blit.
 
-Both are emitted **only when provably safe**; everything else falls back to the direct element loop. For a
+All three are emitted **only when provably safe**; everything else falls back to the direct element loop. For a
 layout-compatible pair the proof can't confirm (e.g. differing field names from a referenced assembly), opt
 in with `[Reinterpret("Member")]`. You don't configure any of this for the common case — it just happens.
 
