@@ -64,10 +64,22 @@ Three axes remain, and the third is a correctness instrument rather than a perfo
 * **Axis 3 — blittability by SIZE.** One 12-byte struct is one point. Sizes 4/8/16/32/64/128 B across the N
   sweep; the blit's usage space along size is still undeclared, and round 29's "always on" was concluded
   from 12 bytes.
-* **Axis 3b — the refusal controls, which are the real gap.** Nothing anywhere proves the blit REFUSES a
-  reordered, reference-carrying or differently-padded struct. `[StructLayout(Auto)]` stands in for the whole
-  eligibility rule. A refusal that silently became a byte copy would transpose or corrupt user data — the
-  worst defect available in this design — and today no test or benchmark would notice.
+* **Axis 3b — the refusal controls. CORRECTED 2026-09-10: the gap is far smaller than this plan claimed.**
+  The original text said *"nothing anywhere proves the blit REFUSES a reordered, reference-carrying or
+  differently-padded struct"*. That was written from the BENCHMARK suite, where `[StructLayout(Auto)]` is
+  indeed the only negative control — and then generalised to the whole repository without looking.
+  `tests/DwarfMapper.Generator.Tests/BlitSoundnessTests.cs` has **27 tests**, each asserting runtime values
+  AND `AssertNoBlitHelper`. Field ORDER is covered, and covered by a test written from a real production
+  bug: a partial struct split across two files where the proof re-sorted by ordinal path, so `P{X=1,Y=2}`
+  came out as `Q{X=2,Y=1}`. `StructLayout(Size)`, `[InlineArray]` length, fixed-buffer length,
+  nullable-on-one-side, user converters, conversion operators, pair-scoped directives, hooks and
+  `[MapConstructor]` are all covered too.
+
+  **The genuine holes, verified by scanning that file: `Pack` and `LayoutKind.Explicit`/`FieldOffset` —
+  zero occurrences.** Both are the dangerous shape rather than the loud one: names, types and ORDER all
+  match, so every check that reads the symbol model sees an identical pair, and only the byte offsets
+  differ. A blit there does not shorten the copy, it reads each member from the wrong offset. Two tests,
+  not an axis.
 
 ## D. Carried, unchanged
 
