@@ -1250,7 +1250,16 @@ namespace DwarfMapper.Generator.Pipeline
             // after construction, only IsRecursionCapable, via the later whole-graph recursion-capability
             // fixup). So "isSynthesizedRecursive" here is unconditionally false and "depth + 1" can never
             // be the depth argument passed to an arm's converter — round 30 coverage sweep, confirmed with
-            // a self-referential arm probe before simplifying away the dead half of this ternary pair.
+            // a self-referential arm probe before simplifying away the dead half of this ternary pair, and
+            // by checking every "IsPartial = " write site in MapperExtractor.Phases.cs: none touches a
+            // DerivedTypeArms-bearing model (SynthesizePreserveDispatchWrappers explicitly skips
+            // DerivedTypeArms.Count > 0 methods when patching, and MarkRecursionCapableCallers' companion
+            // synthesis can only trigger for a method with self-calling Members/ConstructorArguments, which
+            // a dispatch method never has — its recursion, if any, lives in DerivedTypeArms, a field none
+            // of these passes scan). A ctx-accepting SYNTHESIZED dispatch shape does exist in this codebase
+            // for the Preserve+[MapDerivedType] case, but it is a raw-text __DwarfMap_Disp_* wrapper built
+            // by BuildDispatchWrapperCode (MapperExtractor.Members.cs) and stored straight into the
+            // `synthesized` dictionary — never a MapMethodModel, never routed through this method at all.
             var ctxVarName = method.IsRecursionCapable ? "__dwarf_ctx" : "ctx";
 
             // Before hooks (if any)
