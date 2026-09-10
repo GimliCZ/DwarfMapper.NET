@@ -514,6 +514,12 @@ jobs:
       # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
       # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
+      # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
+      # is absent -- 'a machine that cannot verify the IL cannot make this claim either'. Round 29 added the
+      # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
+      # stays loud; every job that can reach it gets the tool.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   codeql:
@@ -750,6 +756,12 @@ jobs:
                  "together."
             exit 1
           fi
+      # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
+      # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
+      # is absent -- 'a machine that cannot verify the IL cannot make this claim either'. Round 29 added the
+      # install to build-test only, so the three other jobs running the same filter went red the first time
+      # this PR reached CI. The rule stays loud; every job that can reach it gets the tool.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
       # --blame-hang: the H7-f runner-level backstop, same rationale as in build-test. It matters more
@@ -817,6 +829,12 @@ jobs:
       # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
       # still LOADS and EMITS under the next major, and the matrix has its own job.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
+      # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
+      # is absent -- 'a machine that cannot verify the IL cannot make this claim either'. Round 29 added the
+      # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
+      # stays loud; every job that can reach it gets the tool.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
