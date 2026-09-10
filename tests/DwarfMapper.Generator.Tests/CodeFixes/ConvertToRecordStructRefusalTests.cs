@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
 using DwarfMapper.CodeFixes;
@@ -249,6 +249,41 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         public void The_fix_offers_no_fix_all()
         {
             Assert.Null(new ConvertToRecordStructCodeFixProvider().GetFixAllProvider());
+        }
+
+        /// <summary>
+        ///     A model carrying an EXPRESSION-BODIED (computed) property is never reported, so the fix never
+        ///     sees one.
+        ///     <para>
+        ///         Found while chasing the round-29 Codecov report, which flagged the null-<c>AccessorList</c>
+        ///         guard in <c>WithInitAccessor</c> as uncovered. The guard exists because an expression-bodied
+        ///         property has no accessor list to rewrite — but it is unreachable THROUGH THE DIAGNOSTIC,
+        ///         because the classifier declines the type before the fix is ever offered. Two attempts to
+        ///         cover it failed for exactly that reason; the honest conclusion is that the line is defensive
+        ///         rather than untested, and this test records the refusal that makes it so.
+        ///     </para>
+        ///     <para>
+        ///         The refusal is also right on its own terms: a computed property has no backing state, so a
+        ///         <c>readonly record struct</c> rewrite has nothing to carry it into.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_model_with_a_computed_property_is_never_reported_so_the_accessor_guard_is_unreachable()
+        {
+            GeneratorAssert.DoesNotReport("""
+                                          using DwarfMapper;
+                                          using System.Collections.Generic;
+                                          namespace Demo;
+                                          public sealed class Order { public long Id { get; set; } }
+                                          public sealed class OrderDto
+                                          {
+                                              public long Id { get; set; }
+                                              private long Doubled => Id * 2;
+                                          }
+                                          public class C { public List<Order> Rows { get; set; } }
+                                          public class D { public List<OrderDto> Rows { get; set; } }
+                                          [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                          """, "DWARF103");
         }
 
         /// <summary>
