@@ -294,5 +294,45 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(diags, d => d.Id == "DWARF108");
             Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
         }
+
+        // ── 15. SetNull + [BeforeMap] on the recursion-capable public entry ──────────────────
+        // EmitSetNullGuardedBody's before-hook loop (isPublicMethod branch) had zero executions:
+        // every prior SetNull fixture declared no hooks at all.
+        [Fact]
+        public void SetNull_public_entry_runs_BeforeMap_hook_inside_the_guard()
+        {
+            var src = SelfRefNode +
+                      """
+                      [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                      public partial class M
+                      {
+                          public partial NodeDto Map(Node n);
+                          [BeforeMap] private static void Check(Node n) { }
+                      }
+                      """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("Check(n);", generated, StringComparison.Ordinal);
+        }
+
+        // ── 16. SetNull + a two-param [AfterMap] hook (TakesSource=true) ─────────────────────
+        // EmitSetNullGuardedBody's after-hook loop reads TakesSource per hook; only the
+        // one-parameter form had ever been exercised under SetNull.
+        [Fact]
+        public void SetNull_after_hook_with_source_param_is_called_with_both_arguments()
+        {
+            var src = SelfRefNode +
+                      """
+                      [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                      public partial class M
+                      {
+                          public partial NodeDto Map(Node n);
+                          [AfterMap] private static void Finish(Node n, NodeDto d) { }
+                      }
+                      """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("Finish(n, __dwarf_target);", generated, StringComparison.Ordinal);
+        }
     }
 }
