@@ -17,6 +17,7 @@
 // EXPECT-MESSAGE DWARF109: does not exactly match this pair's destination type
 // EXPECT-MESSAGE DWARF109: ref global::Demo.AnimalDto
 // EXPECT-MESSAGE DWARF109: global::Demo.DogDto
+// EXPECT-MESSAGE DWARF109: Take the target by value instead
 // EXPECT-CS:
 // NOTE: No CS at all — that is the fix. Map(Animal a) (the dispatch method) still calls
 //       Finish(ref __dwarf_target) normally; Map(Dog d) (the arm's own declared pair) compiles clean
