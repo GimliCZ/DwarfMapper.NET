@@ -39,9 +39,9 @@ PROVE are the honest remainder, and **the emitter does not ship while any row in
 |---|---|---|
 | `[BeforeMap]` / `[AfterMap]` on the `A -> B` pair | **REFUSE** | The hook is user code that runs at `B`'s construction. Fusing deletes the call. This is the headline case. |
 | `[BeforeMap]` / `[AfterMap]` on the `B -> C` pair | **REFUSE** | The hook receives `B` as its source argument. There is no `B` to hand it. |
-| A user-declared converter on any member of `A -> B` | **PROVE** | A converter is a method call the consumer wrote; it may have a side effect (logging, caching, a counter). Fusion preserves the call for the member's VALUE, but whether it is called the same number of times in the fused form must be shown, not assumed. |
-| `B`'s constructor (a `[MapConstructor]` / positional record) | **PROVE** | A user constructor is user code running at `B`'s construction. It may validate, throw, or record. Whether the fused form can skip it depends on whether any of its effects reach `C`. |
-| `[MapValue]` on the `A -> B` pair | **PROVE** | A constant or expression written into `B`. Harmless if `C` reads the same member; observable if the expression has a side effect. |
+| A member of `B` that `C` does not consume, whose production runs user code | **REFUSE** | **MEASURED — see below.** This one rule subsumes the three that used to be separate PROVE rows. |
+| A user-declared converter on a member `C` DOES consume | **SAFE** | The fused form still has to produce the value, so the call still happens, once. |
+| `B`'s constructor (a `[MapConstructor]` / positional record) | **REFUSE** | A fused `A -> C` constructs `C`, never `B`, so a user constructor on `B` does not run at all. Whether its effects were observable is not decidable here, and a constructor that validates is the common case. |
 
 ## 2. Code that can see `B`'s IDENTITY
 
@@ -86,9 +86,34 @@ PROVE are the honest remainder, and **the emitter does not ship while any row in
 4. **A regression test per REFUSE row**, each proving the chained form still ships — the RED being a fused
    emission where the row forbids it.
 
+## 6b. The criterion that collapsed three rows, measured 2026-09-10
+
+Three rows above were variations on one worry — a converter, a `[MapValue]`, or a constructor on the
+`A -> B` pair "may have a side effect". Phrased that way each needs its own investigation and none is
+decidable at generation time. Phrased sharply they are one rule:
+
+> The chained form computes **every** member of `B`. The fused form computes only what `C` consumes. So any
+> member of `B` that `C` does NOT read, whose production runs user code, is a side effect fusion deletes.
+
+`tests/DwarfMapper.IntegrationTests/FusionObservabilityTests.cs` proves it is real rather than theoretical,
+on the mapper's own emitted code: `FoMiddle.Tag` is produced by a converter and `FoTarget` has no `Tag`.
+
+| form | converter calls, 1 object | converter calls, 50 elements |
+|---|---:|---:|
+| chained `MiddleToTarget(SourceToMiddle(x))` | **1** | **50** |
+| direct `SourceToTarget(x)` — what a fused emission produces | **0** | **0** |
+
+So chained and fused are **not interchangeable** for this pair, the divergence grows with N rather than
+being a one-off, and nothing in the two type declarations hints at it. No amount of measuring allocation
+would have surfaced it — which is the argument for this document existing before the emitter.
+
+**Why this is a good criterion rather than merely a true one:** it is decidable at generation time from the
+two member maps alone. No interprocedural purity analysis, no attribute for the consumer to remember. The
+generator already knows which members of `B` the `B -> C` map reads.
+
 ## 7. Honest status
 
-**Six rows are PROVE.** Under the rule stated at the top — the emitter does not ship while any row in its
+**Three rows are PROVE** (was six; §6b resolved three by measurement). Under the rule stated at the top — the emitter does not ship while any row in its
 path is PROVE — this spec does not yet authorise an emitter. The next task is those six, and each is a
 generator test over emitted output, not an argument.
 
