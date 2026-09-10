@@ -42,9 +42,27 @@ namespace DwarfMapper
         ///         The list stays short: one entry per interface-keyed registration, scanned only after both the
         ///         exact-type and base-type lookups have missed.
         ///     </para>
+        ///     <para>
+        ///         <b>Why a copy-on-write array and not a concurrent collection.</b> This was a
+        ///         <see cref="ConcurrentBag{T}" />, which looks like the obvious choice and is the wrong one for
+        ///         a read-mostly set: a bag's enumerator does not walk in place, it COPIES every element into a
+        ///         fresh list on each enumeration. Since <see cref="Map" /> enumerates this on every ambient
+        ///         interface-path call, the per-call allocation grew with the size of the consumer's entire map
+        ///         graph — 56 KB per call against 2,740 registered pairs, versus 24 B on the exact-type path.
+        ///         Retention was flat, so nothing leaked; but under Server GC that churn produces exactly the
+        ///         rising heap a consumer reported as a leak.
+        ///     </para>
+        ///     <para>
+        ///         The access pattern is the argument: registration happens once per assembly load from a module
+        ///         initializer, lookup happens per call forever after. Copy-on-write pays the whole cost on the
+        ///         rare side and leaves the hot side allocating nothing — a <c>for</c> over an array reference
+        ///         read once. Pinned by <c>AmbientDispatchAllocationRuntimeTests</c>.
+        ///     </para>
         /// </remarks>
-        private static readonly ConcurrentBag<(Type Source, Type Destination, Func<object, object> Map)>
-            InterfaceMaps = [];
+        private static volatile (Type Source, Type Destination, Func<object, object> Map)[] _interfaceMaps = [];
+
+        /// <summary>Serialises the copy-on-write swap; never taken on the lookup path.</summary>
+        private static readonly Lock InterfaceMapsGate = new();
 
         /// <summary>
         ///     Update-into (merge) maps, keyed separately from the create-maps.
@@ -61,8 +79,11 @@ namespace DwarfMapper
         {
             get
             {
+                // Deliberately NOT `Maps.Keys`: ConcurrentDictionary.Keys materialises its own List snapshot,
+                // so reading it here allocated the key set twice — 87 KB per read at 2,740 pairs. The
+                // dictionary's own enumerator is lazy and allocates nothing per element.
                 var list = new List<(Type, Type)>(Maps.Count);
-                foreach (var key in Maps.Keys)
+                foreach (var key in Maps.EnumerateKeys())
                     list.Add((key.Source, key.Destination));
                 return list;
             }
@@ -89,7 +110,17 @@ namespace DwarfMapper
             // duplicate registration does not double-count and read as ambiguous at lookup time.
             if (source.IsInterface)
             {
-                InterfaceMaps.Add((source, destination, map));
+                lock (InterfaceMapsGate)
+                {
+                    var current = _interfaceMaps;
+                    var grown = new (Type, Type, Func<object, object>)[current.Length + 1];
+                    Array.Copy(current, grown, current.Length);
+                    grown[current.Length] = (source, destination, map);
+
+                    // Publish the fully built array in one volatile write: a reader either sees the old array
+                    // or the complete new one, never a half-filled one.
+                    _interfaceMaps = grown;
+                }
             }
         }
 
@@ -162,11 +193,17 @@ namespace DwarfMapper
                     return viaBase(source);
                 }
 
+            // One volatile read; the array is never mutated in place, so this snapshot stays coherent for the
+            // whole walk even if another assembly registers mid-loop.
+            var interfaceMaps = _interfaceMaps;
+
             Func<object, object>? viaInterface = null;
+            Type? firstMatch = null;
             List<Type>? candidates = null;
 
-            foreach (var (ifaceSource, ifaceDestination, map) in InterfaceMaps)
+            for (var i = 0; i < interfaceMaps.Length; i++)
             {
+                var (ifaceSource, ifaceDestination, map) = interfaceMaps[i];
                 if (ifaceDestination != destination || !ifaceSource.IsInstanceOfType(source))
                 {
                     continue;
@@ -175,19 +212,25 @@ namespace DwarfMapper
                 if (viaInterface is null)
                 {
                     viaInterface = map;
-                    candidates = [ifaceSource];
+                    firstMatch = ifaceSource;
                 }
                 else
                 {
-                    candidates!.Add(ifaceSource);
+                    // Only now is a list worth allocating. The old code built one on the FIRST match, so the
+                    // overwhelmingly common single-match case — the one that returns — paid for a collection
+                    // that existed solely to have its Count compared to 1.
+                    candidates ??= [firstMatch!];
+                    candidates.Add(ifaceSource);
                 }
             }
 
-            if (viaInterface is not null && candidates!.Count == 1)
+            if (viaInterface is not null && candidates is null)
             {
                 return viaInterface(source);
             }
 
+            // candidates is null here only when nothing matched; when it is non-null the match was ambiguous
+            // and the throw names every interface that accepted the source, as before.
             throw new DwarfMapMissingException(runtimeType, destination, candidates);
         }
 
@@ -297,7 +340,16 @@ namespace DwarfMapper
 
             public int Count => _maps.Count;
 
-            public ICollection<Key> Keys => _maps.Keys;
+            /// <summary>
+            ///     Lazily walks the registered keys. Replaces a <c>Keys</c> property: that returns
+            ///     <see cref="ConcurrentDictionary{TKey,TValue}.Keys" />, which builds a fresh
+            ///     <see cref="List{T}" /> of every key on each read.
+            /// </summary>
+            public IEnumerable<Key> EnumerateKeys()
+            {
+                foreach (var entry in _maps)
+                    yield return entry.Key;
+            }
 
             /// <summary>
             ///     Registers <paramref name="map" /> for <paramref name="key" />, first-wins.
