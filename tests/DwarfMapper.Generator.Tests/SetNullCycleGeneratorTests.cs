@@ -182,5 +182,55 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
             Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);
         }
+
+        // ── 11. SetNull + a ctor-only destination: back-edge threads through the CONSTRUCTOR ─
+        // EmitSetNullGuardedBody's hasCtorArgs=true / hasInitMembers=false arm (round-30 coverage
+        // sweep): every prior SetNull fixture used an object-initializer destination, so a
+        // constructor-only target under OnCycle=SetNull had never been generated once. The
+        // recursive back-edge is the SAME AppendValueExpression call used for a member — a
+        // second null-through-a-ctor-arg call site the emitter had never actually taken.
+        [Fact]
+        public void SetNull_ctor_only_destination_self_cycle_compiles_clean()
+        {
+            // Source is a mutable class (a record source could never actually BE made cyclic — an
+            // immutable positional type can't reference itself before it exists); the ctor-only
+            // shape lives entirely on the destination.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class SnCtorOnly    { public int V { get; set; } public SnCtorOnly? Next { get; set; } }
+                               public record SnCtorOnlyDto(int V, SnCtorOnlyDto? Next);
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial SnCtorOnlyDto Map(SnCtorOnly n); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            // Constructed inline (return new(...);), not via an object initializer.
+            Assert.Contains("return new global::Demo.SnCtorOnlyDto(", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);
+        }
+
+        // ── 12. SetNull + ctor args PLUS a settable member: the sibling arm ──────────────
+        // hasCtorArgs=true / hasInitMembers=true: the constructor call is followed by an object
+        // initializer block. Here the ctor arg is scalar (never cyclic) and the recursive
+        // back-edge is the settable member — the emitter's other unexercised combination.
+        [Fact]
+        public void SetNull_ctor_args_with_extra_member_self_cycle_compiles_clean()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class SnCtorPlus    { public int V { get; set; } public SnCtorPlus? Next { get; set; } }
+                               public record SnCtorPlusDto(int V) { public SnCtorPlusDto? Next { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial SnCtorPlusDto Map(SnCtorPlus n); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("new global::Demo.SnCtorPlusDto(", generated, StringComparison.Ordinal);
+            // The trailing object-initializer assigns the recursive member.
+            Assert.Contains("Next = ", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);
+        }
     }
 }

@@ -91,6 +91,45 @@ namespace DwarfMapper.IntegrationTests
         public partial SnLongDto Map(SnLong n);
     }
 
+    // ── Round-30 coverage sweep: the back-edge threaded through a CONSTRUCTOR ARGUMENT rather ──
+    // than a settable member — EmitSetNullGuardedBody's ctor-args arm had zero test executions
+    // before this. Source is mutable (so it CAN be built genuinely cyclic); destination is an
+    // immutable record, the realistic case this exists for.
+    public class SnCtorOnly
+    {
+        public int V { get; set; }
+
+        public SnCtorOnly? Next { get; set; }
+    }
+
+    public record SnCtorOnlyDto(int V, SnCtorOnlyDto? Next);
+
+    [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+    public partial class SnCtorOnlyMapper
+    {
+        public partial SnCtorOnlyDto Map(SnCtorOnly n);
+    }
+
+    // Same shape, plus a settable member alongside the ctor arg — the sibling arm
+    // (hasCtorArgs && hasInitMembers) that also had zero executions.
+    public class SnCtorPlus
+    {
+        public int V { get; set; }
+
+        public SnCtorPlus? Next { get; set; }
+    }
+
+    public record SnCtorPlusDto(int V)
+    {
+        public SnCtorPlusDto? Next { get; set; }
+    }
+
+    [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+    public partial class SnCtorPlusMapper
+    {
+        public partial SnCtorPlusDto Map(SnCtorPlus n);
+    }
+
     public class SetNullAdversarialRuntimeTests
     {
         // ── Mutual recursion across two types ───────────────────────────────────────
@@ -169,6 +208,68 @@ namespace DwarfMapper.IntegrationTests
             var ta = new SnMutMapper().Map(a);
             Assert.NotNull(ta.B);
             Assert.Null(ta.B!.A);
+        }
+
+        // ── Back-edge through a CONSTRUCTOR ARGUMENT, self-cycle ────────────────────
+        [Fact]
+        public void CtorArgBackEdge_self_cycle_nulls_through_constructor()
+        {
+            var a = new SnCtorOnly
+            {
+                V = 1
+            };
+            a.Next = a; // genuine self-cycle — only possible because the SOURCE is mutable.
+
+            var dto = new SnCtorOnlyMapper().Map(a);
+
+            Assert.Equal(1, dto.V);
+            // The back-edge resolved to null THROUGH THE CONSTRUCTOR CALL, not a member assignment —
+            // the one call site this arm had never actually taken before round 30.
+            Assert.Null(dto.Next);
+        }
+
+        // ── Back-edge through a constructor argument, non-cyclic chain (values survive) ──
+        [Fact]
+        public void CtorArgBackEdge_acyclic_chain_maps_every_value()
+        {
+            var tail = new SnCtorOnly
+            {
+                V = 3
+            };
+            var mid = new SnCtorOnly
+            {
+                V = 2,
+                Next = tail
+            };
+            var head = new SnCtorOnly
+            {
+                V = 1,
+                Next = mid
+            };
+
+            var dto = new SnCtorOnlyMapper().Map(head);
+
+            Assert.Equal(1, dto.V);
+            Assert.Equal(2, dto.Next!.V);
+            Assert.Equal(3, dto.Next.Next!.V);
+            Assert.Null(dto.Next.Next.Next);
+        }
+
+        // ── Ctor arg PLUS a settable member: both the constructor call and the trailing ──
+        // ── object-initializer member assignment must see the same guard. ───────────────
+        [Fact]
+        public void CtorArgWithExtraMember_self_cycle_nulls_the_member_not_the_ctor_value()
+        {
+            var a = new SnCtorPlus
+            {
+                V = 7
+            };
+            a.Next = a; // self-cycle on the MEMBER edge (V is scalar, never cyclic).
+
+            var dto = new SnCtorPlusMapper().Map(a);
+
+            Assert.Equal(7, dto.V); // scalar ctor arg: unaffected by the guard.
+            Assert.Null(dto.Next); // member edge: back-edge nulled.
         }
 
         // ── Defensive: null root → ArgumentNullException (loud, not silent) ─────────
