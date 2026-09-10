@@ -180,7 +180,18 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     strategy:
       # One leg failing its break threshold must NOT cancel the others mid-run: the whole point of the
       # nightly is five scored reports every night, and a cancelled leg leaves no report at all.
@@ -328,7 +339,18 @@ jobs:
   deep-test:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # Sized from measurement + margin, NOT an aspirational cap: locally (12 cores) the deep suite is ~105 s,
     # coverage collection adds ~18 s, ReportGenerator ~15 s, ILVerify ~1 s, and the T8 benchmark smoke +
     # allocation exact-pin gate ~6:40 (measured twice, 6:36/6:44); restore+build ~3 min and the tool
@@ -593,7 +615,18 @@ jobs:
   reproducible-build:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — this job has never run on a hosted runner (see the note at the top of
     # this file about the nightly tier being dormant until master carries it). Local Windows 12-core at
     # 81c4ace: one round of `git clean -xdf` + locked restore + pack of both packages = 22.0 s and 20.0 s
@@ -663,7 +696,18 @@ jobs:
   package-size:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — never run on a hosted runner. Local Windows 12-core at 81c4ace: locked
     # restore + pack of both packages = ~20 s with a warm NuGet cache. A ~4-core hosted runner with a cold
     # cache is dominated by restore (~2 min) and the analyzer-heavy Release build (~2 min), ~5 min with SDK
@@ -726,7 +770,18 @@ jobs:
         os: [ windows-latest, macos-latest ]
     runs-on: ${{ matrix.os }}
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — neither runner has ever run this. The local basis, measured 2026-08-22
     # on Windows (12 cores) at 81c4ace: whole-solution Release build 13 s warm, suite 56 s for 6,987 tests
     # with Category!=SurfaceMatrix (the matrix adds ~25 s, so ~81 s for the unfiltered run this leg does).
@@ -790,7 +845,18 @@ jobs:
   # its own churn into log noise on every PR while never being able to fail anything.
   preview-sdk-canary:
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     continue-on-error: true
     # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
     # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
@@ -895,7 +961,18 @@ jobs:
     needs: deep-test
     # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
     # reader: this is a nightly leg, exactly like the job it consumes.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — never run. An artifact download of a few hundred KB plus a node action
     # is ~1-2 min; 10 leaves room for a slow download without letting the leg idle.
     timeout-minutes: 10
