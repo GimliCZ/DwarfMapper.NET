@@ -196,13 +196,32 @@ so a version with no section here ships with no notes.
   `DwarfMappingDepthException` once `MaxDepth` is exceeded rather than terminating early by nulling the
   back-edge. **Remedy:** make the destination a reference type (a `class` or a `record class`) to get
   `SetNull`'s early termination, or leave it a value type and accept the depth-limited fallback with
-  `<NoWarn>DWARF108</NoWarn>` (or `<WarningsNotAsErrors>`) in the consuming `.csproj` — proven the only
-  mechanism that reaches it: a `#pragma`, a `[SuppressMessage]`, and an `.editorconfig` severity override
-  were all tried and all failed, because a source generator carries no `SupportedDiagnostics` contract for
-  the compiler's suppression pipeline to key off, location or not. Not the same id as `DWARF037` (`OnCycle`
-  losing to the *mapper option* `ReferenceHandling = Preserve`) or `DWARF030` (the identical impossibility
-  under `Preserve`, where a constructor argument rather than a value type is what cannot hold the back-edge)
+  `[SuppressMessage("DwarfMapper", "DWARF108:…")]` on the mapper class (the same mechanism `DWARF076` already
+  uses — the generator reads the attribute directly off the class symbol and skips reporting, so it needs no
+  compiler-level suppression pipeline) or `<NoWarn>DWARF108</NoWarn>` project-wide. A `#pragma` does NOT
+  suppress it, or any other DWARF id — proven, not assumed: pragmas are applied by the compiler's diagnostic
+  filtering, which source-generator-reported diagnostics never pass through. Not the same id as `DWARF037`
+  (`OnCycle` losing to the *mapper option* `ReferenceHandling = Preserve`) or `DWARF030` (the identical
+  impossibility under `Preserve`, where a constructor argument rather than a value type is what cannot hold
+  the back-edge)
   — each has its own, disjoint remedy.
+
+- **`DWARF109` (Error) — an `[AfterMap]` hook taking its target `by ref` matched a pair whose destination
+  is only a base type away, not identical, and the generator emitted `CS1503`.** Found writing `DWARF108`'s
+  own regression test: every `HookCall` construction site (five of them) matches a hook to a pair by
+  implicit conversion — correct for an ordinary by-value parameter, wrong for `ref`, since C# has no `ref`
+  covariance. A `[MapDerivedType]` dispatch hook declared against the dispatch method's own base return
+  type matched a concrete arm's declared pair too (by the same by-value rule), whose local is the arm's
+  DERIVED destination type — `ref DogDto` does not bind to `ref AnimalDto`. The generator now skips the
+  hook for the mismatched pair only (an `Error`, but `ScopedToMethod`: the dispatch method, and any other
+  pair whose destination genuinely is the hook's declared type, are unaffected — the exact "one method's
+  fact should not suppress the whole class" shape `ProjectionNotTranslatable`/item I14 already established).
+  A related, previously-latent bug surfaced alongside it: `EmitDerivedDispatchBody`'s hook-present path
+  assigned the dispatch switch to `var __dwarf_target`, which — with a single arm, or arms whose narrowest
+  common type happens not to be the declared return type — infers the ARM's own type rather than the
+  method's declared return type; invisible for a by-value hook (an implicit upcast papers over it both at
+  the hook call and the final `return`) but exactly what a `ref` hook exposes. Now explicitly typed as the
+  method's own return type, giving it the same target-typed context `return {p} switch` already had.
 
 - **Transfer models as structs — one feature in four parts, documented as one.** `DWARF103` finds a mapped
   collection whose element type could be a `readonly record struct` and prints the size you would get; the

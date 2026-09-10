@@ -1255,9 +1255,22 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var before in method.EmitBeforeHooks)
                 sb.Append(indent).Append("    ").Append(before).Append('(').Append(p).AppendLine(");");
 
-            // Switch expression
+            // Switch expression. `return {p} switch` is TARGET-TYPED by the method's own return type
+            // (the `return` statement's context), so each arm's converter — which naturally returns the
+            // ARM'S CONCRETE type, e.g. Map(Dog) : DogDto, narrower than the dispatch method's own
+            // AnimalDto — converts implicitly per arm. `var __dwarf_target = {p} switch`, needed when
+            // hasAfter defers the return through a hook, has NO such context: `var` infers the switch
+            // expression's OWN natural/best-common type over its arms, which for a single arm (or arms
+            // whose narrowest common ancestor is the destination type only by luck) is that ARM'S type,
+            // not the method's declared return type. With a by-value hook the mismatch is invisible
+            // (DogDto still converts to AnimalDto implicitly, so `Finish(__dwarf_target)` and
+            // `return __dwarf_target;` both silently upcast) — but a `ref`-taking hook needs an EXACT
+            // type, and `ref DogDto` does not bind to `ref AnimalDto`: CS1503, found via DWARF109's own
+            // regression test. Explicitly typing the local as the method's declared return type gives it
+            // the same target-typed context `return` already had, so every arm converts the same way
+            // regardless of hook presence.
             var switchLine = hasAfter
-                ? $"    var __dwarf_target = {p} switch"
+                ? $"    {method.ReturnTypeFullName} __dwarf_target = {p} switch"
                 : $"    return {p} switch";
             sb.Append(indent).AppendLine(switchLine);
             sb.Append(indent).AppendLine("    {");

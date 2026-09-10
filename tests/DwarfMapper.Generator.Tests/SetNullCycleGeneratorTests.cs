@@ -277,6 +277,55 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        // ── 13b. DWARF108 is NOT suppressed by a pragma — documents a Roslyn limitation, not an
+        // aspiration. #pragma is applied by the compiler's diagnostic filtering, which
+        // source-generator-reported diagnostics never pass through; the generator cannot honour it.
+        // Mirrors SelfMapDiagnosticTests' identical pair for DWARF076.
+        [Fact]
+        public void SetNull_struct_destination_DWARF108_is_NOT_suppressed_by_a_pragma()
+        {
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node>? Children { get; set; } }
+                               public struct NodeDto { public int V { get; set; } public List<NodeDto>? Children { get; set; } }
+                               #pragma warning disable DWARF108
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               #pragma warning restore DWARF108
+                               """;
+            Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF108"));
+        }
+
+        // ── 13c. DWARF108 IS suppressed by [SuppressMessage] on the mapper — the in-file hatch,
+        // read directly off the class symbol at generation time (the same mechanism DWARF076 uses,
+        // MapperExtractor.Conversions.cs' HasSuppressMessage). Needs no compiler-level suppression
+        // pipeline, so the pragma limitation above does not apply to it. Also exercises
+        // ApplySetNullPostPass's `setNullSuppressed` branch, which no other test reaches.
+        [Fact]
+        public void SetNull_struct_destination_DWARF108_is_suppressed_by_SuppressMessage_on_the_mapper()
+        {
+            const string src = """
+                               using System.Collections.Generic;
+                               using System.Diagnostics.CodeAnalysis;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node>? Children { get; set; } }
+                               public struct NodeDto { public int V { get; set; } public List<NodeDto>? Children { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               [SuppressMessage("DwarfMapper", "DWARF108:OnCycle = SetNull requires a reference-type destination",
+                                   Justification = "Deliberate: struct destination, depth-guarded fallback accepted.")]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            GeneratorAssert.DoesNotReport(src, "DWARF108");
+            // Suppressing the diagnostic must not resurrect the broken on-stack guard: the fallback
+            // is a correctness requirement, not a side effect of reporting.
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.DoesNotContain("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("DwarfMappingDepthException", generated, StringComparison.Ordinal);
+        }
+
         // ── 14. A reference-type destination on the SAME shape does NOT report DWARF108 ──────
         [Fact]
         public void SetNull_class_destination_through_a_collection_edge_does_not_report_DWARF108()

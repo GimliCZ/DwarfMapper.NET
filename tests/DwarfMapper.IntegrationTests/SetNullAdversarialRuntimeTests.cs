@@ -154,6 +154,12 @@ namespace DwarfMapper.IntegrationTests
     }
 
     [DwarfMapper(OnCycle = OnCycleStrategy.SetNull, MaxDepth = 20)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("DwarfMapper",
+        "DWARF108:OnCycle = SetNull requires a reference-type destination",
+        Justification = "Deliberate: SnStructNodeDto is a struct on purpose, to prove DWARF108 honours " +
+                         "[SuppressMessage] the same way DWARF076 does (MapperExtractor.Conversions.cs' " +
+                         "HasSuppressMessage, read directly off the class symbol — not Roslyn's compiler-" +
+                         "level pragma/config filtering, which does not reach generator diagnostics at all).")]
     public partial class SnStructMapper
     {
         public partial SnStructNodeDto Map(SnStructNode n);

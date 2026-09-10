@@ -113,6 +113,7 @@ DWARF105 | DwarfMapper | Error | Invalid [MapDenseEnumKeys] target
 DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
 DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
 DWARF108 | DwarfMapper | Warning | OnCycle = SetNull requires a reference-type destination
+DWARF109 | DwarfMapper | Error | [AfterMap] by-ref target type does not exactly match this pair's destination
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

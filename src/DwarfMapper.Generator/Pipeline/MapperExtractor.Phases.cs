@@ -25,6 +25,56 @@ namespace DwarfMapper.Generator.Pipeline
     /// </summary>
     internal static partial class MapperExtractor
     {
+        // ── DWARF109: an [AfterMap] hook's "applies to this pair?" test is a BY-VALUE implicit-
+        // conversion check (HasImplicitConversion(actualTarget, h.P0)) at every one of the five sites
+        // that construct a HookCall. That is correct for an ordinary by-value hook parameter — but
+        // once the hook takes its target BY REF, the true requirement is an IDENTITY match: C# has no
+        // ref covariance, so `ref DerivedDto` does not bind to a `ref BaseDto` parameter even though
+        // DerivedDto converts to BaseDto by value. Found via a [MapDerivedType] dispatch method whose
+        // [AfterMap] hook declared the dispatch's own BASE return type: the hook matched the dispatch
+        // method itself (its local IS exactly that base type) and ALSO matched a concrete arm's
+        // declared pair (whose local is the derived type) — compiling clean for the former and CS1503
+        // for the latter, in a .g.cs no consumer can edit. Shared here rather than reimplemented at
+        // each site, so a sixth site added later inherits the check instead of being free to omit it.
+        private static bool RefHookTargetMismatches(
+            ITypeSymbol actualTarget,
+            (string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind) h,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
+        {
+            if (h.TargetRefKind != RefKind.Ref)
+            {
+                return false;
+            }
+
+            // The TARGET parameter is h.P0 for the one-parameter form (Name(target)) and h.P1 for the
+            // two-parameter form (Name(source, target)) — h.P0 is the SOURCE parameter there. Getting
+            // this backwards (comparing against the source type) was the actual bug the first version
+            // of this check shipped with: BlitSoundnessTests' two-parameter ref hook, whose target type
+            // matched exactly, was rejected because its SOURCE type didn't.
+            var hookTargetType = h.P1 ?? h.P0;
+            if (SymbolEqualityComparer.Default.Equals(actualTarget, hookTargetType))
+            {
+                return false;
+            }
+
+            var hookName = h.Name;
+            var hookParamType = hookTargetType;
+
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.AfterMapRefTargetTypeMismatch,
+                location,
+                hookName,
+                // ScopedToMethod: true — this describes a fact about the ONE method/pair being built at
+                // this call site, not the mapper class. Skipping the incompatible hook still leaves that
+                // method (and the class) emittable; MapperClassModel.HasBlockingError would otherwise
+                // take the WHOLE class down for an unrelated hook mismatch on one pair (the exact I14
+                // shape ProjectionNotTranslatable's own ScopedToMethod comment warns against).
+                ScopedToMethod: true,
+                MessageArg2: $"the hook declares 'ref {hookParamType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}', this pair's destination is '{actualTarget.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}'"));
+            return true;
+        }
+
         // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
         // After recursion-capability is finalised, flag every recursion-capable method so the
         // emitter wraps its body in the on-stack guard (TryEnterNode/ExitNode) and the public
@@ -34,12 +84,19 @@ namespace DwarfMapper.Generator.Pipeline
         // This is the None-mode analogue of the Preserve post-pass above, but far simpler:
         // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
         // wrapper) — the guard only nulls a re-entrant back-edge.
-        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode, List<DiagnosticInfo> diagnostics, LocationInfo? classLocation)
+        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode, List<DiagnosticInfo> diagnostics, LocationInfo? classLocation, INamedTypeSymbol classSymbol)
         {
             if (!isSetNullMode)
             {
                 return;
             }
+
+            // Same escape hatch DWARF076 already offers (MapperExtractor.Conversions.cs' HasSuppressMessage,
+            // reused rather than reimplemented): #pragma cannot reach a generator-reported diagnostic — Roslyn
+            // does not run these through pragma filtering — but [SuppressMessage] is an ordinary attribute the
+            // generator itself can read off the class symbol, independent of that limitation. Computed once,
+            // outside the loop: it does not vary per method.
+            var setNullSuppressed = HasSuppressMessage(classSymbol, "DWARF108");
 
             for (var i = 0; i < methods.Count; i++)
             {
@@ -71,19 +128,25 @@ namespace DwarfMapper.Generator.Pipeline
                                           m.DerivedTypeArms.Count == 0;
                 if (reachesSetNullGuard && !m.ReturnIsReferenceType)
                 {
-                    // classLocation (the [DwarfMapper] class identifier), not null: a null-location
-                    // generator diagnostic cannot be suppressed by #pragma, [SuppressMessage], or an
-                    // .editorconfig severity override — none of those mechanisms has a location to
-                    // scope to. Proven empirically (see SetNullAdversarialRuntimeTests' history) before
-                    // this was fixed; the class attribute is also the right target on its own merits —
-                    // this diagnostic is about the `OnCycle = SetNull` the user wrote, not about a
-                    // synthesized helper method with no source position of its own.
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.OnCycleSetNullRequiresReferenceTarget,
-                        classLocation,
-                        m.MethodName,
-                        MessageArg2: m.ReturnTypeFullName));
-                    continue; // leave IsSetNullMode=false — falls back to the plain depth-guarded body.
+                    // classLocation (the [DwarfMapper] class identifier), not null: this diagnostic is about
+                    // the `OnCycle = SetNull` the user wrote, not about a synthesized helper method with no
+                    // source position of its own — the right target on its own merits, independent of
+                    // suppression mechanics.
+                    if (!setNullSuppressed)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.OnCycleSetNullRequiresReferenceTarget,
+                            classLocation,
+                            m.MethodName,
+                            MessageArg2: m.ReturnTypeFullName));
+                    }
+
+                    // Falls back to the plain depth-guarded body EVEN WHEN the diagnostic is suppressed: unlike
+                    // DWARF076 (where suppression accepts the shallow copy as-is), the fallback here is a
+                    // correctness requirement, not a stylistic one — the on-stack guard's `return null!;`
+                    // does not compile against this destination (CS0037) regardless of whether the user
+                    // wants to hear about it.
+                    continue; // leave IsSetNullMode=false.
                 }
 
                 methods[i] = m with
@@ -1543,6 +1606,11 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
+                    if (RefHookTargetMismatches(targetType, h, methodLocation, acc.Diagnostics))
+                    {
+                        continue;
+                    }
+
                     derivedAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
                 }
 
@@ -2539,7 +2607,13 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     // Target is a reference type → by-value is fine (mutations propagate); ref optional.
-                    updAfter.Add(new HookCall(h.Name, takesSource, h.TargetRefKind == RefKind.Ref));
+                    var updTargetIsRef = h.TargetRefKind == RefKind.Ref;
+                    if (RefHookTargetMismatches(updTgt, h, methodLocation, acc.Diagnostics))
+                    {
+                        continue;
+                    }
+
+                    updAfter.Add(new HookCall(h.Name, takesSource, updTargetIsRef));
                 }
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
@@ -3045,6 +3119,11 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                if (RefHookTargetMismatches(targetType, h, methodLocation, acc.Diagnostics))
+                {
+                    continue;
+                }
+
                 applicableAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
             }
 
@@ -3427,6 +3506,11 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
+                    if (RefHookTargetMismatches(genTgt, h, genLoc, acc.Diagnostics))
+                    {
+                        continue;
+                    }
+
                     genAfter.Add(new HookCall(h.Name, takesSource, tIsRef));
                 }
 
@@ -3735,6 +3819,11 @@ namespace DwarfMapper.Generator.Pipeline
                     // Struct target passed by value would lose the hook's mutations; skip it here (the public /
                     // update-into path for the same pair surfaces the AfterMapValueTargetByValue diagnostic).
                     if (nestedTgt.IsValueType && !nestedTargetIsRef)
+                    {
+                        continue;
+                    }
+
+                    if (RefHookTargetMismatches(nestedTgt, h, nestedLocation, acc.Diagnostics))
                     {
                         continue;
                     }

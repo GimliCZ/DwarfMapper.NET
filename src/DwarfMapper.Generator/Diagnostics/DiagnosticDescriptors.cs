@@ -2049,13 +2049,51 @@ namespace DwarfMapper.Generator.Diagnostics
             "back to the default depth-guarded body for this pair: an acyclic source still maps correctly, " +
             "but a genuinely cyclic source now throws DwarfMappingDepthException instead of terminating " +
             "early. Make '{1}' a reference type (a class or a record class) to use OnCycle = SetNull for it, " +
-            "or leave it a value type and accept the depth-limited fallback — add " +
-            "<NoWarn>DWARF108</NoWarn> (or <WarningsNotAsErrors>) to the project's .csproj to accept it " +
-            "knowingly; a source-generator diagnostic like this one is not reachable by #pragma, " +
-            "[SuppressMessage], or an .editorconfig severity override.",
+            "or leave it a value type and accept the depth-limited fallback — say so with " +
+            "[SuppressMessage(\"DwarfMapper\", \"DWARF108:...\")] on the mapper class, or add DWARF108 to " +
+            "<NoWarn> in the project to accept it everywhere. A per-site #pragma does NOT suppress generator " +
+            "diagnostics.",
             Category,
             DiagnosticSeverity.Warning,
             true,
             helpLinkUri: HelpBase + "dwarf108");
+
+        /// <summary>
+        ///     An <c>[AfterMap]</c> hook takes its target by <c>ref</c>, but the hook's declared
+        ///     parameter type is only a BASE of this pair's actual destination type, not the same type.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Found writing DWARF108's regression test: an <c>[AfterMap]</c> hook declared
+        ///         <c>ref AnimalDto</c> matches a <c>[MapDerivedType]</c> dispatch method's own return
+        ///         type exactly, so it applies there without issue — but the SAME hook also matches
+        ///         (by the ordinary <c>HasImplicitConversion</c> "applies" test every hook-collection
+        ///         site uses) the CONCRETE arm method <c>Map(Dog d) : DogDto</c>, whose local is
+        ///         actually typed <c>DogDto</c>. <c>ref DogDto</c> does not convert to <c>ref
+        ///         AnimalDto</c> — C# has no ref covariance — so the generator emitted
+        ///         <c>Finish(ref __dwarf_target)</c> against a <c>ref AnimalDto</c> parameter with a
+        ///         <c>DogDto</c> local: <c>CS0037</c>'s sibling, <c>CS1503</c>, in a <c>.g.cs</c> no
+        ///         consumer can edit.
+        ///     </para>
+        ///     <para>
+        ///         The "applies" check every <c>HookCall</c> construction site uses
+        ///         (<c>HasImplicitConversion(targetType, h.P0)</c>) is a BY-VALUE test: correct for a
+        ///         plain-value hook parameter, where widening the argument at the call site is exactly
+        ///         what C# does. It is the wrong test once <see cref="Model.HookCall.TargetByRef" /> is
+        ///         true, because passing BY REF requires an identity conversion, not an implicit one.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor AfterMapRefTargetTypeMismatch = new(
+            "DWARF109",
+            "[AfterMap] by-ref target type does not exactly match this pair's destination",
+            "[AfterMap] '{0}' takes its target by 'ref', but its declared parameter type does not exactly " +
+            "match this pair's destination type: {1}. A 'ref' parameter needs an identity match — C# has no " +
+            "ref covariance — so this hook is skipped for THIS pair; other pairs whose destination is exactly " +
+            "the hook's declared type are unaffected. Declare a separate [AfterMap] overload for this " +
+            "destination type, or take the target by value if 'ref' was not actually needed.",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf109");
     }
 }

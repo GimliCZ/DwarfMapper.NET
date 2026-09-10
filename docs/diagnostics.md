@@ -2432,12 +2432,14 @@ nulling the back-edge.
 
 **Fix:** make the destination a reference type (a `class` or a `record class`) to get `SetNull`'s early
 termination, or leave it a value type and accept the depth-limited fallback (raise `MaxDepth` if a deep but
-acyclic value-type graph needs to map without throwing). Accept it knowingly with `<NoWarn>DWARF108</NoWarn>`
-(or `<WarningsNotAsErrors>`) in the project's `.csproj` — **not** an `.editorconfig` severity override, a
-`#pragma`, or `[SuppressMessage]`: none of those reach a source-generator-reported diagnostic, because a
-generator (unlike a `DiagnosticAnalyzer`) has no `SupportedDiagnostics` contract for the compiler's
-suppression pipeline to key off, regardless of whether the diagnostic carries a location. `<NoWarn>` works
-because it is applied at the MSBuild diagnostics-to-build-outcome step, after generation, by ID string alone.
+acyclic value-type graph needs to map without throwing). Say so with
+`[SuppressMessage("DwarfMapper", "DWARF108:…")]` on the mapper class for an in-file, next-to-the-code hatch, or
+add `DWARF108` to `<NoWarn>` in the project to accept it everywhere. **`#pragma warning disable DWARF108` does
+not work**, and neither does a pragma for any other `DWARF…` id — pragmas are applied by the compiler's
+diagnostic filtering, which source-generator-reported diagnostics do not pass through, a Roslyn limitation
+rather than something DwarfMapper can fix. `[SuppressMessage]` works anyway: the generator reads it directly
+off the class symbol at generation time and skips reporting, the same mechanism [`DWARF076`](#dwarf076) uses —
+it needs no compiler-level suppression pipeline, so the pragma limitation does not apply to it.
 
 **Not [`DWARF037`](#dwarf037), and not [`DWARF030`](#dwarf030).** DWARF037 is `OnCycle` losing to a *mapper
 option* (`ReferenceHandling = Preserve`); this is `OnCycle` losing to a *type shape* on one specific pair, and
@@ -2445,6 +2447,32 @@ the rest of the mapper is unaffected. DWARF030 is the identical impossibility un
 there, a constructor argument (not a value type) is what can't hold the back-edge — reported separately
 because the two modes have unrelated remedies: DWARF030 says make the member settable, this one says make the
 type a reference type.
+
+---
+
+## dwarf109
+**[AfterMap] by-ref target type does not exactly match this pair's destination** · Error
+
+An `[AfterMap]` hook that takes its target by `ref` — `[AfterMap] void Finish(ref Dto d)`, needed for a
+value-type destination — is matched to a pair by the same rule every hook uses: the hook applies if the
+pair's destination type **implicitly converts** to the hook's declared parameter type. That rule is correct
+for an ordinary by-value parameter, where the compiler upcasts the argument at the call site. It is the wrong
+rule once the parameter is `ref`, because C# has **no `ref` covariance**: `ref DerivedDto` does not bind to a
+`ref BaseDto` parameter even though `DerivedDto` converts to `BaseDto` by value.
+
+This surfaces through `[MapDerivedType]`: a hook declared against the dispatch method's own base return type
+(`[AfterMap] void Finish(ref AnimalDto d)`) matches the dispatch method itself perfectly — its local really is
+typed `AnimalDto` — but the SAME hook also matches every concrete arm's own declared pair by the ordinary
+by-value rule (`DogDto` converts to `AnimalDto`), and those pairs' locals are typed `DogDto`, not `AnimalDto`.
+
+DwarfMapper **skips the hook for the mismatched pair only** — the dispatch method (and any other pair whose
+destination is exactly the hook's declared type) still calls it normally; this is a fact about one pair, not
+the mapper.
+
+**Fix:** declare a separate `[AfterMap]` overload whose `ref` parameter type is exactly this pair's
+destination, or take the target by value if `ref` was not actually needed for it (a reference-type
+destination never needs it — `ref` exists for a value-type destination, whose changes would otherwise be
+lost).
 
 ---
 

@@ -22,18 +22,15 @@
         <!-- DWARF070: NullableRefAssignRuntimeTests deliberately maps string? -> string to PIN the documented
              raw-assign behaviour at runtime. The warning is the correct output for that mapping; the fixture
              exists to prove the null still flows rather than silently becoming a throw or a default. -->
-        <!-- DWARF108: SetNullAdversarialRuntimeTests' struct-destination fixture deliberately triggers this —
-             proving the fallback it accepts (depth-guarded, not SetNull-guarded) is safe at runtime. Suppressed
-             at the PROJECT level, not per-instance: round 30 found empirically that #pragma, [SuppressMessage],
-             AND a file-scoped .editorconfig severity override all fail to reach ANY generator-reported
-             diagnostic here, location or no — Roslyn's pragma/SuppressMessage/editorconfig suppression pipeline
-             does not apply to IIncrementalGenerator diagnostics the way it does to DiagnosticAnalyzer ones (no
-             SupportedDiagnostics contract for a generator to opt in). <NoWarn> works because it is evaluated at
-             the MSBuild diagnostics-to-build-outcome step, after generation, by ID string alone — the one
-             mechanism proven to actually reach this. The docs/diagnostics.md "consumers downgrade per-instance
-             via .editorconfig" line (copied from the DWARF038/044 comment above) is therefore NOT reliable
-             advice for a generator diagnostic; <NoWarn>/<WarningsNotAsErrors> in the consumer's own .csproj is. -->
-        <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812;DWARF038;DWARF044;DWARF070;DWARF108</NoWarn>
+        <!-- DWARF108 is NOT in this list: SetNullAdversarialRuntimeTests' struct-destination fixture
+             (SnStructMapper) suppresses it in-file, at the site, via [SuppressMessage] — DWARF108 honours that
+             attribute the same way DWARF076 does (MapperExtractor.Conversions.cs' HasSuppressMessage, read
+             directly off the mapper class symbol at generation time). #pragma still does NOT reach a
+             generator-reported diagnostic — that part of round 30's finding held — but [SuppressMessage] is
+             not "a location-scoped mechanism" the way #pragma and .editorconfig severity are; it is the
+             generator choosing not to report at all, so it needs no compiler-level suppression pipeline to
+             reach. See docs/diagnostics.md#dwarf108. -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812;DWARF038;DWARF044;DWARF070</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

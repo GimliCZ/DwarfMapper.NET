@@ -301,5 +301,117 @@ namespace DwarfMapper.Generator.Tests
             var (diagnostics, _) = GeneratorTestHarness.Run(src);
             Assert.Contains(diagnostics, d => d.Id == "DWARF036");
         }
+
+        // ── Round-30 coverage sweep: EmitDerivedDispatchBody's hook loops had zero executions —
+        // every fixture above declares no [BeforeMap]/[AfterMap] on the dispatch method itself, so
+        // `foreach (before in method.EmitBeforeHooks)`, the whole `if (hasAfter)` block (the
+        // `var __dwarf_target = ... switch` form, the after-hook loop, TakesSource, TargetByRef,
+        // and the trailing `return __dwarf_target;`) were all 0%.
+
+        [Fact]
+        public void MapDerivedType_BeforeMap_hook_runs_ahead_of_the_switch()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   [BeforeMap] private static void Check(Animal a) { }
+                               }
+                               """;
+            var (_, generated) = GeneratorTestHarness.Run(src);
+            Assert.Contains("Check(a);", generated, StringComparison.Ordinal);
+            // The hook must precede the switch it guards.
+            Assert.True(generated.IndexOf("Check(a);", StringComparison.Ordinal) <
+                        generated.IndexOf("switch", StringComparison.Ordinal));
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        [Fact]
+        public void MapDerivedType_AfterMap_hook_switches_to_a_local_and_returns_it()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   [AfterMap] private static void Finish(AnimalDto d) { }
+                               }
+                               """;
+            var (_, generated) = GeneratorTestHarness.Run(src);
+            // hasAfter=true routes the switch through a local instead of `return ... switch` — EXPLICITLY
+            // typed as the method's own return type (AnimalDto), not `var`: with a single arm, `var`
+            // would infer the ARM's narrower type (DogDto) instead, which only "works" for a by-value
+            // hook by accident of implicit upcasting (see the ref-hook test, which does not have that
+            // luxury and is what surfaced this).
+            Assert.Contains("global::Demo.AnimalDto __dwarf_target = a switch", generated, StringComparison.Ordinal);
+            Assert.Contains("Finish(__dwarf_target);", generated, StringComparison.Ordinal);
+            Assert.Contains("return __dwarf_target;", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        [Fact]
+        public void MapDerivedType_AfterMap_hook_with_source_param_is_called_with_both_arguments()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   [AfterMap] private static void Finish(Animal a, AnimalDto d) { }
+                               }
+                               """;
+            var (_, generated) = GeneratorTestHarness.Run(src);
+            Assert.Contains("Finish(a, __dwarf_target);", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        [Fact]
+        public void MapDerivedType_AfterMap_hook_takes_the_target_by_ref()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   [AfterMap] private static void Finish(ref AnimalDto d) { }
+                               }
+                               """;
+            var (_, generated) = GeneratorTestHarness.Run(src);
+            Assert.Contains("Finish(ref __dwarf_target);", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
     }
 }
