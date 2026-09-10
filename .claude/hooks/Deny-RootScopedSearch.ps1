@@ -176,8 +176,10 @@ Searching the repository root would read credential-bearing configuration files 
 protects, so this cannot be approved without interrupting the owner — who has asked not to be interrupted
 for tool approvals.
 
-Use the dedicated Grep tool instead. It is allowed unconditionally, it is ripgrep underneath, and it takes
-an explicit path:
+Use a SCOPED search instead. For C# source, Route-SearchToRider.ps1 will send you to the Rider MCP
+(`search_regex --q "..."`), which is solution-scoped and returns line AND column spans. For scripts/,
+Issues/, docs/ and .github/ -- which Rider's search cannot see -- the Grep tool is the right instrument and
+takes an explicit path:
 
     Grep(pattern: "<your pattern>", path: "src/DwarfMapper.Generator", output_mode: "content")
 
