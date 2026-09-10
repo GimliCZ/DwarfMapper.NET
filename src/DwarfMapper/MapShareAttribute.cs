@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper
 {
@@ -63,7 +63,8 @@ namespace DwarfMapper
     // reads the member access itself — there is no helper call to remove; a span map and an async stream are
     // element-wise and carry no per-member configuration surface at all.
     [DwarfSurface(SurfaceCategory.ConsumerDirective,
-        AppliesTo = SurfaceEndpoints.CreateMap | SurfaceEndpoints.UpdateInto,
+        AppliesTo = SurfaceEndpoints.CreateMap | SurfaceEndpoints.UpdateInto |
+                             SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream,
         ProbeKey = "shareable-readonly-member")]
 // The default flat DTO pair has no collection member at all, so [MapShare] on it names nothing and the cell
 // would measure the instrument rather than the generator -- the same reason [Reinterpret] carries a probe key.

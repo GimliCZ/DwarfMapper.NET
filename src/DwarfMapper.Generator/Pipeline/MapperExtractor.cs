@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Core;
@@ -1052,6 +1052,31 @@ namespace DwarfMapper.Generator.Pipeline
                     "mapping method where one exists rather than synthesizing one, so that create map is what " +
                     "this method's loop calls and the forced blit runs per element through it.",
                     "The directive is honoured at the create-map and update-into endpoints, which is why its " + "silence here is worth saying out loud — and the create map also VALIDATES it (DWARF022 for " + "a member that is not an unmanaged array on both sides, or names no writable destination " + "member at all); nothing validated it here either.");
+
+            // The METHOD-scoped [MapShare], through ReadShareMembers -- the reader the create-map and
+            // update-into branches resolve with, so an application whose single argument is not a string yields
+            // no directive and reaches neither the model nor a message.
+            //
+            // ADDED 2026-09-10, and the gap it closes is exactly its sibling's. Round 29 shipped [MapShare] and
+            // [Reinterpret] together and gave this gate an arm for ONE of them; a [MapShare] on a span or
+            // async-stream map was discarded IN SILENCE -- verified by probe before this was written, the
+            // generator reported nothing at all. The member was COPIED instead of shared, which is correct code
+            // and not the aliasing the caller asked for: nothing fails, and their assumption about reference
+            // identity is simply false. That is the worst shape of silence this gate exists to remove.
+            //
+            // ReportWithFix rather than Report, for [Reinterpret]'s reason: [MapShare] has no pair-scoped twin,
+            // so "write it pair-scoped on the mapper class" would name a form that does not exist.
+            foreach (var member in ReadShareMembers(method))
+                ReportWithFix($"[MapShare(\"{member}\")] on this mapping method",
+                    "[MapShare] has no pair-scoped form, so the remedy is a DECLARED create map rather than a " +
+                    $"re-scoped attribute: put [MapShare(\"{member}\")] on a `partial {tgt} <Name>({src} s)` " +
+                    "on this mapper class. An element-wise map resolves its element pair through a declared " +
+                    "mapping method where one exists rather than synthesizing one, so that create map is what " +
+                    "this method's loop calls and the share happens per element through it.",
+                    "The directive is honoured at the create-map and update-into endpoints, which is why its " +
+                    "silence here is worth saying out loud -- and those endpoints also PROVE it (DWARF104 for a " +
+                    "member whose reachable graph is provably mutable, which no assertion may override); " +
+                    "nothing proved it here either.");
 
             return false;
 
