@@ -69,6 +69,19 @@ namespace DwarfMapper.IntegrationTests
             // this runs against a realistically large graph rather than a two-entry toy.
             var registered = DwarfMapperRegistry.Provided.Count;
 
+            // VACUITY GUARD. The defect this test exists for costs 80 + 24*N bytes per call, where N is the
+            // number of registered interface maps — it is a SLOPE, not a fixed cost. At N = 2 the old broken
+            // code allocated ~130 B and would sail under the bound below; the bug only becomes visible at
+            // the scale a real consumer runs at. So the measurement is only meaningful against a large
+            // registry, and this test must FAIL rather than pass when it is run in isolation.
+            //
+            // That is exactly why the allocation benchmark gate missed this: it pins exact bytes at one
+            // registry size, and a pin at a single point on a line cannot see the line's gradient.
+            Assert.True(registered > 500,
+                $"only {registered} pairs are registered, so this measurement cannot distinguish the " +
+                "defect from correct behaviour — at small N the per-call registry copy is a few hundred " +
+                "bytes and passes the bound below. Run the whole assembly, not this test alone.");
+
             Assert.True(perCall < 512,
                 $"ambient interface-path dispatch allocated {perCall:F0} B/call against {registered:N0} " +
                 "registered pairs. This path must not copy the registry per call — the allocation is " +

@@ -66,6 +66,51 @@ enumerator. The remaining 44 KB is the returned list itself, inherent to handing
 collection of 2,738 pairs — and this member is documented diagnostics/validation-only, so it is not on any
 hot path.
 
+## Why the allocation gate did not catch it
+
+The repository has an **exact-byte allocation ratchet**: `allocation-baseline.json` pins 28 scenarios and
+`housekeeping.ps1 -BenchSmoke` fails unless every pin matches EXACTLY, in both directions — an unexplained
+decrease is a finding too. It is one of the strictest gates here. It missed this completely, for two
+independent reasons, and the second is the one worth keeping.
+
+**1. The ambient path is not benchmarked at all.** All 28 pins call generated mappers directly
+(`Flat_Dwarf`, `Nested_Dwarf`, `Array_Dwarf`, …). Nothing in `benchmarks/` references
+`DwarfMapperRegistry` or `IDwarfMapper`. The gate is rigorous over what it measures, and the ambient
+facade — the cross-assembly entry point a consumer is most likely to use — was never in the suite.
+
+**2. Even if it had been, the benchmark would have looked fine.** This is the structural reason, and it is
+measured rather than argued. `ConcurrentBag<T>` enumeration costs **80 + 24·N bytes**, dead linear in item
+count:
+
+| registered interface maps | bytes per enumeration |
+|---:|---:|
+| 1 | 80 |
+| 10 | 296 |
+| 50 | 1,256 |
+| 1,000 | 24,058 |
+| 2,738 | 65,768 |
+
+A benchmark process registers a handful of maps. At N = 10 the defect costs **296 bytes** — the same order
+as `Nested_Dwarf`'s legitimate 112 B pin. It would have been measured, pinned as correct, held byte-exact
+across every future run, and stayed green forever, while a consumer with a real map graph paid 56 KB on
+every ambient call.
+
+> **The gate pins absolute bytes at ONE scale. This defect's signature is a slope. A pin at a single point
+> on a line cannot see the line's gradient.**
+
+That is the same lesson round 29 learned from the collection sweep — *"every collection claim rested on one
+element count"* — recurring on a different axis. There the missing axis was element count; here it is
+**registry size**. A ratchet is only as good as the dimension it varies, and this repository has now been
+bitten twice by pinning one point of a curve.
+
+The regression test carries a **vacuity guard** for exactly this reason: it asserts the registry holds more
+than 500 pairs before trusting its own measurement, because at small N the broken code passes the bound.
+A test for a slope must state the scale it needs, or it silently becomes a test of nothing.
+
+**Follow-up (not done here):** add ambient-path benchmark rows so the path has timing/allocation coverage
+at all. Deferred deliberately — it moves `totalBenchmarks` 63 → 65 and R1/R2 require a full smoke re-measure
+in the same commit, which is its own change. Tracked as a round-30 item.
+
 ## Why no test caught it
 
 There was **no retention or allocation test on the ambient path at all** — `AllocationBoundRuntimeTests`
