@@ -49,7 +49,7 @@ PROVE are the honest remainder, and **the emitter does not ship while any row in
 |---|---|---|
 | `ReferenceHandlingStrategy.Preserve` anywhere in the chain | **REFUSE** | `DwarfRefContext`'s identity table is keyed by SOURCE reference with `ReferenceEqualityComparer`. In the `B -> C` map the source is `B`, so the table is keyed on instances fusion would never create. Two `A`s that legitimately share a `B` would produce one `C` today and two under fusion. |
 | `OnCycleStrategy` other than the default, where the cycle routes through `B` | **REFUSE** | The cycle guard is on-stack/depth state about the object being mapped. Removing `B` from the graph removes the node the guard is tracking. |
-| `[MapShare]` / `[Reinterpret]` on a member of `B` | **PROVE** | Sharing means the destination aliases the source's storage. If `C` shares from `B` and `B` is elided, `C` would have to share from `A` directly — which may or may not be the same object. |
+| `[MapShare]` / `[Reinterpret]` on a member of `B` | **SAFE** | **MEASURED**: sharing is TRANSITIVE. `FusionShareTransitivityTests` shows `C.Badges` is reference-equal to `A.Badges` in the chained form AND in the direct form, so eliding `B` cannot change what `C` points at. |
 | `[MapCollectionKey]` upsert into an existing `B` | **REFUSE** | Upsert mutates a destination the caller supplied; there is no such `B` in a fused chain. |
 
 ## 3. Code that can see `B`'s TYPE
@@ -66,8 +66,8 @@ PROVE are the honest remainder, and **the emitter does not ship while any row in
 | feature | status | why |
 |---|---|---|
 | `A -> B` is a **public** partial map method on the mapper | **REFUSE** | Caveat 4 in the spike: fusing `A -> C` does not remove `B`, it adds a second path. The win only exists where the generator can see `B` is produced and consumed inside one call. |
-| `A -> B` reachable via `[ReverseMap]` | **PROVE** | The reverse direction is a different pair; whether declaring it makes the forward edge externally reachable needs checking. |
-| `[GenerateWrapperMap]` expanding over the pair | **PROVE** | `ExpandWrapperMaps` expands over exactly the pairs already declared as map methods — noted in `6fa7308` as the reason an envelope's payload edge is *almost always* a user-declared converter. The interaction with fusion is unexamined. |
+| `A -> B` reachable via `[ReverseMap]` | **SUBSUMED** | **MEASURED**: the attribute LINKS two endpoints the consumer declares and does not generate one — omitting the partner is `DWARF052`. The inverse is therefore a separately declared public endpoint, governed directly by the row above, and nothing on the reverse path constructs `B` on the forward edge. |
+| `[GenerateWrapperMap]` expanding over the pair | **REFUSE (subsumed)** | **MEASURED**: a wrapped pair gains a public envelope endpoint whose payload edge maps `A -> B`. That is a second publicly reachable route through the pair, which the row above already refuses. |
 
 ## 5. Shapes where fusion is pointless rather than wrong
 
