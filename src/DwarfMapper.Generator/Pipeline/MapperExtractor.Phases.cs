@@ -34,7 +34,7 @@ namespace DwarfMapper.Generator.Pipeline
         // This is the None-mode analogue of the Preserve post-pass above, but far simpler:
         // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
         // wrapper) — the guard only nulls a re-entrant back-edge.
-        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode)
+        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode, List<DiagnosticInfo> diagnostics)
         {
             if (!isSetNullMode)
             {
@@ -57,6 +57,26 @@ namespace DwarfMapper.Generator.Pipeline
                 if (!m.ParameterIsReferenceType && !m.IsSpanMap && !m.IsAsyncStreamMap)
                 {
                     continue;
+                }
+
+                // ── DWARF108: the on-stack guard's back-edge is `return null!;`
+                // (MapEmitter.EmitSetNullGuardedBody), which does not compile against a
+                // non-nullable value-type destination (CS0037). Span / async-stream / update-into /
+                // projection / derived-dispatch / top-level-collection models never reach that
+                // emitter at all — EmitMethod returns out of each of them before the SetNull
+                // section — so only the ordinary object-pair shape (a synthesized nested mapper or
+                // a public entry) is actually at risk here.
+                var reachesSetNullGuard = !m.IsSpanMap && !m.IsAsyncStreamMap && !m.IsUpdateInto &&
+                                          !m.IsProjection && !m.IsTopLevelCollectionConversion &&
+                                          m.DerivedTypeArms.Count == 0;
+                if (reachesSetNullGuard && !m.ReturnIsReferenceType)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.OnCycleSetNullRequiresReferenceTarget,
+                        null,
+                        m.MethodName,
+                        MessageArg2: m.ReturnTypeFullName));
+                    continue; // leave IsSetNullMode=false — falls back to the plain depth-guarded body.
                 }
 
                 methods[i] = m with
@@ -3048,6 +3068,13 @@ namespace DwarfMapper.Generator.Pipeline
                 ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
                 ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                 ReturnIsPublicType: IsEffectivelyPublic(targetType),
+                // Left at its default (true) here for years — invisible until DWARF108's post-pass
+                // started reading it for EVERY recursion-capable pair, public entries included, and a
+                // struct-destination declared mapper under OnCycle=SetNull kept its on-stack guard
+                // (CS0037: `return null!;` against a non-nullable value type). Same failure shape as
+                // ParameterIsPublicType/ReturnIsPublicType two lines up: a flag nobody read until a new
+                // feature did.
+                ReturnIsReferenceType: targetType.IsReferenceType,
                 Withheld: withheld,
                 ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                 ReturnTypeSignature: DeclaredReturnSignature(method),

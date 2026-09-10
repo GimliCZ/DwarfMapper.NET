@@ -110,5 +110,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF105` | Error | Invalid [MapDenseEnumKeys] target |
 | `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive |
 | `DWARF107` | Warning | A converter's nullable return is stored where null is forbidden |
+| `DWARF108` | Warning | OnCycle = SetNull requires a reference-type destination |
 
-102 diagnostics.
+103 diagnostics.

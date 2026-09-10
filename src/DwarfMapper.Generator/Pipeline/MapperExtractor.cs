@@ -477,7 +477,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
             ReportCyclicConstructorParameters(methods, allCallGraph, diagnostics, isPreserveMode, declaredNameCount);
             // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
-            ApplySetNullPostPass(methods, isSetNullMode);
+            ApplySetNullPostPass(methods, isSetNullMode, diagnostics);
 
             // Report DWARF031 if the registry cap was exceeded.
             if (nestedRegistry.CapExceeded)

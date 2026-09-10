@@ -2018,5 +2018,42 @@ namespace DwarfMapper.Generator.Diagnostics
             "correct; this is informational so the bypass is visible rather than silent. Remove [Reinterpret] from " +
             "the member to use the conversion or directive instead, or keep it and the block copy stands.",
             HelpBase + "dwarf106");
+
+        /// <summary>
+        ///     <c>OnCycle = SetNull</c> was requested for a recursion-capable pair whose destination is a
+        ///     non-nullable value type — the on-stack guard's back-edge cannot return a value it has no way
+        ///     to represent.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round-30 coverage sweep. <c>EmitSetNullGuardedBody</c>'s back-edge arm writes an
+        ///         unconditional <c>return null!;</c>, which does not compile against a struct return type
+        ///         (CS0037) — a defect no fixture had ever exercised in the years this feature has existed,
+        ///         because every prior SetNull test used a reference-type destination and the fuzzer's schema
+        ///         never generates a struct one under this option either.
+        ///     </para>
+        ///     <para>
+        ///         The fallback is the plain None+Throw depth-guarded body (no on-stack guard): safe for
+        ///         acyclic data, and a genuinely cyclic source now throws <c>DwarfMappingDepthException</c>
+        ///         once <c>MaxDepth</c> is exceeded rather than terminating early. The rejected alternative —
+        ///         emitting <c>default(T)</c> for the back-edge — was considered and refused: it would
+        ///         silently place a phantom zero-valued element into the result, which is exactly the
+        ///         mislinking this generator's whole design exists to prevent.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor OnCycleSetNullRequiresReferenceTarget = new(
+            "DWARF108",
+            "OnCycle = SetNull requires a reference-type destination",
+            "OnCycle = SetNull applies to '{0}', but its destination '{1}' is a value type and cannot hold " +
+            "null — the on-stack guard that breaks a cycle by returning null has no value to return. Falling " +
+            "back to the default depth-guarded body for this pair: an acyclic source still maps correctly, " +
+            "but a genuinely cyclic source now throws DwarfMappingDepthException instead of terminating " +
+            "early. Make '{1}' a reference type (a class or a record class) to use OnCycle = SetNull for it, " +
+            "or leave it a value type and accept the depth-limited fallback — " +
+            "dotnet_diagnostic.DWARF108.severity = none accepts the fallback knowingly.",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf108");
     }
 }

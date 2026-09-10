@@ -186,6 +186,21 @@ so a version with no section here ships with no notes.
   still throws inside the callee's own `ArgumentNullException.ThrowIfNull`, while a forgiven *result* is
   silently stored.
 
+- **`DWARF108` (Warning) — `OnCycle = SetNull` reaches a pair whose destination is a value type, and a
+  struct cannot hold `null`.** Found by a coverage sweep, not a bug report: `EmitSetNullGuardedBody`'s
+  on-stack cycle guard breaks a back-edge with an unconditional `return null!;`, which is `CS0037` against a
+  non-nullable struct return — a shape no fixture had ever exercised (a `List<Node>` self-reference mapped
+  onto `struct NodeDto { List<NodeDto> Children; }` under `SetNull` is the minimal repro). The generator now
+  falls back to the plain depth-guarded body for the affected pair instead of emitting code that does not
+  compile: an acyclic source still maps correctly, and a genuinely cyclic source throws
+  `DwarfMappingDepthException` once `MaxDepth` is exceeded rather than terminating early by nulling the
+  back-edge. **Remedy:** make the destination a reference type (a `class` or a `record class`) to get
+  `SetNull`'s early termination, or leave it a value type and accept the depth-limited fallback;
+  `dotnet_diagnostic.DWARF108.severity = none` accepts the fallback knowingly. Not the same id as `DWARF037`
+  (`OnCycle` losing to the *mapper option* `ReferenceHandling = Preserve`) or `DWARF030` (the identical
+  impossibility under `Preserve`, where a constructor argument rather than a value type is what cannot hold
+  the back-edge) — each has its own, disjoint remedy.
+
 - **Transfer models as structs — one feature in four parts, documented as one.** `DWARF103` finds a mapped
   collection whose element type could be a `readonly record struct` and prints the size you would get; the
   code fix performs the rewrite transitively (the element type and every transfer model it inlines);

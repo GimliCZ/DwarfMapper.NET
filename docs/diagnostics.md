@@ -2416,6 +2416,34 @@ Only fires for a genuinely annotated destination. A destination written in a `#n
 
 ---
 
+## dwarf108
+**OnCycle = SetNull requires a reference-type destination** · Warning
+
+`OnCycle = SetNull` breaks a reference cycle by having the on-stack guard return `null` for a back-edge — and
+a **value-type** (`struct`) destination cannot hold `null`. This fires for a specific recursion-capable pair
+reached through the option (typically an element type behind a `List<T>`/array edge), not for the whole
+mapper: `Node` self-referencing through `List<Node> Children`, mapped onto `struct NodeDto { List<NodeDto>
+Children; }`, is exactly the shape.
+
+DwarfMapper **falls back** to the plain depth-guarded body for that pair — the same code an acyclic-only
+mapper gets under the default `OnCycle = Throw`. An acyclic source still maps correctly; a genuinely cyclic
+source now throws `DwarfMappingDepthException` once `MaxDepth` is exceeded, rather than terminating early by
+nulling the back-edge.
+
+**Fix:** make the destination a reference type (a `class` or a `record class`) to get `SetNull`'s early
+termination, or leave it a value type and accept the depth-limited fallback (raise `MaxDepth` if a deep but
+acyclic value-type graph needs to map without throwing). `dotnet_diagnostic.DWARF108.severity = none` accepts
+the fallback knowingly.
+
+**Not [`DWARF037`](#dwarf037), and not [`DWARF030`](#dwarf030).** DWARF037 is `OnCycle` losing to a *mapper
+option* (`ReferenceHandling = Preserve`); this is `OnCycle` losing to a *type shape* on one specific pair, and
+the rest of the mapper is unaffected. DWARF030 is the identical impossibility under `Preserve` mode instead —
+there, a constructor argument (not a value type) is what can't hold the back-edge — reported separately
+because the two modes have unrelated remedies: DWARF030 says make the member settable, this one says make the
+type a reference type.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

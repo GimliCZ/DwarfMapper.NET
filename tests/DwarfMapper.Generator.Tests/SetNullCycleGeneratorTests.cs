@@ -232,5 +232,67 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("Next = ", generated, StringComparison.Ordinal);
             Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);
         }
+
+        // ── 13. DWARF108: a struct destination behind a recursion-capable pair ───────────────
+        // The probe that found the real defect: EmitSetNullGuardedBody's back-edge is an
+        // unconditional `return null!;`, which is CS0037 against a non-nullable value-type return.
+        // The extractor now detects this and falls back to the plain depth-guarded body instead of
+        // emitting code that fails to compile.
+        [Fact]
+        public void SetNull_struct_destination_reports_DWARF108_and_falls_back_to_depth_guard()
+        {
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node>? Children { get; set; } }
+                               public struct NodeDto { public int V { get; set; } public List<NodeDto>? Children { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+
+            // TWO independent MapMethodModel entries carry the value-type return here — the PUBLIC
+            // entry `Map` (return type NodeDto directly) and the synthesized element helper the
+            // List<Node> edge needs — and both would independently hit CS0037, so both are named.
+            var d108s = diags.Where(d => d.Id == "DWARF108").ToList();
+            Assert.Equal(2, d108s.Count);
+            Assert.All(d108s, d =>
+            {
+                Assert.Equal(DiagnosticSeverity.Warning, d.Severity);
+                Assert.Contains("NodeDto", d.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                    StringComparison.Ordinal);
+            });
+            Assert.Contains(d108s, d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+                .Contains("'Map'", StringComparison.Ordinal));
+            // No error: the fallback is a compiling, safe body — proven below.
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+
+            // Falls back to the plain None+Throw depth-guarded body EVERYWHERE: no on-stack guard at
+            // all survives, on either the public entry or the synthesized element helper.
+            Assert.DoesNotContain("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("DwarfMappingDepthException", generated, StringComparison.Ordinal);
+
+            // And it actually compiles — this is what CS0037 would have broken before the fix.
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        // ── 14. A reference-type destination on the SAME shape does NOT report DWARF108 ──────
+        [Fact]
+        public void SetNull_class_destination_through_a_collection_edge_does_not_report_DWARF108()
+        {
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node>? Children { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto>? Children { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF108");
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+        }
     }
 }
