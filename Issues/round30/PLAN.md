@@ -35,21 +35,33 @@ What survives is small and is documentation, not emission:
    the test pins which one governs this cell so the next reader does not re-derive it from emitted code.
 2. **A sentence in `docs/COMPARISON.md`** saying the `Array` row is a trade rather than a loss.
 
-## B. Map fusion — the emitter, now that the measurement is closed on the right population
+## B. Map fusion — an ANALYZER, not an emitter (reframed 2026-09-10)
 
-**Evidence:** `Issues/round29/SPIKE-map-fusion.md`, re-measured 2026-09-09 against real generated maps and
-byte-identical to the hand-written probe. Approved by the owner ("2 ok").
+**Evidence:** `Issues/round30/FINDING-fusion-has-no-emission-site.md`.
 
-The measurement half is finished. **What remains is entirely design**, and the spike says so:
+This item read "build the emitter, now that the measurement is closed on the right population" until the
+emitter was actually started and the question nobody had asked got asked: **does the generator ever emit
+`MapBC(MapAB(x))`?** It does not. `MemberMap.ConverterMethod` is a single `string?` — a member carries ONE
+converter, so the model cannot represent "convert, then convert again" — and 624 generated files across the
+corpus, gallery and clean-corpus consumer contain zero `A -> B -> C`. The chain the spike measured is
+written by the probe, in a consumer's own method body, which a source generator does not rewrite.
 
-1. **The refusal list** (spike caveat 3) — fusion changes observable behaviour wherever `B`'s construction
-   is observable: `BeforeMap`/`AfterMap` hooks on the `A->B` pair, a `[RoundTrip]` verifier over `B`, a
-   converter with a side effect, a cycle-preserving reference map whose identity table is keyed on `B`.
-   Enumerating these is the first task, not the emitter.
-2. **The private-chain requirement** (caveat 4) — if `A->B` is a public endpoint the consumer can call,
-   fusing `A->C` does not remove `B`, it adds a second path.
-3. **Scoped to element loops.** Straight-line fusion is dead weight: both arms allocate 40 B and tie on
-   time, because the JIT already stack-allocates the intermediate.
+So the work is a **DWARF diagnostic + code fix**:
+
+1. **The analyzer** — a consumer chains two declared maps, especially inside a loop. Report that the
+   intermediate is allocated per element and a direct `A -> C` map would remove it.
+2. **The code fix** — declare `partial C MapAC(A a);` and rewrite the call site.
+   `ConvertToRecordStructCodeFixProvider` is the working precedent for a solution-wide rewrite.
+3. **The suppressions are already written and measured** — every REFUSE row in
+   `SPEC-fusion-refusal-list.md` becomes a reason NOT to suggest it, and the observability criterion is the
+   sharpest: if `C` ignores a member of `B` whose production runs user code, the suggestion would delete
+   that work.
+4. **A non-firing rule:** outside a loop the JIT already stack-allocates the intermediate (both arms
+   allocate 40 B and tie on time), so a suggestion there is pure noise.
+5. **The oracle exists:** `MapFusionEquivalenceTests` — the fix must not change behaviour.
+
+**Open design questions,** and they are the whole remaining risk: which diagnostic id; and whether an
+analyzer can see enough of a loop to be confident the chain is per-element rather than incidental.
 
 ## C. Benchmark axes 2-4 — the rest of what the owner asked for
 
