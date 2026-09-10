@@ -316,6 +316,14 @@ reproduce locally. Codegen mappers (DwarfMapper / Mapperly) cluster at hand-writ
   library equally, recovering to **1.45×** at N = 10⁶. At **N = 1 the fast path is a small loss** (0.84×
   against its own scalar twin — the `Cast` + `CopyTo` setup is not amortised by one element). So this
   figure describes a thousand-element copy and must not be quoted as a property of the path.
+- On the **reference-element array (`Child[]→ChildDto[]`) Mapperly leads by 8-29 % at every element count
+  from 1 to 10⁶** ([`2026-09-09-collection-decade-sweep.md`](../benchmarks/results/2026-09-09-collection-decade-sweep.md)),
+  and the cause is a deliberate difference in what the two libraries DO, not in how fast they do it.
+  DwarfMapper tests each element and maps a null element to null; Mapperly's element method carries no guard
+  and dereferences it. Measured cost of that guarantee: **~9 %** (`NullCheckProbeBenchmarks`; removing the
+  callee's own `ThrowIfNull` recovers nothing, so the whole difference is the element test). **It is a trade,
+  not a deficiency** — and the behaviour is ruled, not incidental, so that a failed `Result<T>` maps to null
+  instead of throwing (`ElementNullArmTests` pins all four cells).
 - On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/

@@ -83,12 +83,15 @@ wrapper just relocates the same branch and adds a call.
 
 Nothing in item A as originally written. Two smaller, genuinely open questions:
 
-* **Is `NullableProjectRefForgiving` reached for a source element that is NOT nullable-annotated in a
-  `<Nullable>enable</Nullable>` project?** `6fa7308` says the arm is for "destination cannot [hold null] and
-  the source is not nullable-annotated either", so the emission observed here is exactly what the ruling
-  prescribes. Two different predicates for "may be null" do coexist in the pipeline
-  (`== Annotated` at `CollectionConverter.cs:296`/`:405` against `!= NotAnnotated` in `SourceMayBeNullRef`),
-  and whether that is deliberate is worth ONE generator test to document — not to change.
+* ~~Two different predicates for "may be null" coexist in the pipeline~~ — **RESOLVED 2026-09-10, and the
+  suspicion was unfounded.** `UserConverterNullGuard` (`MapperExtractor.Conversions.cs:1288`) uses the STRICT
+  `== Annotated` at every branch; the loose `SourceMayBeNullRef` belongs to a different arm entirely (the
+  `Nullable<U>` value-destination composition). This cell is decided by one predicate, consistently.
+  `ElementNullArmTests` now pins all four cells, and the fourth is a genuine finding the annotation rules do
+  not predict: under `#nullable disable` the element gets **no null test at all**, because the gate asks
+  `ConverterParamIsNonNullableRef` and an oblivious parameter is not non-nullable. So the `Result<T>`-Fail
+  protection is absent in a nullable-disabled consumer project — defensible (no annotations, no promises),
+  undocumented until now, and pinned so a change to it is deliberate.
 * **Should `docs/COMPARISON.md` say this?** The `Array` row currently reads as a plain loss. It is a
   measured trade: we map a null element to null; Mapperly dereferences it. A reader deciding between the
   two libraries would want that sentence, and it is the sort of claim this repository normally makes.
