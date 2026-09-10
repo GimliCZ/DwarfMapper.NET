@@ -26,7 +26,10 @@ carried a long way, without the cheap check that would have falsified it.
 |---|---|
 | consumer | `fusedchat-dwarfmapper`, 32 projects, 8 of them declaring `[DwarfMapper]` mappers |
 | how it consumes | `PackageReference Include="DwarfMapper"`, resolved from this repo's `artifacts/nuget` via the solution's own `NuGet.config` |
-| package under test | **`DwarfMapper.1.1.0-rc11`**, packed from `e980931` on `feat/round30` |
+| package under test | **`DwarfMapper.1.1.0-rc12`**, packed from `ee2c82b` — the current tip |
+| superseded run | rc11 from `e980931`; re-run because the generator CHANGED after it (the `[MapShare]`
+de-silencing fix `53cd56e` now emits `DWARF090` where it previously said nothing, and FusedChat has 8
+mapper-declaring projects that could have tripped it) |
 | previous pin | `1.1.0-rc5` — the app was several release candidates behind |
 | surface exercised | `[assembly: DwarfMapperValidationRoot]`, `AllowNonPublic = true`, the ambient `IDwarfMapper` facade, and per-project analyzer references (the package marks the analyzer `PrivateAssets="all"`, so it does not flow transitively) |
 
@@ -44,6 +47,12 @@ dotnet test    FusedChat.sln -c Release --no-build     TEST_EXIT=0
 | assemblies built | **32** |
 | **DWARF diagnostics of any severity** | **0** |
 | other warnings | 190, **every one `NU1903`** — pre-existing advisories on `System.Security.Cryptography.Xml` in FusedChat's own dependency graph, unrelated to this package |
+
+**rc12 re-run, 2026-09-10:** `RESTORE_EXIT=0`, `BUILD_EXIT=0`, `TEST_EXIT=0` — 32 assemblies, **0 errors,
+0 DWARF diagnostics**, 711 tests (707 passed, 4 skipped). The new `DWARF090` surfaces nothing in FusedChat:
+no `[MapShare]` sits on an element-wise endpoint there. The build reports 1,042 warnings on a FULL rebuild
+(`CS8618` x584, `NU1903` x190, the rest FusedChat's own nullability) — the rc11 run showed only 190 because
+it was incremental, which is worth recording so the two numbers are not read as a regression.
 
 | test project | passed | failed | skipped |
 |---|---:|---:|---:|
