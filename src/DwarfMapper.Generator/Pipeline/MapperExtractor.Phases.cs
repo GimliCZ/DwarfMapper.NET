@@ -34,7 +34,7 @@ namespace DwarfMapper.Generator.Pipeline
         // This is the None-mode analogue of the Preserve post-pass above, but far simpler:
         // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
         // wrapper) — the guard only nulls a re-entrant back-edge.
-        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode, List<DiagnosticInfo> diagnostics)
+        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode, List<DiagnosticInfo> diagnostics, LocationInfo? classLocation)
         {
             if (!isSetNullMode)
             {
@@ -71,9 +71,16 @@ namespace DwarfMapper.Generator.Pipeline
                                           m.DerivedTypeArms.Count == 0;
                 if (reachesSetNullGuard && !m.ReturnIsReferenceType)
                 {
+                    // classLocation (the [DwarfMapper] class identifier), not null: a null-location
+                    // generator diagnostic cannot be suppressed by #pragma, [SuppressMessage], or an
+                    // .editorconfig severity override — none of those mechanisms has a location to
+                    // scope to. Proven empirically (see SetNullAdversarialRuntimeTests' history) before
+                    // this was fixed; the class attribute is also the right target on its own merits —
+                    // this diagnostic is about the `OnCycle = SetNull` the user wrote, not about a
+                    // synthesized helper method with no source position of its own.
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.OnCycleSetNullRequiresReferenceTarget,
-                        null,
+                        classLocation,
                         m.MethodName,
                         MessageArg2: m.ReturnTypeFullName));
                     continue; // leave IsSetNullMode=false — falls back to the plain depth-guarded body.

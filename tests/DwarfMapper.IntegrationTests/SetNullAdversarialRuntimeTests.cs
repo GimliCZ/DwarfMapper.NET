@@ -130,6 +130,35 @@ namespace DwarfMapper.IntegrationTests
         public partial SnCtorPlusDto Map(SnCtorPlus n);
     }
 
+    // ── Round-30 follow-up: proof for DWARF108's blocking-finding fix. Before the fix, this
+    // diagnostic reported at a NULL location, and a null-location generator diagnostic defeats
+    // #pragma, [SuppressMessage], AND .editorconfig severity overrides alike — proven empirically
+    // (all three tried, all three failed) before the fix landed. DWARF108 now reports at the
+    // [DwarfMapper] class identifier instead, so the ordinary [SuppressMessage] mechanism — the
+    // same one DWARF076 uses two files up in SelfMapDiagnosticTests — reaches it. This fixture
+    // compiling at all, in a project with TreatWarningsAsErrors, IS the proof; the tests below
+    // additionally exercise the fallback body it accepts (the same depth-guarded shape OnCycle =
+    // Throw gets) adversarially at runtime.
+    public class SnStructNode
+    {
+        public int V { get; set; }
+
+        public List<SnStructNode>? Children { get; set; } = new();
+    }
+
+    public struct SnStructNodeDto
+    {
+        public int V { get; set; }
+
+        public List<SnStructNodeDto>? Children { get; set; }
+    }
+
+    [DwarfMapper(OnCycle = OnCycleStrategy.SetNull, MaxDepth = 20)]
+    public partial class SnStructMapper
+    {
+        public partial SnStructNodeDto Map(SnStructNode n);
+    }
+
     public class SetNullAdversarialRuntimeTests
     {
         // ── Mutual recursion across two types ───────────────────────────────────────
@@ -270,6 +299,47 @@ namespace DwarfMapper.IntegrationTests
 
             Assert.Equal(7, dto.V); // scalar ctor arg: unaffected by the guard.
             Assert.Null(dto.Next); // member edge: back-edge nulled.
+        }
+
+        // ── DWARF108 fallback, struct destination: acyclic source maps correctly ────
+        [Fact]
+        public void StructDestination_acyclic_tree_maps_every_value_through_the_fallback()
+        {
+            var child2 = new SnStructNode
+            {
+                V = 2
+            };
+            var child3 = new SnStructNode
+            {
+                V = 3
+            };
+            var root = new SnStructNode
+            {
+                V = 1,
+                Children = [child2, child3]
+            };
+
+            var dto = new SnStructMapper().Map(root);
+
+            Assert.Equal(1, dto.V);
+            Assert.Equal(2, dto.Children!.Count);
+            Assert.Equal(2, dto.Children[0].V);
+            Assert.Equal(3, dto.Children[1].V);
+        }
+
+        // ── DWARF108 fallback, struct destination: a struct cannot hold "null" for the ──
+        // ── back-edge, so the depth guard — not SetNull's early termination — is what ──
+        // ── actually protects a cyclic source from an unbounded walk. ───────────────
+        [Fact]
+        public void StructDestination_self_cycle_throws_DwarfMappingDepthException()
+        {
+            var a = new SnStructNode
+            {
+                V = 1
+            };
+            a.Children!.Add(a); // self-cycle
+
+            Assert.Throws<DwarfMappingDepthException>(() => new SnStructMapper().Map(a));
         }
 
         // ── Defensive: null root → ArgumentNullException (loud, not silent) ─────────

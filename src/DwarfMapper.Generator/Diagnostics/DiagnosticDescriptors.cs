@@ -2049,8 +2049,10 @@ namespace DwarfMapper.Generator.Diagnostics
             "back to the default depth-guarded body for this pair: an acyclic source still maps correctly, " +
             "but a genuinely cyclic source now throws DwarfMappingDepthException instead of terminating " +
             "early. Make '{1}' a reference type (a class or a record class) to use OnCycle = SetNull for it, " +
-            "or leave it a value type and accept the depth-limited fallback — " +
-            "dotnet_diagnostic.DWARF108.severity = none accepts the fallback knowingly.",
+            "or leave it a value type and accept the depth-limited fallback — add " +
+            "<NoWarn>DWARF108</NoWarn> (or <WarningsNotAsErrors>) to the project's .csproj to accept it " +
+            "knowingly; a source-generator diagnostic like this one is not reachable by #pragma, " +
+            "[SuppressMessage], or an .editorconfig severity override.",
             Category,
             DiagnosticSeverity.Warning,
             true,

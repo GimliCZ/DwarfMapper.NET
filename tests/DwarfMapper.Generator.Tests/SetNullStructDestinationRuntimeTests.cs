@@ -12,15 +12,21 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         Lives here rather than in <c>DwarfMapper.IntegrationTests</c> because DWARF108 firing
-    ///         is the DELIBERATE point of the fixture, and that project builds with
-    ///         warnings-as-errors: a source-generator diagnostic bypasses both <c>#pragma</c> (outside
-    ///         Roslyn's pragma-filtering pipeline — see <c>SelfMapDiagnosticTests</c>'s DWARF076 pair)
-    ///         and <c>[SuppressMessage]</c>/<c>.editorconfig</c> severity overrides, because this
-    ///         post-pass reports with a NULL location (the same known gap DWARF030 has), and every one
-    ///         of those three mechanisms scopes by location. Proven empirically before this file was
-    ///         written — a project-wide `dotnet_diagnostic.DWARF108.severity = none` still failed the
-    ///         build. <see cref="GeneratorTestHarness.EmitAssembly(string)" /> compiles through the
+    ///         Runtime proof lives here AND (as of round 30's DWARF108 blocking-finding fix) as a
+    ///         suppressed fixture in <c>DwarfMapper.IntegrationTests</c>
+    ///         (<c>SetNullAdversarialRuntimeTests.SnStructMapper</c>). DWARF108 now reports at the
+    ///         <c>[DwarfMapper]</c> class identifier rather than a null location, but that alone does
+    ///         NOT make it suppressible: proven empirically (in that order) that a <c>#pragma</c>, a
+    ///         <c>[SuppressMessage]</c>, AND a file-scoped <c>.editorconfig</c> severity override all
+    ///         still fail against it even WITH a real location. The real cause is architectural, not
+    ///         positional — a source generator (<c>IIncrementalGenerator</c>) carries no
+    ///         <c>SupportedDiagnostics</c> contract the way a <c>DiagnosticAnalyzer</c> does, so
+    ///         Roslyn's pragma/SuppressMessage/editorconfig suppression pipeline never runs against
+    ///         its diagnostics at all. Only <c>&lt;NoWarn&gt;</c> — an MSBuild-level filter applied by
+    ///         ID string after generation completes — actually reaches it; see that project's
+    ///         fixture and its <c>.csproj</c> comment. This file keeps the in-process reflection proof
+    ///         (no MSBuild round-trip needed) via
+    ///         <see cref="GeneratorTestHarness.EmitAssembly(string)" />, which compiles through the
     ///         real generator with its own (non-warnings-as-errors) options, so the Warning is just
     ///         data in the result here, exactly as it is for every other diagnostic-observing test in
     ///         this project.

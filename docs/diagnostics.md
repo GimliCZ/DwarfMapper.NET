@@ -2432,8 +2432,12 @@ nulling the back-edge.
 
 **Fix:** make the destination a reference type (a `class` or a `record class`) to get `SetNull`'s early
 termination, or leave it a value type and accept the depth-limited fallback (raise `MaxDepth` if a deep but
-acyclic value-type graph needs to map without throwing). `dotnet_diagnostic.DWARF108.severity = none` accepts
-the fallback knowingly.
+acyclic value-type graph needs to map without throwing). Accept it knowingly with `<NoWarn>DWARF108</NoWarn>`
+(or `<WarningsNotAsErrors>`) in the project's `.csproj` — **not** an `.editorconfig` severity override, a
+`#pragma`, or `[SuppressMessage]`: none of those reach a source-generator-reported diagnostic, because a
+generator (unlike a `DiagnosticAnalyzer`) has no `SupportedDiagnostics` contract for the compiler's
+suppression pipeline to key off, regardless of whether the diagnostic carries a location. `<NoWarn>` works
+because it is applied at the MSBuild diagnostics-to-build-outcome step, after generation, by ID string alone.
 
 **Not [`DWARF037`](#dwarf037), and not [`DWARF030`](#dwarf030).** DWARF037 is `OnCycle` losing to a *mapper
 option* (`ReferenceHandling = Preserve`); this is `OnCycle` losing to a *type shape* on one specific pair, and

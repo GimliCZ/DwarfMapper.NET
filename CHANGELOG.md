@@ -195,11 +195,14 @@ so a version with no section here ships with no notes.
   compile: an acyclic source still maps correctly, and a genuinely cyclic source throws
   `DwarfMappingDepthException` once `MaxDepth` is exceeded rather than terminating early by nulling the
   back-edge. **Remedy:** make the destination a reference type (a `class` or a `record class`) to get
-  `SetNull`'s early termination, or leave it a value type and accept the depth-limited fallback;
-  `dotnet_diagnostic.DWARF108.severity = none` accepts the fallback knowingly. Not the same id as `DWARF037`
-  (`OnCycle` losing to the *mapper option* `ReferenceHandling = Preserve`) or `DWARF030` (the identical
-  impossibility under `Preserve`, where a constructor argument rather than a value type is what cannot hold
-  the back-edge) — each has its own, disjoint remedy.
+  `SetNull`'s early termination, or leave it a value type and accept the depth-limited fallback with
+  `<NoWarn>DWARF108</NoWarn>` (or `<WarningsNotAsErrors>`) in the consuming `.csproj` — proven the only
+  mechanism that reaches it: a `#pragma`, a `[SuppressMessage]`, and an `.editorconfig` severity override
+  were all tried and all failed, because a source generator carries no `SupportedDiagnostics` contract for
+  the compiler's suppression pipeline to key off, location or not. Not the same id as `DWARF037` (`OnCycle`
+  losing to the *mapper option* `ReferenceHandling = Preserve`) or `DWARF030` (the identical impossibility
+  under `Preserve`, where a constructor argument rather than a value type is what cannot hold the back-edge)
+  — each has its own, disjoint remedy.
 
 - **Transfer models as structs — one feature in four parts, documented as one.** `DWARF103` finds a mapped
   collection whose element type could be a `readonly record struct` and prints the size you would get; the

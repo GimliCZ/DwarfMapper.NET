@@ -13,7 +13,7 @@
 // EXPECT-MESSAGE DWARF108: OnCycle = SetNull applies to 'Map'
 // EXPECT-MESSAGE DWARF108: is a value type and cannot hold null
 // EXPECT-MESSAGE DWARF108: throws DwarfMappingDepthException instead of terminating early
-// EXPECT-MESSAGE DWARF108: dotnet_diagnostic.DWARF108.severity = none
+// EXPECT-MESSAGE DWARF108: <NoWarn>DWARF108</NoWarn>
 // EXPECT-CS:
 // NOTE: No CS at all — that is the fix. The fallback body (the same shape a plain OnCycle = Throw
 //       pair gets) compiles clean; before this fix, this exact fixture emitted CS0037 in a .g.cs no
