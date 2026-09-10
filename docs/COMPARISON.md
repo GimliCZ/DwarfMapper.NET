@@ -69,8 +69,21 @@ A capability, testing, performance, and **migration-ease** comparison against th
 
 **Differentiators only DwarfMapper has:** the blittable SIMD fast-path, zero-alloc `Span<T>` mapping,
 heterogeneous `[FlattenGraph]` degradation, a *non-optional* completeness build-error gate, `[RoundTrip]`
-verification, and uniform "never a silent StackOverflow" across direct/collection/dictionary cycles in
-every reference mode.
+verification, uniform "never a silent StackOverflow" across direct/collection/dictionary cycles in
+every reference mode, and two directives that remove an allocation rather than speeding one up:
+
+* **`[MapShare]`** — assign the source reference instead of copying, for a collection the automatic
+  immutability proof cannot see through. Measured **24 B/op against the copying twin's 8,080 B**, because
+  the collection is not built at all. Refused outright where the graph is provably mutable (`DWARF104`):
+  no assertion makes a settable member unsettable.
+* **`[MapDenseEnumKeys]`** — fill an `[InlineArray]` member from an enum-keyed dictionary by index, one
+  slot per declared member. **40 B/op against the dictionary twin's 384 B**; the slots live inside the
+  destination object, so the dictionary and its bucket and entry arrays are never allocated. A key that
+  would index outside the array is a build error (`DWARF105`), not a silent write.
+
+Both are gated by exact allocation pins rather than described — see
+[`allocation-baseline.json`](../benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json) — and both are
+demonstrated in the gallery (`49_MapShare.cs`, `50_MapDenseEnumKeys.cs`).
 
 **Where DwarfMapper is the stricter one, and where that costs you.** The last two rows are the only ones on
 which DwarfMapper is deliberately *less* capable than an oracle. A value the author did not declare an answer
