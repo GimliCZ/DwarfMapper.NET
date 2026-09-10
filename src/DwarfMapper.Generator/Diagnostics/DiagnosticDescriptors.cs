@@ -2089,8 +2089,9 @@ namespace DwarfMapper.Generator.Diagnostics
             "[AfterMap] '{0}' takes its target by 'ref', but its declared parameter type does not exactly " +
             "match this pair's destination type: {1}. A 'ref' parameter needs an identity match — C# has no " +
             "ref covariance — so this hook is skipped for THIS pair; other pairs whose destination is exactly " +
-            "the hook's declared type are unaffected. Declare a separate [AfterMap] overload for this " +
-            "destination type, or take the target by value if 'ref' was not actually needed.",
+            "the hook's declared type are unaffected. Take the target by value instead — a reference-type " +
+            "destination never needs 'ref' — since no overload can fix this: a base-typed 'ref' hook still " +
+            "matches every derived pair by the same by-value rule and will report DWARF109 there too.",
             Category,
             DiagnosticSeverity.Error,
             true,

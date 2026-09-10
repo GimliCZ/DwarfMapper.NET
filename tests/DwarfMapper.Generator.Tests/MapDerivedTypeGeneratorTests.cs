@@ -413,5 +413,57 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("Finish(ref __dwarf_target);", generated, StringComparison.Ordinal);
             GeneratorAssert.EmitsCompilableCode(src);
         }
+
+        [Fact]
+        public void MapDerivedType_AfterMap_ref_hook_against_the_base_type_reports_DWARF109_for_the_derived_pair()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   [AfterMap] private static void Finish(ref AnimalDto d) { }
+                               }
+                               """;
+            Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF109"));
+
+            // The dispatch method's own pair is unaffected — Finish still applies where the destination
+            // really is AnimalDto. Only Dog's own declared pair (destination DogDto) skips it.
+            var (_, generated) = GeneratorTestHarness.Run(src);
+            Assert.Contains("Finish(ref __dwarf_target);", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MapDerivedType_AfterMap_hook_taken_by_value_instead_of_ref_clears_DWARF109()
+        {
+            // Same shape as the ref-mismatch case above — this is DWARF109's documented fix: dropping
+            // `ref` (not a second overload) is what clears the diagnostic for every derived pair at once.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   [AfterMap] private static void Finish(AnimalDto d) { }
+                               }
+                               """;
+            GeneratorAssert.DoesNotReport(src, "DWARF109");
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
     }
 }

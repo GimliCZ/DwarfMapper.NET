@@ -2469,10 +2469,13 @@ DwarfMapper **skips the hook for the mismatched pair only** — the dispatch met
 destination is exactly the hook's declared type) still calls it normally; this is a fact about one pair, not
 the mapper.
 
-**Fix:** declare a separate `[AfterMap]` overload whose `ref` parameter type is exactly this pair's
-destination, or take the target by value if `ref` was not actually needed for it (a reference-type
-destination never needs it — `ref` exists for a value-type destination, whose changes would otherwise be
-lost).
+**Fix:** take the target by value — a reference-type destination never needs `ref` (`ref` exists for a
+value-type destination, whose changes would otherwise be lost, and `AnimalDto`/`DogDto` above are both
+classes). A separate `[AfterMap]` overload does **not** fix this: a hook declared against the base type still
+matches every derived pair by the same by-value rule, so adding `[AfterMap] void Finish2(ref DogDto d)`
+gives `Dog`'s pair a working hook but leaves the base-typed `Finish(ref AnimalDto d)` still mismatched
+against it — DWARF109 keeps firing. There is no `ref`-typed overload set that clears this for every pair at
+once; dropping `ref` is the only fix that generalizes.
 
 ---
 
