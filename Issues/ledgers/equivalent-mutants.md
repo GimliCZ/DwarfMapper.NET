@@ -105,7 +105,7 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 409 | 87.04 % (2026-09-06, round-29 Phase 2 gate) | 16 | 0 | 0 | 96.08 % |
+| generator | `stryker-config.json` | 409 | 88.26 % (2026-09-11, round-30 coverage sweep checkpoint) | 16 | 0 | 0 | 96.08 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
@@ -120,6 +120,17 @@ rows below are untouched — no mutant was re-adjudicated, retired or newly prov
 that 393 mutants are killable today. The 41 survivors and 12 uncovered mutants of the 2026-09-06 run
 (BlittableProof 36 + 5, ConstructorSelector 4 + 7, EquatableArray 1) have **not** been dispositioned here;
 that is the next kill program's work, and `break` must not move again before it happens.
+
+**Generator RE-MEASURED 2026-09-11** (round-30 coverage sweep checkpoint): same 409 scoreable
+(the denominator did not move this time), 356 → 361 killed, 41 → 40 survived, 12 → 8 uncovered, 0
+timeouts in either run, so `break`/`low` moved 87 → 88 in `stryker-config.json` in the same
+commit. This IS a kill-program result, not a denominator effect: BlittableProof.cs moved
+191/36/5 (killed/survived/uncovered) → 196/35/1 — one Survived→Killed, four NoCoverage→Killed —
+attributed to the coverage sweep's `TryExplainNearMiss` branch closures (commit `f3ae553`), which
+happened to close branches this leg was already generating mutants against. EquatableArray,
+ConstructorSelector and LocationInfo are unchanged. The remaining 35 BlittableProof survivors + 1
+uncovered, and ConstructorSelector's 4 survivors + 7 uncovered, are still the next kill program's
+worklist.
 
 
 **Testing leg added 2026-09-09**, and it is the first row here whose reason is a REGRESSION rather than a
@@ -243,8 +254,8 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "generator": {
       "config": "stryker-config.json",
       "scoreable": 409,
-      "measuredRawScore": 87.04,
-      "measuredOn": "2026-09-06",
+      "measuredRawScore": 88.26,
+      "measuredOn": "2026-09-11",
       "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
