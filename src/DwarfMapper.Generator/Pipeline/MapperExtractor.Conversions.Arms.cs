@@ -952,6 +952,27 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when <paramref name="registry" /> marks the <paramref name="srcElem" />→<paramref name="tgtElem" />
+        ///     element pair as customized (a pair-scoped <c>[MapProperty]</c>/<c>[MapIgnore]</c>/<c>[MapValue]</c> or
+        ///     hook matching it), so the blit gate below must keep the element loop rather than reinterpret past it.
+        /// </summary>
+        /// <remarks>
+        ///     Carved out of <see cref="HandleCollectionConversion" /> as its own named unit because no fixture
+        ///     reachable through the generator's surface can drive <paramref name="registry" /> to <see langword="null" />:
+        ///     <c>ConversionRequest.NestedRegistry</c> is built exactly once per <c>Extract</c> call
+        ///     (<c>MapperExtractor.cs</c>) and threaded, unconditionally non-null, through every member, constructor-
+        ///     argument, flatten-directive and hetero-arm resolution that reaches this arm — round-30 item G's own
+        ///     finding that the testability problem here is concentration, not cruft. A direct unit test is what
+        ///     proves both arms of the null-conditional; see
+        ///     <c>MapperExtractorArmPredicateTests.NestedRegistryMarksPairCustomized_...</c>.
+        /// </remarks>
+        internal static bool NestedRegistryMarksPairCustomized(
+            NestedMappingRegistry? registry,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem) =>
+            registry?.PairIsCustomized(srcElem, tgtElem) == true;
+
+        /// <summary>
         ///     Collections: element-wise conversion, including the in-place and context-threading shapes.
         /// </summary>
         /// <returns>
@@ -1006,7 +1027,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // would apply, so the two agree byte for byte — which is exactly why the proof is allowed to
                 // replace it, and only it.
                 var elemHasUserConversion = ElementPairResolvesToUserConversion(req, srcElem, tgtElem);
-                var elemPairIsCustomized = req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true;
+                var elemPairIsCustomized = NestedRegistryMarksPairCustomized(req.NestedRegistry, srcElem, tgtElem);
                 var elemPairKeepsTheLoop = elemHasUserConversion || elemPairIsCustomized;
 
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
