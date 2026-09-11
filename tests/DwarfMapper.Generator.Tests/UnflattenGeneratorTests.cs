@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -228,7 +229,40 @@ namespace DwarfMapper.Generator.Tests
                         }
                         """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF045"));
+            var d = Find(diags, "DWARF045");
+            Assert.NotNull(d);
+            // DWARF045 is shared by four refusals (bad path, non-constructible intermediate, deeper-than-one,
+            // and this one); the id alone does not say WHICH fired, and the descriptor's format is a bare
+            // "{0}", so only the text can. It must name the dotted target the caller wrote.
+            Assert.Contains("is not supported on the unflatten target 'Address.City'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void When_on_an_unflatten_target_is_refused_before_the_path_is_resolved()
+        {
+            // The When/NullSubstitute check sits ABOVE ResolveUnflattenTarget and `continue`s past it, so a
+            // target that is BOTH modifier-bearing and unresolvable ('Nope' is not a member of D) is refused
+            // exactly once, for the modifier. Without that `continue` the same directive would be refused a
+            // second time, for the intermediate — two DWARF045s about one attribute, the second of which the
+            // caller cannot act on until the first is gone.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Addr { public string City { get; set; } = ""; }
+                               public class S { public string City { get; set; } = ""; public int Tier { get; set; } }
+                               public class D { public Addr Address { get; set; } = new(); }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [MapProperty(nameof(S.City), "Nope.City", When = nameof(Ok))]
+                                   public partial D Map(S s);
+                                   private static bool Ok(S s) => true;
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            var d = Assert.Single(diags.Where(x => x.Id == "DWARF045"));
+            Assert.Contains("'Nope.City'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
         [Fact]

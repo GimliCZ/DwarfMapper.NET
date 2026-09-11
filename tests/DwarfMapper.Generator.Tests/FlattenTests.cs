@@ -91,6 +91,39 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains(diagnostics,
                 d => d.Id == "DWARF017" &&
                      d.GetMessage(CultureInfo.InvariantCulture).Contains("City", StringComparison.Ordinal));
+            // The ambiguity arm `continue`s: the member IS accounted for (by two roots, which is the
+            // problem), so it must not ALSO be reported as having no source at all.
+            Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF001");
+        }
+
+        [Fact]
+        public void A_nullable_flattened_leaf_into_a_converter_is_reported_by_its_dotted_path()
+        {
+            // DWARF070's noun for a flattened leaf is the ROOT.LEAF path the emitted access spells
+            // (`s.Home.Inner`), not the leaf's bare name — the reader has to find the member on the source
+            // graph, and 'Inner' alone names nothing on Src. The separator is a one-character literal in the
+            // flatten arm, and the mutation leg blanked it without a failure: "HomeInner" reads as a member
+            // that does not exist.
+            const string src = """
+                               #nullable enable
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Child { public int V { get; set; } }
+                               public class ChildDto { public int V { get; set; } }
+                               public class Home { public Child? Inner { get; set; } public string Street { get; set; } = ""; }
+                               public class Src { public Home Home { get; set; } = new(); }
+                               public class Dst { public ChildDto Inner { get; set; } = new(); public string Street { get; set; } = ""; }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [Flatten("Home")]
+                                   public partial Dst Map(Src s);
+                                   public partial ChildDto ToDto(Child c);
+                               }
+                               """;
+            var (diagnostics, generated) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
+            var d = Assert.Single(diagnostics.Where(x => x.Id == "DWARF070"));
+            Assert.Contains("Source member 'Home.Inner' is a nullable reference", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            Assert.Contains("Inner = ToDto(s.Home.Inner!)", generated, StringComparison.Ordinal);
         }
 
         [Fact]

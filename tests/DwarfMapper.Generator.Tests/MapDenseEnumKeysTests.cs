@@ -630,6 +630,11 @@ namespace DwarfMapper.Generator.Tests
             var message = d.GetMessage(CultureInfo.InvariantCulture);
 
             Assert.Contains(named, message, StringComparison.Ordinal);
+            // The message is assembled from three literals, and the modifier name sits in the middle one. The
+            // mutation leg blanked each of the other two without a failure: the opening names the DIRECTIVE
+            // and the MEMBER (which of several dense members this is about), the closing carries the remedy.
+            Assert.Contains("[MapDenseEnumKeys] member 'Counts' also carries a [MapProperty]", message, StringComparison.Ordinal);
+            Assert.Contains("remove one of them", message, StringComparison.Ordinal);
         }
     }
 }

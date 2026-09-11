@@ -74,9 +74,14 @@ namespace DwarfMapper.Generator.Tests
                                    private static void Cfg(MapConfig<S, D> c) => c.MapOr(t => t.V, s => s.V, 5).Value(t => t.Tag, 99);
                                }
                                """;
-            var (diags, _) = GeneratorTestHarness.Run(src);
+            var (diags, generated) = GeneratorTestHarness.Run(src);
             Assert.Null(D068(diags));
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            // Recognized is not honoured: MapOr's fallback travels as a PRE-RENDERED literal (NullSubLiteral,
+            // the MapConfig-only branch of the NullSubstitute arm), and the mutation leg emptied that branch
+            // without a failure — the op parsed, the coalesce vanished. The emission is the proof.
+            Assert.Contains("V = src.V ?? 5", generated, StringComparison.Ordinal);
+            Assert.Contains("Tag = 99", generated, StringComparison.Ordinal);
         }
 
         /// <summary>

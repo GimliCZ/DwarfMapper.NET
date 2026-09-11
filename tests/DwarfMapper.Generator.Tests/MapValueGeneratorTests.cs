@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -190,7 +191,68 @@ namespace DwarfMapper.Generator.Tests
                         }
                         """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF041"));
+            var d = Find(diags, "DWARF041");
+            Assert.NotNull(d);
+            // The descriptor's format is a bare "{0}", so the whole message IS the resolver's own text — an
+            // id-only assertion passes against a blanked one. Pinned on the two facts the reader needs:
+            // WHICH member, and WHAT a valid provider looks like (the destination type is the fourth
+            // ingredient, and every row here targets the same int member).
+            Assert.Contains("for 'Count' must name a parameterless method whose return type is assignable to 'int'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MapValue_with_neither_a_constant_nor_Use_reports_DWARF042_saying_so()
+        {
+            // The one-argument constructor exists for the Use= form; written WITHOUT Use= it names a target and
+            // supplies nothing for it. ReadMapValues marks that neither constant (two-argument form) nor
+            // provider, and the resolver's third arm is the only thing standing between the caller and a
+            // silently unassigned member — it had no test of its own before this one (the mutation leg found
+            // both its Add and its message removable without a failure).
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int Id { get; set; } }
+                               public class D { public int Id { get; set; } public int Count { get; set; } }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [MapValue(nameof(D.Count))]
+                                   public partial D Map(S s);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            var d = Find(diags, "DWARF042");
+            Assert.NotNull(d);
+            Assert.Contains("[MapValue] for 'Count' provides neither a constant value nor Use=",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Shadow_report_under_Flexible_finds_the_source_member_by_its_normalized_name()
+        {
+            // DWARF064 asks "would auto-match have used a source member here?", and under NameConvention.Flexible
+            // auto-match keys the source groups by NORMALIZED name (strip '_', lowercase). The shadow lookup has
+            // to normalize the target the same way or it answers "no" for exactly the pair Flexible exists to
+            // join — snake_case source, PascalCase target — and the [MapValue] masks user_name in silence. The
+            // remedy must also spell the member as the source declares it, because that is the spelling
+            // [MapIgnoreSource] takes.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int Id { get; set; } public string user_name { get; set; } = ""; }
+                               public class D { public int Id { get; set; } public string UserName { get; set; } = ""; }
+                               [DwarfMapper(NameConvention = NameConvention.Flexible)] public partial class M
+                               {
+                                   [MapValue(nameof(D.UserName), "stub")]
+                                   public partial D Map(S s);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            var d = Find(diags, "DWARF064");
+            Assert.NotNull(d);
+            Assert.Contains("[MapIgnoreSource(\"user_name\")]", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
         [Theory]

@@ -114,6 +114,31 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void A_duplicate_explicit_target_is_refused_before_its_source_is_resolved()
+        {
+            // The duplicate arm `continue`s before the resolver sees the second [MapProperty]. Without that,
+            // the second pair would be resolved as if it were legitimate — and here its source is a class that
+            // cannot become a string, so the caller would read a DWARF005 about the duplicate's own conversion
+            // on top of the DWARF011 that is the real problem. One directive, one refusal.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Blob { }
+                               public class Source { public string A { get; set; } = ""; public Blob B { get; set; } = new(); }
+                               public class Target { public string Name { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapProperty("A", "Name")]
+                                   [MapProperty("B", "Name")]
+                                   public partial Target Map(Source s);
+                               }
+                               """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal(["DWARF011"], diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Id).Distinct().ToArray());
+        }
+
+        [Fact]
         public void MapIgnore_and_MapProperty_same_target_reports_DWARF012()
         {
             const string src = """
@@ -133,6 +158,30 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains(diagnostics,
                 d => d.Id == "DWARF012" &&
                      d.GetMessage(CultureInfo.InvariantCulture).Contains("Name", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void An_ignored_explicit_target_is_refused_before_its_source_is_resolved()
+        {
+            // Same rule as the duplicate arm: the contradiction is reported and the pair is dropped THERE. A
+            // source that cannot become a string proves the drop — resolved anyway, it would add a DWARF005
+            // the caller has to read past to find the [MapIgnore]/[MapProperty] clash that caused it.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Blob { }
+                               public class Source { public Blob Full { get; set; } = new(); }
+                               public class Target { public string Name { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapIgnore("Name")]
+                                   [MapProperty("Full", "Name")]
+                                   public partial Target Map(Source s);
+                               }
+                               """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal(["DWARF012"], diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Id).Distinct().ToArray());
         }
 
         [Fact]

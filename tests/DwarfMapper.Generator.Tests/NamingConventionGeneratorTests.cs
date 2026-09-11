@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -63,6 +64,32 @@ namespace DwarfMapper.Generator.Tests
             var d = Find(diags, "DWARF048");
             Assert.NotNull(d);
             Assert.Equal(DiagnosticSeverity.Error, d.Severity);
+            // The whole sentence, because it is built from three literals and a join: the target, the
+            // candidates in declaration order SEPARATED so the reader can tell them apart, and the remedy.
+            // The mutation leg blanked each piece (and the ", " between the names) without a failure.
+            Assert.Contains("target 'UserName' matches multiple source members under NameConvention.Flexible (UserName, user_name); disambiguate with [MapProperty]",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_collision_is_refused_before_either_candidate_is_resolved()
+        {
+            // The ambiguity arm `continue`s before the resolver sees a candidate. Without that, the FIRST
+            // candidate would be resolved as if it had won — and here it is a class that cannot become a
+            // string, so the caller would read DWARF005 about a conversion they never asked for on top of the
+            // collision that is the real problem.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Blob { }
+                               public class S { public Blob UserName { get; set; } = new(); public string user_name { get; set; } = ""; }
+                               public class D { public string UserName { get; set; } = ""; }
+                               [DwarfMapper(NameConvention = NameConvention.Flexible)] public partial class M { public partial D Map(S s); }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.NotNull(Find(diags, "DWARF048"));
+            Assert.Equal(["DWARF048"], diags.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Id).Distinct().ToArray());
         }
 
         [Fact]

@@ -460,6 +460,9 @@ namespace DwarfMapper.Generator.Tests
             // conflict would pass a test that only asserted the id, and would send the caller to the wrong
             // line of their own source.
             Assert.Contains(named, message, StringComparison.Ordinal);
+            // And the opening literal — the one that says WHICH member and WHICH directive — is a separate
+            // string the modifier assertion does not reach; the mutation leg blanked it without a failure.
+            Assert.Contains("[MapShare] member 'Items' also carries a [MapProperty]", message, StringComparison.Ordinal);
         }
     }
 }

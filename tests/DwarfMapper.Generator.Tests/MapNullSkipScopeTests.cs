@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
 {
@@ -151,6 +152,88 @@ namespace DwarfMapper.Generator.Tests
                                                                 """);
 
             Assert.Contains(Guard, generated, StringComparison.Ordinal);
+        }
+
+        // ── Which members the guard reaches, and which it must leave alone ────────────────────────────────
+        // ApplySkipNullSourceMembers marks a member deferrable only when its destination can be assigned after
+        // construction and its source can actually be null. The three tests below pin one side of that
+        // boundary each; every one was a hole the mutation leg found (the whole field arm and most of the
+        // skip conditions were removable without a failure).
+
+        [Fact]
+        public void A_public_mutable_field_target_is_guarded_like_a_settable_property()
+        {
+            // Fields are destinations too, and a plain mutable field is exactly as post-construction-settable as
+            // a { get; set; } property. The field arm has its own readonly/const/required checks — none of
+            // which a mutable field trips — so it must land in the deferrable set and get the guard.
+            var generated = GeneratorAssert.EmitsCompilableCode("""
+                                                                using DwarfMapper;
+                                                                namespace Demo;
+                                                                public class Dto { public string? Name { get; set; } public string? Note { get; set; } }
+                                                                public class Entity { public string Name = ""; public string Note { get; set; } = ""; }
+
+                                                                [DwarfMapper(SkipNullSourceMembers = true)]
+                                                                public partial class M { public partial Entity Map(Dto src); }
+                                                                """);
+
+            Assert.Contains("if (src.Name is not null) __dwarf_target.Name = src.Name;", generated, StringComparison.Ordinal);
+            Assert.Contains("if (src.Note is not null) __dwarf_target.Note = src.Note;", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_When_guarded_member_is_left_to_its_predicate_and_keeps_its_DWARF070()
+        {
+            // When= and SkipIfSourceNull are mutually exclusive on a member (MemberMap says so), and the emitter
+            // writes the predicate guard alone. So the pass must SKIP a When member outright: marking it would
+            // not change the guard, but it would clear NullRefIntoNonNullable — and with it the `!` and the
+            // DWARF070 that tell the caller a null can still reach `Note` when the predicate is true.
+            var (diagnostics, generated) = GeneratorTestHarness.Run("""
+                                                                    #nullable enable
+                                                                    using DwarfMapper;
+                                                                    namespace Demo;
+                                                                    public class Dto { public string? Name { get; set; } public string? Note { get; set; } }
+                                                                    public class Entity { public string Name { get; set; } = ""; public string Note { get; set; } = ""; }
+
+                                                                    [DwarfMapper(SkipNullSourceMembers = true)]
+                                                                    public partial class M
+                                                                    {
+                                                                        [MapProperty(nameof(Dto.Note), nameof(Entity.Note), When = nameof(HasNote))]
+                                                                        public partial Entity Map(Dto src);
+                                                                        private static bool HasNote(Dto d) => d.Note is not null;
+                                                                    }
+                                                                    """,
+                NullableContextOptions.Enable);
+
+            Assert.Contains("if (HasNote(src)) __dwarf_target.Note = src.Note!;", generated, StringComparison.Ordinal);
+            Assert.Contains("if (src.Name is not null) __dwarf_target.Name = src.Name;", generated, StringComparison.Ordinal);
+            var d070 = Assert.Single(diagnostics.Where(d => d.Id == "DWARF070"));
+            Assert.Contains("'Note'", d070.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void An_init_only_target_is_not_deferred_and_keeps_its_DWARF070()
+        {
+            // An init-only member can only be set in the initializer, so it cannot take the post-construction
+            // guard: deferring it emits `__dwarf_target.Name = …` after the `new`, which is CS8852 in the
+            // consumer's .g.cs. It stays a plain (forgiven, DWARF070-reported) initializer entry while the
+            // settable sibling is guarded.
+            const string src = """
+                               #nullable enable
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Dto { public string? Name { get; set; } public string? Note { get; set; } }
+                               public class Entity { public string Name { get; init; } = ""; public string Note { get; set; } = ""; }
+
+                               [DwarfMapper(SkipNullSourceMembers = true)]
+                               public partial class M { public partial Entity Map(Dto src); }
+                               """;
+            var (diagnostics, generated) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
+
+            Assert.Contains("Name = src.Name!,", generated, StringComparison.Ordinal);
+            Assert.Contains("if (src.Note is not null) __dwarf_target.Note = src.Note;", generated, StringComparison.Ordinal);
+            var d070 = Assert.Single(diagnostics.Where(d => d.Id == "DWARF070"));
+            Assert.Contains("'Name'", d070.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src, NullableContextOptions.Enable);
         }
 
         [Fact]

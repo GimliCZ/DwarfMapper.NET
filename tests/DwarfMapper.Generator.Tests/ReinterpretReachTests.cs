@@ -147,7 +147,10 @@ namespace DwarfMapper.Generator.Tests
             // The element pair resolves to the DECLARED create map, so the blit runs per element through the
             // method that carries the directive rather than through a freshly synthesized element mapper.
             Assert.Contains(expectedCall, generated, StringComparison.Ordinal);
-            Assert.Contains("__DwarfBlit_", generated, StringComparison.Ordinal);
+            // The ASSIGNMENT, not merely the helper: SynthesizeBlit adds the helper to the table before the
+            // member is added to the plan, so a plan that dropped the member would still emit the helper and
+            // pass a presence check — while Data silently kept its default. The mutation leg did exactly that.
+            Assert.Contains("Data = __DwarfBlit_", generated, StringComparison.Ordinal);
             Assert.Contains("MemoryMarshal.Cast<int, uint>", generated, StringComparison.Ordinal);
         }
 

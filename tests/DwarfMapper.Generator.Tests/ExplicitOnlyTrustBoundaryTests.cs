@@ -72,6 +72,29 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void Explicit_only_refuses_the_by_name_match_before_resolving_it()
+        {
+            // The refusal `continue`s past the resolver. That is what makes it a trust boundary rather than a
+            // warning bolted onto a wire that still happens: a same-named source whose type does not even
+            // convert (a class into a bool) is refused for being same-named and for nothing else — no DWARF005
+            // about a conversion the mapper was never going to perform.
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Flag { }
+                                  public class UserInput { public string Name { get; set; } = ""; public Flag IsAdmin { get; set; } = new(); }
+                                  public class UserEntity { public string Name { get; set; } = ""; public bool IsAdmin { get; set; } }
+                                  [DwarfMapper(AutoMatchMembers = false)]
+                                  public partial class M { public partial UserEntity Map(UserInput input); }
+                                  """;
+
+            var (diagnostics, _) = GeneratorTestHarness.Run(source);
+
+            Assert.Equal(2, diagnostics.Count(d => d.Id == "DWARF072"));
+            Assert.Equal(["DWARF072"], diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Id).Distinct().ToArray());
+        }
+
+        [Fact]
         public void Explicit_only_honours_MapProperty_and_MapIgnore_and_then_compiles()
         {
             // The intended usage: map what you allow, ignore what you protect — every field a deliberate decision.

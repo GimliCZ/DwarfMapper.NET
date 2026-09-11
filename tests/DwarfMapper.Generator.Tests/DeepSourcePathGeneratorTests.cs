@@ -116,7 +116,17 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF043"));
+            var d = Find(diags, "DWARF043");
+            Assert.NotNull(d);
+            // Names BOTH the path the caller wrote and the segment that broke it — the second is the part a
+            // five-hop path needs, and the descriptor's format is a bare "{0}", so only the text carries it.
+            Assert.Contains("source path 'Customer.City' has no member 'City'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+            // The walk failed, so the explicit map `continue`s before the flat-name lookup. Without that, the
+            // null leaf type would fall into the "unknown source" arm and the one bad segment would be
+            // reported twice, once as a path and once as a member that does not exist.
+            Assert.Null(Find(diags, "DWARF009"));
         }
 
         [Fact]
@@ -134,7 +144,11 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF043"));
+            var d = Find(diags, "DWARF043");
+            Assert.NotNull(d);
+            Assert.Contains("source path 'Nope.Name' has no member 'Nope'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         [Fact]
@@ -158,6 +172,11 @@ namespace DwarfMapper.Generator.Tests
             Assert.NotNull(d);
             // Item 8: a nullable interior hop can NRE at runtime → Warning, not a mere suggestion.
             Assert.Equal(DiagnosticSeverity.Warning, d.Severity);
+            // The message is the whole diagnostic (a bare "{0}" descriptor): it must name the path and say
+            // what the hazard is, or the warning is a code with nothing to act on.
+            Assert.Contains("source path 'Customer.Name' traverses a nullable member; a null interior value throws at runtime",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         [Fact]
