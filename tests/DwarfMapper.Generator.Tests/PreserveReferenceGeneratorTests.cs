@@ -319,6 +319,50 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("SetReference", generated, StringComparison.Ordinal);
         }
 
+        // ── 14c. Preserve + a recursion-capable element ALSO reached through an immutable
+        //         collection: the immutable helper threads (ctx, depth) even though it cannot
+        //         itself register-before-fill ────────────────────────────────────────────────
+        [Fact]
+        public void Preserve_immutable_array_of_a_recursion_capable_element_threads_ctx()
+        {
+            // EmitImmutableArray/EmitImmutableCollection's `elemNeedsCtx` arm — never independently true in
+            // any existing fixture, because every Preserve+ImmutableArray/ImmutableList/ImmutableHashSet test
+            // used a non-recursive element. Node becomes recursion-capable through the LIST edge (Kids);
+            // Extra (an ImmutableArray of the SAME element type) must thread ctx too, even though an
+            // immutable collection can never itself register-before-fill.
+            const string src = """
+                               using System.Collections.Generic;
+                               using System.Collections.Immutable;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node> Kids { get; set; } = new(); public ImmutableArray<Node> Extra { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } = new(); public ImmutableArray<NodeDto> Extra { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_immutable_list_of_a_recursion_capable_element_threads_ctx()
+        {
+            // The same arm in EmitImmutableCollection (ImmutableList/ImmutableHashSet share one emitter,
+            // separate from EmitImmutableArray above).
+            const string src = """
+                               using System.Collections.Generic;
+                               using System.Collections.Immutable;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node> Kids { get; set; } = new(); public ImmutableList<Node>? Extra { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } = new(); public ImmutableList<NodeDto>? Extra { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        }
+
         // ── 15. None mode: acyclic mapper has NO DwarfRefContext param (zero overhead) ─
         [Fact]
         public void None_mode_acyclic_mapper_has_no_DwarfRefContext_param()
