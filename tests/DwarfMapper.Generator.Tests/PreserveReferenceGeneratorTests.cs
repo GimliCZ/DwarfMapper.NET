@@ -297,6 +297,28 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        // ── 14b. Preserve + self-referential HashSet<T> element: register-before-fill ──
+        [Fact]
+        public void Preserve_self_referential_hashset_element_registers_before_fill()
+        {
+            // EmitHashSet's registerBeforeFill arm — TryGetReference/SetReference around the fill loop, so a
+            // shared or cyclic reference reached through a HashSet edge resolves to the same instance instead
+            // of being duplicated. Every existing Preserve+HashSet fixture used a non-recursive element
+            // (identity int, or an acyclic object), which takes EmitHashSet's OTHER two arms.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public HashSet<Node>? Children { get; set; } }
+                               public class NodeDto { public int V { get; set; } public HashSet<NodeDto>? Children { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("TryGetReference", generated, StringComparison.Ordinal);
+            Assert.Contains("SetReference", generated, StringComparison.Ordinal);
+        }
+
         // ── 15. None mode: acyclic mapper has NO DwarfRefContext param (zero overhead) ─
         [Fact]
         public void None_mode_acyclic_mapper_has_no_DwarfRefContext_param()
