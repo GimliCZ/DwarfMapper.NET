@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 42;
-        private const int PinnedTotalOccurrences = 53;
+        private const int PinnedEntryRows = 58;
+        private const int PinnedTotalOccurrences = 69;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -79,7 +79,18 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // trivia source for an added attribute list, which Formatter.Annotation has normalised away in
             // every case tried -- evidence, not a proof.
             ["codefixes|proven-equivalent"] = 22,
-            ["codefixes|probably-equivalent"] = 1
+            ["codefixes|probably-equivalent"] = 1,
+            // Round 30's pipeline kill program (2026-09-11) is the first adjudication for that leg: sixteen
+            // proven rows, case analyses in Issues/ledgers/pipeline-mutation-survivors.md (same commit).
+            // Three shared lemmas carry the skip-null chain and the extras guards (member-name keys never
+            // equal "" or a dotted string; no MemberMap carries both a SourceName and a ValueExpression;
+            // every ExtrasByTarget entry was admitted with When or a NullSubstitute); the rest are an
+            // empty-list guard, a loop whose only effect is idempotent, a snapshot nothing reads outside
+            // its branch, a HandledTargets.Add no later reader can see, and three "" -> "Stryker was here!"
+            // SourceName flips whose every consumer short-circuits or resolves the name against real
+            // members. Three are marked WEAKER (two rest on DWARF078's error-suppresses-emission
+            // invariant, one on both factory-bearing callers passing NameConvention: 0).
+            ["pipeline|proven-equivalent"] = 16
         };
 
         // ── shared ────────────────────────────────────────────────────────────────

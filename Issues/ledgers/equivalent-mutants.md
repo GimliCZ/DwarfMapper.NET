@@ -109,7 +109,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 304 | 89.80 % (2026-09-09, round-29 Phase 3 gate) | 0 | 0 | 0 | 100.00 % |
+| pipeline | `stryker-config.pipeline.json` | 304 | 89.80 % (2026-09-09, round-29 Phase 3 gate) | 16 | 0 | 0 | 94.73 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
@@ -196,6 +196,22 @@ group-naming fallback — **not** in the `[MapShare]` / `[MapDenseEnumKeys]` reg
 than assumed, because still-unexecuted code in a feature shipped this round would have been a blocker for
 the release rather than a worklist entry.
 
+**Pipeline kill program, 2026-09-11 (round 30).** The leg re-measured at **81.25 %** (247 of 304 — 56
+survived, 1 uncovered, 0 timeouts), reproduced identically twice, with zero commits to the three mutated
+files since the pin: every survivor sits on a diagnostic site or branch the suite reaches but asserts only
+the id of. The first adjudication for this leg lands here — **16 proven-equivalent rows**, all in
+`MapperExtractor.Members.Phases.cs`, with the case analyses in `Issues/ledgers/pipeline-mutation-survivors.md`
+(the leg's own survivors ledger, in the code-fixes leg's shape). Three shared lemmas carry most of them: the
+skip-null pass's `srcTypeByName` cannot match `""` or a dotted name; no `MemberMap` carries both a non-empty
+`SourceName` and a `ValueExpression`; every `ExtrasByTarget` entry was admitted with `When` or a
+`NullSubstitute`. Three rows are marked WEAKER: two rest on the error-suppresses-emission invariant
+(DWARF078), one on the fact that both callers that pass `FactoryExcludedMembers` construct their options with
+`NameConvention: 0`, so DWARF080's Flexible lookup arm is unreachable today. `rawCeiling` becomes
+(304 − 16) / 304 = 94.73 %. Three survivors are deliberately **not** adjudicated and
+are named in that file: two leading-dot path refusals where the mutant's message is the better one, and the
+line-670 `ConsumedCtorParams` flip, which the probe showed to be a latent defect (a `[MapIgnore]` on a
+required constructor-bound member emits CS9035 with no DWARF079) — a source question, not a test one.
+
 The run that produced this row was itself a regression fix, and it is worth recording why. The first
 Phase 3 attempt scored 75.99 % against `break` 78 -- **below the floor** -- with 11 mutants NoCoverage,
 clustered on the four-way ternaries at lines 365, 367 and 405 that name which `[MapProperty]` modifier
@@ -248,7 +264,8 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "Issues/ledgers/E3-E1-report.md",
     "Issues/ledgers/H7-timeout-dissection.md",
     "Issues/round20/CARRY-FORWARD.md",
-    "Issues/ledgers/codefixes-mutation-survivors.md"
+    "Issues/ledgers/codefixes-mutation-survivors.md",
+    "Issues/ledgers/pipeline-mutation-survivors.md"
   ],
   "legs": {
     "generator": {
@@ -311,11 +328,11 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "scoreable": 304,
       "measuredRawScore": 89.80,
       "measuredOn": "2026-09-09",
-      "provenEquivalent": 0,
+      "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 100.0,
-      "rawCeilingFormula": "(304 - 0) / 304 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
+      "rawCeiling": 94.73,
+      "rawCeilingFormula": "(304 - 16) / 304 — the round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
     }
   },
   "entries": [
@@ -906,6 +923,230 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "proven-equivalent",
       "proof": "Initialises the out parameters immediately before \"return false\", so the compiler is satisfied. Every caller is of the form \"if (TryRead... && TryRead...)\" and reads the outs only on the true path. WEAKER THAN THE OTHERS: this rests on caller discipline rather than on the language, and becomes killable the day a caller reads the outs after a false return.",
       "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ApplySkipNullSourceMembers (empty-list guard)",
+      "lineAtProof": 37,
+      "lineCurrent": 37,
+      "mutator": "Equality mutation",
+      "original": "acc.Result.Count > 0",
+      "mutated": "acc.Result.Count >= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "With >= 0 the block also runs on an empty member list: it builds two lookups and iterates zero members. Nothing is added, changed or reported; the forms differ only in an allocation.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ApplySkipNullSourceMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ApplySkipNullSourceMembers (dotted-source test)",
+      "lineAtProof": 59,
+      "lineCurrent": 59,
+      "mutator": "Equality mutation",
+      "original": "m.SourceName.IndexOf('.') >= 0",
+      "mutated": "m.SourceName.IndexOf('.') > 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Differs only for a SourceName beginning with '.'. Every SourceName in acc.Result is \"\", a symbol name, Root + \".\" + Leaf with a symbol-name root, or a dotted path TryResolvePath accepted (whose first segment equalled a readable member's name, so is non-empty). None begins with '.'.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ApplySkipNullSourceMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ApplySkipNullSourceMembers (skip chain, first ||)",
+      "lineAtProof": 58,
+      "lineCurrent": 58,
+      "mutator": "Logical mutation",
+      "original": "string.IsNullOrEmpty(m.SourceName) ||",
+      "mutated": "string.IsNullOrEmpty(m.SourceName) &&",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Differs iff exactly one of {empty source, dotted source} holds and every later term is false; the mutant then falls through to srcTypeByName.TryGetValue with \"\" or a dotted name, which fails (lemma L1: keys are member names under Ordinal/OrdinalIgnoreCase), so nothing is assigned.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ApplySkipNullSourceMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ApplySkipNullSourceMembers (skip chain, second ||)",
+      "lineAtProof": 59,
+      "lineCurrent": 59,
+      "mutator": "Logical mutation",
+      "original": "m.SourceName.IndexOf('.') >= 0 ||",
+      "mutated": "m.SourceName.IndexOf('.') >= 0 &&",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Differs iff (empty-or-dotted source) xor (ValueExpression set), with every later term false. The first case falls through to a lookup that fails (L1); the second needs a ValueExpression member with a non-empty undotted SourceName, and none exists (L2: the only two ValueExpression constructions pass \"\").",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ApplySkipNullSourceMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ApplySkipNullSourceMembers (skip chain, third ||)",
+      "lineAtProof": 60,
+      "lineCurrent": 60,
+      "mutator": "Logical mutation",
+      "original": "m.ValueExpression is not null ||",
+      "mutated": "m.ValueExpression is not null &&",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Differs iff (empty/dotted/ValueExpression) xor (unflatten), with When, SkipIfSourceNull and the deferrable test all false. An unflatten member has a dotted TargetName, never in deferrableTargets (L3), so its case contradicts the premise; the other case falls through to a lookup that fails (L1) or needs a member L2 rules out.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ApplySkipNullSourceMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveMapValues (DWARF040 continue)",
+      "lineAtProof": 153,
+      "lineCurrent": 153,
+      "mutator": "Statement mutation",
+      "original": "continue;",
+      "mutated": "(the continue after the MapValueTypeMismatch report removed)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The fall-through adds a MemberMap with ValueExpression \"\". DWARF040 is an Error, and an Error withholds the mapper's whole emission (DWARF078 names the mechanism), so it is never emitted; every later reader of acc.Result (skip-null pass, DWARF070 report, source coverage, dense post-pass) produces nothing from it. WEAKER THAN THE OTHERS: rests on the error-suppresses-emission invariant.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveMapValues"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveMapValues (DWARF041 continue)",
+      "lineAtProof": 167,
+      "lineCurrent": 167,
+      "mutator": "Statement mutation",
+      "original": "continue;",
+      "mutated": "(the continue after the MapValueUseInvalid report removed)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Same shape as the DWARF040 row: the fall-through adds a MemberMap carrying Escape(mv.Use) + \"()\" for a mapper whose emission the Error already withholds (DWARF078), and no later reader of acc.Result reports off it. WEAKER THAN THE OTHERS: rests on the error-suppresses-emission invariant.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveMapValues"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveMapValues (constant member SourceName)",
+      "lineAtProof": 156,
+      "lineCurrent": 156,
+      "mutator": "String mutation",
+      "original": "new MemberMap(mvTgt, \"\", ValueExpression: literal)",
+      "mutated": "new MemberMap(mvTgt, \"Stryker was here!\", ValueExpression: literal)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Every consumer of SourceName either short-circuits on ValueExpression (skip-null pass, AddPlanLine, AppendValueExpression), is gated on NullRefIntoNonNullable (DWARF070 report), or looks the string up among real source members (AddConsumed/ReportUnconsumed, MemberTypeByName), where a non-identifier matches nothing exactly as \"\" does.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveMapValues"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveMapValues (Use= member SourceName)",
+      "lineAtProof": 174,
+      "lineCurrent": 174,
+      "mutator": "String mutation",
+      "original": "new MemberMap(mvTgt, \"\", ValueExpression: Identifiers.Escape(mv.Use) + \"()\")",
+      "mutated": "new MemberMap(mvTgt, \"Stryker was here!\", ValueExpression: Identifiers.Escape(mv.Use) + \"()\")",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Same consumer enumeration as the constant-member row: ValueExpression short-circuits the emitter and the skip-null pass, NullRefIntoNonNullable gates DWARF070, and the remaining readers resolve the string against real source members, where it matches nothing.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveMapValues"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveExplicitMaps (unflatten extras guard)",
+      "lineAtProof": 222,
+      "lineCurrent": 222,
+      "mutator": "Logical mutation",
+      "original": "TryGetValue(tgtName, out var uex) && (uex.When is not null || uex.HasNullSub)",
+      "mutated": "TryGetValue(tgtName, out var uex) || (uex.When is not null || uex.HasNullSub)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "On a miss the out tuple is default (When null, HasNullSub false) and both forms are false. On a hit both are true, because all four producers of ExtrasByTarget (ReadMapPropertyExtras, MatchPairProps, the co-located host reader, MapConfig MapOr) admit an entry only when HasNullSub || When is not null.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveExplicitMaps"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveExplicitMaps (hasExtras)",
+      "lineAtProof": 347,
+      "lineCurrent": 347,
+      "mutator": "Logical mutation",
+      "original": "lookups.ExtrasByTarget.TryGetValue(tgtName, out var shareExtras) &&",
+      "mutated": "lookups.ExtrasByTarget.TryGetValue(tgtName, out var shareExtras) ||",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Identical argument to the unflatten extras guard: a miss yields a default tuple whose HasNullSub/When test is false, a hit yields an entry every producer admitted only with HasNullSub || When is not null, so the right operand equals the lookup result on every input.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveExplicitMaps"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveExplicitMaps (synthBeforeConversion snapshot)",
+      "lineAtProof": 330,
+      "lineCurrent": 330,
+      "mutator": "Conditional (true) mutation",
+      "original": "var synthBeforeConversion = req.StringFormats is not null && req.StringFormats.ContainsKey(tgtName)",
+      "mutated": "var synthBeforeConversion = true",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The snapshot is read at exactly one site, inside the StringFormats.TryGetValue branch; for a member with no format the forced snapshot is a HashSet nothing reads, for one with a format the original took it too. Emitted text identical.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveExplicitMaps"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveExplicitMaps (When-predicate search)",
+      "lineAtProof": 536,
+      "lineCurrent": 536,
+      "mutator": "Statement mutation",
+      "original": "break;",
+      "mutated": "(the break after ok = true removed)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The loop body's only effect is ok = true; nothing resets ok and a later iteration can only set it again. Removing the early exit changes the iteration count, not the outcome.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveExplicitMaps"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveAutoMatchedMembers (extra-parameter HandledTargets)",
+      "lineAtProof": 758,
+      "lineCurrent": 758,
+      "mutator": "Statement mutation",
+      "original": "acc.HandledTargets.Add(target.Name);",
+      "mutated": "(the HandledTargets.Add in the extra-parameter arm removed)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "HandledTargets is read afterwards only for LATER targets (WritableMembers yields each name once) and by the read-only silent-loss guard (names disjoint from writable targets); every other reader ran before this pass.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveAutoMatchedMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveAutoMatchedMembers (DWARF080 source lookup)",
+      "lineAtProof": 642,
+      "lineCurrent": 642,
+      "mutator": "Conditional (false) mutation",
+      "original": "lookups.SourceGroups.ContainsKey(lookups.Flexible ? NormalizeName(target.Name) : target.Name)",
+      "mutated": "lookups.SourceGroups.ContainsKey(target.Name)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The branch is guarded by req.FactoryExcludedMembers, which only the [GenerateMap] and synthesized-nested-pair callers of ResolveMembers pass, and both construct their MapperOptions with NameConvention: 0 — so lookups.Flexible is false on every input that reaches the ternary and both forms read target.Name. Planted and run against a Flexible [GenerateMap] factory fixture: identical output. WEAKER THAN THE OTHERS: rests on that wiring, and becomes killable the day a [GenerateMap] pair honours NameConvention.Flexible.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveAutoMatchedMembers"
+    },
+    {
+      "leg": "pipeline",
+      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
+      "member": "ResolveAutoMatchedMembers (extra-parameter SourceName)",
+      "lineAtProof": 731,
+      "lineCurrent": 731,
+      "mutator": "String mutation",
+      "original": "<empty-quotes literal> as the extra-parameter MemberMap's SourceName",
+      "mutated": "\"Stryker was here!\" as the extra-parameter MemberMap's SourceName",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The member carries SourceAccessExpression and every consumer prefers it (DWARF070 report, AddPlanLine, AppendValueExpression, the ThrowIfNull message); the skip-null pass falls through to a lookup that fails (L1); AddConsumed/ReportUnconsumed resolve the string against real source members, where it matches nothing.",
+      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveAutoMatchedMembers"
     }
   ]
 }
