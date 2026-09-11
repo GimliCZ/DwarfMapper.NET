@@ -404,6 +404,47 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(1, helperCount);
         }
 
+        [Fact]
+        public void Two_members_blitting_the_same_list_shape_pair_reuse_one_synthesized_helper()
+        {
+            // SynthesizeBlitListShape's own memoization check, the List-storage twin of SynthesizeBlit's —
+            // every blit-list fixture in the suite maps exactly one List<T> member of its struct pair.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct SrcV { public int X; public int Y; }
+                               public struct DstV { public int X; public int Y; }
+                               public class C { public List<SrcV> A { get; set; } = new(); public List<SrcV> B { get; set; } = new(); }
+                               public class D { public List<DstV> A { get; set; } = new(); public List<DstV> B { get; set; } = new(); }
+                               [DwarfMapper] public partial class M { public partial D Map(C c); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            var helperCount = System.Text.RegularExpressions.Regex.Matches(generated, "__DwarfBlitL_").Count;
+            Assert.True(helperCount > 0, "expected a list-shape blit helper to be emitted:\n" + generated);
+            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
+                "private static global::System.Collections.Generic.List<global::Demo.DstV> __DwarfBlitL_").Count;
+            Assert.Equal(1, declCount);
+        }
+
+        [Fact]
+        public void Two_members_widening_the_same_pair_reuse_one_synthesized_helper()
+        {
+            // SynthesizeSimdWiden's memoization check — every SIMD-widen fixture in the suite maps exactly
+            // one array member of its primitive-widen pair.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class C { public int[] A { get; set; } = System.Array.Empty<int>(); public int[] B { get; set; } = System.Array.Empty<int>(); }
+                               public class D { public long[] A { get; set; } = System.Array.Empty<long>(); public long[] B { get; set; } = System.Array.Empty<long>(); }
+                               [DwarfMapper] public partial class M { public partial D Map(C c); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
+                "private static long\\[\\] __DwarfWiden_").Count;
+            Assert.Equal(1, declCount);
+        }
+
         // ── 15. None mode: acyclic mapper has NO DwarfRefContext param (zero overhead) ─
         [Fact]
         public void None_mode_acyclic_mapper_has_no_DwarfRefContext_param()
