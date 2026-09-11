@@ -6,11 +6,26 @@ Round 30. The leg (`stryker-config.pipeline.json`) mutates the four member-resol
 `MapperExtractor.Members.Phases.cs` plus the two context records they are parameterised by. It was pinned
 at `break` 89 on 2026-09-09 (89.80 %, 273 of 304) and measured **81.25 % (247 of 304 — 56 survived,
 1 uncovered, 0 timeouts) on 2026-09-11**, reproduced identically on two independent runs, with **zero
-commits** to any of the three mutated files since the pin.
+commits** to any of the three mutated files since the pin. After the kill program it measured **93.42 %
+(284 of 304 — 19 survived, 1 uncovered, 0 timeouts)** the same day, and `break` moved 89 → 93.
 
 This file carries the case analysis behind every mutant that remains after the kill program. The
 machine-readable rows are in [`equivalent-mutants.md`](equivalent-mutants.md); this is the prose they
 anchor to, in the shape of [`codefixes-mutation-survivors.md`](codefixes-mutation-survivors.md).
+
+## The score, and what moved it
+
+| run | scoreable | killed | survived | uncovered | score |
+|---|---:|---:|---:|---:|---:|
+| 2026-09-09 pin (`StrykerOutput/2026-09-09.06-09-56`) | 304 | 273 | 29 | 2 | 89.80 % |
+| 2026-09-11, before (`StrykerOutput/2026-09-11.09-25-59`) | 304 | 247 | 56 | 1 | 81.25 % |
+| 2026-09-11, after the kill program (`StrykerOutput/2026-09-11.13-02-15`) | 304 | **284** | 19 | 1 | **93.42 %** |
+
+The mutant-by-mutant diff of the two 2026-09-11 reports is one-way: **37 Survived → Killed**, no other
+status change, and the 37 are exactly the mutants the tests in commit `0b94ad0` were written against. The
+20 that remain are the 16 adjudicated below plus the four in *Left open, on purpose*. `rawCeiling` is
+**94.73 %** — `(304 − 16) / 304` — so the measured score sits four undetected mutants under the ceiling,
+every one of the four named.
 
 ## Why the score fell with no source change
 

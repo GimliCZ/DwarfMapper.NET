@@ -109,7 +109,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 304 | 89.80 % (2026-09-09, round-29 Phase 3 gate) | 16 | 0 | 0 | 94.73 % |
+| pipeline | `stryker-config.pipeline.json` | 304 | 93.42 % (2026-09-11, round-30 kill program) | 16 | 0 | 0 | 94.73 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
@@ -211,6 +211,16 @@ skip-null pass's `srcTypeByName` cannot match `""` or a dotted name; no `MemberM
 are named in that file: two leading-dot path refusals where the mutant's message is the better one, and the
 line-670 `ConsumedCtorParams` flip, which the probe showed to be a latent defect (a `[MapIgnore]` on a
 required constructor-bound member emits CS9035 with no DWARF079) — a source question, not a test one.
+
+**Pipeline RE-MEASURED 2026-09-11** after the kill program (`StrykerOutput/2026-09-11.13-02-15`): same 304
+scoreable, 247 → **284 killed**, 56 → 19 survived, 1 uncovered in both, 0 timeouts in both — **93.42 %**, so
+`break`/`low` moved 89 → 93 (and `high` 90 → 94) in `stryker-config.pipeline.json` in the same commit. The
+mutant-by-mutant diff against the 81.25 % run is one-way: 37 Survived → Killed, not one Killed → Survived,
+and the 37 are exactly the mutants commit `0b94ad0` was written against (each RED-proven against its plant
+before GREEN). The 20 still undetected are the 16 rows here plus the four `pipeline-mutation-survivors.md`
+leaves open by name, so the measurement sits four mutants under the 94.73 % ceiling with every one of the
+four accounted for. Not a denominator effect, not a timeout reclassification, and — like the 09-09 raise —
+one commit later than the tests that earned it, because the 45-minute run cannot live inside the test commit.
 
 The run that produced this row was itself a regression fix, and it is worth recording why. The first
 Phase 3 attempt scored 75.99 % against `break` 78 -- **below the floor** -- with 11 mutants NoCoverage,
@@ -326,8 +336,8 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "pipeline": {
       "config": "stryker-config.pipeline.json",
       "scoreable": 304,
-      "measuredRawScore": 89.80,
-      "measuredOn": "2026-09-09",
+      "measuredRawScore": 93.42,
+      "measuredOn": "2026-09-11",
       "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
