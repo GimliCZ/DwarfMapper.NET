@@ -59,6 +59,32 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains(diags, d => d.Id == "DWARF028");
         }
 
+        [Theory]
+        [InlineData("ICollection")]
+        [InlineData("IList")]
+        [InlineData("IReadOnlyCollection")]
+        public void Interface_collection_target_kinds_are_translatable(string targetKind)
+        {
+            // IsTargetKindTranslatable's switch has a true arm per translatable TargetKind; List/Array/
+            // IEnumerable/IReadOnlyList are exercised elsewhere in this file, but nothing had independently
+            // driven ICollection, IList or IReadOnlyCollection as a PROJECTION member's target shape.
+            var src = $$"""
+                        using DwarfMapper;
+                        using System.Linq;
+                        using System.Collections.Generic;
+                        namespace Demo;
+                        public class Line { public int Qty { get; set; } }
+                        public class LineDto { public int Qty { get; set; } }
+                        public class Order { public List<Line> Lines { get; set; } = new(); }
+                        public class OrderDto { public {{targetKind}}<LineDto> Lines { get; set; } = new List<LineDto>(); }
+                        [DwarfMapper] public partial class M { public partial IQueryable<OrderDto> P(IQueryable<Order> q); }
+                        """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            _o.WriteLine("DIAGS: " + string.Join(", ", diags.Select(d => d.Id)));
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
         [Fact]
         public void Reference_handling_on_projection_reports_DWARF028()
         {
