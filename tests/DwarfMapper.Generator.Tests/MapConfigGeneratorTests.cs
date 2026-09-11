@@ -371,6 +371,33 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     TryReadMethodGroup's <c>MemberAccessExpressionSyntax</c> arm — every method-group fixture in the
+        ///     suite passes a BARE identifier (<c>IdentifierNameSyntax</c>); a dotted method group
+        ///     (<c>Helpers.Compute</c>, a different syntax node with the same meaning) had never been tried.
+        /// </summary>
+        [Fact]
+        public void Value_with_a_dotted_method_group_computes_the_member_with_no_diagnostic()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int ComputeTag() => 99;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => t.Tag, M.ComputeTag);
+                               }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            Assert.Null(D068(diags));
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Contains("ComputeTag()", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     DWARF069: the same destination member ('A' on D) is configured once by
         ///     <c>[MapProperty&lt;S,T&gt;]</c> AND once by a <c>MapConfig&lt;S,T&gt;</c> <c>.Map</c> call — a genuine
         ///     attribute-vs-config collision, caught by <c>ReportMapConfigConflicts</c> at the merge point.
