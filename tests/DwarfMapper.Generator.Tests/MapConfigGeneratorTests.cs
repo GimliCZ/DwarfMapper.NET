@@ -157,6 +157,101 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     DWARF068: <c>MapWhen</c>'s own unsupported-expression refusal — a separate emission site from
+        ///     <c>Map</c>'s, never independently exercised (every existing MapWhen fixture used valid selectors).
+        /// </summary>
+        [Fact]
+        public void MapWhen_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static bool Always(S s) => true;
+                                   private static void Cfg(MapConfig<S, D> c) => c.MapWhen(t => t.A, s => Identity(s.A), nameof(Always));
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Ignore</c>'s own unsupported-expression refusal, a separate emission site.
+        /// </summary>
+        [Fact]
+        public void Ignore_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int B { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Ignore(t => Identity(t.B));
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>IgnoreSource</c>'s own unsupported-expression refusal, a separate emission site.
+        /// </summary>
+        [Fact]
+        public void IgnoreSource_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } public int Unused { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.IgnoreSource(s => Identity(s.Unused));
+                                   public partial D Map(S s);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Construct</c>'s own unsupported-expression refusal — it reads a factory METHOD GROUP
+        ///     (<c>TryReadMethodGroup</c>), so an inline lambda (not a method group) must be rejected the same
+        ///     way the 3-arg <c>Map</c> converter is.
+        /// </summary>
+        [Fact]
+        public void Construct_with_inline_lambda_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static void Cfg(MapConfig<S, D> c) => c.Construct(s => new D());
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
         ///     DWARF069: the same destination member ('A' on D) is configured once by
         ///     <c>[MapProperty&lt;S,T&gt;]</c> AND once by a <c>MapConfig&lt;S,T&gt;</c> <c>.Map</c> call — a genuine
         ///     attribute-vs-config collision, caught by <c>ReportMapConfigConflicts</c> at the merge point.
