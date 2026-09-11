@@ -80,6 +80,36 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     TryReadMemberPath's <c>ParenthesizedLambdaExpressionSyntax</c> arm — every other MapConfig fixture
+        ///     in the suite writes the simple-lambda form (<c>t =&gt; t.A</c>), which is a DIFFERENT syntax node
+        ///     (<c>SimpleLambdaExpressionSyntax</c>). A single-parameter selector written with explicit
+        ///     parentheses (<c>(t) =&gt; t.A</c>) must resolve identically.
+        /// </summary>
+        [Fact]
+        public void Map_with_parenthesized_single_parameter_selector_resolves_the_same_as_simple_lambda()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static void Cfg(MapConfig<S, D> c) => c.Map((t) => t.A, (s) => s.A);
+                               }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            // A parenthesized-parameter selector that TryReadMemberPath failed to parse would fall through to
+            // the "not a member selector" DWARF068 refusal — its ABSENCE here is the proof the parenthesized
+            // arm resolved the path, not the simple-lambda arm every other fixture exercises.
+            Assert.Null(D068(diags));
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.False(string.IsNullOrEmpty(generated));
+        }
+
+        /// <summary>
         ///     DWARF068: a non-member-access selector (a method CALL, not a member selector) must be
         ///     rejected by <c>TryReadMemberPath</c> and reported, not silently mis-parsed.
         /// </summary>
