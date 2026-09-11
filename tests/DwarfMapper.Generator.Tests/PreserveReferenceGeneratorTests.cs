@@ -363,6 +363,47 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
         }
 
+        [Fact]
+        public void Preserve_queue_of_a_recursion_capable_element_threads_ctx()
+        {
+            // The same elemNeedsCtx arm in EmitStackQueue (Stack<T>/Queue<T> share one emitter): a
+            // Queue/Stack target can never register-before-fill either, but its element conversion still
+            // needs (ctx, depth) when that element is recursion-capable through some other edge.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node> Kids { get; set; } = new(); public Queue<Node>? Extra { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } = new(); public Queue<NodeDto>? Extra { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Two_members_blitting_the_same_pair_reuse_one_synthesized_helper()
+        {
+            // SynthesizeBlit's memoization check (`if (synth.ContainsKey(name)) return name;`) had never
+            // fired: every blit fixture in the suite maps exactly one array member of its struct pair, so the
+            // helper is always created fresh, never reused. Two members sharing the same layout-identical
+            // struct-array pair must resolve to the SAME helper (one declaration, not two).
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct SrcV { public int X; public int Y; }
+                               public struct DstV { public int X; public int Y; }
+                               public class C { public SrcV[] A { get; set; } = System.Array.Empty<SrcV>(); public SrcV[] B { get; set; } = System.Array.Empty<SrcV>(); }
+                               public class D { public DstV[] A { get; set; } = System.Array.Empty<DstV>(); public DstV[] B { get; set; } = System.Array.Empty<DstV>(); }
+                               [DwarfMapper] public partial class M { public partial D Map(C c); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+            var helperCount = System.Text.RegularExpressions.Regex.Matches(generated, "private static global::Demo.DstV\\[\\] __DwarfBlit_").Count;
+            Assert.Equal(1, helperCount);
+        }
+
         // ── 15. None mode: acyclic mapper has NO DwarfRefContext param (zero overhead) ─
         [Fact]
         public void None_mode_acyclic_mapper_has_no_DwarfRefContext_param()
