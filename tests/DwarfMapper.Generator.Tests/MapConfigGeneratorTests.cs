@@ -252,6 +252,125 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     DWARF068: <c>MapOr</c>'s member-selector refusal, its own emission site.
+        /// </summary>
+        [Fact]
+        public void MapOr_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int? A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int? Identity(int? x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.MapOr(t => t.A, s => Identity(s.A), 5);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>MapOr</c>'s fallback must be a compile-time constant — its own refusal, separate
+        ///     from the selector one above.
+        /// </summary>
+        [Fact]
+        public void MapOr_with_a_non_constant_fallback_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int? A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static readonly int NotConst = 5;
+                                   private static void Cfg(MapConfig<S, D> c) => c.MapOr(t => t.A, s => s.A, NotConst);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Value</c>'s target-selector refusal, its own emission site.
+        /// </summary>
+        [Fact]
+        public void Value_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => Identity(t.Tag), 99);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     <c>Value</c>'s METHOD-GROUP form (a computed value, not a constant) — the existing MapOr/Value
+        ///     fixture only ever used the constant overload; the method-group arm had never fired.
+        /// </summary>
+        [Fact]
+        public void Value_with_a_method_group_computes_the_member_with_no_diagnostic()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int ComputeTag() => 99;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => t.Tag, ComputeTag);
+                               }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            Assert.Null(D068(diags));
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Contains("ComputeTag()", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Value</c>'s second argument must be a constant or a method group — its own refusal
+        ///     when it's neither (an inline lambda).
+        /// </summary>
+        [Fact]
+        public void Value_with_neither_a_constant_nor_a_method_group_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => t.Tag, () => 99);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
         ///     DWARF069: the same destination member ('A' on D) is configured once by
         ///     <c>[MapProperty&lt;S,T&gt;]</c> AND once by a <c>MapConfig&lt;S,T&gt;</c> <c>.Map</c> call — a genuine
         ///     attribute-vs-config collision, caught by <c>ReportMapConfigConflicts</c> at the merge point.
