@@ -383,6 +383,72 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void SetNull_span_map_of_a_recursion_capable_element_allocates_the_setNull_context()
+        {
+            // EmitElementContext's IsSetNullMode arm (`preserve: false, setNull: true`) — the element-wise
+            // (span/async-stream) twin of EmitMethod's own SetNull context creation. IntegrationTests exercises
+            // this shape at RUNTIME (ElementWiseReferenceHandlingRuntimeTests.EwrSetNullMapper), but that
+            // project's own build-time generator invocation is invisible to coverlet — only a generator-level
+            // test running the generator IN-PROCESS (GeneratorTestHarness) counts toward this assembly's
+            // measured coverage.
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                               public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial void MapSpan(ReadOnlySpan<Node> src, Span<NodeDto> dst); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("preserve: false, setNull: true", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_async_stream_map_of_a_recursion_capable_element_allocates_shared_context()
+        {
+            // EmitAsyncStreamMapMethod's own ctx gate (`elem?.ConverterMethod is not null &&
+            // elem.ConverterNeedsDepthCtx`) — the async-stream twin of the span-map gate closed above. Same
+            // reason it was open: IntegrationTests exercises the runtime shape (EwrPreserveMapper.MapStream)
+            // but that project's build-time generator run is invisible to this assembly's measured coverage.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                               public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial IAsyncEnumerable<NodeDto> MapStream(IAsyncEnumerable<Node> src); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("new global::DwarfMapper.DwarfRefContext(", generated, StringComparison.Ordinal);
+            Assert.Contains("preserve: true", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_register_before_populate_after_hook_taking_the_target_by_ref()
+        {
+            // EmitPreserveRegisterBeforePopulate has its OWN after-hooks loop — textually similar to, but a
+            // separate emission site from, EmitMethod's and the MapConstructor factory path's — and its
+            // TargetByRef arm had never fired: every existing Preserve register-before-populate fixture used
+            // a hook taking the target by value, or no hook at all.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                               public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M
+                               {
+                                   public partial NodeDto Map(Node n);
+                                   [AfterMap] private static void Touch(ref NodeDto d) { }
+                               }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("Touch(ref __dwarf_t);", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Two_members_blitting_the_same_pair_reuse_one_synthesized_helper()
         {
             // SynthesizeBlit's memoization check (`if (synth.ContainsKey(name)) return name;`) had never
