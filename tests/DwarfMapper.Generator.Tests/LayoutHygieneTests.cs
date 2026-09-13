@@ -85,6 +85,19 @@ namespace DwarfMapper.Generator.Tests
         // ─── Measure: the numbers ────────────────────────────────────────────────
 
         /// <summary>
+        ///     An optional member is measured through its underlying type, and when THAT width is not the
+        ///     generator's to claim, the refusal carries outward. <c>nint</c> is the platform's width, so a
+        ///     <c>nint?</c> field refuses the whole struct — no layout, never a guessed one.
+        /// </summary>
+        [Fact]
+        public void An_optional_member_whose_underlying_width_is_the_platforms_refuses_the_whole_struct()
+        {
+            Assert.Null(TryMeasureType(
+                "namespace T { public struct S { public long A; public nint? B; public byte C; } }",
+                "S"));
+        }
+
+        /// <summary>
         ///     The plan's headline fixture. Verified against the runtime: <c>Unsafe.SizeOf</c> is 40, and
         ///     <c>Marshal.OffsetOf</c> puts the five fields at 0 / 8 / 16 / 24 / 32.
         ///     <para>
