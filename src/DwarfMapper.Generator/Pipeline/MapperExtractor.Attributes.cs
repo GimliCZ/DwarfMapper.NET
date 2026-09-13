@@ -341,12 +341,28 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static IEnumerable<string> ObsoleteMemberNames(ITypeSymbol type)
         {
-            for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            foreach (var t in TypeAndBasesBelowObject(type))
                 foreach (var member in t.GetMembers())
                     if (member is IPropertySymbol or IFieldSymbol && IsObsolete(member))
                     {
                         yield return member.Name;
                     }
+        }
+
+        /// <summary>
+        ///     A type and its base types, stopping before <c>object</c> — and ending early, on null, for a type with no
+        ///     base at all (an interface). The ONE statement of the member-declaring walk that IgnoreObsoleteMembers and
+        ///     the <c>required</c>-member check both need.
+        /// </summary>
+        /// <remarks>
+        ///     Shared because the required-member check only ever sees classes and structs, whose chain always reaches
+        ///     <c>object</c>: its own copy of this loop carried a null exit no input could take. The obsolete-member
+        ///     walk DOES see interfaces (an update-into destination), so one walk has both exits reached by real input.
+        /// </remarks>
+        private static IEnumerable<ITypeSymbol> TypeAndBasesBelowObject(ITypeSymbol type)
+        {
+            for (ITypeSymbol? t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                yield return t;
         }
 
         private static bool IsObsolete(ISymbol symbol)

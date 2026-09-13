@@ -72,9 +72,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static bool IsRequiredMember(INamedTypeSymbol targetType, string memberName)
         {
-            for (var current = (ITypeSymbol?)targetType;
-                 current is not null && current.SpecialType != SpecialType.System_Object;
-                 current = current.BaseType)
+            foreach (var current in TypeAndBasesBelowObject(targetType))
                 foreach (var member in current.GetMembers())
                 {
                     if (!StringComparer.OrdinalIgnoreCase.Equals(member.Name, memberName))
