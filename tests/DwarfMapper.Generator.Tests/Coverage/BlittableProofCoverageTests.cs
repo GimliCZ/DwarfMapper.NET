@@ -1102,6 +1102,16 @@ namespace DwarfMapper.Generator.Tests.Coverage
         // ─── Arms reached only through these fixtures ─────────────────────────────
 
         [Fact]
+        public void TryExplainNearMiss_two_empty_structs_are_not_a_near_miss()
+        {
+            // Distinct, unmanaged, same kind, and no instance fields at all: nothing about the pair suggests a blit.
+            var (_, types) = Compile("namespace T { public struct E1 { } public struct E2 { } }");
+
+            Assert.False(BlittableProof.TryExplainNearMiss(types["E1"], types["E2"], out var reason));
+            Assert.Equal(string.Empty, reason);
+        }
+
+        [Fact]
         public void EnumUnderlying_answers_an_enum_its_backing_type_and_anything_else_none()
         {
             var (compilation, types) = Compile("namespace T { public enum Kind : long { A } public class C { } }");
