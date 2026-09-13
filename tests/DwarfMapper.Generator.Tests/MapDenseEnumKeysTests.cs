@@ -655,5 +655,21 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Contains("is keyed by 'int[]', which is not an enum", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     A VALUE-type source that yields the key/value pairs is legal, and cannot be null: the helper's parameter
+        ///     carries no <c>?</c> and the fill tests nothing for null.
+        /// </summary>
+        [Fact]
+        public void A_value_type_source_fills_without_a_nullable_parameter()
+        {
+            var gen = GeneratorAssert.CompilesClean(DenseMap("PlatformCounts", "Counts3",
+                "public struct PlatformCounts : IEnumerable<KeyValuePair<Platform, int>> {" +
+                " public IEnumerator<KeyValuePair<Platform, int>> GetEnumerator() { yield break; }" +
+                " System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator(); }"));
+
+            Assert.Contains("(global::Demo.PlatformCounts src)", gen, StringComparison.Ordinal);
+            Assert.DoesNotContain("PlatformCounts? src", gen, StringComparison.Ordinal);
+        }
     }
 }
