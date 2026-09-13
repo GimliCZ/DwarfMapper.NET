@@ -298,17 +298,14 @@ namespace DwarfMapper.Generator.Pipeline
                 return null;
             }
 
-            var primitive = BlittableProof.PrimitiveSize(type);
+            // An enum is measured as its underlying primitive. Only an enum has an underlying type, and one whose
+            // underlying type has no fixed width falls through to the refusals below, as that type itself would.
+            var primitive = BlittableProof.PrimitiveSize(type is INamedTypeSymbol { EnumUnderlyingType: { } underlying }
+                ? underlying
+                : type);
             if (primitive > 0)
             {
                 return (primitive, primitive);
-            }
-
-            if (type.TypeKind == TypeKind.Enum &&
-                type is INamedTypeSymbol { EnumUnderlyingType: { } underlying })
-            {
-                var width = BlittableProof.PrimitiveSize(underlying);
-                return width > 0 ? (width, width) : null;
             }
 
             if (FixedLayoutBclSize(type) is { } bcl)
