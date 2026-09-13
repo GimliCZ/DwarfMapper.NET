@@ -429,25 +429,10 @@ namespace DwarfMapper.Generator.Pipeline
                 // dropped in silence: the rename still bound, so completeness was satisfied and nothing was
                 // reported, while .Map applied the modifier and .Project did not — the same mapper yielding
                 // different data depending on which method you called. Same rule as Use= above.
-                if (extrasByTarget.TryGetValue(tgtName, out var extra))
+                if (UntranslatableModifierReason(extrasByTarget, tgtName) is { } modifierReason)
                 {
-                    if (extra.HasNullSub)
-                    {
-                        EmitDwarf028(diagnostics,
-                            location,
-                            tgtName,
-                            "NullSubstitute is not translatable in projection (the substitution would be silently " + "dropped and a null stored instead); remove it or map this member at runtime");
-                        continue;
-                    }
-
-                    if (extra.When is not null)
-                    {
-                        EmitDwarf028(diagnostics,
-                            location,
-                            tgtName,
-                            "When= is not translatable in projection (the predicate cannot run inside an expression " + "tree, so the member would always be assigned); remove it or map this member at runtime");
-                        continue;
-                    }
+                    EmitDwarf028(diagnostics, location, tgtName, modifierReason);
+                    continue;
                 }
 
                 // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
@@ -1932,6 +1917,33 @@ namespace DwarfMapper.Generator.Pipeline
                 : new DiagnosticInfo(DiagnosticDescriptors.ConstructorParameterUnmapped, location, paramName));
             srcMember = default;
             return false;
+        }
+
+        /// <summary>
+        ///     Why the <c>[MapProperty]</c> modifier recorded for <paramref name="target" /> cannot be carried into a
+        ///     projection, or <see langword="null" /> when the target has no modifier to refuse.
+        /// </summary>
+        /// <remarks>
+        ///     <c>ReadMapPropertyExtras</c> records only a target that carries <c>NullSubstitute</c> or <c>When</c>, so an
+        ///     entry with neither never reaches the projection through a mapper. Answering it here states that case once,
+        ///     where a test can ask it, instead of leaving an exit no input takes at the call site. NullSubstitute is
+        ///     named first when both are present, as the inline checks this replaced did.
+        /// </remarks>
+        internal static string? UntranslatableModifierReason(IReadOnlyDictionary<string, (bool HasNullSub, string? When)> extrasByTarget, string target)
+        {
+            if (!extrasByTarget.TryGetValue(target, out var extra))
+            {
+                return null;
+            }
+
+            if (extra.HasNullSub)
+            {
+                return "NullSubstitute is not translatable in projection (the substitution would be silently " + "dropped and a null stored instead); remove it or map this member at runtime";
+            }
+
+            return extra.When is not null
+                ? "When= is not translatable in projection (the predicate cannot run inside an expression " + "tree, so the member would always be assigned); remove it or map this member at runtime"
+                : null;
         }
 
         // The comparer already collapsed case when it is OrdinalIgnoreCase or Flexible, so the second pass can
