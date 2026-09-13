@@ -442,5 +442,64 @@ namespace DwarfMapper.Generator.Tests
                 StringComparison.Ordinal);
             Assert.DoesNotContain("Tag = n.Tag,", generated, StringComparison.Ordinal);
         }
+
+        // ── 19. SetNull + ctor args + init members, one deferred by a When predicate ─────────
+        // Test 18 reaches the same initializer-block skip through SkipIfSourceNull only; its
+        // WhenPredicate operand was never true there. A When-guarded member is assigned after
+        // construction under its predicate, so the initializer block must pass over it.
+        [Fact]
+        public void SetNull_ctor_args_plus_when_guarded_member_skips_it_in_the_initializer_block()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class SnCtorWhen    { public int V { get; set; } public SnCtorWhen? Next { get; set; } public int Bonus { get; set; } }
+                               public record SnCtorWhenDto(int V) { public SnCtorWhenDto? Next { get; set; } public int Bonus { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M
+                               {
+                                   [MapProperty(nameof(SnCtorWhen.Bonus), nameof(SnCtorWhenDto.Bonus), When = nameof(Eligible))]
+                                   public partial SnCtorWhenDto Map(SnCtorWhen n);
+                                   private static bool Eligible(SnCtorWhen n) => n.V > 0;
+                               }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("var __dwarf_target = new global::Demo.SnCtorWhenDto(", generated, StringComparison.Ordinal);
+            // Bonus is deferred: assigned under its predicate after the initializer block closes, never
+            // inline in the root method's initializer.
+            Assert.Contains("if (Eligible(n)) __dwarf_target.Bonus = n.Bonus;", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("Bonus = n.Bonus,", generated, StringComparison.Ordinal);
+        }
+
+        // ── 20. SetNull + ctor args + init members, one deferred by unflattening ─────────────
+        // The same skip's UnflattenIntermediateFqn operand: a dotted target path cannot be written
+        // as an initializer member (`Address.City = …` does not parse there), so it is assigned
+        // through the intermediate after construction. Declared PAIR-SCOPED: SetNull only engages
+        // on a cycle, and the cycle routes Next through a synthesized helper shared by every route
+        // to the pair, which the pair-scoped form reaches and a method-level one does not.
+        [Fact]
+        public void SetNull_ctor_args_plus_unflattened_member_skips_it_in_the_initializer_block()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class SnAddr { public string City { get; set; } = ""; }
+                               public class SnCtorUnflat    { public int V { get; set; } public SnCtorUnflat? Next { get; set; } public string City { get; set; } = ""; }
+                               public record SnCtorUnflatDto(int V) { public SnCtorUnflatDto? Next { get; set; } public SnAddr Address { get; set; } = new(); }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               [MapProperty<SnCtorUnflat, SnCtorUnflatDto>(nameof(SnCtorUnflat.City), "Address.City")]
+                               public partial class M
+                               {
+                                   public partial SnCtorUnflatDto Map(SnCtorUnflat n);
+                               }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+            Assert.Contains("var __dwarf_target = new global::Demo.SnCtorUnflatDto(", generated, StringComparison.Ordinal);
+            // The leaf is assigned through the intermediate after construction, in the root and in the helper.
+            Assert.Contains("__dwarf_target.Address.City = n.City;", generated, StringComparison.Ordinal);
+            Assert.Contains("__dwarf_target.Address.City = s.City;", generated, StringComparison.Ordinal);
+        }
     }
 }
