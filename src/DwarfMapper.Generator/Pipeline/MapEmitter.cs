@@ -1639,9 +1639,11 @@ namespace DwarfMapper.Generator.Pipeline
                     var needsBang = member.ConverterNeedsDepthCtx || (member.SourceIsNullableRef && (GeneratedNames.IsSynthesized(member.ConverterMethod) || member.ConverterParamIsNonNullableRef));
                     if (member.ConverterNeedsDepthCtx)
                     {
+                        // needsBang is true here by its own definition (ConverterNeedsDepthCtx is its first operand),
+                        // so the recursion-capable call always forgives its source.
                         sb.Append(member.EmitConverterMethod).Append('(')
                             .Append(srcAccess)
-                            .Append(needsBang ? "!" : "").Append(", ")
+                            .Append('!').Append(", ")
                             .Append(ctxVarName).Append(", ").Append(depthArg).Append(')').Append(callBang);
                     }
                     else
