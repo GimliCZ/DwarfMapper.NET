@@ -667,7 +667,13 @@ namespace DwarfMapper.Generator.Pipeline
                     // conversions hit it independently and each reinvented the same workaround, because
                     // AutoMapper's expression trees bypassed the compile-time rule entirely and simply left the
                     // member null. `.Ignore()` on a required member is therefore common in migrating code.
-                    if (!req.RequiredMembersAlreadySatisfied && (req.ConsumedCtorParams is null || !req.ConsumedCtorParams.Contains(target.Name)) && IsRequiredMember(req.TargetType, target.Name))
+                    //
+                    // A constructor that also binds the member does NOT satisfy `required`: without
+                    // [SetsRequiredMembers] C# still demands it in the initializer (ComputeRequiredMustInitialize's
+                    // double-set), so ignoring it is CS9035 exactly as for a member no constructor touches. This
+                    // guard used to exempt ctor-bound members and emitted `new C(X: s.X) { … }` with X omitted and
+                    // no DWARF079 — found as pipeline mutant 11484, whose "is not null" flip reported correctly.
+                    if (!req.RequiredMembersAlreadySatisfied && IsRequiredMember(req.TargetType, target.Name))
                     {
                         acc.Diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.IgnoredRequiredMember,

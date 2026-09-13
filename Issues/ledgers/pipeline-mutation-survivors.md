@@ -201,8 +201,13 @@ through to a lookup that fails by L1. `AddConsumed`/`ReportUnconsumed`: as for t
   Probed: `[MapIgnore("X")]` on a `required` member `X` that the constructor also takes (`C(int X)`, no
   `[SetsRequiredMembers]`) emits `new C(X: s.X) { … }` with `X` omitted from the initializer — **CS9035 in
   the consumer's .g.cs with no DWARF079**, the exact silent shape DWARF079 exists to prevent. The mutant
-  reports DWARF079 there. This is a source defect, recorded here and not fixed in this test-only program;
-  the mutant stays open until it is.
+  reports DWARF079 there. This was a source defect, recorded here and not fixed in the test-only program.
+  **Fixed 2026-09-13**: the ctor-consumed exemption was removed from the guard (it had shipped with DWARF079
+  in `684f403` without a stated reason — that commit documents only the `[SetsRequiredMembers]` and
+  update-into exemptions), pinned by
+  `IgnoredRequiredMemberTests.Reports_when_the_ignored_required_member_is_also_a_constructor_argument` and its
+  non-ignored twin. The mutant's clause no longer exists, so the leg's scoreable population shrinks at the
+  next measurement; the floor moves then, not in the fix commit (the leg takes ~45 minutes).
 - **Line 105, `?? false` → `?? true`** (NoCoverage) — a dead-branch question, not an equivalence. Both
   producers of `IgnoredSourceMembers` (`IgnoredSourcesFor`, `ClassIgnoredSources`) return a `HashSet`, and
   every `ResolveMembers` caller passes one, so the null-coalesce is never reached. A denominator question
