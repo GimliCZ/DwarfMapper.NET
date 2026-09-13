@@ -302,11 +302,11 @@ namespace DwarfMapper.Generator.Pipeline
             // (item 20). Open generics are never emitted; only the closed instantiations actually declared.
             var genComp = ctx.SemanticModel.Compilation;
             var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
-            var genPairs = new List<(ITypeSymbol Src, INamedTypeSymbol Tgt)>();
+            var genPairs = new List<(ITypeSymbol Src, ITypeSymbol Tgt)>();
             foreach (var attr in classSymbol.GetAttributes())
-                if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac && ac.TypeArguments.Length == 2 && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns && ac.TypeArguments[1] is INamedTypeSymbol gt)
+                if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac && ac.TypeArguments.Length == 2 && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns && ac.TypeArguments[1] is INamedTypeSymbol or IArrayTypeSymbol)
                 {
-                    genPairs.Add((ac.TypeArguments[0], gt));
+                    genPairs.Add((ac.TypeArguments[0], ac.TypeArguments[1]));
                 }
 
             // Member-level directives written on the CO-LOCATED HOST itself, read before the wrapper expansion

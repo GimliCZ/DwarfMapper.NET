@@ -23,7 +23,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static void ExpandWrapperMaps(
             INamedTypeSymbol classSymbol,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             List<DiagnosticInfo> diagnostics,
             LocationInfo? loc)
         {

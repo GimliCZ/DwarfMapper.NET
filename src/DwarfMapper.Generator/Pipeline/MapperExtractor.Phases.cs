@@ -1397,13 +1397,15 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            if (method.ReturnType is not INamedTypeSymbol targetType)
+            if (method.ReturnType is not (INamedTypeSymbol or IArrayTypeSymbol))
             {
                 acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod,
                     methodLocation,
                     method.Name));
                 return;
             }
+
+            var targetType = method.ReturnType;
 
             var sourceType = method.Parameters[0].Type;
 
@@ -1659,7 +1661,11 @@ namespace DwarfMapper.Generator.Pipeline
             // with targetType as both src and target — they check the TARGET shape first.
             // Scope: only fires when the return type IS a collection/dict; object/record/scalar
             // return types fail both TryResolve calls and fall through unchanged.
-            var isCollReturn = CollectionConverter.TryResolve(targetType,
+            // An ARRAY return always takes this route, including the shapes CollectionConverter declines (a
+            // multi-dimensional array): an array is never constructed member by member, so the conversion owns
+            // both the success and the refusal, exactly as it does for an array MEMBER. Below this block the
+            // return is therefore a named type.
+            var isCollReturn = targetType is IArrayTypeSymbol || CollectionConverter.TryResolve(targetType,
                 targetType,
                 out _,
                 out _,
@@ -1675,12 +1681,27 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (isCollReturn || isDictReturn)
             {
+                // The route emits `return helper(param);` — there is nowhere for an extra parameter to go, so a
+                // second parameter is refused here rather than dropped from the implementing half (which emitted
+                // CS0759 + CS8795 into the consumer's .g.cs for `partial List<D> Map(List<S> s, int x)`).
+                if (method.Parameters.Length > 1)
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod,
+                        methodLocation,
+                        method.Name));
+                    return;
+                }
+
                 var tlResolved = TryResolveConversion(
                     ctx.SemanticModel.Compilation,
                     sourceType,
                     targetType,
                     null,
-                    decls.AllMethods,
+                    // The method itself is in AllMethods, and the user-declared-conversion arm scans that list
+                    // too: an array return from a source no collection shape accepts (a ReadOnlySpan<S>) found
+                    // ITSELF there and emitted a depth wrapper calling itself (CS0457). A List return never got
+                    // that far only because DWARF027 answers first for a named collection target.
+                    ExcludingMethod(decls.AllMethods, method.Name, sourceType, targetType),
                     // This pair is resolved as a WHOLE, so the method must not be a candidate for its own
                     // conversion — the same self-exclusion the [GenerateMap] collection path needs.
                     ExcludingPair(decls.MapperMethods, sourceType, targetType),
@@ -1763,6 +1784,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
 
+            // Every array return was claimed by Fix 1 (see isCollReturn), so construction sees a named type.
+            var namedTargetType = (INamedTypeSymbol)targetType;
+
             // Selection must see the FULL explicit-rename set — method-level [MapProperty] PLUS the
             // [ReverseMap]-inherited renames and pair-scoped [MapProperty<S,T>] renames — so a ctor parameter
             // bound ONLY via a rename still counts as satisfiable. Previously reverse/pair renames were merged
@@ -1810,7 +1834,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Choose construction strategy for the target type, now with the full rename set visible.
             var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation,
-                targetType,
+                namedTargetType,
                 acc.Diagnostics,
                 methodLocation,
                 out var objInitOnly,
@@ -1885,7 +1909,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 (resolvedFgDirectives, fgInjectedMembers) = ResolveFlattenGraphDirectives(
                     sourceType,
-                    targetType,
+                    namedTargetType,
                     flattenGraphRaw,
                     ctx.SemanticModel.Compilation,
                     methodLocation,
@@ -1956,12 +1980,12 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Compute which consumed-param members are `required` and whose ctor lacks [SetsRequiredMembers].
                 // Those must still be emitted in the object initializer to satisfy the C# `required` rule.
-                requiredMustInitialize = ComputeRequiredMustInitialize(ctor, targetType, consumedParams);
+                requiredMustInitialize = ComputeRequiredMustInitialize(ctor, namedTargetType, consumedParams);
             }
 
             var members = ResolveMembers(
                 sourceType,
-                targetType,
+                namedTargetType,
                 ignores,
                 ctx.SemanticModel.Compilation,
                 methodLocation,
@@ -2009,7 +2033,7 @@ namespace DwarfMapper.Generator.Pipeline
             members.AddRange(fgInjectedMembers);
 
             // ── Source-member coverage (RequiredMapping = Both) ───────────────────────────
-            ReportSourceMemberCoverage(method, ctx, decls, policy, acc, sourceType, targetType, members,
+            ReportSourceMemberCoverage(method, ctx, decls, policy, acc, sourceType, namedTargetType, members,
                 ctorArgs, resolvedFgDirectives, extraParamSig, methodLocation, methodDiagStart);
         }
 
@@ -3189,7 +3213,7 @@ namespace DwarfMapper.Generator.Pipeline
             MapperDeclarations decls,
             MapperPolicy policy,
             MapperAccumulators acc,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             Compilation genComp,
             LocationInfo? genLoc,
             Dictionary<int, HostPairDirectives> hostDirectives)
@@ -3233,7 +3257,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // target's members — which would e.g. flag List<T>.Capacity via DWARF001. The source may be ANY
                 // IEnumerable<T> (custom user collections like a ConcurrentList<T> included), matching the
                 // member-level collection handling.
-                var genIsColl = CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _);
+                // An array target always takes this route, for the reason the declared path's isCollReturn gives.
+                var genIsColl = genTgt is IArrayTypeSymbol || CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _);
                 var genIsDict = !genIsColl && DictionaryConverter.TryResolve(genTgt, genTgt, out _, out _, out _, out _, out _);
 
                 // An ENUM target needs the same treatment, and for the same reason: it is a VALUE to convert,
@@ -3331,6 +3356,9 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // Every array target was claimed by the conversion route above.
+                var genTgtNamed = (INamedTypeSymbol)genTgt;
+
                 // Pair-scoped [MapConstructor<S,T>(factory)] override: delegate construction to a user factory
                 // method and only populate settable members afterward (AutoMapper ConstructUsing semantics).
                 string? genFactory = null;
@@ -3373,14 +3401,14 @@ namespace DwarfMapper.Generator.Pipeline
                     // Factory builds the object; only settable members are assigned afterward, so init-only /
                     // required members are excluded (the factory owns them) and there are no ctor args.
                     genCtorArgs = Array.Empty<MemberMap>();
-                    genConsumed = CollectFactoryExcludedMembers(genTgt);
+                    genConsumed = CollectFactoryExcludedMembers(genTgtNamed);
                     genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     // Kept separately from genConsumed so DWARF080 can tell "the ctor assigns it" (no loss) from
                     // "the factory owns it and the source value is dropped" (silent loss).
                     genFactoryExcluded = genConsumed;
                 }
                 else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation,
-                             genTgt,
+                             genTgtNamed,
                              acc.Diagnostics,
                              genLoc,
                              out var genObjInitOnly,
@@ -3424,13 +3452,13 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
+                    genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgtNamed, genConsumed);
                     genCtorSetsRequired = CtorSetsRequiredMembers(genCtor);
                 }
 
                 var genMembers = ResolveMembers(
                     genSrc,
-                    genTgt,
+                    genTgtNamed,
                     genIgnores,
                     genComp,
                     genLoc,
@@ -3570,7 +3598,7 @@ namespace DwarfMapper.Generator.Pipeline
             MapperDeclarations decls,
             MapperPolicy policy,
             MapperAccumulators acc,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             Compilation genComp,
             List<(MapMethodModel Model, string MethodName)> pendingNestedModels,
             CancellationToken ct)

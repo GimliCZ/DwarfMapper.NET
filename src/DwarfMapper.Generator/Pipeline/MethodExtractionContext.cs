@@ -42,7 +42,7 @@ namespace DwarfMapper.Generator.Pipeline
             // lets it sit here among the read-only facts. Round 29 T0.2c review fix 1 needed it: two of the
             // pair-scoped directives are honoured only for a declared pair, so "is this pair customized?"
             // cannot be answered without knowing which pairs are declared.
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> GenPairs);
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> GenPairs);
 
         /// <summary>
         ///     The mapper's configuration, as read from its attributes. Every value is a class-level default; the

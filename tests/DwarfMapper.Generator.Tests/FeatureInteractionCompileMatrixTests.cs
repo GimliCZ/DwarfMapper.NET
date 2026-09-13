@@ -248,8 +248,18 @@ namespace DwarfMapper.Generator.Tests
                 }
                 """);
 
-            // Note: List→Array top-level method (ItemDto[] Map(List<Item>)) is not supported by the generator
-            // (DWARF003 or CS8795). Tracked as M2/M3 generator bugs. Skipped here.
+            yield return new FimMatrixCase("toplevel_List_to_Array",
+                """
+                using DwarfMapper;
+                using System.Collections.Generic;
+                namespace Fim;
+                public class Item { public int V { get; set; } }
+                public class ItemDto { public int V { get; set; } }
+                [DwarfMapper] public partial class M {
+                    public partial ItemDto[] Map(List<Item> src);
+                    public partial ItemDto Map(Item i);
+                }
+                """);
 
             yield return new FimMatrixCase("toplevel_List_to_IReadOnlyList",
                 """

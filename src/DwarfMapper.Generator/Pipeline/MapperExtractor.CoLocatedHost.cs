@@ -41,7 +41,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </param>
         private static Dictionary<int, HostPairDirectives> ReadCoLocatedHostDirectives(
             INamedTypeSymbol host,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> declaredPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> declaredPairs,
             List<DiagnosticInfo> diagnostics)
         {
             // The pairs a host member can speak about, in declaration order: a stacked directive binds to the

@@ -891,7 +891,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>DWARF013</c>. The declared method wins, which is the same precedence the rest of resolution uses.
         /// </remarks>
         private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> GeneratedPairCandidates(
-            IReadOnlyList<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            IReadOnlyList<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> declared)
         {
             var candidates = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
