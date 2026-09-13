@@ -140,10 +140,12 @@ namespace DwarfMapper.Generator.Pipeline
                         reservedConverters: req.ReservedConverters))
                 {
                     converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
-                    // A possibly-null reference source needs the explicit null test. A value-type source
-                    // (non-Nullable<>) always yields a value, and a direct assignment (no converter) already
-                    // lifts through the implicit U→U?, so both keep NullHandling.None.
-                    if (innerConvT is not null && SourceMayBeNullRef(req.SrcType))
+                    // A possibly-null reference source needs the explicit null test; a value-type source
+                    // (non-Nullable<>) always yields a value and keeps NullHandling.None. innerConvT is never null
+                    // here: the inner call answers true without a converter only through its direct-assignment arm,
+                    // and a built-in implicit src→U into a value type U lifts to src→U?, which the outer call's
+                    // same arm already claimed before reaching this one.
+                    if (SourceMayBeNullRef(req.SrcType))
                     {
                         nullHandling = NullHandling.NullableProjectRef;
                     }
