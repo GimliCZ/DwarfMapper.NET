@@ -563,7 +563,7 @@ namespace DwarfMapper.Generator.Pipeline
                 });
         }
 
-        private static bool HasDerivedTypesInCompilation(Compilation compilation, ITypeSymbol src)
+        internal static bool HasDerivedTypesInCompilation(Compilation compilation, ITypeSymbol src)
         {
             if (src is not INamedTypeSymbol { TypeKind: TypeKind.Class } namedSrc)
             {

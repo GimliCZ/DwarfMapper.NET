@@ -13,7 +13,9 @@ using Microsoft.CodeAnalysis.CSharp;
 //   - ImplementsIEnumerable's interface walk and IsUnsupportedCollectionTarget's arms, which the same earlier refusals
 //     shadow;
 //   - IsMappableObjectPair's enumerable TARGET refusal for a non-enumerable source: every nested member of that shape
-//     is refused as DWARF027 before auto-nest is asked.
+//     is refused as DWARF027 before auto-nest is asked;
+//   - HasDerivedTypesInCompilation's non-class and special-type refusals: its only caller asks after
+//     IsMappableObjectPair accepted the pair, which already refused both shapes.
 namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class ConversionPredicateUnitTests
@@ -91,6 +93,14 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             Assert.True(MapperExtractor.IsMappableObjectPair(Compilation, Named("T.ConcreteSrc"), Named("T.Dst")));
             Assert.False(MapperExtractor.IsMappableObjectPair(Compilation, Named("T.ConcreteSrc"), Named("T.TypedBag")));
+        }
+
+        [Fact]
+        public void HasDerivedTypesInCompilation_refuses_a_non_class_source_and_object()
+        {
+            Assert.False(MapperExtractor.HasDerivedTypesInCompilation(Compilation, Compilation.CreateArrayTypeSymbol(Named("T.ConcreteSrc"))));
+            Assert.False(MapperExtractor.HasDerivedTypesInCompilation(Compilation, Named("T.ValueDst")));
+            Assert.False(MapperExtractor.HasDerivedTypesInCompilation(Compilation, Compilation.GetSpecialType(SpecialType.System_Object)));
         }
 
         [Fact]
