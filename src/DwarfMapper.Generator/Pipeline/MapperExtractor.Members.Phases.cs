@@ -443,6 +443,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var convNeedsCtx,
+                        out var convParamType,
                         req.Options.AutoNest,
                         req.NestedRegistry,
                         req.Options.NullAsNull,
@@ -566,6 +567,7 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         convNeedsCtx,
                         SourceMayBeNullRef(srcMatch),
+                        ConverterParamTypeFqn: convParamType,
                         NullSubstituteLiteral: nullSubLit,
                         WhenPredicate: whenPred,
                         // NullSubstitute already coalesces the null away (`src.X ?? literal`), so the assignment
@@ -716,6 +718,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var epConv,
                             out var epNull,
                             out var epNeedsCtx,
+                            out var epConvParamType,
                             req.Options.AutoNest,
                             req.NestedRegistry,
                             req.Options.NullAsNull,
@@ -739,6 +742,7 @@ namespace DwarfMapper.Generator.Pipeline
                             epNull,
                             false, // !epNeedsCtx is in the guard above: an extra parameter never threads (ctx, depth).
                             SourceMayBeNullRef(ep.Type!),
+                            ConverterParamTypeFqn: epConvParamType,
                             NullRefIntoNonNullable: IsDirectNullRefAssign(epConv, epNull, ep.Type!, target.Type),
                             ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(epConv,
                                 target.Type,
@@ -801,6 +805,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 out var fconv,
                                 out var fnull,
                                 out var fneedsCtx,
+                                out var fconvParamType,
                                 req.Options.AutoNest,
                                 req.NestedRegistry,
                                 req.Options.NullAsNull,
@@ -815,6 +820,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 fnull,
                                 fneedsCtx,
                                 SourceMayBeNullRef(fm.LeafType),
+                                ConverterParamTypeFqn: fconvParamType,
                                 NullRefIntoNonNullable:
                                 IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type),
                                 ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(fconv,
@@ -969,6 +975,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var needsCtx,
+                        out var convParamType,
                         req.Options.AutoNest,
                         req.NestedRegistry,
                         req.Options.NullAsNull,
@@ -992,6 +999,7 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         needsCtx,
                         SourceMayBeNullRef(source.Type),
+                        ConverterParamTypeFqn: convParamType,
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
                         ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(
                             conv,

@@ -677,6 +677,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var eConv,
                             out var eNull,
                             out var eNeedsCtx,
+                            out var eConvParamType,
                             autoNest,
                             nestedRegistry,
                             nullAsNull,
@@ -691,6 +692,7 @@ namespace DwarfMapper.Generator.Pipeline
                             eNull,
                             eNeedsCtx,
                             SourceMayBeNullRef(srcType),
+                            ConverterParamTypeFqn: eConvParamType,
                             // Same raw-assign rule as the member path: a nullable reference bound bare to a
                             // non-nullable parameter is null-forgiven by the emitter and reported as DWARF070
                             // below. It used to be set on members only, so `Alias = s.Alias!` and
@@ -773,6 +775,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var needsCtx,
+                        out var convParamType,
                         autoNest,
                         nestedRegistry,
                         nullAsNull,
@@ -786,6 +789,7 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         needsCtx,
                         SourceMayBeNullRef(srcMember.Type),
+                        ConverterParamTypeFqn: convParamType,
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, srcMember.Type, param.Type),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(conv,
                             srcMember.Type,

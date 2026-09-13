@@ -66,6 +66,7 @@ namespace DwarfMapper.Generator.Pipeline
             out string? converterMethod,
             out NullHandling nullHandling,
             out bool converterNeedsCtx,
+            out string? converterParamTypeFqn,
             bool autoNest = false,
             NestedMappingRegistry? nestedRegistry = null,
             bool nullAsNull = false,
@@ -78,6 +79,11 @@ namespace DwarfMapper.Generator.Pipeline
             converterMethod = null;
             nullHandling = NullHandling.None;
             converterNeedsCtx = false;
+            // The parameter type of the DECLARED method a name was adopted from, set only where a declared name
+            // becomes the converter (Use= and auto-adoption, below). An overloaded name is a different method per
+            // parameter type, and the recursion-cycle phase cannot tell which one a bare name meant — see
+            // MemberMap.ConverterParamTypeFqn.
+            converterParamTypeFqn = null;
 
             // One bundle for the arms below. Five of the six read 19 or 20 of this method's parameters, so
             // passing them individually would give each arm a signature nobody could read. diagnostics and
@@ -124,6 +130,7 @@ namespace DwarfMapper.Generator.Pipeline
                         }
 
                         converterMethod = m.Name;
+                        converterParamTypeFqn = m.ParamType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         return true;
                     }
 
@@ -216,7 +223,7 @@ namespace DwarfMapper.Generator.Pipeline
             // so that a user method can intentionally shadow the built-in behavior. The search itself is
             // FindUserDeclaredConversion — shared verbatim with the array/list blit gate, which has to ask
             // the same question one arm earlier (round 29 T0.2c); see that method's remarks.
-            FindUserDeclaredConversion(req, out var found, out var ambiguous);
+            FindUserDeclaredConversion(req, out var found, out var foundParamType, out var ambiguous);
             if (ambiguous)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
@@ -228,6 +235,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (found is not null && !PrefersSynthesizedObjectMap(req, found))
             {
                 converterMethod = found;
+                converterParamTypeFqn = foundParamType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 nullHandling = UserConverterNullGuard(req, found);
                 return true;
             }
@@ -358,7 +366,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         resolves at the top of the chain and is unaffected — only auto-adoption is blocked.
         ///     </para>
         /// </remarks>
-        private static void FindUserDeclaredConversion(ConversionRequest req, out string? found, out bool ambiguous)
+        private static void FindUserDeclaredConversion(ConversionRequest req, out string? found, out ITypeSymbol? foundParamType, out bool ambiguous)
         {
             static bool IsReserved(IReadOnlyCollection<string>? reserved, string name)
             {
@@ -366,12 +374,14 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             found = null;
+            foundParamType = null;
             ambiguous = false;
 
             foreach (var c in req.AutoCandidates)
                 if (!IsReserved(req.ReservedConverters, c.Name) && HasImplicitConversion(req.Compilation, req.SrcType, c.ParamType) && HasImplicitConversion(req.Compilation, c.ReturnType, req.TgtType))
                 {
                     ambiguous |= found is not null;
+                    foundParamType ??= c.ParamType;
                     found ??= c.Name;
                 }
 
@@ -392,6 +402,7 @@ namespace DwarfMapper.Generator.Pipeline
                 if (HasImplicitConversion(req.Compilation, req.SrcType, m.ParamType) && HasImplicitConversion(req.Compilation, m.ReturnType, req.TgtType))
                 {
                     ambiguous |= found is not null;
+                    foundParamType ??= m.ParamType;
                     found ??= m.Name;
                 }
             }

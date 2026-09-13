@@ -292,6 +292,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var uConv,
                     out var uNullH,
                     out var uNeedsCtx,
+                    out _,
                     autoNest,
                     nestedRegistry,
                     nullAsNull,

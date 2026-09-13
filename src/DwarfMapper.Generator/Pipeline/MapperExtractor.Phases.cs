@@ -322,6 +322,11 @@ namespace DwarfMapper.Generator.Pipeline
                 StringComparer.Ordinal);
             if (isPreserveMode)
             {
+                // Candidates first; a wrapper is synthesized only once a caller has actually been redirected to it.
+                // A dispatch method on a recursion cycle already had every caller redirected to its depth companion
+                // by MarkRecursionCapableCallers, so its wrapper would be a private method nothing calls — emitted
+                // into the consumer's .g.cs all the same.
+                var wrapperModels = new Dictionary<string, MapMethodModel>(StringComparer.Ordinal);
                 for (var i = 0; i < methods.Count; i++)
                 {
                     var m = methods[i];
@@ -344,19 +349,14 @@ namespace DwarfMapper.Generator.Pipeline
                         m.ParameterTypeFullName,
                         m.ReturnTypeFullName);
 
-                    if (!synthesized.ContainsKey(wrapperName))
-                    {
-                        var wrapperCode = BuildDispatchWrapperCode(m, wrapperName);
-                        synthesized[wrapperName] = new SynthesizedMethod(wrapperName, wrapperCode);
-                    }
-
+                    wrapperModels[wrapperName] = m;
                     dispatchWrapperByPublicName[m.MethodName] = wrapperName;
-                    recursionCapableNames.Add(wrapperName);
                 }
 
                 // Patch: redirect members/ctor-args that call a public dispatch method to the wrapper.
                 if (dispatchWrapperByPublicName.Count > 0)
                 {
+                    var usedWrappers = new HashSet<string>(StringComparer.Ordinal);
                     for (var i = 0; i < methods.Count; i++)
                     {
                         var m = methods[i];
@@ -382,6 +382,7 @@ namespace DwarfMapper.Generator.Pipeline
                                     ConverterMethod = wn,
                                     ConverterNeedsDepthCtx = true
                                 };
+                                usedWrappers.Add(wn);
                                 patched = true;
                             }
                         }
@@ -402,6 +403,7 @@ namespace DwarfMapper.Generator.Pipeline
                                     ConverterMethod = wn,
                                     ConverterNeedsDepthCtx = true
                                 };
+                                usedWrappers.Add(wn);
                                 patched = true;
                             }
                         }
@@ -422,6 +424,22 @@ namespace DwarfMapper.Generator.Pipeline
                                 IsPreserveMode = m.IsPartial ? true : m.IsPreserveMode
                             };
                         }
+                    }
+
+                    // In candidate order, so the synthesized table fills in the order it always did.
+                    foreach (var candidate in wrapperModels)
+                    {
+                        if (!usedWrappers.Contains(candidate.Key))
+                        {
+                            continue;
+                        }
+
+                        if (!synthesized.ContainsKey(candidate.Key))
+                        {
+                            synthesized[candidate.Key] = new SynthesizedMethod(candidate.Key, BuildDispatchWrapperCode(candidate.Value, candidate.Key));
+                        }
+
+                        recursionCapableNames.Add(candidate.Key);
                     }
                 }
             }
@@ -921,13 +939,13 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var mem in model.Members)
                     if (mem.ConverterMethod is not null)
                     {
-                        allCallGraph[callerName].Add(mem.ConverterMethod);
+                        allCallGraph[callerName].Add(ExactOverloadKey(mem.ConverterMethod, mem.ConverterParamTypeFqn, declaredNameCount) ?? mem.ConverterMethod);
                     }
 
                 foreach (var arg in model.ConstructorArguments)
                     if (arg.ConverterMethod is not null)
                     {
-                        allCallGraph[callerName].Add(arg.ConverterMethod);
+                        allCallGraph[callerName].Add(ExactOverloadKey(arg.ConverterMethod, arg.ConverterParamTypeFqn, declaredNameCount) ?? arg.ConverterMethod);
                     }
             }
 
@@ -941,9 +959,10 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var callerKey = DeclKey(m, declaredNameCount);
-                if (!allCallGraph.ContainsKey(callerKey))
+                if (!allCallGraph.TryGetValue(callerKey, out var callerEdges))
                 {
-                    allCallGraph[callerKey] = new HashSet<string>(StringComparer.Ordinal);
+                    callerEdges = new HashSet<string>(StringComparer.Ordinal);
+                    allCallGraph[callerKey] = callerEdges;
                 }
 
                 foreach (var mem in m.Members)
@@ -957,7 +976,11 @@ namespace DwarfMapper.Generator.Pipeline
                     // we can't determine which overload without param-type info, so we add edges
                     // to ALL overloads of that name.  For non-overloaded names and synthesized
                     // names, add the name directly.
-                    if (declaredNameCount.TryGetValue(mem.ConverterMethod, out var oc) && oc > 1)
+                    if (ExactOverloadKey(mem.ConverterMethod, mem.ConverterParamTypeFqn, declaredNameCount) is { } memKey)
+                    {
+                        allCallGraph[callerKey].Add(memKey);
+                    }
+                    else if (declaredNameCount.TryGetValue(mem.ConverterMethod, out var oc) && oc > 1)
                         // Add edges to all OTHER overloads (not the method itself — a converter can't be
                         // a self-call when it was auto-matched to a DIFFERENT overload by parameter type).
                     {
@@ -994,7 +1017,11 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    if (declaredNameCount.TryGetValue(arg.ConverterMethod, out var oc) && oc > 1)
+                    if (ExactOverloadKey(arg.ConverterMethod, arg.ConverterParamTypeFqn, declaredNameCount) is { } argKey)
+                    {
+                        allCallGraph[callerKey].Add(argKey);
+                    }
+                    else if (declaredNameCount.TryGetValue(arg.ConverterMethod, out var oc) && oc > 1)
                     {
                         for (var j = 0; j < methods.Count; j++)
                         {
@@ -1020,6 +1047,15 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         allCallGraph[callerKey].Add(arg.ConverterMethod);
                     }
+                }
+
+                // A [MapDerivedType] dispatch method has no members: its calls are its ARMS. Without these edges
+                // `Map(Animal)` → arm → `Friend` → `Map(Animal)` was not a cycle in this graph at all, and was only
+                // ever flagged when an overloaded bare name happened to fan out into one elsewhere. A bare overloaded
+                // arm name is expanded below like any other edge.
+                foreach (var armEdge in m.DerivedTypeArms)
+                {
+                    allCallGraph[callerKey].Add(ExactOverloadKey(armEdge.ConverterMethod, armEdge.ConverterParamTypeFqn, declaredNameCount) ?? armEdge.ConverterMethod);
                 }
             }
 
@@ -1293,6 +1329,22 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     The <see cref="DeclKey" /> of the one overload <paramref name="edge" />'s converter was adopted from, when
+        ///     resolution recorded it and the name is overloaded; otherwise <see langword="null" />, and the caller
+        ///     falls back to the bare-name treatment.
+        /// </summary>
+        /// <remarks>
+        ///     The exact key INCLUDES the caller itself. The bare-name fallback excludes it, because a bare name
+        ///     cannot say which overload it meant \u2014 and that exclusion is what hid an overloaded self-map's own cycle.
+        /// </remarks>
+        private static string? ExactOverloadKey(string? converterMethod, string? converterParamTypeFqn, Dictionary<string, int> declaredNameCount)
+        {
+            return converterParamTypeFqn is not null && converterMethod is not null && declaredNameCount.TryGetValue(converterMethod, out var cnt) && cnt > 1
+                ? converterMethod + "\u00a7" + converterParamTypeFqn
+                : null;
+        }
+
+        /// <summary>
         ///     The source members this mapper disowns for <paramref name="method" /> — class-level
         ///     <c>[MapIgnoreSource]</c> plus the method's own, by their REAL source spelling. Read by the DWARF064
         ///     shadow rule, whose message names <c>[MapIgnoreSource]</c> as the way to declare a shadow
@@ -1464,6 +1516,9 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 var resolvedArms =
                     new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
+                // Keyed by the arm's source type, which is unique per method (seenSrcTypes below): the overload each
+                // arm adopted, for the recursion-cycle phase's edge (see MemberMap.ConverterParamTypeFqn).
+                var armParamTypes = new Dictionary<string, string?>(StringComparer.Ordinal);
                 var seenSrcTypes = new HashSet<string>(StringComparer.Ordinal);
 
                 foreach (var (derivedSrc, derivedTgt, _) in rawDerivedPairs)
@@ -1533,6 +1588,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var armConverter,
                         out _,
                         out var armNeedsCtx,
+                        out var armParamType,
                         methodAutoNest,
                         acc.NestedRegistry,
                         policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -1553,6 +1609,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     resolvedArms.Add((derivedSrc, derivedTgt, armConverter, armNeedsCtx));
+                    armParamTypes[srcFqn] = armParamType;
                 }
 
                 // Sort arms most-derived-first.
@@ -1570,7 +1627,8 @@ namespace DwarfMapper.Generator.Pipeline
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         a.ConverterMethod,
-                        a.NeedsCtx))
+                        a.NeedsCtx,
+                        armParamTypes[a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)]))
                     .ToArray();
 
                 // Collect applicable hooks.
@@ -1714,6 +1772,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var tlConverter,
                     out _,
                     out var tlNeedsCtx,
+                    out _,
                     methodAutoNest,
                     acc.NestedRegistry,
                     policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -2116,6 +2175,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var asConv,
                         out var asNull,
                         out var asNeedsCtx,
+                        out _,
                         asAutoNest,
                         acc.NestedRegistry,
                         reservedConverters: decls.MapperReservedConverters))
@@ -2895,6 +2955,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var spanConv,
                         out var spanNull,
                         out var spanNeedsCtx,
+                        out _,
                         spanAutoNest,
                         acc.NestedRegistry,
                         // Reservation is mapper-wide: a converter dedicated by Use=, or a [MapConstructor]
@@ -3296,6 +3357,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var gConv,
                         out _,
                         out var gNeedsCtx,
+                        out _,
                         policy.ClassAutoNest,
                         acc.NestedRegistry,
                         policy.NullCollections == NullCollectionsBehavior.AsNull,

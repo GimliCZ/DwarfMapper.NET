@@ -13,17 +13,20 @@ namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class RecursionContextPropagationCoverageTests
     {
-        private const string CyclicAnimals = """
-                                             public abstract class Animal { public string Name { get; set; } = ""; public Animal? Friend { get; set; } }
-                                             public class Dog : Animal { public string Breed { get; set; } = ""; }
-                                             public class AnimalDto { public string Name { get; set; } = ""; public AnimalDto? Friend { get; set; } }
-                                             public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
-                                             """;
+        // ACYCLIC on purpose. Give Animal a self-referencing member (Friend) and ToDto is on a real cycle through its
+        // own arm: its callers are then redirected to its depth companion before the wrapper pass runs, and that
+        // shape is pinned in MapDerivedTypeGeneratorTests instead.
+        private const string AcyclicAnimals = """
+                                              public abstract class Animal { public string Name { get; set; } = ""; }
+                                              public class Dog : Animal { public string Breed { get; set; } = ""; }
+                                              public class AnimalDto { public string Name { get; set; } = ""; }
+                                              public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                                              """;
 
         [Fact]
-        public void Preserve_ctor_arg_calling_a_recursive_dispatch_method_goes_through_the_dispatch_wrapper()
+        public void Preserve_ctor_arg_calling_a_recursion_capable_dispatch_method_goes_through_the_dispatch_wrapper()
         {
-            var src = "using DwarfMapper;\nnamespace Demo;\n" + CyclicAnimals + """
+            var src = "using DwarfMapper;\nnamespace Demo;\n" + AcyclicAnimals + """
                                                                                 public class Zoo { public Animal Star { get; set; } = new Dog(); }
                                                                                 public class ZooDto { public ZooDto(AnimalDto star) { Star = star; } public AnimalDto Star { get; } }
                                                                                 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
@@ -43,10 +46,12 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         [Fact]
-        public void Preserve_dispatch_method_is_wrapped_even_without_a_cycle()
+        public void Preserve_dispatch_method_nobody_calls_threads_its_own_context_and_synthesizes_no_wrapper()
         {
             // Under Preserve every auto-nested object mapper is forced recursion-capable for uniform identity
-            // tracking, so an arm with no cycle still needs the shared context and the dispatch gets a wrapper.
+            // tracking, so the arm still needs the shared context — which the dispatch method opens itself. The
+            // ctx-accepting wrapper exists for CALLERS that must share a context; with none, it used to be emitted
+            // anyway as a private method nothing called.
             const string src = """
                                using DwarfMapper;
                                namespace Demo;
@@ -63,7 +68,9 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                """;
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            Assert.Contains("__DwarfMap_Disp_global__Demo_Animal_global__Demo_AnimalDto_", generated, StringComparison.Ordinal);
+            Assert.Contains("global::Demo.Dog __s => __DwarfMap_Obj_global__Demo_Dog_global__Demo_DogDto_", generated, StringComparison.Ordinal);
+            Assert.Contains("(__s, __dwarf_ctx, 0),", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__DwarfMap_Disp_", generated, StringComparison.Ordinal);
         }
 
         [Fact]

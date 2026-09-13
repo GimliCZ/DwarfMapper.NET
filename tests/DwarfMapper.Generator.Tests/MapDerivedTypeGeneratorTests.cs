@@ -501,6 +501,41 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("(__s, __dwarf_ctx, 0),", generated, StringComparison.Ordinal);
             Assert.Contains("(__s, ctx, depth + 1),", generated, StringComparison.Ordinal);
             Assert.Contains(arm, generated, StringComparison.Ordinal);
+            // Every caller of Map(Animal) goes through the companion, so the Preserve dispatch wrapper has no caller
+            // and must not be emitted as a dead private method.
+            Assert.DoesNotContain("__DwarfMap_Disp_", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Dispatch_method_on_a_cycle_through_its_own_arm_is_depth_guarded_under_distinct_names()
+        {
+            // The call graph had no edges for [MapDerivedType] ARMS, so ToDto -> arm -> Friend -> ToDto was not a
+            // cycle in it. Callers went through the Preserve dispatch wrapper and ToDto itself had no depth companion;
+            // the overloaded twin above only got one because a bare overloaded name happened to fan out into a cycle
+            // elsewhere. Arms are edges now, so both spellings get the same guarded shape.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; public Animal? Friend { get; set; } }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; public AnimalDto? Friend { get; set; } }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               public class Zoo { public string Title { get; set; } = ""; public Animal Star { get; set; } = new Dog(); }
+                               public class ZooDto { public ZooDto(string title, AnimalDto star) { Title = title; Star = star; } public string Title { get; } public AnimalDto Star { get; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto ToDto(Animal a);
+                                   public partial DogDto ToDog(Dog d);
+                                   public partial ZooDto ToZoo(Zoo z);
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("private global::Demo.AnimalDto __DwarfMap_Depth_ToDto(global::Demo.Animal a, global::DwarfMapper.DwarfRefContext ctx, int depth)", generated, StringComparison.Ordinal);
+            Assert.Contains("star: __DwarfMap_Depth_ToDto(z.Star!, __dwarf_ctx, 0));", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__DwarfMap_Disp_", generated, StringComparison.Ordinal);
         }
     }
 }

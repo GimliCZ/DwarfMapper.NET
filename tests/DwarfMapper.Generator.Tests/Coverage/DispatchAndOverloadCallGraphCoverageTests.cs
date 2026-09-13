@@ -38,12 +38,14 @@ namespace DwarfMapper.Generator.Tests.Coverage
         [Fact]
         public void Preserve_dispatch_wrapper_patch_leaves_a_converter_less_ctor_arg_alone()
         {
+            // ACYCLIC on purpose. With a self-referencing member (Animal.Friend) ToDto is on a real cycle through its
+            // own arm, its callers are redirected to its depth companion first, and the wrapper patch never runs.
             const string src = """
                                using DwarfMapper;
                                namespace Demo;
-                               public abstract class Animal { public string Name { get; set; } = ""; public Animal? Friend { get; set; } }
+                               public abstract class Animal { public string Name { get; set; } = ""; }
                                public class Dog : Animal { public string Breed { get; set; } = ""; }
-                               public class AnimalDto { public string Name { get; set; } = ""; public AnimalDto? Friend { get; set; } }
+                               public class AnimalDto { public string Name { get; set; } = ""; }
                                public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
                                public class Zoo { public string Title { get; set; } = ""; public Animal Star { get; set; } = new Dog(); }
                                public class ZooDto { public ZooDto(string title, AnimalDto star) { Title = title; Star = star; } public string Title { get; } public AnimalDto Star { get; } }
@@ -113,9 +115,13 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                """;
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            // Deliberately indifferent to whether the call is the public overload or a depth companion: see
-            // the round-30 sweep's note on the synthesized-caller overload expansion.
-            Assert.Contains("Map(s.Child", generated, StringComparison.Ordinal);
+            // Acyclic: the helper adopted Map(Child), and only Map(Child). Before its edge carried the adopted
+            // overload it was fanned out to Map(Holder) too, which manufactured Map(Holder) → helper → Map(Holder):
+            // a depth companion for both overloads and a DwarfRefContext allocated on every call, for a graph with
+            // no cycle in it.
+            Assert.Contains("Child = Map(s.Child", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__DwarfMap_Depth_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
         }
     }
 }

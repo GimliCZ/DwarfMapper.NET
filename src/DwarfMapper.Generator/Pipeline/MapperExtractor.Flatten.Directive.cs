@@ -344,6 +344,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var leafConv,
                         out var leafNull,
                         out _,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry);
 

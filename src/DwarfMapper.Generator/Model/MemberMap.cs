@@ -144,6 +144,18 @@ namespace DwarfMapper.Generator.Model
     ///     <c>ImmutableArray&lt;T&gt;</c>, a struct that is never null and can still wrap a null array — <c>is
     ///     null</c> against it is CS0037, so the two forms are not interchangeable.
     /// </param>
+    /// <param name="ConverterParamTypeFqn">
+    ///     When <see cref="ConverterMethod" /> is a USER-declared method adopted by name (auto-matched, or
+    ///     <c>[MapProperty(Use = …)]</c>), the fully-qualified type of the parameter of the overload that was
+    ///     adopted; <see langword="null" /> for every synthesized converter and every edge resolved some other way.
+    ///     <para>
+    ///         Never emitted — it is the call-graph edge's disambiguator. An overloaded name is one method per
+    ///         parameter type, and the recursion-cycle phase used to fan a bare name out to every overload except
+    ///         the caller: a helper's edge to <c>Map(Child)</c> also reached <c>Map(Holder)</c> (a manufactured
+    ///         cycle, and a needless context allocation), while <c>Map(Node)</c>'s own <c>Next = Map(n.Next)</c> was
+    ///         the one edge excluded (a real cycle hidden, so no depth guard and a stack overflow on cyclic data).
+    ///     </para>
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -163,7 +175,8 @@ namespace DwarfMapper.Generator.Model
         string? SourceAccessExpression = null,
         bool ConverterReturnIsNullableRef = false,
         string? ShareEmptyFallback = null,
-        bool ShareGuardsDefault = false) : IEquatable<MemberMap>
+        bool ShareGuardsDefault = false,
+        string? ConverterParamTypeFqn = null) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

@@ -132,6 +132,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var innerConvT,
                         out _,
                         out _,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -225,6 +226,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var innerConv,
                         out _,
                         out _,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -295,6 +297,7 @@ namespace DwarfMapper.Generator.Pipeline
                         req.TargetName,
                         diagnostics,
                         out var innerNonNull,
+                        out _,
                         out _,
                         out _,
                         req.AutoNest,
@@ -369,7 +372,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Ambiguity counts as "the user wrote a conversion for this pair": the resolver refuses it with
             // DWARF013, and a block copy that quietly resolved the ambiguity by ignoring both candidates would
             // be the loudest possible bypass.
-            FindUserDeclaredConversion(elemReq, out var found, out var ambiguous);
+            FindUserDeclaredConversion(elemReq, out var found, out _, out var ambiguous);
             if (ambiguous || (found is not null && !PrefersSynthesizedObjectMap(elemReq, found)))
             {
                 return true;
@@ -435,7 +438,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 // Name the thing that is not being called. A declared method is named directly; an operator has
                 // no name a user could grep for, so it is described by the pair it converts between.
-                FindUserDeclaredConversion(probe, out var found, out _);
+                FindUserDeclaredConversion(probe, out var found, out _, out _);
                 bypassed = found is not null
                     ? $"the declared conversion method '{found}'"
                     : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
@@ -1174,6 +1177,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var elemConv,
                         out var elemNull,
                         out var elemNeedsCtx,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1376,6 +1380,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var keyConv,
                         out var keyNull,
                         out var keyNeedsCtx,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1403,6 +1408,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var valConv,
                         out var valNull,
                         out var valNeedsCtx,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
