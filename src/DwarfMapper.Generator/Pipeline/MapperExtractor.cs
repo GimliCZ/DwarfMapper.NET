@@ -1390,7 +1390,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var attr in symbol.GetAttributes())
             {
-                var cls = attr.AttributeClass?.ToDisplayString();
+                var cls = KnownNames.AttributeClassName(attr.AttributeClass);
                 string message;
 
                 if (cls == KnownNames.MapPropertyFqn && attr.ConstructorArguments.Length == 1)
@@ -1461,7 +1461,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 foreach (var attr in member.GetAttributes())
                 {
-                    var cls = attr.AttributeClass?.ToDisplayString();
+                    var cls = KnownNames.AttributeClassName(attr.AttributeClass);
                     var isProperty = cls == KnownNames.MapPropertyFqn;
                     var isIgnore = cls == KnownNames.MapIgnoreFqn;
                     if (!isProperty && !isIgnore)

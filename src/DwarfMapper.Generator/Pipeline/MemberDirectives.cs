@@ -68,7 +68,7 @@ namespace DwarfMapper.Generator.Pipeline
             var ordered = new List<(string File, int Pos, MemberDirective Directive)>();
             foreach (var a in member.GetAttributes())
             {
-                var cls = a.AttributeClass?.ToDisplayString();
+                var cls = KnownNames.AttributeClassName(a.AttributeClass);
                 var isIgnore = cls == KnownNames.MapIgnoreFqn;
                 if (!isIgnore && cls != KnownNames.MapPropertyFqn)
                 {

@@ -81,7 +81,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var asm in compilation.SourceModule.ReferencedAssemblySymbols)
             foreach (var a in asm.GetAttributes())
-                switch (a.AttributeClass?.ToDisplayString())
+                switch (KnownNames.AttributeClassName(a.AttributeClass))
                 {
                     case KnownNames.DwarfProvidesMapFqn:
                         if (ReadPair(a) is { } p)
@@ -127,7 +127,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var a in compilation.Assembly.GetAttributes())
             {
-                var name = a.AttributeClass?.ToDisplayString();
+                var name = KnownNames.AttributeClassName(a.AttributeClass);
                 if (name != KnownNames.DwarfProvidesMapFqn && name != KnownNames.DwarfRequiresMapFqn)
                 {
                     continue;

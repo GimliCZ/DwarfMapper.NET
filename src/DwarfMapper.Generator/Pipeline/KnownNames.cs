@@ -29,6 +29,15 @@ namespace DwarfMapper.Generator.Pipeline
             return attributeClass?.ToDisplayString() == fqn;
         }
 
+        /// <summary>
+        ///     An attribute class's fully-qualified name, or <see langword="null" /> for no class — for the match sites
+        ///     that switch on or keep the name rather than compare it once (see <see cref="IsAttributeClass" />).
+        /// </summary>
+        public static string? AttributeClassName(Microsoft.CodeAnalysis.INamedTypeSymbol? attributeClass)
+        {
+            return attributeClass?.ToDisplayString();
+        }
+
         // ── Attribute simple names (matched via AttributeClass.Name) ──
         public const string DwarfMapper = "DwarfMapperAttribute";
         public const string DwarfMapperOptions = "DwarfMapperOptionsAttribute";
