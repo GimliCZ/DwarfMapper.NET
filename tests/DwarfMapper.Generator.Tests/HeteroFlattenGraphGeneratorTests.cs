@@ -509,5 +509,88 @@ namespace DwarfMapper.Generator.Tests
             Assert.Single(lines, l => l.Contains("__DwarfMap_EnumName_", StringComparison.Ordinal) &&
                                       l.Contains("(global::Demo.Kind ", StringComparison.Ordinal));
         }
+
+        /// <summary>
+        ///     The FsNode fixture with the node base's modifier, the source navigation member, the target collection
+        ///     member and the directive's arms all chosen by the caller.
+        /// </summary>
+        private static string FlattenGraphSource(string nodeModifier, string rootMember, string nodesMember, string arms)
+        {
+            return $$"""
+                     using DwarfMapper;
+                     using System.Collections.Generic;
+                     namespace Demo;
+                     public class Unrelated { public int X { get; set; } }
+                     public class UnrelatedDto { public int X { get; set; } }
+                     public {{nodeModifier}} class FsNode { public string Name { get; set; } = ""; }
+                     public class Folder : FsNode { public List<FsNode> Children { get; set; } = new(); }
+                     public class File   : FsNode { public long Size { get; set; } }
+                     public {{nodeModifier}} class FsNodeDto { public string Name { get; set; } = ""; }
+                     public class FolderDto : FsNodeDto { public List<FsNodeDto>? Children { get; set; } }
+                     public class FileDto   : FsNodeDto { public long Size { get; set; } }
+                     public class Tree    { {{rootMember}} }
+                     public class TreeDto { {{nodesMember}} }
+                     [DwarfMapper]
+                     public partial class M
+                     {
+                         [FlattenGraph(nameof(Tree.Root), nameof(TreeDto.Nodes))]
+                         {{arms}}
+                         public partial TreeDto Map(Tree t);
+                     }
+                     """;
+        }
+
+        private const string BothArms = "[MapDerivedType<Folder, FolderDto>] [MapDerivedType<File, FileDto>]";
+
+        // ── 21. A concrete node base with [MapDerivedType] arms takes the heterogeneous path ─────
+
+        /// <summary>
+        ///     A node base that is neither abstract nor an interface still dispatches per concrete type when the
+        ///     directive declares arms. Every other heterogeneous fixture's node base was abstract.
+        /// </summary>
+        [Fact]
+        public void HeteroFlattenGraph_concrete_node_base_with_arms_emits_per_type_helpers()
+        {
+            var src = FlattenGraphSource("", "public FsNode? Root { get; set; }", "public List<FsNodeDto> Nodes { get; set; } = new();", BothArms);
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("__DwarfMap_FlatNode_", generated, StringComparison.Ordinal);
+        }
+
+        // ── 22. Every arm refused skips the directive ─────────────────────────────────
+
+        /// <summary>
+        ///     When no declared arm survives validation there is nothing to dispatch to, so the directive is skipped
+        ///     after the refusal is reported, rather than emitting a traversal with no arms.
+        /// </summary>
+        [Fact]
+        public void HeteroFlattenGraph_every_arm_refused_reports_DWARF035_and_emits_no_traversal()
+        {
+            var src = FlattenGraphSource("abstract", "public FsNode? Root { get; set; }", "public List<FsNodeDto> Nodes { get; set; } = new();",
+                "[MapDerivedType<Unrelated, UnrelatedDto>]");
+            var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARF035" &&
+                     d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("'global::Demo.Unrelated'", StringComparison.Ordinal));
+            Assert.DoesNotContain("__DwarfMap_FlattenGraph_", generated, StringComparison.Ordinal);
+        }
+
+        // ── 23. The array-target wrapper takes the source navigation's own shape ─────────
+
+        /// <summary>
+        ///     An array target is filled through a <c>.ToArray()</c> wrapper whose parameter must match the traversal
+        ///     helper's: an array of nodes, or any enumerable of them. Every array-target fixture navigated from a
+        ///     single node.
+        /// </summary>
+        [Theory]
+        [InlineData("public FsNode[]? Root { get; set; }", "global::Demo.FsNode[]? entry)")]
+        [InlineData("public List<FsNode>? Root { get; set; }", "global::System.Collections.Generic.IEnumerable<global::Demo.FsNode>? entry)")]
+        public void HeteroFlattenGraph_array_target_wrapper_takes_the_source_navigation_shape(string rootMember, string wrapperParameter)
+        {
+            var src = FlattenGraphSource("abstract", rootMember, "public FsNodeDto[] Nodes { get; set; } = [];", BothArms);
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains(generated.Split('\n'),
+                l => l.Contains("__DwarfMap_FlattenGraphArr_", StringComparison.Ordinal) &&
+                     l.Contains("(" + wrapperParameter, StringComparison.Ordinal));
+        }
     }
 }
