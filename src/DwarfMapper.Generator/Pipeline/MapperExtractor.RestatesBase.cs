@@ -284,9 +284,9 @@ namespace DwarfMapper.Generator.Pipeline
             // The models carry display strings rather than symbols (they must stay value-equatable), so the check
             // has to get back to symbols to ask about base chains and member types. Matching against the pairs the
             // class itself declares keeps this to a small, local search rather than a compilation-wide lookup.
-            foreach (var attr in classSymbol.GetAttributes())
+            foreach (var (_, ac) in WithNonNullKey(classSymbol.GetAttributes(), a => a.AttributeClass))
             {
-                if (attr.AttributeClass is not { } ac || ac.TypeArguments.Length != 2)
+                if (ac.TypeArguments.Length != 2)
                 {
                     continue;
                 }
