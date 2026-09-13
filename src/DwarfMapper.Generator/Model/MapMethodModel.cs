@@ -330,6 +330,21 @@ namespace DwarfMapper.Generator.Model
         /// </remarks>
         public string EmitParameterTypeSignature => ParameterTypeSignature ?? ParameterTypeFullName;
 
+        /// <summary>
+        ///     The ELEMENT member of an element-wise method (the async-stream and span maps), or a member with no
+        ///     converter and no null handling when the model carries none, so readers take its fields without a null
+        ///     test at each one.
+        /// </summary>
+        /// <remarks>
+        ///     Async-stream and span models are always built with exactly one element member, so the "none" answer is reached
+        ///     here, where the unit test asks it, rather than as a null-conditional at every field the emitter reads.
+        ///     It emits exactly what the old null-conditionals did: no converter, <see cref="NullHandling.None" />, and
+        ///     every flag false.
+        /// </remarks>
+        public MemberMap ElementMember => Members.Count > 0 ? Members[0] : NoElementMember;
+
+        private static readonly MemberMap NoElementMember = new("", "");
+
         /// <summary>The return-slot twin of <see cref="EmitParameterTypeSignature" />.</summary>
         public string EmitReturnTypeSignature => ReturnTypeSignature ?? ReturnTypeFullName;
 

@@ -886,8 +886,8 @@ namespace DwarfMapper.Generator.Pipeline
             // Without this the call below is missing the converter's required (ctx, depth) tail: CS7036 in the
             // generated file (B33). Note the retention cost is the collection path's, stretched over a lazy
             // sequence: under Preserve the identity map lives as long as the iterator does.
-            var elem = method.Members.Count > 0 ? method.Members[0] : null;
-            if (elem?.ConverterMethod is not null && elem.ConverterNeedsDepthCtx)
+            var elem = method.ElementMember;
+            if (elem.ConverterMethod is not null && elem.ConverterNeedsDepthCtx)
             {
                 EmitElementContext(sb, method, indent);
             }
@@ -921,18 +921,18 @@ namespace DwarfMapper.Generator.Pipeline
             sb.Append(indent).Append("        yield return ")
                 .Append(CollectionConverter.ElementExpr(
                     "__item",
-                    elem?.EmitConverterMethod,
-                    elem?.NullHandling ?? NullHandling.None,
+                    elem.EmitConverterMethod,
+                    elem.NullHandling,
                     method.AsyncStreamTargetElementFullName,
-                    elem?.ConverterNeedsDepthCtx ?? false,
-                    elem?.SourceIsNullableRef ?? false,
+                    elem.ConverterNeedsDepthCtx,
+                    elem.SourceIsNullableRef,
                     ", __dwarf_ctx, 0",
                     // No index expression (an `await foreach` has no counter); the trailing argument is round 29
                     // T2.9's user-declared-converter forgiveness, resolved at this endpoint's own resolution site
                     // and carried on the element MemberMap beside SourceIsNullableRef.
                     null,
-                    elem?.ConverterParamIsNonNullableRef ?? false,
-                    elem?.ConverterReturnIsNullableRef ?? false));
+                    elem.ConverterParamIsNonNullableRef,
+                    elem.ConverterReturnIsNullableRef));
 
             sb.AppendLine(";");
             sb.Append(indent).AppendLine("}");

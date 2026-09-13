@@ -49,8 +49,8 @@ namespace DwarfMapper.Generator.Pipeline
             // ctx-carrying element converter gets ONE DwarfRefContext for the whole call, so two span slots
             // holding the same source object land the SAME target instance under Preserve. Without it the call
             // below is missing the converter's required (ctx, depth) tail: CS7036 in the generated file (B33).
-            var elem = method.Members.Count > 0 ? method.Members[0] : null;
-            if (elem?.ConverterMethod is not null && elem.ConverterNeedsDepthCtx)
+            var elem = method.ElementMember;
+            if (elem.ConverterMethod is not null && elem.ConverterNeedsDepthCtx)
             {
                 EmitElementContext(sb, method, indent);
             }
@@ -65,7 +65,7 @@ namespace DwarfMapper.Generator.Pipeline
             // 1" tail: the context local this method's own body declares (see EmitElementContext above) is
             // named __dwarf_ctx, and a span element is always a fresh depth-0 call, exactly like the
             // async-stream loop's element converter call just above in this file.
-            var elemNh = elem?.NullHandling ?? NullHandling.None;
+            var elemNh = elem.NullHandling;
 
             // NullableProject/NullableProjectRef reference the element TWICE (.HasValue then .Value, or
             // "is null" then the plain value) — indexing the span twice for that loses nullable flow tracking
@@ -86,11 +86,11 @@ namespace DwarfMapper.Generator.Pipeline
             sb.Append(indent).Append("        ").Append(dst).Append("[__i] = ")
                 .Append(CollectionConverter.ElementExpr(
                     needsLocal ? "__item" : src + "[__i]",
-                    elem?.EmitConverterMethod,
+                    elem.EmitConverterMethod,
                     elemNh,
                     method.SpanTargetElementFullName,
-                    elem?.ConverterNeedsDepthCtx ?? false,
-                    elem?.SourceIsNullableRef ?? false,
+                    elem.ConverterNeedsDepthCtx,
+                    elem.SourceIsNullableRef,
                     ", __dwarf_ctx, 0",
                     // Round 29 T0.2b review fix round 1: __i is always in scope in this inline loop (unlike
                     // several CollectionConverter target shapes, which is why this argument is opt-in), so a
@@ -99,8 +99,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // Round 29 T2.9: the user-declared-converter half of the forgiveness decision, resolved at
                     // the span endpoint's own resolution site (MapperExtractor.Phases) and carried here on the
                     // element MemberMap, exactly as SourceIsNullableRef is.
-                    elem?.ConverterParamIsNonNullableRef ?? false,
-                    elem?.ConverterReturnIsNullableRef ?? false))
+                    elem.ConverterParamIsNonNullableRef,
+                    elem.ConverterReturnIsNullableRef))
                 .AppendLine(";");
 
             if (needsLocal)
