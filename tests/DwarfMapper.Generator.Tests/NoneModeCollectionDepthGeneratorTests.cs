@@ -33,6 +33,33 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void None_mode_self_referential_struct_element_list_re_synthesizes_the_helper_with_ctx()
+        {
+            // The re-synthesized helper asks whether the ELEMENT is a nullable reference, to null-forgive the element
+            // call. Every recursive fixture above has a class element; a struct element answers no before the
+            // annotation is read.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct Node    { public int V { get; set; } public List<Node> Kids { get; set; } }
+                               public struct NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains(
+                "global::System.Collections.Generic.List<global::Demo.NodeDto> __DwarfMapColl_",
+                generated,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "(global::System.Collections.Generic.List<global::Demo.Node>? src, global::DwarfMapper.DwarfRefContext ctx, int depth)",
+                generated,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("__item!", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void None_mode_non_recursive_object_list_stays_zero_overhead()
         {
             const string src = """
