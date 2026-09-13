@@ -1030,7 +1030,7 @@ namespace DwarfMapper.Generator.Pipeline
         // with different return (target) types overload only by return type — illegal C# (CS0111). The
         // consumer would otherwise see a raw CS0111 inside generated code. Detect, report loudly, and drop
         // the duplicate emission so DWARF060 is the single actionable diagnostic (the build still fails).
-        private static void ReportSameSourceSignatureCollisions(List<MapMethodModel> methods, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics)
+        internal static void ReportSameSourceSignatureCollisions(List<MapMethodModel> methods, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics)
         {
             {
                 var sigOwner = new Dictionary<string, int>(StringComparer.Ordinal);
