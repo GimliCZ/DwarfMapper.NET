@@ -118,5 +118,54 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             Assert.Contains("found 'Sel'", Message068(src), StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void Map_with_a_computed_target_selector_is_refused()
+        {
+            // The target half of the selector pair: every refused Map so far had a readable target.
+            var src = Cfg(" => c.Map(t => 1, s => s.A).Ignore(t => t.Label).Ignore(t => t.Extra);");
+
+            Assert.Contains("found 'c.Map(t => 1, s => s.A)'", Message068(src), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MapOr_with_a_computed_target_selector_is_refused()
+        {
+            var src = Cfg(" => c.MapOr(t => 1, s => s.N, 0).Ignore(t => t.Label).Ignore(t => t.Extra);");
+
+            Assert.Contains("found 'c.MapOr(t => 1, s => s.N, 0)'", Message068(src), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_call_on_an_array_in_the_config_body_is_not_a_configuration_call()
+        {
+            // The receiver's type is not a named type at all, so it cannot be the MapConfig value.
+            var src = Cfg(" { c.Ignore(t => t.Label).Ignore(t => t.Extra); _ = new int[0].Clone(); }");
+
+            GeneratorAssert.EmitsCompilableCode(src);
+            GeneratorAssert.DoesNotReport(src, "DWARF068");
+        }
+
+        [Fact]
+        public void A_call_on_a_typeless_receiver_in_the_config_body_is_not_a_configuration_call()
+        {
+            // `null.ToString()` does not compile (CS0023), but the generator still reads the body: the receiver has no
+            // type, so it is skipped rather than refused.
+            var src = Cfg(" { c.Ignore(t => t.Label).Ignore(t => t.Extra); _ = null.ToString(); }");
+
+            GeneratorAssert.DoesNotReport(src, "DWARF068");
+        }
+
+        [Fact]
+        public void A_constructor_taking_a_MapConfig_is_not_a_convention_method()
+        {
+            // Same one-parameter shape as a convention method, but declared as a constructor.
+            var src = Cfg(" => c.Ignore(t => t.Label).Ignore(t => t.Extra);",
+                "    public M(MapConfig<S, D> other) { }\n    public M() { }\n");
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("nameof(Cfg)", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("nameof(M)", generated, StringComparison.Ordinal);
+        }
     }
 }
