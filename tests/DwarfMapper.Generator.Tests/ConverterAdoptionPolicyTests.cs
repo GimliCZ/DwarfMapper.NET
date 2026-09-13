@@ -76,6 +76,38 @@ namespace DwarfMapper.Generator.Tests
             Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF013"));
         }
 
+        /// <summary>
+        ///     The same refusal one arm earlier. A layout-identical struct array would block-copy, so the blit gate
+        ///     asks whether the element pair belongs to a user conversion before taking it — and two candidates are
+        ///     still no answer. The pair keeps the element loop, and the loop's own resolution reports DWARF013
+        ///     rather than the gate silently blitting past both methods.
+        /// </summary>
+        [Fact]
+        public void Two_matching_element_methods_refuse_a_blittable_array_instead_of_blitting_past_them()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct P { public int X; }
+                               public struct Q { public int X; }
+                               public class C { public P[] V { get; set; } = System.Array.Empty<P>(); }
+                               public class D { public Q[] V { get; set; } = System.Array.Empty<Q>(); }
+
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   public partial D Map(C c);
+                                   private static Q One(P p) => new Q { X = p.X };
+                                   private static Q Two(P p) => new Q { X = p.X + 1 };
+                               }
+                               """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+
+            Assert.Contains(diagnostics, d => d.Id == "DWARF013");
+            Assert.DoesNotContain("__DwarfMapBlit", generated, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void A_method_dedicated_by_Use_is_withheld_from_auto_adoption()
         {
