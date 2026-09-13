@@ -294,7 +294,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>One declared enum member and the constant array slot it writes.</summary>
-        private readonly struct DeclaredSlot
+        internal readonly struct DeclaredSlot
         {
             public DeclaredSlot(string memberFq, int index)
             {
@@ -321,7 +321,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     text is a function of the symbol's contents rather than of member declaration order as Roslyn
         ///     happens to return it.
         /// </remarks>
-        private static IEnumerable<DeclaredSlot> DeclaredSlots(ITypeSymbol enumKey, int offset)
+        internal static IEnumerable<DeclaredSlot> DeclaredSlots(ITypeSymbol enumKey, int offset)
         {
             // The explicit comparer is what DeterminismSourceScanTests' D1 asks for, and it is honest
             // rather than a way past the scan: the key is a long, so ordering is numeric and could not
@@ -444,7 +444,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     either throw or wrap into a NEGATIVE number a range test could read as in-bounds. It is reported
         ///     as out of range instead, which is a refusal — the direction this feature must always fail in.
         /// </remarks>
-        private static bool TryValueOf(object? constant, out long value, out string printed)
+        internal static bool TryValueOf(object? constant, out long value, out string printed)
         {
             switch (constant)
             {
