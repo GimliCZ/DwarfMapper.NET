@@ -689,6 +689,44 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR12");
         }
 
+        // ── DWARFR13 — a generic [MapTo] source ─────────────────────────────────────────────────────
+        // The registry wrote `this global::Demo.Src<T> source` with T declared nowhere, so the generated extension
+        // class did not compile (CS0246) and nothing in the build named the cause. The class model refuses the same
+        // shape as DWARF054. A class nested in a generic type is generic too, and failed the same way.
+        [Fact]
+        public void A_generic_MapTo_source_reports_DWARFR13_and_emits_nothing()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             [MapTo(typeof(Dto))] public class Src<T> { public int A { get; set; } }
+                             public class Dto { public int A { get; set; } }
+                             """;
+            var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARFR13" &&
+                     d.GetMessage(CultureInfo.InvariantCulture).Contains("Demo.Src<T>", StringComparison.Ordinal));
+            Assert.Empty(generated);
+            GeneratorAssert.EmitsCompilableCode(s);
+        }
+
+        [Fact]
+        public void A_MapTo_source_nested_in_a_generic_type_reports_DWARFR13_and_emits_nothing()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Outer<T> { [MapTo(typeof(Dto))] public class Src { public int A { get; set; } } }
+                             public class Dto { public int A { get; set; } }
+                             """;
+            var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARFR13" &&
+                     d.GetMessage(CultureInfo.InvariantCulture).Contains("Demo.Outer<T>.Src", StringComparison.Ordinal));
+            Assert.Empty(generated);
+            GeneratorAssert.EmitsCompilableCode(s);
+        }
+
         // The MESSAGE, not just the id — and this one is the reason the gate two facts below exists. DWARFR11
         // shipped with a literal `{ ... }` in its MessageFormat, which is an unescaped format-specifier brace:
         // string.Format throws FormatException, Roslyn catches it and hands back the UNFORMATTED string, and the

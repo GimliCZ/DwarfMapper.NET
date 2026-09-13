@@ -152,6 +152,18 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Warning,
             true);
 
+        // The registry writes its extension methods ON the source type: `ToDto(this Src<T> source)` declares no T, so a
+        // generic source failed as CS0246 in a generated file with nothing naming the cause. The class model refuses
+        // the same shape as DWARF054. IsGenericType is also true for a type nested in a generic type, which fails the
+        // same way (`this Outer<T>.Src source`).
+        public static readonly DiagnosticDescriptor GenericSource = new(
+            "DWARFR13",
+            "A [MapTo] source type cannot be generic",
+            "[MapTo] source {0} is generic; the registry emits extension methods on the source type and cannot declare its type parameters — put [MapTo] on a non-generic type, or map the closed pair with the [DwarfMapper] class model",
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
         public static readonly DiagnosticDescriptor RecursiveNesting = new(
             "DWARFR06",
             "Recursive nested mapping is not supported by the registry",

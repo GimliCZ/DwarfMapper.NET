@@ -132,3 +132,4 @@ DWARFR09 | DwarfMapper.Registry | Error | A type the [MapTo] registry constructs
 DWARFR10 | DwarfMapper.Registry | Error | Member has a source match but auto-matching is disabled
 DWARFR11 | DwarfMapper.Registry | Warning | [DwarfMapperConstructor] is not read by the [MapTo] registry
 DWARFR12 | DwarfMapper.Registry | Warning | [MapIgnore] argument is not read by the [MapTo] registry
+DWARFR13 | DwarfMapper.Registry | Error | A [MapTo] source type cannot be generic

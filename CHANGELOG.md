@@ -410,6 +410,13 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapTo]` on a generic source type generated code that did not compile, with no diagnostic.** The registry
+  emits extension methods on the source type, and for `class Src<T>` (or a class nested in a generic type) it wrote
+  `this Src<T> source` with `T` declared nowhere: `CS0246` in a generated file, and nothing in the build naming the
+  cause. It is now refused as the new **`DWARFR13`** (Error), the registry's counterpart of `DWARF054`, and nothing is
+  generated for that type. **Remedy:** put `[MapTo]` on a non-generic source type, or map the closed pair with the
+  `[DwarfMapper]` class model.
+
 - **Naming anything in your own code after a C# keyword — `@class`, `@event`, `@record` — produced generated
   code that did not compile, in twenty-seven distinct places.** `@class` is legal C# and people write it,
   particularly in DTOs generated from a JSON or OpenAPI schema; the `@` is syntax, so the compiler hands a

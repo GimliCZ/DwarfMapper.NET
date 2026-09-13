@@ -79,6 +79,26 @@ namespace DwarfMapper.Generator.Registry
             var diags = new List<DiagnosticInfo>();
             var resolver = new Resolver(compilation, diags, location);
             var hasError = false;
+            var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
+
+            // The extension methods below are written ON the source type, and `this Src<T> source` declares no T: a
+            // generic source (or one nested in a generic type) failed as CS0246 in the generated file with nothing
+            // naming the cause. Refused before anything else is read, as the class model refuses a generic mapper
+            // with DWARF054 — nothing is generated for the type.
+            if (source.IsGenericType)
+            {
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.GenericSource, location, source.ToDisplayString()));
+                return new Model(
+                    source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    TypeFacts.CanBeNull(source),
+                    ns,
+                    "__DwarfRegistry_" + source.Name,
+                    false,
+                    new EquatableArray<TargetPlan>(Array.Empty<TargetPlan>()),
+                    new EquatableArray<SynthesizedMethod>(Array.Empty<SynthesizedMethod>()),
+                    new EquatableArray<DiagnosticInfo>(diags.ToArray()),
+                    true);
+            }
 
             // Assembly-level configuration, through the SAME reader the [DwarfMapper] class model resolves its
             // defaults with. [MapTo] takes no options of its own, so the assembly defaults are the whole option
@@ -322,7 +342,6 @@ namespace DwarfMapper.Generator.Registry
                 hasError = true;
             }
 
-            var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
             var helpers = resolver.Synth.Values.OrderBy(h => h.Name, StringComparer.Ordinal).ToArray();
             // Public extension class only when the assembly OPTED IN with
             // [assembly: DwarfMapperOptions(PublicExtensions = true)] and the source and every target are
