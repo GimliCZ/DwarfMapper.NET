@@ -463,7 +463,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>The C# keyword for an accessibility, spelled out rather than lower-cased at runtime.</summary>
-        private static string AccessibilityWord(Accessibility a)
+        internal static string AccessibilityWord(Accessibility a)
         {
             return a switch
             {

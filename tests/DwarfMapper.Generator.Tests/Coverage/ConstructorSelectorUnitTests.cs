@@ -6,7 +6,9 @@ using Microsoft.CodeAnalysis.CSharp;
 
 // Unit tests for ConstructorSelector answers no generator input reaches (per-branch rule: expose, test directly):
 //   - UnusableReason's fallback for a constructor that fails none of IsUsableCandidate's tests: the report asks for a
-//     reason only after IsUsableCandidate refused the constructor.
+//     reason only after IsUsableCandidate refused the constructor;
+//   - AccessibilityWord's "public" and default arms: IsAccessible admits every public constructor, and a
+//     constructor's declared accessibility is never NotApplicable.
 namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class ConstructorSelectorUnitTests
@@ -23,6 +25,13 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var reason = ConstructorSelector.UnusableReason(ctor, target, compilation, false);
 
             Assert.Contains("no specific reason could be determined", reason, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void AccessibilityWord_spells_public_and_falls_back_for_not_applicable()
+        {
+            Assert.Equal("public", ConstructorSelector.AccessibilityWord(Accessibility.Public));
+            Assert.Equal("not accessible from the mapper", ConstructorSelector.AccessibilityWord(Accessibility.NotApplicable));
         }
     }
 }
