@@ -383,5 +383,41 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain("__DwarfMap_FlatNodeDispatch_", generated, StringComparison.Ordinal);
             GeneratorAssert.EmitsCompilableCode(src);
         }
+
+        // ── 16. A Nullable<struct> member under an interface node base is an edge ───────
+
+        /// <summary>
+        ///     A struct node implementing the interface base, held as <c>Leaf?</c> on a derived node, is an EDGE: C#
+        ///     boxes <c>Leaf?</c> implicitly to the interface, so the single-ref edge check classifies it, and the
+        ///     derived DTO's same-named member is nulled like every other edge.
+        /// </summary>
+        [Fact]
+        public void HeteroFlattenGraph_nullable_struct_member_under_an_interface_base_is_an_edge()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public interface INode { string Name { get; } }
+                               public struct Leaf : INode { public string Name { get; set; } }
+                               public class Folder : INode { public string Name { get; set; } = ""; public List<INode> Children { get; set; } = new(); public Leaf? Opt { get; set; } }
+                               public class File   : INode { public string Name { get; set; } = ""; public long Size { get; set; } }
+                               public interface INodeDto { string Name { get; } }
+                               public class FolderDto : INodeDto { public string Name { get; set; } = ""; public List<INodeDto>? Children { get; set; } public INodeDto? Opt { get; set; } }
+                               public class FileDto   : INodeDto { public string Name { get; set; } = ""; public long Size { get; set; } }
+                               public class Tree    { public INode? Root { get; set; } }
+                               public class TreeDto { public List<INodeDto> Nodes { get; set; } = new(); }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [FlattenGraph(nameof(Tree.Root), nameof(TreeDto.Nodes))]
+                                   [MapDerivedType<Folder, FolderDto>]
+                                   [MapDerivedType<File, FileDto>]
+                                   public partial TreeDto Map(Tree t);
+                               }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("Opt = null,", generated, StringComparison.Ordinal);
+        }
     }
 }

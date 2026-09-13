@@ -81,19 +81,9 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     var memberTypeNoAnnot = nm.Type.WithNullableAnnotation(NullableAnnotation.None);
 
-                    // Single-ref edge: type assignable to nodeBase (includes exact type and subtypes)
+                    // Single-ref edge: type assignable to nodeBase (includes exact type and subtypes). A Nullable<T>
+                    // member lands here too: C# boxes T? implicitly to every interface and base class T converts to.
                     if (HasImplicitConversion(req.Compilation, memberTypeNoAnnot, nav.NodeType))
-                    {
-                        derivedEdgeMembers.Add((nm.Name, false, false));
-                        continue;
-                    }
-
-                    // Nullable<T> where T is assignable to nodeBase
-                    if (nm.Type is INamedTypeSymbol nmNamed &&
-                        nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
-                        HasImplicitConversion(req.Compilation,
-                            nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None),
-                            nav.NodeType))
                     {
                         derivedEdgeMembers.Add((nm.Name, false, false));
                         continue;
