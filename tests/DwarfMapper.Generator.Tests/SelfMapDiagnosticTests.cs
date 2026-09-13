@@ -202,5 +202,25 @@ namespace DwarfMapper.Generator.Tests
 
             GeneratorAssert.DoesNotReport(src, Id);
         }
+
+        [Fact]
+        public void DWARF076_is_suppressed_by_a_bare_check_id_with_no_reason()
+        {
+            // The ":reason" suffix is conventional, not required: "DWARF076" on its own is the exact id and must
+            // suppress just as "DWARF076:reason" does.
+            const string src = """
+                               using System.Diagnostics.CodeAnalysis;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public sealed class Dto { public int Id { get; set; } }
+
+                               [DwarfMapper]
+                               [GenerateMap<Dto, Dto>]
+                               [SuppressMessage("DwarfMapper", "DWARF076")]
+                               public partial class M { }
+                               """;
+
+            GeneratorAssert.DoesNotReport(src, Id);
+        }
     }
 }
