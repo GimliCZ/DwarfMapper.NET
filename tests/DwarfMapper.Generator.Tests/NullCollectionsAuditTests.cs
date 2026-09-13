@@ -232,5 +232,20 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("private global::System.Collections.Generic.HashSet<int>? __DwarfMapColl_", gen, StringComparison.Ordinal);
             Assert.Contains("if (src is null) return null;", gen, StringComparison.Ordinal);
         }
+
+        [Theory]
+        [InlineData("Stack")]
+        [InlineData("Queue")]
+        public void A5_AsNull_nullable_Stack_or_Queue_target_returns_null_for_a_null_source(string concrete)
+        {
+            var s = "using DwarfMapper;\nusing System.Collections.Generic;\nnamespace Demo;\n" +
+                    "public class Src { public List<int>? Items { get; set; } }\n" +
+                    "public class Dst { public " + concrete + "<int>? Items { get; set; } }\n" +
+                    "[DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]\n" +
+                    "public partial class M { public partial Dst Map(Src s); }\n";
+            var gen = GeneratorAssert.CompilesClean(s, NullableContextOptions.Enable);
+            Assert.Contains("private global::System.Collections.Generic." + concrete + "<int>? __DwarfMapColl_", gen, StringComparison.Ordinal);
+            Assert.Contains("if (src is null) return null;", gen, StringComparison.Ordinal);
+        }
     }
 }
