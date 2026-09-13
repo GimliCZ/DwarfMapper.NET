@@ -496,7 +496,7 @@ namespace DwarfMapper.Generator.Pipeline
         // public method before knowing the Holder mapper needs ctx. We now re-check all public
         // declared methods under Preserve mode and patch any member/ctor-arg that calls a
         // newly-added recursionCapableNames entry without ConverterNeedsDepthCtx=true.
-        private static void PropagateContextToPublicMethodsSecondPass(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth, bool isPreserveMode)
+        internal static void PropagateContextToPublicMethodsSecondPass(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth, bool isPreserveMode)
         {
             if (isPreserveMode)
             {
