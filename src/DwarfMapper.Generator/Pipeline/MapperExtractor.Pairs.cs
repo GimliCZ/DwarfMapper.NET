@@ -80,10 +80,15 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length != 2 || attr.ConstructorArguments[0].Value is not string src || attr.ConstructorArguments[1].Value is not string tgt)
+                if (attr.ConstructorArguments.Length != 2)
                 {
                     continue;
                 }
+
+                // A null member name names no member, exactly as a name matching none does. It is kept, so the pair
+                // reports DWARF009 / DWARF008 instead of the directive vanishing silently.
+                var src = attr.ConstructorArguments[0].Value as string ?? string.Empty;
+                var tgt = attr.ConstructorArguments[1].Value as string ?? string.Empty;
 
                 string? use = null;
                 var hasNull = false;
