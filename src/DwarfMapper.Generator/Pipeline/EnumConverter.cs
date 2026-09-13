@@ -337,7 +337,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///         them with no per-type list to drift out of date.
         ///     </para>
         /// </summary>
-        private static bool IsZero(object? constantValue)
+        /// <remarks>
+        ///     Internal so a unit test can pass a value that is not <see cref="IConvertible" />: an enum constant is always
+        ///     a boxed integral, so that answer was never reached through the converter.
+        /// </remarks>
+        internal static bool IsZero(object? constantValue)
         {
             return constantValue is IConvertible c && c.ToDecimal(CultureInfo.InvariantCulture) == 0m;
         }
