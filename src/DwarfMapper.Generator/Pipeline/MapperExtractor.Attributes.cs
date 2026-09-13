@@ -225,7 +225,12 @@ namespace DwarfMapper.Generator.Pipeline
                 return IsEffectivelyPublic(arr.ElementType);
             }
 
-            for (ISymbol? s = t; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
+            // The type itself, then each type that contains it. This walked ContainingSymbol up to the namespace,
+            // which also carried a null exit no symbol can take — every symbol in that chain is public inside a
+            // namespace or fails the accessibility check first — so one branch was untestable by construction.
+            // Containing TYPES are the only symbols whose accessibility decides the question, and the walk over them
+            // ends on null for every top-level type.
+            for (ITypeSymbol? s = t; s is not null; s = s.ContainingType)
                 if (s.DeclaredAccessibility != Accessibility.Public)
                 {
                     return false;
