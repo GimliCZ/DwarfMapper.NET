@@ -464,5 +464,26 @@ namespace DwarfMapper.Generator.Tests
             // string the modifier assertion does not reach; the mutation leg blanked it without a failure.
             Assert.Contains("[MapShare] member 'Items' also carries a [MapProperty]", message, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     The share's null guard must answer with the empty value the copying helper returned, without allocating.
+        ///     A read-only dictionary or set interface has no static <c>Empty</c> and is not a sequence interface
+        ///     <c>Array.Empty&lt;T&gt;()</c> can stand in for, so the forced share is refused rather than allocating.
+        /// </summary>
+        [Theory]
+        [InlineData("IReadOnlyDictionary<string, Badge>", "System.Collections.Generic.IReadOnlyDictionary<string, Demo.Badge>")]
+        [InlineData("IReadOnlySet<Badge>", "System.Collections.Generic.IReadOnlySet<Demo.Badge>")]
+        public void MapShare_on_a_target_with_no_allocation_free_empty_value_is_refused(string memberType, string named)
+        {
+            var src = "public sealed class A { public " + memberType + " Items { get; init; } = null!; }\n" +
+                      "public sealed class B { public " + memberType + " Items { get; init; } = null!; }\n" +
+                      "[DwarfMapper] public partial class M { [MapShare(\"Items\")] public partial B Map(A a); }\n";
+            var (diagnostics, _) = GeneratorTestHarness.Run(Shapes + src);
+
+            var message = Assert.Single(diagnostics, x => x.Id == "DWARF104").GetMessage(CultureInfo.InvariantCulture);
+            Assert.Contains("[MapShare] member 'Items' has no allocation-free empty value ('" + named + "'",
+                message,
+                StringComparison.Ordinal);
+        }
     }
 }
