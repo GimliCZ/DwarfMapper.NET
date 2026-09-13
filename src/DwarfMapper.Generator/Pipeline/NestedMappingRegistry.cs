@@ -70,8 +70,8 @@ namespace DwarfMapper.Generator.Pipeline
         // answer is "no" — the same verdict a mapper with no pair-scoped attributes produces.
         private Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?>? _pairIsCustomized;
 
-        // Cached result; null until ComputeRecursionCapability() is called.
-        private HashSet<string>? _recursionCapable;
+        // Cached result; empty until ComputeRecursionCapability() replaces it.
+        private HashSet<string> _recursionCapable = new(StringComparer.Ordinal);
 
         /// <summary>
         ///     Whether the depth cap was exceeded. When true a DWARF031 was already scheduled.
@@ -266,7 +266,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         public bool IsRecursionCapable(string methodName)
         {
-            return _recursionCapable?.Contains(methodName) == true;
+            return _recursionCapable.Contains(methodName);
         }
 
         /// <summary>
