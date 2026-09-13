@@ -132,7 +132,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var reference = a.ApplicationSyntaxReference;
-                if (GeneratedSourceExtensions.IsGeneratorAuthored(reference?.SyntaxTree))
+                if (!IsHandWritten(reference))
                 {
                     continue;
                 }
@@ -143,6 +143,21 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return found;
+        }
+
+        /// <summary>
+        ///     Whether the attribute application at <paramref name="reference" /> was written in this compilation's own
+        ///     source rather than emitted by a generator.
+        /// </summary>
+        /// <remarks>
+        ///     An attribute of <c>compilation.Assembly</c> always has an application syntax reference, so the "no
+        ///     reference" answer was an outcome <see cref="HandWrittenManifests" /> never reached. A missing reference
+        ///     reads as generator-authored, exactly as <see cref="GeneratedSourceExtensions.IsGeneratorAuthored" /> reads
+        ///     a missing tree.
+        /// </remarks>
+        internal static bool IsHandWritten(SyntaxReference? reference)
+        {
+            return !GeneratedSourceExtensions.IsGeneratorAuthored(reference?.SyntaxTree);
         }
 
         private static (string Source, string Destination)? ReadPair(AttributeData a)
