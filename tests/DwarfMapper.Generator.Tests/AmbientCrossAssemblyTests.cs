@@ -106,5 +106,28 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Contains(diags, d => d.Id == "DWARF063" && d.Severity == DiagnosticSeverity.Warning);
         }
+
+        [Fact]
+        public void Root_reports_DWARF061_for_a_pair_only_a_referenced_consumer_requires()
+        {
+            // A mid-tier consumer compiled with the generator carries [assembly: DwarfRequiresMap] in its metadata. The
+            // root consumes nothing itself, so the requirement it reports is the one it read from that metadata.
+            var consumer = CompileToReference("Shared.Consumer",
+                """
+                namespace Shared;
+                public class Doc { public int V { get; set; } }
+                public class Model { public int V { get; set; } }
+                public class Use
+                {
+                    public Model Convert(global::DwarfMapper.IDwarfMapper m, Doc d) => m.Map<Model>(d);
+                }
+                """);
+
+            var diags = RunRoot("[assembly: global::DwarfMapper.DwarfMapperValidationRoot]", consumer);
+
+            Assert.Contains(diags,
+                d => d.Id == "DWARF061" &&
+                     d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Shared.Doc", StringComparison.Ordinal));
+        }
     }
 }
