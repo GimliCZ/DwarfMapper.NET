@@ -591,7 +591,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
         }
 
-        private static bool IsAbstractOrInterfaceAutoNestSource(
+        internal static bool IsAbstractOrInterfaceAutoNestSource(
             Compilation compilation,
             ITypeSymbol src,
             INamedTypeSymbol tgt)
@@ -655,7 +655,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Returns true when <paramref name="type" /> implements <c>IEnumerable</c> (generic or non-generic),
         ///     which means it is a collection/sequence type that belongs to CollectionConverter/DictionaryConverter.
         /// </summary>
-        private static bool ImplementsIEnumerable(INamedTypeSymbol type)
+        internal static bool ImplementsIEnumerable(INamedTypeSymbol type)
         {
             // Fast checks: well-known collection / dict names (all supported + well-known unsupported)
             if (type.Name is "List" or "Array" or "HashSet" or "Dictionary"
@@ -696,7 +696,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     is not string, is not already handled by CollectionConverter or DictionaryConverter)
         ///     → should emit DWARF027 rather than DWARF005.
         /// </summary>
-        private static bool IsUnsupportedCollectionTarget(ITypeSymbol type)
+        internal static bool IsUnsupportedCollectionTarget(ITypeSymbol type)
         {
             if (type.SpecialType == SpecialType.System_String)
             {
@@ -1393,7 +1393,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     emitted <c>Inner = s.Inner is null ? null! : ToDto(s.Inner)</c> — the null ARM forgiven and the
         ///     CALL not, which is CS8601 in the consumer's .g.cs (round 29 task 2.8 concern 1).
         /// </summary>
-        private static bool ConverterReturnIsNullableRef(
+        internal static bool ConverterReturnIsNullableRef(
             string? converterMethod,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
