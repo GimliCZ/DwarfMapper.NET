@@ -256,7 +256,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     a name. Their mappings are supposed to differ, and reporting that would be the check crying wolf on
         ///     the one shape where divergence is the whole point.
         /// </remarks>
-        private static bool SameMemberType(ITypeSymbol baseTgt, ITypeSymbol derivedTgt, string memberName)
+        internal static bool SameMemberType(ITypeSymbol baseTgt, ITypeSymbol derivedTgt, string memberName)
         {
             var baseType = MemberTypeOf(baseTgt, memberName);
             var derivedType = MemberTypeOf(derivedTgt, memberName);
