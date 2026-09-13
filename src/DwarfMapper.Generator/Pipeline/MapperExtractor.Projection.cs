@@ -1272,7 +1272,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     widening or same-width (thus safe as a direct inline cast in SQL projection).
         ///     Both must be integral types.
         /// </summary>
-        private static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
+        internal static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
         {
             // (bit width, isSigned) per integral type. Honours the enum's ACTUAL underlying type
             // (byte/short/uint/long/…), not a fixed int assumption.
@@ -2063,7 +2063,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         as the runtime path does.
         ///     </para>
         /// </summary>
-        private sealed class FlexibleNameComparer : StringComparer
+        internal sealed class FlexibleNameComparer : StringComparer
         {
             public static readonly FlexibleNameComparer Instance = new();
 
