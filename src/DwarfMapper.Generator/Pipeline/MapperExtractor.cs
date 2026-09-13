@@ -97,7 +97,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var classSymbol = (INamedTypeSymbol)ctx.TargetSymbol;
             if (classSymbol.GetAttributes().Any(a =>
-                    a.AttributeClass?.ToDisplayString() == KnownNames.DwarfMapperFqn))
+                    KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.DwarfMapperFqn)))
             {
                 return null; // a [DwarfMapper] class — the primary pipeline emits into it directly
             }
@@ -634,7 +634,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             return ctor is not null &&
                    ctor.GetAttributes()
-                       .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+                       .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, SetsRequiredMembersAttribute));
         }
 
         /// <summary>
@@ -696,7 +696,7 @@ namespace DwarfMapper.Generator.Pipeline
             // If the chosen ctor is annotated [SetsRequiredMembers], C# considers all required members
             // satisfied — no double-set needed.
             var ctorHasSetsRequired = ctor.GetAttributes()
-                .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+                .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, SetsRequiredMembersAttribute));
 
             if (ctorHasSetsRequired)
             {
@@ -800,7 +800,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static IEnumerable<string> ReadIgnores(ISymbol symbol)
         {
             return symbol.GetAttributes()
-                .Where(a => a.AttributeClass?.ToDisplayString() == KnownNames.MapIgnoreFqn)
+                .Where(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.MapIgnoreFqn))
                 .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
                 .Where(s => s is not null)
                 .Select(s => s!);
@@ -813,7 +813,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static IEnumerable<string> ReadIgnoreSources(ISymbol symbol)
         {
             return symbol.GetAttributes()
-                .Where(a => a.AttributeClass?.ToDisplayString() == KnownNames.MapIgnoreSourceFqn)
+                .Where(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.MapIgnoreSourceFqn))
                 .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
                 .Where(s => s is not null)
                 .Select(s => s!);
@@ -1503,7 +1503,7 @@ namespace DwarfMapper.Generator.Pipeline
             var maps = new List<(string Source, string Target, string? Use)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn))
                 {
                     continue;
                 }
@@ -1535,7 +1535,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new List<(string, bool, TypedConstant, string?, string?)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapValueFqn)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapValueFqn))
                 {
                     continue;
                 }

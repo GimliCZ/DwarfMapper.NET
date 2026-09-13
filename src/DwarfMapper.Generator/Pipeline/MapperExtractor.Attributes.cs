@@ -13,7 +13,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var members = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.ReinterpretFqn && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string m)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.ReinterpretFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string m)
                 {
                     members.Add(m);
                 }
@@ -36,7 +36,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var members = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapShareFqn &&
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapShareFqn) &&
                     attr.ConstructorArguments.Length == 1 &&
                     attr.ConstructorArguments[0].Value is string m)
                 {
@@ -69,7 +69,7 @@ namespace DwarfMapper.Generator.Pipeline
             var members = new List<(string, int)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapDenseEnumKeysFqn ||
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapDenseEnumKeysFqn) ||
                     attr.ConstructorArguments.Length != 1 ||
                     !(attr.ConstructorArguments[0].Value is string m))
                 {
@@ -111,7 +111,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var keys = new List<(string, string)>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapCollectionKeyFqn && attr.ConstructorArguments.Length >= 2 && attr.ConstructorArguments[0].Value is string collection && attr.ConstructorArguments[1].Value is string key)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapCollectionKeyFqn) && attr.ConstructorArguments.Length >= 2 && attr.ConstructorArguments[0].Value is string collection && attr.ConstructorArguments[1].Value is string key)
                 {
                     keys.Add((collection, key));
                 }
@@ -650,7 +650,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool ReadMethodAutoNest(IMethodSymbol method, bool classDefault)
         {
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.AutoNestFqn && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is bool b)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.AutoNestFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is bool b)
                 {
                     return b;
                 }

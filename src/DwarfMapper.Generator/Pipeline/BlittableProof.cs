@@ -594,7 +594,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             foreach (var attr in t.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.StructLayoutAttribute")
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, "System.Runtime.InteropServices.StructLayoutAttribute"))
                 {
                     if (attr.ConstructorArguments.Length >= 1 &&
                         attr.ConstructorArguments[0].Value is int kind &&
@@ -632,7 +632,7 @@ namespace DwarfMapper.Generator.Pipeline
         public static int InlineArrayLength(INamedTypeSymbol t)
         {
             foreach (var attr in t.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.CompilerServices.InlineArrayAttribute" &&
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, "System.Runtime.CompilerServices.InlineArrayAttribute") &&
                     attr.ConstructorArguments.Length == 1 &&
                     attr.ConstructorArguments[0].Value is int length)
                 {

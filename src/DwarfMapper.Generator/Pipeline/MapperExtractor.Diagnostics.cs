@@ -200,7 +200,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var fwd in partials)
             {
                 if (!fwd.GetAttributes()
-                        .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.RoundTripFqn))
+                        .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.RoundTripFqn)))
                 {
                     continue;
                 }

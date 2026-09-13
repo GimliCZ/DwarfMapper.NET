@@ -337,7 +337,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new List<(string, bool, TypedConstant, string?, string?)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn) || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
                 {
                     continue;
                 }
@@ -474,7 +474,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn) || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
                 {
                     continue;
                 }
@@ -491,7 +491,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool HasReverseMap(IMethodSymbol m)
         {
-            return m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.ReverseMapFqn);
+            return m.GetAttributes().Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.ReverseMapFqn));
         }
 
         /// <summary>
@@ -559,7 +559,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var roots = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.FlattenFqn && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string s)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string s)
                 {
                     roots.Add(s);
                 }
@@ -576,7 +576,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var result = new List<(string, string)>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.FlattenGraphFqn && attr.ConstructorArguments.Length == 2 && attr.ConstructorArguments[0].Value is string src && attr.ConstructorArguments[1].Value is string tgt)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenGraphFqn) && attr.ConstructorArguments.Length == 2 && attr.ConstructorArguments[0].Value is string src && attr.ConstructorArguments[1].Value is string tgt)
                 {
                     result.Add((src, tgt));
                 }

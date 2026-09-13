@@ -99,7 +99,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             foreach (var a in enumKey.GetAttributes())
-                if (a.AttributeClass?.ToDisplayString() == FlagsFqn)
+                if (KnownNames.IsAttributeClass(a.AttributeClass, FlagsFqn))
                 {
                     reason = $"is keyed by '{enumKey.ToDisplayString()}', which is a [Flags] enum. A flags enum's " +
                              "key space is the POWER SET of its members — 'A | B' is a legitimate key that no " +
@@ -400,7 +400,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             var declared = -1;
             foreach (var a in tgt.GetAttributes())
-                if (a.AttributeClass?.ToDisplayString() == InlineArrayFqn &&
+                if (KnownNames.IsAttributeClass(a.AttributeClass, InlineArrayFqn) &&
                     a.ConstructorArguments.Length == 1 &&
                     a.ConstructorArguments[0].Value is int n)
                 {

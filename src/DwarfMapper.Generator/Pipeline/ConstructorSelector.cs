@@ -203,7 +203,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsAnnotated(IMethodSymbol ctor)
         {
             return ctor.GetAttributes()
-                .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute);
+                .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, DwarfMapperConstructorAttribute));
         }
 
         /// <summary>
@@ -480,7 +480,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool IsObsolete(IMethodSymbol method)
         {
-            return method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == ObsoleteAttribute);
+            return method.GetAttributes().Any(a => KnownNames.IsAttributeClass(a.AttributeClass, ObsoleteAttribute));
         }
     }
 }

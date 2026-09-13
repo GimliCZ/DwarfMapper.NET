@@ -1003,9 +1003,9 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
             {
                 var isBefore = m.GetAttributes()
-                    .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.BeforeMapFqn);
+                    .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.BeforeMapFqn));
                 var isAfter = m.GetAttributes()
-                    .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.AfterMapFqn);
+                    .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.AfterMapFqn));
                 if (!isBefore && !isAfter)
                 {
                     continue;

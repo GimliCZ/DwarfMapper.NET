@@ -41,7 +41,7 @@ namespace DwarfMapper.Generator.Pipeline
         public static AttributeData? Defaults(Compilation compilation)
         {
             foreach (var attribute in compilation.Assembly.GetAttributes())
-                if (attribute.AttributeClass?.ToDisplayString() == KnownNames.DwarfMapperDefaultsFqn)
+                if (KnownNames.IsAttributeClass(attribute.AttributeClass, KnownNames.DwarfMapperDefaultsFqn))
                 {
                     return attribute;
                 }
@@ -78,7 +78,7 @@ namespace DwarfMapper.Generator.Pipeline
             var publicExtensions = false;
             foreach (var attribute in compilation.Assembly.GetAttributes())
             {
-                if (attribute.AttributeClass?.ToDisplayString() != KnownNames.DwarfMapperOptionsFqn)
+                if (!KnownNames.IsAttributeClass(attribute.AttributeClass, KnownNames.DwarfMapperOptionsFqn))
                 {
                     continue;
                 }

@@ -394,7 +394,7 @@ namespace DwarfMapper.Generator.Pipeline
             isError = false;
             foreach (var attribute in member.GetAttributes())
             {
-                if (attribute.AttributeClass?.ToDisplayString() != "System.ObsoleteAttribute")
+                if (!KnownNames.IsAttributeClass(attribute.AttributeClass, "System.ObsoleteAttribute"))
                 {
                     continue;
                 }

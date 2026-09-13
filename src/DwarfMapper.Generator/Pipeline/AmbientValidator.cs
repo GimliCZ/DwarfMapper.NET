@@ -45,7 +45,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var a in compilation.Assembly.GetAttributes())
             {
-                if (a.AttributeClass?.ToDisplayString() != KnownNames.ValidationRootFqn)
+                if (!KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.ValidationRootFqn))
                 {
                     continue;
                 }

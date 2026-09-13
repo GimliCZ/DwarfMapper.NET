@@ -18,6 +18,17 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>The runtime attributes' namespace (also the <c>ContainingNamespace.Name</c> checked at match sites).</summary>
         public const string Ns = "DwarfMapper";
 
+        /// <summary>
+        ///     Whether an attribute's class is the one named by <paramref name="fqn" />. Takes the class as nullable
+        ///     because <c>AttributeData.AttributeClass</c> is declared that way; every attribute a compilation hands the
+        ///     generator does carry a class, so the null answer is reached only through this helper's own test — one
+        ///     place, instead of the same unreachable null-conditional at thirty match sites.
+        /// </summary>
+        public static bool IsAttributeClass(Microsoft.CodeAnalysis.INamedTypeSymbol? attributeClass, string fqn)
+        {
+            return attributeClass?.ToDisplayString() == fqn;
+        }
+
         // ── Attribute simple names (matched via AttributeClass.Name) ──
         public const string DwarfMapper = "DwarfMapperAttribute";
         public const string DwarfMapperOptions = "DwarfMapperOptionsAttribute";
