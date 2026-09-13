@@ -282,7 +282,7 @@ namespace DwarfMapper.Generator.Pipeline
             var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
             if (options.SkipNullSourceMembers)
             {
-                for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                foreach (var t in TypeAndBasesBelowObject(targetType))
                     foreach (var tm in t.GetMembers())
                         if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
                         {
