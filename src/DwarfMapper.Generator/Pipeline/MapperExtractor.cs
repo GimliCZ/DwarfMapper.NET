@@ -704,9 +704,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Collect required member names from the target type hierarchy.
             var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (var current = (ITypeSymbol)targetType;
-                 current is not null && current.SpecialType != SpecialType.System_Object;
-                 current = current.BaseType)
+            foreach (var current in TypeAndBasesBelowObject(targetType))
                 foreach (var member in current.GetMembers())
                     switch (member)
                     {
