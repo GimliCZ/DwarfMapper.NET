@@ -390,8 +390,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Shared because the required-member check only ever sees classes and structs, whose chain always reaches
         ///     <c>object</c>: its own copy of this loop carried a null exit no input could take. The obsolete-member
         ///     walk DOES see interfaces (an update-into destination), so one walk has both exits reached by real input.
+        ///     Internal because <see cref="ImmutabilityProof" />'s member walk is the same walk: it answers interfaces
+        ///     before walking, so its own copy had the same unreachable null exit.
         /// </remarks>
-        private static IEnumerable<ITypeSymbol> TypeAndBasesBelowObject(ITypeSymbol type)
+        internal static IEnumerable<ITypeSymbol> TypeAndBasesBelowObject(ITypeSymbol type)
         {
             for (ITypeSymbol? t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
                 yield return t;

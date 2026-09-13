@@ -375,7 +375,7 @@ namespace DwarfMapper.Generator.Pipeline
             reason = "";
             var worst = ImmutabilityVerdict.Proven;
 
-            for (var type = named; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
+            foreach (var type in MapperExtractor.TypeAndBasesBelowObject(named))
             foreach (var member in type.GetMembers())
             {
                 if (member.IsStatic)
