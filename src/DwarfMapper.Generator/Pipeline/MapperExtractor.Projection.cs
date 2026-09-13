@@ -1027,9 +1027,8 @@ namespace DwarfMapper.Generator.Pipeline
             // would need CreateChecked — fall through to DWARF028 for that case.
             if (srcType.TypeKind == TypeKind.Enum && TypeInterfaces.IsIntegral(tgtType))
             {
-                // Get the enum's underlying integral type for a width-safety check.
-                var enumUnderlying = ((INamedTypeSymbol)srcType).EnumUnderlyingType;
-                if (enumUnderlying is not null && IsWideningOrSameWidth(enumUnderlying, tgtType))
+                // Width-safety check on the enum's underlying integral type.
+                if (EnumFitsIntegral(srcType, tgtType))
                 {
                     var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     return $"({tgtFqn}){srcExpr}";
@@ -1047,8 +1046,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (TypeInterfaces.IsIntegral(srcType) && tgtType.TypeKind == TypeKind.Enum)
             {
                 // integral→enum: safe when source integral width ≤ enum underlying width.
-                var enumUnderlying = ((INamedTypeSymbol)tgtType).EnumUnderlyingType;
-                if (enumUnderlying is not null && IsWideningOrSameWidth(srcType, enumUnderlying))
+                if (IntegralFitsEnum(srcType, tgtType))
                 {
                     var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     return $"({tgtFqn}){srcExpr}";
@@ -1464,6 +1462,27 @@ namespace DwarfMapper.Generator.Pipeline
                             c.Parameters.Length > 0)
                 .OrderByDescending(c => c.Parameters.Length)
                 .FirstOrDefault());
+        }
+
+        /// <summary>
+        ///     Whether every value of the enum <paramref name="enumType" /> survives a plain cast to
+        ///     <paramref name="integral" />: its underlying type is the same width as the target or widens to it. False for
+        ///     a type with no underlying type.
+        /// </summary>
+        /// <remarks>
+        ///     The projection asks it only about real enums, which always have an underlying type, so "no underlying type"
+        ///     is answered here once, where the unit test asks it, instead of as an inline null test at each cast that no
+        ///     mapper can fail.
+        /// </remarks>
+        internal static bool EnumFitsIntegral(ITypeSymbol enumType, ITypeSymbol integral)
+        {
+            return enumType is INamedTypeSymbol { EnumUnderlyingType: { } underlying } && IsWideningOrSameWidth(underlying, integral);
+        }
+
+        /// <summary>The integral-to-enum twin of <see cref="EnumFitsIntegral" />.</summary>
+        internal static bool IntegralFitsEnum(ITypeSymbol integral, ITypeSymbol enumType)
+        {
+            return enumType is INamedTypeSymbol { EnumUnderlyingType: { } underlying } && IsWideningOrSameWidth(integral, underlying);
         }
 
         /// <summary>
