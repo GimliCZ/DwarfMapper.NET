@@ -799,8 +799,7 @@ namespace DwarfMapper.Generator.Registry
                 else if (tgtType is INamedTypeSymbol dn &&
                          dn.TypeArguments.Length == 1 &&
                          dn.Name == "List" &&
-                         dn.ContainingNamespace?.ToDisplayString() ==
-                         "System.Collections.Generic")
+                         KnownNames.IsNamespace(dn.ContainingNamespace, "System.Collections.Generic"))
                 {
                     dElem = dn.TypeArguments[0];
                 }

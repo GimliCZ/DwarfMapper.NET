@@ -454,7 +454,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool IsListOfT(ITypeSymbol? type, out ITypeSymbol? element)
         {
-            if (type is INamedTypeSymbol { Name: "List", TypeArguments.Length: 1 } nt && nt.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+            if (type is INamedTypeSymbol { Name: "List", TypeArguments.Length: 1 } nt && KnownNames.IsNamespace(nt.ContainingNamespace, "System.Collections.Generic"))
             {
                 element = nt.TypeArguments[0];
                 return true;
@@ -597,7 +597,7 @@ namespace DwarfMapper.Generator.Pipeline
             out ITypeSymbol? firstArg)
         {
             firstArg = null;
-            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && n.ContainingNamespace?.ToDisplayString() == ns)
+            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && KnownNames.IsNamespace(n.ContainingNamespace, ns))
             {
                 firstArg = n.TypeArguments[0];
                 return true;

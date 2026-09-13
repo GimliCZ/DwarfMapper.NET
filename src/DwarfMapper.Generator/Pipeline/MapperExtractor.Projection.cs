@@ -88,7 +88,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
         {
             element = type;
-            if (type is INamedTypeSymbol n && n.Name == "IQueryable" && n.TypeArguments.Length == 1 && n.ContainingNamespace?.ToDisplayString() == "System.Linq")
+            if (type is INamedTypeSymbol n && n.Name == "IQueryable" && n.TypeArguments.Length == 1 && KnownNames.IsNamespace(n.ContainingNamespace, "System.Linq"))
             {
                 element = n.TypeArguments[0];
                 return true;
@@ -2034,7 +2034,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>True for <c>System.Threading.CancellationToken</c>.</summary>
         private static bool IsCancellationToken(ITypeSymbol t)
         {
-            return t is INamedTypeSymbol { Name: "CancellationToken" } n && n.ContainingNamespace?.ToDisplayString() == "System.Threading";
+            return t is INamedTypeSymbol { Name: "CancellationToken" } n && KnownNames.IsNamespace(n.ContainingNamespace, "System.Threading");
         }
 
         /// <summary>

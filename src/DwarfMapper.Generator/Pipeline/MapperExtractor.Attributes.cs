@@ -347,7 +347,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsObsolete(ISymbol symbol)
         {
             foreach (var attribute in symbol.GetAttributes())
-                if (attribute.AttributeClass is { Name: "ObsoleteAttribute" } a && a.ContainingNamespace?.ToDisplayString() == "System")
+                if (attribute.AttributeClass is { Name: "ObsoleteAttribute" } a && KnownNames.IsNamespace(a.ContainingNamespace, "System"))
                 {
                     return true;
                 }
@@ -385,7 +385,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in symbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 0 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 0 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
@@ -411,7 +411,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }

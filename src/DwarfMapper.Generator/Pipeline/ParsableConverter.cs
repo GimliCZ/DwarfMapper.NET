@@ -185,7 +185,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>Returns true when <paramref name="t" /> is System.DateTimeOffset.</summary>
         private static bool IsDateTimeOffset(ITypeSymbol t)
         {
-            return t.ContainingNamespace?.ToDisplayString() == "System" && t.Name == "DateTimeOffset" && t.TypeKind == TypeKind.Struct;
+            return KnownNames.IsNamespace(t.ContainingNamespace, "System") && t.Name == "DateTimeOffset" && t.TypeKind == TypeKind.Struct;
         }
 
         /// <summary>

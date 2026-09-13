@@ -369,7 +369,7 @@ namespace DwarfMapper.Generator.Pipeline
                     named.TypeArguments[0] is INamedTypeSymbol elem &&
                     elem.Name == "KeyValuePair" &&
                     elem.TypeArguments.Length == 2 &&
-                    elem.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+                    KnownNames.IsNamespace(elem.ContainingNamespace, "System.Collections.Generic"))
                 {
                     key = elem.TypeArguments[0];
                     value = elem.TypeArguments[1];

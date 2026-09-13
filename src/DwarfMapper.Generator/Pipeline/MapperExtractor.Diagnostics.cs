@@ -40,7 +40,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var attr in classSymbol.GetAttributes())
             {
-                if (attr.AttributeClass is not { Name: KnownNames.GenerateWrapperMap } || attr.AttributeClass.ContainingNamespace?.ToDisplayString() != KnownNames.Ns || attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
+                if (attr.AttributeClass is not { Name: KnownNames.GenerateWrapperMap } || !KnownNames.IsNamespace(attr.AttributeClass.ContainingNamespace, KnownNames.Ns) || attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
                 {
                     continue;
                 }

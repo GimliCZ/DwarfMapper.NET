@@ -13,7 +13,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapConstructor || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapConstructor || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
@@ -72,7 +72,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapProperty || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapProperty || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
@@ -124,7 +124,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapIgnore || ac.TypeArguments.Length != 1 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapIgnore || ac.TypeArguments.Length != 1 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
@@ -271,7 +271,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapValue || ac.TypeArguments.Length != 1 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapValue || ac.TypeArguments.Length != 1 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }

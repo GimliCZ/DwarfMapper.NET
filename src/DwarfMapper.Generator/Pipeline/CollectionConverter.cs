@@ -1462,7 +1462,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool IsHashSetType(ITypeSymbol t)
         {
-            return t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && n.Name == "HashSet" && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+            return t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && n.Name == "HashSet" && KnownNames.IsNamespace(n.ContainingNamespace, "System.Collections.Generic");
         }
 
         private static bool IsIEnumerableT(ITypeSymbol t, out ITypeSymbol? element)
@@ -1481,7 +1481,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // Fallback: namespace + name check (handles some multi-targeting scenarios)
-            if (n.Name == "IEnumerable" && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic" && n.TypeKind == TypeKind.Interface)
+            if (n.Name == "IEnumerable" && KnownNames.IsNamespace(n.ContainingNamespace, "System.Collections.Generic") && n.TypeKind == TypeKind.Interface)
             {
                 element = n.TypeArguments[0];
                 return true;
@@ -1496,7 +1496,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsExactNamedType(ITypeSymbol t, string name, string ns, int arity, out ITypeSymbol? firstArg)
         {
             firstArg = null;
-            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && n.ContainingNamespace?.ToDisplayString() == ns)
+            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && KnownNames.IsNamespace(n.ContainingNamespace, ns))
             {
                 firstArg = n.TypeArguments[0];
                 return true;

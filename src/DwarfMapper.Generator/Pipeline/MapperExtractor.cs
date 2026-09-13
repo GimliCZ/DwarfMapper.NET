@@ -304,7 +304,7 @@ namespace DwarfMapper.Generator.Pipeline
             var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
             var genPairs = new List<(ITypeSymbol Src, ITypeSymbol Tgt)>();
             foreach (var attr in classSymbol.GetAttributes())
-                if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac && ac.TypeArguments.Length == 2 && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns && ac.TypeArguments[1] is INamedTypeSymbol or IArrayTypeSymbol)
+                if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac && ac.TypeArguments.Length == 2 && KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns) && ac.TypeArguments[1] is INamedTypeSymbol or IArrayTypeSymbol)
                 {
                     genPairs.Add((ac.TypeArguments[0], ac.TypeArguments[1]));
                 }

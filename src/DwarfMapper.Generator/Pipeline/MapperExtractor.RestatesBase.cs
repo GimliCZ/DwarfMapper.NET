@@ -334,7 +334,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var attr in classSymbol.GetAttributes())
             {
-                if (attr.AttributeClass is not { Name: KnownNames.RestatesBase } ac || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (attr.AttributeClass is not { Name: KnownNames.RestatesBase } ac || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }

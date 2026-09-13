@@ -476,7 +476,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             INamedTypeSymbol? kvp = null;
             foreach (var c in Self(src))
-                if (c is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T && named.TypeArguments[0] is INamedTypeSymbol elem && elem.Name == "KeyValuePair" && elem.TypeArguments.Length == 2 && elem.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+                if (c is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T && named.TypeArguments[0] is INamedTypeSymbol elem && elem.Name == "KeyValuePair" && elem.TypeArguments.Length == 2 && KnownNames.IsNamespace(elem.ContainingNamespace, "System.Collections.Generic"))
                 {
                     kvp = elem;
                     break;

@@ -334,7 +334,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsFlagsEnum(INamedTypeSymbol enumType)
         {
             foreach (var attribute in enumType.GetAttributes())
-                if (attribute.AttributeClass is { Name: "FlagsAttribute" } a && a.ContainingNamespace?.ToDisplayString() == "System")
+                if (attribute.AttributeClass is { Name: "FlagsAttribute" } a && KnownNames.IsNamespace(a.ContainingNamespace, "System"))
                 {
                     return true;
                 }
@@ -492,7 +492,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attribute in member.GetAttributes())
             {
                 var cls = attribute.AttributeClass;
-                if (cls is { Name: "EnumMemberAttribute" } && cls.ContainingNamespace?.ToDisplayString() == "System.Runtime.Serialization")
+                if (cls is { Name: "EnumMemberAttribute" } && KnownNames.IsNamespace(cls.ContainingNamespace, "System.Runtime.Serialization"))
                 {
                     foreach (var na in attribute.NamedArguments)
                         if (na.Key == "Value" && na.Value.Value is string v)
@@ -505,7 +505,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attribute in member.GetAttributes())
             {
                 var cls = attribute.AttributeClass;
-                if (cls is { Name: "DescriptionAttribute" } && cls.ContainingNamespace?.ToDisplayString() == "System.ComponentModel" && attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is string d)
+                if (cls is { Name: "DescriptionAttribute" } && KnownNames.IsNamespace(cls.ContainingNamespace, "System.ComponentModel") && attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is string d)
                 {
                     return d;
                 }

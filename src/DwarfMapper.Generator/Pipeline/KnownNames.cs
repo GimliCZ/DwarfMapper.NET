@@ -38,6 +38,18 @@ namespace DwarfMapper.Generator.Pipeline
             return attributeClass?.ToDisplayString();
         }
 
+        /// <summary>
+        ///     Whether <paramref name="containingNamespace" /> is the namespace named <paramref name="name" />. Takes the
+        ///     namespace as nullable because <c>ISymbol.ContainingNamespace</c> is declared that way; every named type a
+        ///     compilation hands the generator does have one (the global namespace included), so the null answer is
+        ///     reached only through this helper's own test — one place, instead of the same unreachable
+        ///     null-conditional at every type- and attribute-match site.
+        /// </summary>
+        public static bool IsNamespace(Microsoft.CodeAnalysis.INamespaceSymbol? containingNamespace, string name)
+        {
+            return containingNamespace?.ToDisplayString() == name;
+        }
+
         // ── Attribute simple names (matched via AttributeClass.Name) ──
         public const string DwarfMapper = "DwarfMapperAttribute";
         public const string DwarfMapperOptions = "DwarfMapperOptionsAttribute";
