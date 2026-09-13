@@ -415,7 +415,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The FIRST test in <see cref="IsUsableCandidate" /> that this constructor fails, phrased with its
         ///     remedy. Order matches the predicate's, so the reason given is the reason applied.
         /// </summary>
-        private static string UnusableReason(
+        internal static string UnusableReason(
             IMethodSymbol ctor,
             INamedTypeSymbol target,
             Compilation compilation,
