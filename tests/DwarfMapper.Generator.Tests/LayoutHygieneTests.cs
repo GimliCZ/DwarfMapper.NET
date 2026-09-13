@@ -807,6 +807,24 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     The once-only check reads the diagnostics already collected for the mapper, and those are not all
+        ///     DWARF101. A DWARF038 raised by an earlier member sits in the same list, and it must be stepped over
+        ///     rather than mistaken for the padded struct's earlier report — which would silence the hint.
+        /// </summary>
+        [Fact]
+        public void An_unrelated_earlier_diagnostic_does_not_count_as_the_padded_structs_report()
+        {
+            var source = PaddedPair
+                .Replace("public class C { ", "public class C { public long Big { get; set; } ", StringComparison.Ordinal)
+                .Replace("public class D { ", "public class D { public double Big { get; set; } ", StringComparison.Ordinal);
+
+            var (all, _) = GeneratorTestHarness.Run(source);
+
+            Assert.Contains(all, d => d.Id == "DWARF038");
+            Assert.Single(all, d => d.Id == "DWARF101");
+        }
+
+        /// <summary>
         ///     Two members of the same padded type is ONE report, not two. An Info repeated per member is the
         ///     shape consumers suppress wholesale.
         /// </summary>
