@@ -1098,5 +1098,26 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             return types;
         }
+
+        // ─── Arms reached only through these fixtures ─────────────────────────────
+
+        [Fact]
+        public void EnumUnderlying_answers_an_enum_its_backing_type_and_anything_else_none()
+        {
+            var (compilation, types) = Compile("namespace T { public enum Kind : long { A } public class C { } }");
+
+            Assert.Equal(SpecialType.System_Int64, BlittableProof.EnumUnderlying(types["Kind"]));
+            Assert.Equal(SpecialType.None, BlittableProof.EnumUnderlying(types["C"]));
+            Assert.Equal(SpecialType.None,
+                BlittableProof.EnumUnderlying(compilation.CreateArrayTypeSymbol(compilation.GetSpecialType(SpecialType.System_Int32))));
+        }
+
+        [Fact]
+        public void SameSpecialType_requires_the_same_real_special_type()
+        {
+            Assert.True(BlittableProof.SameSpecialType(SpecialType.System_Int32, SpecialType.System_Int32));
+            Assert.False(BlittableProof.SameSpecialType(SpecialType.System_Int32, SpecialType.System_Int64));
+            Assert.False(BlittableProof.SameSpecialType(SpecialType.None, SpecialType.None));
+        }
     }
 }
