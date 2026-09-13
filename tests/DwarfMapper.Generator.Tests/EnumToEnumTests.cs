@@ -83,5 +83,25 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
             GeneratorAssert.EmitsCompilableCode(src);
         }
+
+        [Fact]
+        public void Flags_ByName_emits_one_arm_per_value_and_skips_an_alias()
+        {
+            // AliasA shares A's value, so the flags accumulator tests that bit once, under the first name.
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               [Flags] public enum Src { None = 0, A = 1, AliasA = 1, B = 2 }
+                               [Flags] public enum Dst { None = 0, A = 1, AliasA = 1, B = 2 }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Single(generated.Split('\n'), l => l.Contains("__r |= global::Demo.Dst.A;", StringComparison.Ordinal));
+            Assert.DoesNotContain("Dst.AliasA", generated, StringComparison.Ordinal);
+        }
     }
 }

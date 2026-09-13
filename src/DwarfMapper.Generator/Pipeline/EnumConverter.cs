@@ -199,15 +199,8 @@ namespace DwarfMapper.Generator.Pipeline
             // so that two mapping methods using the same incomplete enum pair each report DWARF015.
             var targetNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var m in EnumMembers(tgt)) targetNames.Add(m.Name);
-            var seenValuesForDiag = new HashSet<object>();
-            foreach (var m in EnumMembers(src))
+            foreach (var m in DistinctValuedMembers(src))
             {
-                if (m.ConstantValue is null ||
-                    !seenValuesForDiag.Add(m.ConstantValue))
-                {
-                    continue; // alias of an already-emitted value
-                }
-
                 if (!targetNames.Contains(m.Name))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IncompleteEnumMapping, location, m.Name));
@@ -239,15 +232,8 @@ namespace DwarfMapper.Generator.Pipeline
                 w.Line("{");
                 using (w.Indent())
                 {
-                    var seenValues = new HashSet<object>();
-                    foreach (var m in EnumMembers(src))
+                    foreach (var m in DistinctValuedMembers(src))
                     {
-                        if (m.ConstantValue is null ||
-                            !seenValues.Add(m.ConstantValue))
-                        {
-                            continue; // alias of an already-emitted value
-                        }
-
                         if (targetNames.Contains(m.Name))
                         {
                             w.Line(Fq(src) + "." + Identifiers.Escape(m.Name) + " => " + Fq(tgt) + "." + Identifiers.Escape(m.Name) + ",");
@@ -294,14 +280,8 @@ namespace DwarfMapper.Generator.Pipeline
                     w.Line("var __r = default(" + Fq(tgt) + ");");
                     w.Line("var __rest = (" + underlying + ")v;");
 
-                    var seenValues = new HashSet<object>();
-                    foreach (var m in EnumMembers(src))
+                    foreach (var m in DistinctValuedMembers(src))
                     {
-                        if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
-                        {
-                            continue;
-                        }
-
                         if (!targetNames.Contains(m.Name))
                         {
                             continue;
@@ -357,7 +337,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         them with no per-type list to drift out of date.
         ///     </para>
         /// </summary>
-        private static bool IsZero(object constantValue)
+        private static bool IsZero(object? constantValue)
         {
             return constantValue is IConvertible c && c.ToDecimal(CultureInfo.InvariantCulture) == 0m;
         }
@@ -373,6 +353,25 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     yield return f;
+                }
+        }
+
+        /// <summary>
+        ///     The enum's nameable constant members, first of each value: an alias of a value already yielded is skipped,
+        ///     so a switch never carries two arms for one constant.
+        /// </summary>
+        /// <remarks>
+        ///     The one statement of the alias rule four emitters each spelled inline. A constant with no value is skipped
+        ///     too: an enum member always has one, so that answer is reached only through this method's own test, with a
+        ///     class constant set to null.
+        /// </remarks>
+        internal static IEnumerable<IFieldSymbol> DistinctValuedMembers(INamedTypeSymbol enumType)
+        {
+            var seen = new HashSet<object>();
+            foreach (var m in EnumMembers(enumType))
+                if (m.ConstantValue is not null && seen.Add(m.ConstantValue))
+                {
+                    yield return m;
                 }
         }
 
@@ -601,14 +600,8 @@ namespace DwarfMapper.Generator.Pipeline
                     w.Line("{");
                     using (w.Indent())
                     {
-                        var seenValues = new HashSet<object>();
-                        foreach (var m in EnumMembers(src))
+                        foreach (var m in DistinctValuedMembers(src))
                         {
-                            if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
-                            {
-                                continue;
-                            }
-
                             var text = flags ? m.Name : SerializedName(m, stringSource);
                             w.Line(Fq(src) + "." + Identifiers.Escape(m.Name) + " => \"" + Escape(text) + "\",");
                         }
