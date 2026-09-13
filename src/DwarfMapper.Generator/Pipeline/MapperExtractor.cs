@@ -1563,7 +1563,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Renders a non-failing constant as a C# literal. Callers that can fail on assignability must
         ///     validate BEFORE calling (the MapConfig path is pre-validated by the compiler via the generic member type).
         /// </summary>
-        private static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType)
+        internal static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType)
         {
             if (value is null)
             {
