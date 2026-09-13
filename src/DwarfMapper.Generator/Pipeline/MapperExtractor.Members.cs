@@ -857,7 +857,10 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
-                if (!visited.Add(type))
+                // The nesting bound is what makes the walk finite: a visited set alone never closes on a type that grows
+                // with every hop (`class Rec<T> { Rec<Rec<T>>? X }` is a new constructed symbol each time), and below
+                // the bound only finitely many types can be built from the program's definitions.
+                if (!visited.Add(type) || GenericNesting(type) > MaxWalkGenericNesting)
                 {
                     continue;
                 }
@@ -888,6 +891,20 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return false;
+        }
+
+        // Deeper than any hand-written member type (`Dictionary<string, List<Node[]>>` is 3) and far short of a runaway.
+        private const int MaxWalkGenericNesting = 8;
+
+        // How deeply generic arguments and array elements nest: `Node` 0, `List<Node>` and `Node[]` 1, `List<Node[]>` 2.
+        private static int GenericNesting(ITypeSymbol type)
+        {
+            return type switch
+            {
+                IArrayTypeSymbol array => 1 + GenericNesting(array.ElementType),
+                INamedTypeSymbol { TypeArguments.Length: > 0 } named => 1 + named.TypeArguments.Max(GenericNesting),
+                _ => 0
+            };
         }
 
         /// <summary>

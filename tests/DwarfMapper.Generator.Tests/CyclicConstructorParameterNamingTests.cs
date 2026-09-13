@@ -238,6 +238,7 @@ namespace DwarfMapper.Generator.Tests
                                               public class Loop { public Loop? Next { get; set; } public string Name { get; set; } = ""; }
                                               public interface IHolder { Node N { get; } }
                                               public struct Pair { public int A { get; set; } public Wrapper W { get; set; } }
+                                              public class Rec<T> { public Rec<Rec<T>>? X { get; set; } }
                                           }
                                           """;
 
@@ -298,6 +299,20 @@ namespace DwarfMapper.Generator.Tests
             Assert.False(Reaches(Named("T.Loop")));
             Assert.False(Reaches(Generic("System.Collections.Generic.List`1", WalkCompilation.GetSpecialType(SpecialType.System_Int32))));
             Assert.False(Reaches(Named("System.Collections.Generic.List`1").TypeParameters[0]));
+        }
+
+        [Fact]
+        public async Task Walk_terminates_on_a_generic_type_that_grows_with_every_member_hop()
+        {
+            // Rec<int>.X is Rec<Rec<int>>, whose X is Rec<Rec<Rec<int>>> — a new constructed symbol per hop, so a
+            // visited set alone never closes. The walk runs for every Preserve constructor argument, so this would hang
+            // the generator (and the IDE hosting it) on any mapper with such an argument.
+            var recOfInt = Generic("T.Rec`1", WalkCompilation.GetSpecialType(SpecialType.System_Int32));
+            var walk = Task.Run(() => Reaches(recOfInt));
+
+            var finished = await Task.WhenAny(walk, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(true);
+            Assert.Same(walk, finished);
+            Assert.False(await walk.ConfigureAwait(true));
         }
     }
 }
