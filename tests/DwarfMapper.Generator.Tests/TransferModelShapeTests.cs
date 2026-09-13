@@ -1316,5 +1316,32 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
             Assert.Equal("the constructor of 'Dto' does more than assign its members", verdict.Reason);
         }
+
+        /// <summary>
+        ///     A jagged array's element is itself an array, not a named type, so it cannot be on the inline path. It is
+        ///     measured as a collection in turn and stays a reference field.
+        /// </summary>
+        [Fact]
+        public void Eligible_for_a_jagged_array_member_counted_as_a_reference()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public int[][] Grid { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(8, verdict.Size);
+            Assert.True(verdict.SizeIsUpperBound);
+        }
+
+        /// <summary>
+        ///     A <c>dynamic</c> member is neither a collection nor a named type, and has no size the generator can
+        ///     prove.
+        /// </summary>
+        [Fact]
+        public void Refused_for_a_dynamic_member()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public dynamic D { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("member 'Dto.D' of type 'dynamic' has no size this generator can prove", verdict.Reason);
+        }
     }
 }
