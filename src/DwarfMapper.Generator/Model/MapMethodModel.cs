@@ -319,6 +319,28 @@ namespace DwarfMapper.Generator.Model
             FactoryMethod is null ? null : Identifiers.Escape(FactoryMethod);
 
         /// <summary>
+        ///     The parameter type as written into a signature that must MATCH the user's declaration:
+        ///     <see cref="ParameterTypeSignature" /> (annotations kept) when the model carries one,
+        ///     <see cref="ParameterTypeFullName" /> otherwise.
+        /// </summary>
+        /// <remarks>
+        ///     One statement of the fallback for every emit site that writes a user-matched signature. Declared,
+        ///     async-stream and update-into models always carry the signature; synthesized entries do not. So the
+        ///     fallback is reached through the sites that meet both, not repeated where only one shape arrives.
+        /// </remarks>
+        public string EmitParameterTypeSignature => ParameterTypeSignature ?? ParameterTypeFullName;
+
+        /// <summary>The return-slot twin of <see cref="EmitParameterTypeSignature" />.</summary>
+        public string EmitReturnTypeSignature => ReturnTypeSignature ?? ReturnTypeFullName;
+
+        /// <summary>
+        ///     The update-into DESTINATION parameter's twin of <see cref="EmitParameterTypeSignature" />: its
+        ///     <see cref="UpdateTargetTypeSignature" />, or <see cref="ReturnTypeFullName" /> (which holds the same type)
+        ///     when the model carries none.
+        /// </summary>
+        public string EmitUpdateTargetTypeSignature => UpdateTargetTypeSignature ?? ReturnTypeFullName;
+
+        /// <summary>
         ///     <see cref="BeforeHooks" /> as they must be written into emitted C# — a <c>[BeforeMap]</c> method
         ///     the consumer named <c>@class</c> is called by name from the generated body.
         /// </summary>

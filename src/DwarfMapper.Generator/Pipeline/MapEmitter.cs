@@ -228,8 +228,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // [GenerateMap]-synthesized entries are emitted as a FULL method (no `partial` keyword),
                 // since the user never declared a partial to implement.
                 sb.Append(indent).Append(method.Accessibility).Append(method.EmitAsNonPartial ? " " : " partial ")
-                    .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.EmitMethodName)
-                    .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(method.EmitParameterName);
+                    .Append(method.EmitReturnTypeSignature).Append(' ').Append(method.EmitMethodName)
+                    .Append('(').Append(method.EmitParameterTypeSignature).Append(' ').Append(method.EmitParameterName);
                 foreach (var ep in method.ExtraParameters) sb.Append(", ").Append(ep); // Phase 5: extra params
                 sb.AppendLine(")");
             }
@@ -857,8 +857,8 @@ namespace DwarfMapper.Generator.Pipeline
             // IAsyncEnumerable<Dst>. IAsyncEnumerable<out T> is covariant, so the mismatch itself is silent —
             // which is exactly how the unlifted call hid it before round 29 task 2.8.
             sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
-                .Append(method.ReturnTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(method.EmitMethodName)
-                .Append('(').Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src);
+                .Append(method.EmitReturnTypeSignature).Append(' ').Append(method.EmitMethodName)
+                .Append('(').Append(method.EmitParameterTypeSignature).Append(' ').Append(src);
             if (ct is not null)
                 // [EnumeratorCancellation] is what links the parameter to the token a consumer passes to
                 // WithCancellation on the RESULT; without it the token is inert and the stream is uncancellable.
@@ -982,12 +982,12 @@ namespace DwarfMapper.Generator.Pipeline
             // for a CS8819 on the return. Hence two fields, each fed by its own symbol. Annotating the parameter
             // needs no follow-on forgiveness: the ThrowIfNull below is [NotNull]-annotated, so flow analysis
             // treats `dst` as non-null for the whole body. Round 29 task 2.8.
-            var retType = method.UpdateReturnsVoid ? "void" : method.ReturnTypeSignature ?? method.ReturnTypeFullName;
+            var retType = method.UpdateReturnsVoid ? "void" : method.EmitReturnTypeSignature;
 
             sb.Append(indent).Append(method.Accessibility).Append(" partial ").Append(retType).Append(' ')
                 .Append(method.EmitMethodName).Append('(')
-                .Append(method.ParameterTypeSignature ?? method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
-                .Append(method.UpdateTargetTypeSignature ?? method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
+                .Append(method.EmitParameterTypeSignature).Append(' ').Append(src).Append(", ")
+                .Append(method.EmitUpdateTargetTypeSignature).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
 
             // Null guards (loud — mapping into/from null is a programming error). BCL throw-helper keeps

@@ -58,7 +58,7 @@ namespace DwarfMapper.Generator.Pipeline
                     candidates.Add(new ExtCandidate(
                         method.ParameterTypeFullName,
                         method.ReturnTypeFullName,
-                        method.ReturnTypeSignature ?? method.ReturnTypeFullName,
+                        method.EmitReturnTypeSignature,
                         extName,
                         mapperFullName,
                         method.EmitMethodName,
