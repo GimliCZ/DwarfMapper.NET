@@ -533,9 +533,9 @@ namespace DwarfMapper.Generator
                 spc.ReportDiagnostic(diagnostic.ToDiagnostic());
             }
 
-            if (model.HasBlockingError)
+            if (CascadeSignpost(model) is { } signpost)
             {
-                ReportCascadeSignpost(spc, model);
+                spc.ReportDiagnostic(signpost);
                 return;
             }
 
@@ -563,7 +563,13 @@ namespace DwarfMapper.Generator
         ///         errors: DWARF096 has already named them, at the method they belong to.
         ///     </para>
         /// </remarks>
-        private static void ReportCascadeSignpost(SourceProductionContext spc, MapperClassModel model)
+        /// <returns>
+        ///     The DWARF078 signpost, or <see langword="null" /> when the class has no class-level error — which is the
+        ///     same predicate as <see cref="MapperClassModel.HasBlockingError" />, so the caller asks this once and lets
+        ///     the answer decide emission, rather than asking <c>HasBlockingError</c> first and then carrying an
+        ///     "errors, but none to name" exit no model can take.
+        /// </returns>
+        private static Diagnostic? CascadeSignpost(MapperClassModel model)
         {
             // Distinct ids, in report order, so the message names the causes rather than repeating one id per
             // affected member. Ordinal comparison: these are ASCII identifiers, never user text.
@@ -585,16 +591,13 @@ namespace DwarfMapper.Generator
                 }
             }
 
-            if (ids.Count == 0)
-            {
-                return;
-            }
-
-            spc.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.NoCodeGenerated,
-                LocationInfo.ToLocationOrNone(first),
-                model.ClassName,
-                string.Join(", ", ids)));
+            return ids.Count == 0
+                ? null
+                : Diagnostic.Create(
+                    DiagnosticDescriptors.NoCodeGenerated,
+                    LocationInfo.ToLocationOrNone(first),
+                    model.ClassName,
+                    string.Join(", ", ids));
         }
     }
 }
