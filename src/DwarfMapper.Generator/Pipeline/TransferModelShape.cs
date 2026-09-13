@@ -673,7 +673,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var attribute in attributes)
             {
-                var name = attribute.AttributeClass?.Name;
+                var name = KnownNames.AttributeSimpleName(attribute.AttributeClass);
                 switch (name)
                 {
                     case "Key":

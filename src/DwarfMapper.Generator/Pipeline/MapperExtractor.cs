@@ -660,7 +660,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var marked = method.GetAttributes().Any(a =>
-                    string.Equals(a.AttributeClass?.Name, KnownNames.ProvidesMap, StringComparison.Ordinal) && a.AttributeClass?.ContainingNamespace?.ToDisplayString() == KnownNames.Ns);
+                    KnownNames.IsAttributeNamed(a.AttributeClass, KnownNames.ProvidesMap, KnownNames.Ns));
 
                 if (!marked)
                 {

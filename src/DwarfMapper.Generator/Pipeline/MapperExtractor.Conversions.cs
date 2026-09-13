@@ -777,7 +777,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var a in symbol.GetAttributes())
             {
-                if (!string.Equals(a.AttributeClass?.Name, "SuppressMessageAttribute", StringComparison.Ordinal))
+                if (!string.Equals(KnownNames.AttributeSimpleName(a.AttributeClass), "SuppressMessageAttribute", StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -820,7 +820,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 foreach (var a in attrs)
                 {
-                    if (!string.Equals(a.AttributeClass?.Name, KnownNames.MapConstructor, StringComparison.Ordinal))
+                    if (!string.Equals(KnownNames.AttributeSimpleName(a.AttributeClass), KnownNames.MapConstructor, StringComparison.Ordinal))
                     {
                         continue;
                     }
