@@ -234,13 +234,8 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            if (!_edges.TryGetValue(_currentPair, out var deps))
-            {
-                deps = new HashSet<string>(StringComparer.Ordinal);
-                _edges[_currentPair] = deps;
-            }
-
-            deps.Add(calleeName);
+            // SetCurrentPair created this node before _currentPair could name it, and no entry is ever removed.
+            _edges[_currentPair].Add(calleeName);
         }
 
         // ── Recursion-capability analysis ────────────────────────────────────────────
