@@ -214,6 +214,29 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     A STRUCT node DTO is constructible — DWARF034 accepts "a class or struct with a public constructor" —
+        ///     so the flat-node helper must compile for it. Its null guard answered <c>return null!;</c>
+        ///     unconditionally, which a value type rejects with CS0037 in a file the consumer did not write.
+        /// </summary>
+        [Fact]
+        public void A_struct_node_dto_emits_a_flat_node_helper_that_compiles()
+        {
+            var src = Models.Replace("public class NodeDto", "public struct NodeDto", StringComparison.Ordinal)
+                      + "public class Root { public Node? Entry { get; set; } }\n"
+                      + "public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }\n"
+                      + "[DwarfMapper]\n"
+                      + "public partial class M\n"
+                      + "{\n"
+                      + "    [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]\n"
+                      + "    public partial RootDto Map(Root r);\n"
+                      + "}\n";
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+            Assert.Contains("if (n is null) return default;", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     A node DTO the generated code could not construct is refused up front, rather than emitting a
         ///     <c>new</c> the consumer's compiler would reject in a file they did not write.
         /// </summary>

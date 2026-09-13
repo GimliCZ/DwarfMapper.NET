@@ -410,6 +410,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[FlattenGraph]` into a `struct` node DTO generated code that did not compile.** The directive accepts a node
+  DTO that is "a class or struct with a public constructor", but the flat-node helper it synthesizes opened with
+  `return null!;` for a null node, which a value type rejects: `CS0037` in a generated file, with no DwarfMapper
+  diagnostic. A struct node DTO now gets `return default;` there. The traversal never passes that helper a null
+  node, so no mapped value changes, and class node DTOs emit exactly what they did before.
+
 - **`[MapTo]` on a generic source type generated code that did not compile, with no diagnostic.** The registry
   emits extension methods on the source type, and for `class Src<T>` (or a class nested in a generic type) it wrote
   `this Src<T> source` with `T` declared nowhere: `CS0246` in a generated file, and nothing in the build naming the

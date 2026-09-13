@@ -298,7 +298,11 @@ namespace DwarfMapper.Generator.Pipeline
                 sb.Append("    private ").Append(dtoFq).Append(' ').Append(flatNodeHelperName)
                     .Append('(').Append(nodeFq).AppendLine("? n)");
                 sb.AppendLine("    {");
-                sb.AppendLine("        if (n is null) return null!;");
+                // A struct node DTO cannot be null, and DWARF034 accepts one. The traversal only ever passes a
+                // dequeued non-null node, so the guard's answer is never observed — it only has to compile.
+                sb.AppendLine(nodeDtoType.IsValueType
+                    ? "        if (n is null) return default;"
+                    : "        if (n is null) return null!;");
                 sb.Append("        return new ").Append(dtoFq).AppendLine();
                 sb.AppendLine("        {");
 
