@@ -630,11 +630,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Under <c>[SetsRequiredMembers]</c> the answer to the second is no, and ignoring the member is
         ///     legitimate.
         /// </remarks>
-        private static bool CtorSetsRequiredMembers(IMethodSymbol? ctor)
+        private static bool CtorSetsRequiredMembers(IMethodSymbol ctor)
         {
-            return ctor is not null &&
-                   ctor.GetAttributes()
-                       .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, SetsRequiredMembersAttribute));
+            return ctor.GetAttributes()
+                .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, SetsRequiredMembersAttribute));
         }
 
         /// <summary>
