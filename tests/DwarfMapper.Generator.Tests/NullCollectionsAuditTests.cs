@@ -211,5 +211,26 @@ namespace DwarfMapper.Generator.Tests
             Assert.True(allocIdx >= 0, "allocation not found in generated code");
             Assert.True(nullIdx < allocIdx, $"null guard (at {nullIdx}) must appear before allocation (at {allocIdx})");
         }
+
+        // ─── A5: AsNull reaches the HashSet / Stack / Queue helpers ───────────────────
+        // Every AsNull fixture above targets List<T> or Dictionary; these three helpers have their own nullable
+        // return type and null-in answer.
+
+        [Fact]
+        public void A5_AsNull_nullable_HashSet_target_returns_null_for_a_null_source()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             using System.Collections.Generic;
+                             namespace Demo;
+                             public class Src { public List<int>? Items { get; set; } }
+                             public class Dst { public HashSet<int>? Items { get; set; } }
+                             [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                             public partial class M { public partial Dst Map(Src s); }
+                             """;
+            var gen = GeneratorAssert.CompilesClean(s, NullableContextOptions.Enable);
+            Assert.Contains("private global::System.Collections.Generic.HashSet<int>? __DwarfMapColl_", gen, StringComparison.Ordinal);
+            Assert.Contains("if (src is null) return null;", gen, StringComparison.Ordinal);
+        }
     }
 }
