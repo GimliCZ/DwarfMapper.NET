@@ -105,6 +105,27 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void ByName_names_a_warning_level_obsolete_member_under_a_pragma()
+        {
+            // [Obsolete("old", false)] is still a legal value, so the exhaustive switch names it, inside the scoped
+            // CS0612/CS0618 guard. Only the error form is left out.
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public enum Src { Red, [Obsolete("old", false)] Green }
+                               public enum Dst { Red, Green }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("#pragma warning disable CS0612, CS0618", generated, StringComparison.Ordinal);
+            Assert.Contains("global::Demo.Src.Green => global::Demo.Dst.Green,", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void An_enum_with_an_attribute_other_than_Flags_maps_by_a_plain_switch()
         {
             const string src = """

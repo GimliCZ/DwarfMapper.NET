@@ -403,7 +403,10 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 // ObsoleteAttribute(string message, bool error): the second constructor argument is the error flag.
-                isError = attribute.ConstructorArguments.Length >= 2 && attribute.ConstructorArguments[1].Value is true;
+                // Compared with Equals rather than tested with `is true`: that argument is always a bool when it arrives.
+                // A mistyped one fails constructor binding and records no arguments at all, and a consumer-declared
+                // look-alike taking another type crashes the compiler's own obsolete decoding first (both measured).
+                isError = attribute.ConstructorArguments.Length >= 2 && Equals(attribute.ConstructorArguments[1].Value, true);
                 return true;
             }
 
