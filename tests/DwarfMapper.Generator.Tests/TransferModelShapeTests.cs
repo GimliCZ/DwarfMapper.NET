@@ -1236,5 +1236,37 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
             Assert.Contains("nests transfer models more than 16 deep", verdict.Reason, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     C# requires <c>==</c> and <c>!=</c> together, and the refusal names whichever the class declares first.
+        ///     Every other fixture declared <c>==</c> first.
+        /// </summary>
+        [Fact]
+        public void Refused_for_operator_inequality_declared_first_and_named_as_such()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int A { get; set; } " +
+                "public static bool operator !=(Dto x, Dto y) => false; public static bool operator ==(Dto x, Dto y) => true; " +
+                "public override bool Equals(object o) => false; public override int GetHashCode() => 0; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal(
+                "'Dto' declares 'operator !=', which a readonly record struct synthesises and cannot have declared beside it (CS0111)",
+                verdict.Reason);
+        }
+
+        /// <summary>
+        ///     An operator other than equality does not collide with anything a record struct synthesises, so it is a
+        ///     static member like any other and does not refuse the type.
+        /// </summary>
+        [Fact]
+        public void Eligible_with_an_operator_other_than_equality()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int A { get; set; } public static Dto operator +(Dto x, Dto y) => x; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(4, verdict.Size);
+        }
     }
 }
