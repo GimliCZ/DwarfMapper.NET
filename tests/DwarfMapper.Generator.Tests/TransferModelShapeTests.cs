@@ -1302,5 +1302,19 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
             Assert.Equal(4, verdict.Size);
         }
+
+        /// <summary>
+        ///     Assigning a parameter to some OTHER object's member is not member initialization: the target is neither
+        ///     <c>X</c> nor <c>this.X</c>.
+        /// </summary>
+        [Fact]
+        public void Refused_for_a_constructor_that_assigns_another_objects_member()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public static class Holder { public static int Value; } public sealed class Dto { public Dto(int a) { Holder.Value = a; } public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("the constructor of 'Dto' does more than assign its members", verdict.Reason);
+        }
     }
 }
