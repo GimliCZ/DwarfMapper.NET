@@ -25,6 +25,17 @@ namespace DwarfMapper.Generator.Diagnostics
             return From(locations.FirstOrDefault() ?? Location.None);
         }
 
+        /// <summary>
+        ///     <see cref="From" /> for the syntax a reference points at — typically an attribute's
+        ///     <see cref="AttributeData.ApplicationSyntaxReference" /> — or <see langword="null" /> when there is none. An
+        ///     attribute read from a referenced assembly's metadata has no application syntax; one helper answers that
+        ///     for every directive reader instead of each repeating the fallback inline.
+        /// </summary>
+        public static LocationInfo? FromReference(SyntaxReference? reference)
+        {
+            return reference is null ? null : From(reference.GetSyntax().GetLocation());
+        }
+
         public static LocationInfo? From(Location location)
         {
             if (location is null || location.SourceTree is null)

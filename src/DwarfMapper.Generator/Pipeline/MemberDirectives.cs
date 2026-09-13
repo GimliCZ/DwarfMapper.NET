@@ -119,7 +119,7 @@ namespace DwarfMapper.Generator.Pipeline
                     hasNullSub,
                     nullSub,
                     format,
-                    LocationInfo.From(reference?.GetSyntax().GetLocation() ?? Location.None))));
+                    LocationInfo.FromReference(reference))));
             }
 
             ordered.Sort((x, y) =>

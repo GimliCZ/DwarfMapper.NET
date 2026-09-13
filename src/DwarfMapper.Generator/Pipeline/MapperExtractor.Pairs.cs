@@ -32,7 +32,7 @@ namespace DwarfMapper.Generator.Pipeline
                     Source = ac.TypeArguments[0],
                     Target = ac.TypeArguments[1],
                     Method = method,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
@@ -119,7 +119,7 @@ namespace DwarfMapper.Generator.Pipeline
                     HasNullSub = hasNull,
                     NullSub = nullSub,
                     When = when,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
@@ -147,7 +147,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     Target = ac.TypeArguments[0],
                     Member = member,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
@@ -310,7 +310,7 @@ namespace DwarfMapper.Generator.Pipeline
                     IsConstant = isConstant,
                     Value = value,
                     Use = use,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
