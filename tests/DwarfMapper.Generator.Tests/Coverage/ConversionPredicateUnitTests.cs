@@ -11,7 +11,9 @@ using Microsoft.CodeAnalysis.CSharp;
 //   - IsAbstractOrInterfaceAutoNestSource's Nullable<T> and enumerable TARGET refusals: every surface probe for those
 //     shapes was answered earlier (DWARF033 / DWARF027) before this predicate was asked;
 //   - ImplementsIEnumerable's interface walk and IsUnsupportedCollectionTarget's arms, which the same earlier refusals
-//     shadow.
+//     shadow;
+//   - IsMappableObjectPair's enumerable TARGET refusal for a non-enumerable source: every nested member of that shape
+//     is refused as DWARF027 before auto-nest is asked.
 namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class ConversionPredicateUnitTests
@@ -82,6 +84,13 @@ namespace DwarfMapper.Generator.Tests.Coverage
         public void IsAbstractOrInterfaceAutoNestSource_refuses_an_enumerable_target()
         {
             Assert.False(MapperExtractor.IsAbstractOrInterfaceAutoNestSource(Compilation, Named("T.AbstractSrc"), Named("T.TypedBag")));
+        }
+
+        [Fact]
+        public void IsMappableObjectPair_refuses_an_enumerable_target_for_a_plain_class_source()
+        {
+            Assert.True(MapperExtractor.IsMappableObjectPair(Compilation, Named("T.ConcreteSrc"), Named("T.Dst")));
+            Assert.False(MapperExtractor.IsMappableObjectPair(Compilation, Named("T.ConcreteSrc"), Named("T.TypedBag")));
         }
 
         [Fact]

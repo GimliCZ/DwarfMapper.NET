@@ -456,7 +456,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     When <paramref name="allowInterfaceSrc" /> is <see langword="true" />, interface source types
         ///     are accepted (used by [MapDerivedType] arm resolution where the caller explicitly opts in).
         /// </summary>
-        private static bool IsMappableObjectPair(
+        internal static bool IsMappableObjectPair(
             Compilation compilation,
             ITypeSymbol src,
             INamedTypeSymbol tgt,
