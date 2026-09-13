@@ -205,12 +205,16 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // One pair can be emitted twice — a declared method and the helper a nested edge reached — and would
-            // otherwise name the same parameter twice.
+            // otherwise name the same parameter twice. Upper-cased because a `required` member bound by a constructor
+            // is ALSO an initializer member (CS9035), and arrives once as `kids` and once as `Kids`.
             var reported = new HashSet<(string TargetType, string Parameter)>();
             for (var i = 0; i < methods.Count; i++)
             {
                 var m = methods[i];
-                if (m.ConstructorArguments.Count == 0)
+                // An init-only or required member is filled before the object exists exactly as a constructor
+                // argument is: the object initializer runs before register-before-populate can record the instance.
+                var filledBeforeRegistration = m.ConstructorArguments.Concat(m.Members.Where(member => member.MustInitialize)).ToList();
+                if (filledBeforeRegistration.Count == 0)
                 {
                     continue;
                 }
@@ -223,12 +227,12 @@ namespace DwarfMapper.Generator.Pipeline
 
                 var outerKey = DeclKey(m, declaredNameCount);
                 var isSelfMap = string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal);
-                foreach (var ctorArg in m.ConstructorArguments)
+                foreach (var ctorArg in filledBeforeRegistration)
                 {
                     var onCycle = (isSelfMap && ctorArg.SourceReachesSourceType) ||
                                   (ctorArg.ConverterMethod is not null &&
                                    CanReach(graph, ExactOverloadKey(ctorArg.ConverterMethod, ctorArg.ConverterParamTypeFqn, declaredNameCount) ?? ctorArg.ConverterMethod, outerKey));
-                    if (onCycle && reported.Add((m.ReturnTypeFullName, ctorArg.TargetName)))
+                    if (onCycle && reported.Add((m.ReturnTypeFullName, ctorArg.TargetName.ToUpperInvariant())))
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.CyclicConstructorParameter,

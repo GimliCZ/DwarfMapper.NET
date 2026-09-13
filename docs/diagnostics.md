@@ -299,10 +299,11 @@ generated, and the one `CS8795` that follows is signposted by [`DWARF096`](#dwar
 A member set through a constructor parameter or `init`-only property takes part in a reference cycle under
 `ReferenceHandling=Preserve`. A cycle can only be reconstructed when the looping member is assigned *after* the
 object is created (the mapper records each object before filling it, so cycles can point back to it). The
-diagnostic names only the parameter that carries the cycle: one whose mapping leads back to the type being built,
-directly or through a collection or dictionary (`TreeDto(int v, List<TreeDto> kids)` names `kids`, never `v`), and,
-in a same-type map, one whose source member can hold a reference back to the source type. **Fix:** make the member
-a settable property, or break the cycle.
+diagnostic names only the parameter or member that carries the cycle: one whose mapping leads back to the type being
+built, directly or through a collection or dictionary (`TreeDto(int v, List<TreeDto> kids)` names `kids`, never `v`),
+and, in a same-type map, one whose source member can hold a reference back to the source type. An `init`-only or
+`required` member counts exactly like a constructor parameter: C# fills it in the object initializer, before the
+mapper can record the new object. **Fix:** make the member a settable, non-`required` property, or break the cycle.
 
 ## dwarf031
 **Mapping nests too deeply** · Error

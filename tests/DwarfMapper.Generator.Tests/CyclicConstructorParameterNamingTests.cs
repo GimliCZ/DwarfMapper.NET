@@ -281,6 +281,98 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(["leaves"], NamedParameters(src));
         }
 
+        // ── Init-only and required members: filled in the object initializer, before the instance is registered ──
+
+        [Fact]
+        public void An_init_only_self_map_names_the_back_edge_not_the_scalar()
+        {
+            // Emitted as `new Node { V = n.V, Next = n.Next }`: the target's Next is the SOURCE node — the D2 record
+            // shape through a property instead of a constructor parameter, and it was accepted without a word.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node { public int V { get; init; } public Node? Next { get; init; } }
+                               """ + Preserve + " public partial class M { public partial Node Map(Node n); }";
+
+            Assert.Equal(["Next"], NamedParameters(src));
+        }
+
+        [Fact]
+        public void Distinct_types_cycling_through_an_init_only_member_are_refused()
+        {
+            // Accepted before, and emitted `__dwarf_t.Next = …` after construction: CS8852 in the consumer's .g.cs.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int V { get; set; } public Src? Next { get; set; } }
+                               public class Dst { public int V { get; init; } public Dst? Next { get; init; } }
+                               """ + Preserve + " public partial class M { public partial Dst Map(Src s); }";
+
+            Assert.Equal(["Next"], NamedParameters(src));
+        }
+
+        [Fact]
+        public void Distinct_types_cycling_through_a_required_list_are_refused()
+        {
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int V { get; set; } public List<Src> Kids { get; set; } = new(); }
+                               public class Dst { public int V { get; set; } public required List<Dst> Kids { get; set; } }
+                               """ + Preserve + " public partial class M { public partial Dst Map(Src s); }";
+
+            Assert.Equal(["Kids"], NamedParameters(src));
+        }
+
+        [Fact]
+        public void Distinct_types_cycling_through_a_required_field_are_refused()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int V { get; set; } public Src? Next { get; set; } }
+                               public class Dst { public int V { get; set; } public required Dst? Next; }
+                               """ + Preserve + " public partial class M { public partial Dst Map(Src s); }";
+
+            Assert.Equal(["Next"], NamedParameters(src));
+        }
+
+        [Fact]
+        public void A_required_member_also_bound_by_the_constructor_is_named_once()
+        {
+            // Without [SetsRequiredMembers] the member is written twice — `new Dst(kids: …) { Kids = … }` — and must
+            // not be reported twice under two spellings.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public List<Src> Kids { get; set; } = new(); }
+                               public class Dst
+                               {
+                                   public Dst(List<Dst> kids) { Kids = kids; }
+                                   public required List<Dst> Kids { get; init; }
+                               }
+                               """ + Preserve + " public partial class M { public partial Dst Map(Src s); }";
+
+            Assert.Equal(["kids"], NamedParameters(src));
+        }
+
+        [Fact]
+        public void Acyclic_init_only_members_and_a_settable_cycle_beside_an_init_only_scalar_are_not_named()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Addr { public string City { get; set; } = ""; }
+                               public class AddrDto { public string City { get; init; } = ""; }
+                               public class Src { public int V { get; set; } public Addr A { get; set; } = new(); public Src? Next { get; set; } }
+                               public class Dst { public int V { get; init; } public AddrDto A { get; init; } = new(); public Dst? Next { get; set; } }
+                               """ + Preserve + " public partial class M { [MapValue(\"V\", 7)] public partial Dst Map(Src s); }";
+
+            Assert.Empty(NamedParameters(src));
+        }
+
         // ── Where the error is anchored ───────────────────────────────────────────────────────────────────────
 
         private static int AnchorLine(string src)
@@ -376,6 +468,15 @@ namespace DwarfMapper.Generator.Tests
                                               public interface IHolder { Node N { get; } }
                                               public struct Pair { public int A { get; set; } public Wrapper W { get; set; } }
                                               public class Rec<T> { public Rec<Rec<T>>? X { get; set; } }
+                                              public class InitBase { public int Inherited { get; init; } }
+                                              public class InitShapes : InitBase
+                                              {
+                                                  public int GetOnly { get; }
+                                                  public int Settable { get; set; }
+                                                  public required int RequiredField;
+                                                  public int PlainField;
+                                                  public void Method() { }
+                                              }
                                           }
                                           """;
 
@@ -436,6 +537,20 @@ namespace DwarfMapper.Generator.Tests
             Assert.False(Reaches(Named("T.Loop")));
             Assert.False(Reaches(Generic("System.Collections.Generic.List`1", WalkCompilation.GetSpecialType(SpecialType.System_Int32))));
             Assert.False(Reaches(Named("System.Collections.Generic.List`1").TypeParameters[0]));
+        }
+
+        [Fact]
+        public void Initializer_only_members_are_init_accessors_and_required_members_anywhere_in_the_hierarchy()
+        {
+            var shapes = Named("T.InitShapes");
+
+            Assert.True(MapperExtractor.IsInitializerOnlyMember(shapes, "Inherited"));
+            Assert.True(MapperExtractor.IsInitializerOnlyMember(shapes, "RequiredField"));
+            Assert.False(MapperExtractor.IsInitializerOnlyMember(shapes, "GetOnly"));
+            Assert.False(MapperExtractor.IsInitializerOnlyMember(shapes, "Settable"));
+            Assert.False(MapperExtractor.IsInitializerOnlyMember(shapes, "PlainField"));
+            Assert.False(MapperExtractor.IsInitializerOnlyMember(shapes, "Method"));
+            Assert.False(MapperExtractor.IsInitializerOnlyMember(shapes, "Missing"));
         }
 
         [Fact]

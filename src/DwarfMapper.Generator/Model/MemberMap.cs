@@ -165,6 +165,13 @@ namespace DwarfMapper.Generator.Model
     ///     see because no method is called. A member typed <c>int</c> or an unrelated <c>Address</c> cannot carry the
     ///     cycle, and used to be named all the same.
     /// </param>
+    /// <param name="MustInitialize">
+    ///     The destination member is <c>init</c>-only or <c>required</c>, so C# accepts an assignment to it only inside
+    ///     the object initializer (CS8852 / CS9035 anywhere else). The main path writes every member there anyway;
+    ///     the register-before-populate path under <c>ReferenceHandling = Preserve</c> assigns members AFTER
+    ///     registering the instance, so it needs to know which ones cannot wait — and DWARF030 needs to know which
+    ///     members share a constructor argument's limitation: filled before the object exists.
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -186,7 +193,8 @@ namespace DwarfMapper.Generator.Model
         string? ShareEmptyFallback = null,
         bool ShareGuardsDefault = false,
         string? ConverterParamTypeFqn = null,
-        bool SourceReachesSourceType = false) : IEquatable<MemberMap>
+        bool SourceReachesSourceType = false,
+        bool MustInitialize = false) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

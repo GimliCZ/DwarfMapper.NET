@@ -436,7 +436,59 @@ namespace DwarfMapper.Generator.Pipeline
             // has had its chance to fire the directive before it is reported as having done nothing.
             ReportUnappliedDenseEnumDirectives(denseEnumDirectives, result, location, diagnostics, diagnosticsStart);
 
+            // Last, over the finished list, so every member however it was resolved is classified once.
+            MarkInitializerOnlyMembers(result, sourceType, targetType, compilation, options.AllowNonPublic, options.IsPreserve);
+
             return result;
+        }
+
+        /// <summary>
+        ///     Marks every resolved member whose destination is <c>init</c>-only or <c>required</c> — see
+        ///     <see cref="MemberMap.MustInitialize" /> — and, under Preserve from a reference-type source, whether its
+        ///     source member's type can lead back to the source type, the fact DWARF030 reads for a self-map.
+        /// </summary>
+        private static void MarkInitializerOnlyMembers(List<MemberMap> members, ITypeSymbol sourceType, INamedTypeSymbol targetType, Compilation compilation, bool allowNonPublic, bool isPreserve)
+        {
+            for (var i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                // A dotted target is an unflatten leaf, assigned post-construction on the member it names.
+                if (member.TargetName.IndexOf('.') >= 0 || !IsInitializerOnlyMember(targetType, member.TargetName))
+                {
+                    continue;
+                }
+
+                // A member with no source name ([MapValue], an extra parameter) copies nothing out of the source graph.
+                var reaches = isPreserve &&
+                              sourceType.IsReferenceType &&
+                              member.SourceName.Length > 0 &&
+                              TryResolveSourcePath(sourceType, member.SourceName, compilation, allowNonPublic, out var sourceMemberType, out _, out _) &&
+                              SourceMemberReachesType(sourceMemberType!, sourceType, compilation, allowNonPublic);
+                members[i] = member with
+                {
+                    MustInitialize = true,
+                    SourceReachesSourceType = reaches
+                };
+            }
+        }
+
+        /// <summary>
+        ///     Whether C# lets <paramref name="memberName" /> be assigned only inside an object initializer: an
+        ///     <c>init</c> accessor, or a <c>required</c> property or field, declared anywhere in the target's hierarchy.
+        /// </summary>
+        internal static bool IsInitializerOnlyMember(INamedTypeSymbol targetType, string memberName)
+        {
+            for (var current = (ITypeSymbol?)targetType; current is not null; current = current.BaseType)
+                foreach (var member in current.GetMembers(memberName))
+                    switch (member)
+                    {
+                        case IPropertySymbol property:
+                            return property.IsRequired || property.SetMethod is { IsInitOnly: true };
+                        case IFieldSymbol field:
+                            return field.IsRequired;
+                    }
+
+            return false;
         }
 
         /// <summary>
