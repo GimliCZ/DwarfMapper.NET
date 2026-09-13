@@ -50,12 +50,10 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                var autoValidate = false;
-                foreach (var named in a.NamedArguments)
-                    if (named.Key == "AutoValidate" && named.Value.Value is bool b)
-                    {
-                        autoValidate = b;
-                    }
+                // AutoValidate is the attribute's only settable property and a bool, so a set value is always a bool
+                // constant: asked this way, no branch tests a key or a type that no application has.
+                var autoValidate = MapperExtractor.TryGetNamedArgument(a.NamedArguments, "AutoValidate", out var value) &&
+                                   Equals(value.Value, true);
 
                 return (true, autoValidate);
             }
