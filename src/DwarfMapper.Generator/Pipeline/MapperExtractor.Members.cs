@@ -113,7 +113,7 @@ namespace DwarfMapper.Generator.Pipeline
             IReadOnlyCollection<string> mapperReservedConverters,
             HashSet<string>? consumedCtorParams,
             HashSet<string>? requiredMustInitialize,
-            NestedMappingRegistry? nestedRegistry,
+            NestedMappingRegistry nestedRegistry,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)> mapValues,
             // REQUIRED for mapValues' reason: every caller passes the mapper's parameterless providers, never null.
             IReadOnlyList<(string Name, ITypeSymbol ReturnType)> valueProviders,
@@ -616,7 +616,7 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, SynthesizedMethod> synthesized,
             NullStrategy nullStrategy,
             bool autoNest,
-            NestedMappingRegistry? nestedRegistry,
+            NestedMappingRegistry nestedRegistry,
             out MemberMap[] ctorArgs,
             out HashSet<string> consumedParams,
             bool nullAsNull = false,

@@ -67,8 +67,8 @@ namespace DwarfMapper.Generator.Pipeline
             out NullHandling nullHandling,
             out bool converterNeedsCtx,
             out string? converterParamTypeFqn,
-            bool autoNest = false,
-            NestedMappingRegistry? nestedRegistry = null,
+            bool autoNest,
+            NestedMappingRegistry nestedRegistry,
             bool nullAsNull = false,
             bool isPreserve = false,
             bool allowInterfaceSrc = false,
@@ -430,7 +430,6 @@ namespace DwarfMapper.Generator.Pipeline
         {
             return (req.IsPreserve || req.IsSetNull) &&
                    req.AutoNest &&
-                   req.NestedRegistry is not null &&
                    req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
                    req.TgtType is INamedTypeSymbol namedTgt &&
                    IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt);
@@ -443,7 +442,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool AutoNestWouldClaim(ConversionRequest req)
         {
             return req.AutoNest &&
-                   req.NestedRegistry is not null &&
                    req.TgtType is INamedTypeSymbol namedTgt &&
                    IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt, req.AllowInterfaceSrc);
         }

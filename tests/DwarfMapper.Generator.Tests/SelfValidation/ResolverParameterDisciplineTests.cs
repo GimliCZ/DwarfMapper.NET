@@ -58,14 +58,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> Allowlist = new(StringComparer.Ordinal)
         {
-            // 15 rows. Was 31 when this scan was written. ResolveMembers lost nine and ResolveProjectionMembers seven when
+            // 14 rows. Was 31 when this scan was written. ResolveMembers lost nine and ResolveProjectionMembers seven when
             // R27-02 bundled their mapper-wide flags into MapperOptions — the allowlist doing exactly what a
-            // shrink-only list is for. What remains is the converters and the constructor-argument resolver.
+            // shrink-only list is for. TryResolveConversion's autoNest became required in round 30, when the
+            // non-nullable nestedRegistry after it could no longer carry a default. What remains is the converters
+            // and the constructor-argument resolver.
             "CollectionConverter.cs::Synthesize::isPreserve",
             "CollectionConverter.cs::TryResolve::nullAsNull",
             "DictionaryConverter.cs::Synthesize::isPreserve",
             "DictionaryConverter.cs::Synthesize::nullAsNull",
-            "MapperExtractor.Conversions.cs::TryResolveConversion::autoNest",
             "MapperExtractor.Conversions.cs::TryResolveConversion::implicitConversions",
             "MapperExtractor.Conversions.cs::TryResolveConversion::isPreserve",
             "MapperExtractor.Conversions.cs::TryResolveConversion::isSetNull",

@@ -39,7 +39,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             resolved = false;
 
-            if (req.AutoNest && req.NestedRegistry is not null && req.TgtType is INamedTypeSymbol namedTgt)
+            if (req.AutoNest && req.TgtType is INamedTypeSymbol namedTgt)
             {
                 // AutoNestWouldClaim is this same condition, asked by the blit gate one arm earlier; the two
                 // are one method so they cannot drift apart (round 29 T0.2c).
@@ -452,7 +452,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // phrase comes from the customization rule itself — the only place that knows which kind matched
                 // and therefore whether it was DECLARED FOR this pair (an attribute) or MATCHED TO it by
                 // implicit conversion (a hook), and which verb reads correctly for it.
-                if (req.NestedRegistry?.PairCustomization(srcElem, tgtElem) is not { } customization)
+                if (req.NestedRegistry.PairCustomization(srcElem, tgtElem) is not { } customization)
                 {
                     return;
                 }
@@ -661,7 +661,7 @@ namespace DwarfMapper.Generator.Pipeline
             // [AfterMap] taking the target by value writes into a copy once the target is a struct. Asked
             // through the registry's own rule, so this and the blit gate cannot disagree about what customizes
             // a pair.
-            if (req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true)
+            if (req.NestedRegistry.PairIsCustomized(srcElem, tgtElem))
             {
                 return;
             }
@@ -1216,7 +1216,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // with (elem, ctx, depth + 1), threading ONE shared context across the collection edge. This
                 // is what lets a cycle routed through a collection break (SetNull → back-edge null) or
                 // depth-cap, instead of the element re-entering the public entry (fresh context → StackOverflow).
-                if ((req.IsPreserve || req.IsSetNull) && elemConv is not null && GeneratedNames.IsObjectMap(elemConv) && req.NestedRegistry is not null)
+                if ((req.IsPreserve || req.IsSetNull) && elemConv is not null && GeneratedNames.IsObjectMap(elemConv))
                 {
                     req.NestedRegistry.ForceRecursionCapable(elemConv);
                     elemNeedsCtx = true;
@@ -1275,7 +1275,7 @@ namespace DwarfMapper.Generator.Pipeline
                     elemForgivesResult);
                 if (elemConv is not null)
                 {
-                    req.NestedRegistry?.RecordHelperElementEdge(converterMethod, elemConv, elemParamType);
+                    req.NestedRegistry.RecordHelperElementEdge(converterMethod, elemConv, elemParamType);
                 }
                 // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
                 // element is recursion-capable (Preserve, or None/SetNull self-referential element).
@@ -1294,7 +1294,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // collection helper calling it was never re-synthesized, so it still called it with one argument.
                 // That emitted code which did not compile (CS7036). The equivalent partial-method mapper worked,
                 // because its element resolved to a declared method and so WAS recorded here.
-                if (!req.IsPreserve && !req.IsSetNull && !elemNeedsCtx && req.NestedRegistry is not null && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))
+                if (!req.IsPreserve && !req.IsSetNull && !elemNeedsCtx && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))
                 {
                     var hName = converterMethod;
                     var capSrc = req.SrcType;
@@ -1424,7 +1424,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
                 // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
                 // what lets a cycle routed through a dictionary value break (SetNull) or depth-cap.
-                if ((req.IsPreserve || req.IsSetNull) && req.NestedRegistry is not null)
+                if (req.IsPreserve || req.IsSetNull)
                 {
                     if (keyConv is not null && GeneratedNames.IsObjectMap(keyConv))
                     {
@@ -1502,12 +1502,12 @@ namespace DwarfMapper.Generator.Pipeline
                     keyForgivesResult);
                 if (keyConv is not null)
                 {
-                    req.NestedRegistry?.RecordHelperElementEdge(converterMethod, keyConv, keyParamType);
+                    req.NestedRegistry.RecordHelperElementEdge(converterMethod, keyConv, keyParamType);
                 }
 
                 if (valConv is not null)
                 {
-                    req.NestedRegistry?.RecordHelperElementEdge(converterMethod, valConv, valParamType);
+                    req.NestedRegistry.RecordHelperElementEdge(converterMethod, valConv, valParamType);
                 }
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
@@ -1516,7 +1516,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // None+Throw: a key/value resolved to a PUBLIC declared method. Record a re-synthesis
                 // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
-                if (!req.IsPreserve && !req.IsSetNull && req.NestedRegistry is not null)
+                if (!req.IsPreserve && !req.IsSetNull)
                 {
                     var keyIsPublicObj = keyConv is not null &&
                                          !keyNeedsCtx &&

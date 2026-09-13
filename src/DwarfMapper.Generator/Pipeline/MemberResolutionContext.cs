@@ -73,7 +73,7 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, int> DenseEnumMembers,
             HashSet<string>? ConsumedCtorParams,
             HashSet<string>? RequiredMustInitialize,
-            NestedMappingRegistry? NestedRegistry,
+            NestedMappingRegistry NestedRegistry,
             // Never null: ResolveMembers settles "no list" as "an empty list" before this is built.
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
                 MapValues,

@@ -28,7 +28,7 @@ namespace DwarfMapper.Generator.Pipeline
             EnumPolicy EnumPolicy,
             NullStrategy NullStrategy,
             bool AutoNest,
-            NestedMappingRegistry? NestedRegistry,
+            NestedMappingRegistry NestedRegistry,
             bool IsPreserve,
             bool AllowNonPublic,
             IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>? RawDerivedPairs);
