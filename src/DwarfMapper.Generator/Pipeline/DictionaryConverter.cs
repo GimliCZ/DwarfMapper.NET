@@ -421,10 +421,9 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            var ns = n.ContainingNamespace?.ToDisplayString();
             var name = n.Name;
 
-            if (ns == "System.Collections.Generic")
+            if (KnownNames.IsNamespace(n.ContainingNamespace, "System.Collections.Generic"))
             {
                 switch (name)
                 {
@@ -447,7 +446,7 @@ namespace DwarfMapper.Generator.Pipeline
                         return true;
                 }
             }
-            else if (ns == "System.Collections.Immutable")
+            else if (KnownNames.IsNamespace(n.ContainingNamespace, "System.Collections.Immutable"))
             {
                 switch (name)
                 {
