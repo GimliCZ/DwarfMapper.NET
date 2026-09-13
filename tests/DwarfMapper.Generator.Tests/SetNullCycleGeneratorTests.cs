@@ -501,5 +501,31 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("__dwarf_target.Address.City = n.City;", generated, StringComparison.Ordinal);
             Assert.Contains("__dwarf_target.Address.City = s.City;", generated, StringComparison.Ordinal);
         }
+
+        // ── 21. SetNull + a cycle through an IEnumerable<T> destination ───────────────────────
+        // The IEnumerable<T> helper takes (ctx, depth) only when its element call needs them. Every
+        // IEnumerable<T> destination so far had a non-recursive element; here the element is the pair itself.
+        [Fact]
+        public void SetNull_cycle_through_an_IEnumerable_destination_threads_ctx_into_the_helper()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public class SnLazy    { public int V { get; set; } public List<SnLazy> Kids { get; set; } = new(); }
+                               public class SnLazyDto { public int V { get; set; } public IEnumerable<SnLazyDto> Kids { get; set; } = new List<SnLazyDto>(); }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial SnLazyDto Map(SnLazy n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains(
+                "global::System.Collections.Generic.IEnumerable<global::Demo.SnLazyDto> __DwarfMapColl_",
+                generated,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "(global::System.Collections.Generic.List<global::Demo.SnLazy>? src, global::DwarfMapper.DwarfRefContext ctx, int depth)",
+                generated,
+                StringComparison.Ordinal);
+        }
     }
 }
