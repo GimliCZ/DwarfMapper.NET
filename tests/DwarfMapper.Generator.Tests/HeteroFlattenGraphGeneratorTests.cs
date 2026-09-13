@@ -384,6 +384,35 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        /// <summary>
+        ///     The FsNode fixture with extra members on the derived node and DTO types, and any supporting types.
+        /// </summary>
+        private static string FsNodeSourceWith(string folderExtra, string fileExtra, string folderDtoExtra, string fileDtoExtra, string types = "")
+        {
+            return $$"""
+                     using DwarfMapper;
+                     using System.Collections.Generic;
+                     namespace Demo;
+                     {{types}}
+                     public abstract class FsNode { public string Name { get; set; } = ""; }
+                     public class Folder : FsNode { public List<FsNode> Children { get; set; } = new(); {{folderExtra}} }
+                     public class File   : FsNode { public long Size { get; set; } {{fileExtra}} }
+                     public abstract class FsNodeDto { public string Name { get; set; } = ""; }
+                     public class FolderDto : FsNodeDto { public List<FsNodeDto>? Children { get; set; } {{folderDtoExtra}} }
+                     public class FileDto   : FsNodeDto { public long Size { get; set; } {{fileDtoExtra}} }
+                     public class Tree    { public FsNode? Root { get; set; } public string Label { get; set; } = ""; }
+                     public class TreeDto { public List<FsNodeDto> Nodes { get; set; } = new(); public string Label { get; set; } = ""; }
+                     [DwarfMapper]
+                     public partial class M
+                     {
+                         [FlattenGraph(nameof(Tree.Root), nameof(TreeDto.Nodes))]
+                         [MapDerivedType<Folder, FolderDto>]
+                         [MapDerivedType<File, FileDto>]
+                         public partial TreeDto Map(Tree t);
+                     }
+                     """;
+        }
+
         // ── 16. A Nullable<struct> member under an interface node base is an edge ───────
 
         /// <summary>
@@ -418,6 +447,67 @@ namespace DwarfMapper.Generator.Tests
                                """;
             var generated = GeneratorAssert.CompilesClean(src);
             Assert.Contains("Opt = null,", generated, StringComparison.Ordinal);
+        }
+
+        // ── 17. A derived-node leaf with no DTO counterpart is not assigned ────────────
+
+        [Fact]
+        public void HeteroFlattenGraph_derived_leaf_without_a_dto_counterpart_is_not_assigned()
+        {
+            var src = FsNodeSourceWith("", "public int Extra { get; set; }", "", "");
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.DoesNotContain("Extra =", generated, StringComparison.Ordinal);
+        }
+
+        // ── 18. A derived-node leaf with no conversion is reported, not dropped ─────────
+
+        [Fact]
+        public void HeteroFlattenGraph_derived_leaf_without_a_conversion_reports_DWARF005()
+        {
+            var src = FsNodeSourceWith("", "public System.IO.Stream? Blob { get; set; }", "", "public int Blob { get; set; }");
+            var reported = GeneratorAssert.Reports(src, "DWARF005");
+            Assert.Contains(reported,
+                d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("'Blob'", StringComparison.Ordinal));
+        }
+
+        // ── 19. A nested-object leaf on a derived node is left unassigned ─────────────
+
+        /// <summary>
+        ///     Pins the MF-D skip (c86a185): a derived-node leaf whose conversion is a COMPLEX synthesized helper
+        ///     (object, collection or dictionary) is not assigned, because that helper may take the (ctx, depth) tail
+        ///     the flat-node helper cannot pass. The member keeps its default and nothing is reported, which is the same
+        ///     silent shape SF-LEAFDIAG removed for an unmappable leaf. It is recorded for the owner, not changed here:
+        ///     a fix that assigns or reports it should update this test deliberately.
+        /// </summary>
+        [Fact]
+        public void HeteroFlattenGraph_nested_object_leaf_on_a_derived_node_is_left_unassigned()
+        {
+            var src = FsNodeSourceWith("",
+                "public Address Addr { get; set; } = new();",
+                "",
+                "public AddressDto Addr { get; set; } = new();",
+                "public class Address { public string City { get; set; } = \"\"; } public class AddressDto { public string City { get; set; } = \"\"; }");
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diags, d => d.Id.StartsWith("DWARF", StringComparison.Ordinal));
+            Assert.DoesNotContain("Addr =", generated, StringComparison.Ordinal);
+            GeneratorAssert.CompilesClean(src);
+        }
+
+        // ── 20. The same simple leaf helper on two arms is synthesized once ───────────
+
+        [Fact]
+        public void HeteroFlattenGraph_same_enum_leaf_on_two_arms_shares_one_helper()
+        {
+            var src = FsNodeSourceWith("public Kind K { get; set; }",
+                "public Kind K { get; set; }",
+                "public KindDto K { get; set; }",
+                "public KindDto K { get; set; }",
+                "public enum Kind { A, B } public enum KindDto { A, B }");
+            var generated = GeneratorAssert.CompilesClean(src);
+            var lines = generated.Split('\n');
+            Assert.Equal(2, lines.Count(l => l.Contains("K = __DwarfMap_EnumName_", StringComparison.Ordinal)));
+            Assert.Single(lines, l => l.Contains("__DwarfMap_EnumName_", StringComparison.Ordinal) &&
+                                      l.Contains("(global::Demo.Kind ", StringComparison.Ordinal));
         }
     }
 }
