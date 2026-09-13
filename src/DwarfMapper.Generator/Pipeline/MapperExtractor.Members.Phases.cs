@@ -176,6 +176,21 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Whether the chosen constructor alone assigns <paramref name="target" />, so the object initializer must not
+        ///     assign it again: it is a consumed constructor parameter, and not a <c>required</c> member whose constructor
+        ///     lacks <c>[SetsRequiredMembers]</c> (C# still demands those in the initializer, CS9035).
+        /// </summary>
+        /// <remarks>
+        ///     Callers pass the two sets together: both from a construction, or both null for update-into, which has no
+        ///     construction. So "consumed parameters, but no required-member set" never arrives through a mapper; it is
+        ///     answered here once, where the unit test asks it, for both passes that ask the question.
+        /// </remarks>
+        internal static bool IsAssignedByConstructorOnly(HashSet<string>? consumedCtorParams, HashSet<string>? requiredMustInitialize, string target)
+        {
+            return consumedCtorParams is not null && consumedCtorParams.Contains(target) && (requiredMustInitialize is null || !requiredMustInitialize.Contains(target));
+        }
+
+        /// <summary>
         ///     [MapProperty]: every explicitly named source-to-destination pair, validated and resolved. Runs
         ///     FIRST, so an explicit choice wins over anything auto-matching would have inferred.
         /// </summary>
@@ -252,10 +267,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // If this explicit mapping targets a constructor parameter (already consumed), skip it here
                 // UNLESS the member is `required` and the ctor lacks [SetsRequiredMembers] — in that case
                 // the member must also appear in the object initializer to satisfy CS9035.
-                if (req.ConsumedCtorParams is not null &&
-                    req.ConsumedCtorParams.Contains(tgtName) &&
-                    (req.RequiredMustInitialize is null ||
-                     !req.RequiredMustInitialize.Contains(tgtName)))
+                if (IsAssignedByConstructorOnly(req.ConsumedCtorParams, req.RequiredMustInitialize, tgtName))
                 {
                     continue;
                 }
@@ -617,10 +629,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // as both ctor params AND init properties — must not double-assign).
                 // EXCEPTION: `required` members whose ctor lacks [SetsRequiredMembers] must also be set in
                 // the object initializer (CS9035), so do NOT skip them.
-                if (req.ConsumedCtorParams is not null &&
-                    req.ConsumedCtorParams.Contains(target.Name) &&
-                    (req.RequiredMustInitialize is null ||
-                     !req.RequiredMustInitialize.Contains(target.Name)))
+                if (IsAssignedByConstructorOnly(req.ConsumedCtorParams, req.RequiredMustInitialize, target.Name))
                 {
                     // Under a [MapConstructor] factory the skip above is not "the constructor assigns it" — it is
                     // "nobody assigns it". The factory owns construction, so an init-only/required member keeps
