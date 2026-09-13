@@ -736,21 +736,15 @@ namespace DwarfMapper.Generator.Pipeline
             // the fix rewrites the very symbol classified here.
             //
             // OriginalDefinition: a closed generic's id is its definition's id, and the definition is what has
-            // a declaration to rewrite.
-            var nestedIds = new List<string>();
-            foreach (var model in inlined)
-                if (model.OriginalDefinition.GetDocumentationCommentId() is { Length: > 0 } nestedId)
-                {
-                    nestedIds.Add(nestedId);
-                }
-
+            // a declaration to rewrite. A named type always has an id — "T:" for a declared one, "!:" for an
+            // error type — so every model contributes one.
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionElementCouldBeAStruct,
                 req.Location,
                 message,
                 TransferModelId: target.OriginalDefinition.GetDocumentationCommentId(),
-                NestedTransferModelIds: nestedIds.Count == 0
+                NestedTransferModelIds: inlined.Count == 0
                     ? null
-                    : string.Join("|", nestedIds),
+                    : string.Join("|", inlined.Select(model => model.OriginalDefinition.GetDocumentationCommentId())),
                 TransferModelSize: verdict.Size.ToString(CultureInfo.InvariantCulture)));
         }
 
