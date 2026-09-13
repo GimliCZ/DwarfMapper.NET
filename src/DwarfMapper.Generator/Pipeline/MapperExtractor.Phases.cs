@@ -423,7 +423,7 @@ namespace DwarfMapper.Generator.Pipeline
         // (DerivedTypeArms.Count > 0) whose arm converters are recursion-capable (i.e.
         // need ctx+depth forwarding).  This includes Preserve-mode auto-nested pairs
         // (__DwarfMap_Obj_*) which were force-marked recursion-capable in the block above.
-        private static void ThreadContextThroughDispatchArms(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
+        internal static void ThreadContextThroughDispatchArms(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
         {
             for (var i = 0; i < methods.Count; i++)
             {
