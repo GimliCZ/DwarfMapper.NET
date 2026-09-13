@@ -832,13 +832,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<DiagnosticInfo> diagnostics,
             string targetMemberName,
             EnumPolicy enumPolicy,
-            StringComparer? comparer,
+            StringComparer comparer,
             bool autoNest,
             bool nullAsNull,
             bool implicitConversions)
         {
-            comparer ??= StringComparer.Ordinal;
-
             // ── Depth guard ───────────────────────────────────────────────────────
             if (depth > ProjectionMaxDepth)
             {
@@ -1562,12 +1560,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<DiagnosticInfo> diagnostics,
             string targetMemberName,
             EnumPolicy enumPolicy,
-            StringComparer? comparer,
+            StringComparer comparer,
             bool autoNest,
             bool nullAsNull,
             bool implicitConversions)
         {
-            comparer ??= StringComparer.Ordinal;
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
