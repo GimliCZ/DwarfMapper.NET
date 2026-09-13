@@ -8,7 +8,9 @@ using System.Text;
 //   - ComputeRequiredMustInitialize's required FIELD arm (every fixture's required member was a property);
 //   - ReportMemberFormDirectives skipping an attribute on a mapper member that is not a directive at all;
 //   - TryFormatConstant's refusals for a non-renderable [MapValue] constant (typeof) and an enum constant whose type
-//     does not convert to the destination.
+//     does not convert to the destination;
+//   - the DWARF057 lookup's name for a co-located host in the global namespace;
+//   - the [GenerateMap] pair collector skipping a target that is neither a named nor an array type (dynamic).
 namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class ExtractorClassLevelCoverageTests
@@ -111,6 +113,42 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var message = Assert.Single(GeneratorAssert.Reports(src, "DWARF040")).GetMessage(CultureInfo.InvariantCulture);
             Assert.Contains("enum constant of type 'Demo.Kind' is not assignable to 'string'", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_co_located_host_in_the_global_namespace_generates_its_mapper()
+        {
+            // Every co-located fixture declared a namespace, so the mapper's full name was always namespace-qualified
+            // when the DWARF057 collision lookup composed it.
+            const string src = """
+                               using DwarfMapper;
+                               public class GDst { public int Id { get; set; } }
+                               [GenerateMap<GHost, GDst>]
+                               public partial class GHost { public int Id { get; set; } }
+                               """;
+
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("global::GDst", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_generate_map_whose_target_is_dynamic_adds_no_pair()
+        {
+            // `dynamic` is neither a named nor an array type, so the pair is not collected. The compiler already refuses
+            // the attribute (CS8970, in the caller's own source); the generator must neither crash nor add a second
+            // report, and must emit no mapping.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int Id { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<Src, dynamic>]
+                               public partial class M;
+                               """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diagnostics, d => d.Id.StartsWith("DWARF", StringComparison.Ordinal));
+            Assert.DoesNotContain("Map(", generated, StringComparison.Ordinal);
         }
     }
 }
