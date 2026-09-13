@@ -102,7 +102,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             foreach (var (name, _) in group)
-                if (!(req.IgnoredSourceMembers?.Contains(name) ?? false))
+                if (!req.IgnoredSourceMembers.Contains(name))
                 {
                     return name;
                 }
@@ -150,7 +150,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else if (mv.Use is not null)
                 {
-                    var provider = (req.ValueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
+                    var provider = req.ValueProviders
                         .FirstOrDefault(p => StringComparer.Ordinal.Equals(p.Name, mv.Use));
                     if (provider.Name is null || !HasImplicitConversion(req.Compilation, provider.ReturnType, mvTgtType))
                     {

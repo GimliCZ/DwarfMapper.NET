@@ -212,3 +212,7 @@ through to a lookup that fails by L1. `AddConsumed`/`ReportUnconsumed`: as for t
   producers of `IgnoredSourceMembers` (`IgnoredSourcesFor`, `ClassIgnoredSources`) return a `HashSet`, and
   every `ResolveMembers` caller passes one, so the null-coalesce is never reached. A denominator question
   for the maintainer, deliberately absent from the ledger (see "What this ledger is NOT").
+  *Resolved 2026-09-13 by the round-30 coverage sweep:* `ignoredSourceMembers` (and `valueProviders`) became
+  REQUIRED, non-nullable `ResolveMembers` parameters, and `MemberRequest.IgnoredSourceMembers` is non-nullable, so
+  line 105 reads `!req.IgnoredSourceMembers.Contains(name)` with no null-coalesce. The mutant no longer exists; the
+  scoreable population shrinks at the next measurement.

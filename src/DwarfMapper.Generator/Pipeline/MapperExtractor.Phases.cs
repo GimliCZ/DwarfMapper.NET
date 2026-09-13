@@ -1992,6 +1992,7 @@ namespace DwarfMapper.Generator.Pipeline
                 acc.NestedRegistry,
                 mapValues,
                 decls.ValueProviders,
+                IgnoredSourcesFor(decls, method),
                 extraParams,
                 mapPropExtras,
                 stringFormats,
@@ -1999,7 +2000,6 @@ namespace DwarfMapper.Generator.Pipeline
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
                 // would. Gating here produced a false DWARF079 on that shape.
                 CtorSetsRequiredMembers(ctor),
-                ignoredSourceMembers: IgnoredSourcesFor(decls, method),
                 shareMembers: shareMembers,
                 denseEnumMembers: denseEnumMembers);
 

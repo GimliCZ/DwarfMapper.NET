@@ -77,13 +77,13 @@ namespace DwarfMapper.Generator.Pipeline
             // Never null: ResolveMembers settles "no list" as "an empty list" before this is built.
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
                 MapValues,
-            IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? ValueProviders,
+            IReadOnlyList<(string Name, ITypeSymbol ReturnType)> ValueProviders,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? ExtraParams,
             Dictionary<string, string>? StringFormats,
             bool RequiredMembersAlreadySatisfied,
             IReadOnlyCollection<string>? FactoryExcludedMembers,
-            // Source members disowned by [MapIgnoreSource]; read only by the DWARF064 shadow rule.
-            HashSet<string>? IgnoredSourceMembers);
+            // Source members disowned by [MapIgnoreSource]; read only by the DWARF064 shadow rule. Empty, never null.
+            HashSet<string> IgnoredSourceMembers);
 
         /// <summary>
         ///     The name lookups the prologue derives from a <see cref="MemberRequest" /> and every pass then reads.

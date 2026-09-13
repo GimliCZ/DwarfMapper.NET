@@ -115,7 +115,16 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string>? requiredMustInitialize,
             NestedMappingRegistry? nestedRegistry,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)> mapValues,
-            IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
+            // REQUIRED for mapValues' reason: every caller passes the mapper's parameterless providers, never null.
+            IReadOnlyList<(string Name, ITypeSymbol ReturnType)> valueProviders,
+            // SOURCE members the mapper explicitly disowns via [MapIgnoreSource]. Read by exactly one rule:
+            // DWARF064, whose message tells the reader to write [MapIgnoreSource("X")] "if the shadow is
+            // intentional". Until this was threaded through, that remedy did nothing — the check consulted
+            // only whether a same-named source member existed, never whether the mapper had disowned it — so
+            // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
+            // which is the DESTINATION set. REQUIRED and never null, for mapValues' reason: every caller passes
+            // a set (IgnoredSourcesFor or ClassIgnoredSources), empty when nothing is disowned.
+            HashSet<string> ignoredSourceMembers,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
             Dictionary<string, string>? stringFormats = null,
@@ -135,13 +144,6 @@ namespace DwarfMapper.Generator.Pipeline
             // factory chose and drops the source value silently. Only the second is a data-loss hazard, so only
             // the second raises DWARF080. Null when no factory is in force.
             IReadOnlyCollection<string>? factoryExcludedMembers = null,
-            // SOURCE members the mapper explicitly disowns via [MapIgnoreSource]. Read by exactly one rule:
-            // DWARF064, whose message tells the reader to write [MapIgnoreSource("X")] "if the shadow is
-            // intentional". Until this was threaded through, that remedy did nothing — the check consulted
-            // only whether a same-named source member existed, never whether the mapper had disowned it — so
-            // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
-            // which is the DESTINATION set.
-            HashSet<string>? ignoredSourceMembers = null,
             // Destination members the caller asked to SHARE with [MapShare], read by TryPlanShare. Optional, and
             // an absent list means "the caller forced nothing" rather than "no share at all": the AUTOMATIC share
             // is a property of the TYPES and needs no directive, exactly as the blit needs no [Reinterpret].
