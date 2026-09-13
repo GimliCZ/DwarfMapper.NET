@@ -149,5 +149,27 @@ namespace DwarfMapper.Generator.Tests
             // No cached field for a mapper that hosts only a static provider — nothing needs an instance.
             Assert.DoesNotContain("private static readonly global::Demo.M", ambient, StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void A_pair_provided_by_two_mappers_is_registered_once_by_the_first()
+        {
+            // The same (source, target) [ProvidesMap] on two mappers of one assembly: the first mapper in hint-name order
+            // provides it, exactly as a same-assembly duplicate generated map does, so the manifest names the pair once.
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Src { public int Id { get; set; } }
+                             public class Dst { public int Id { get; set; } }
+                             [DwarfMapper] public partial class P1 { [ProvidesMap] public static Dst Provide(Src s) => new() { Id = s.Id }; }
+                             [DwarfMapper] public partial class P2 { [ProvidesMap] public static Dst Provide(Src s) => new() { Id = s.Id }; }
+                             """;
+
+            var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
+
+            const string manifest = "[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::Demo.Src), typeof(global::Demo.Dst))]";
+            Assert.Single(ambient.Split('\n'), line => line.Contains(manifest, StringComparison.Ordinal));
+            Assert.Contains("global::Demo.P1.Provide((global::Demo.Src)__s)", ambient, StringComparison.Ordinal);
+            Assert.DoesNotContain("global::Demo.P2.Provide", ambient, StringComparison.Ordinal);
+        }
     }
 }
