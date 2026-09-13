@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
@@ -11,6 +13,16 @@ namespace DwarfMapper.Generator.Diagnostics
         public Location ToLocation()
         {
             return Location.Create(FilePath, TextSpan, LineSpan);
+        }
+
+        /// <summary>
+        ///     <see cref="From" /> for a symbol's FIRST declaration location, or <see cref="Location.None" /> when it has
+        ///     none. Every symbol the generator anchors a diagnostic at is declared in source, so the empty case is not
+        ///     reached through a compilation — it is one helper, tested directly, instead of six inline fallbacks.
+        /// </summary>
+        public static LocationInfo? FromFirst(ImmutableArray<Location> locations)
+        {
+            return From(locations.FirstOrDefault() ?? Location.None);
         }
 
         public static LocationInfo? From(Location location)

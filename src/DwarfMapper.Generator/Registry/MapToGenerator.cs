@@ -75,7 +75,7 @@ namespace DwarfMapper.Generator.Registry
         {
             var source = (INamedTypeSymbol)ctx.TargetSymbol;
             var compilation = ctx.SemanticModel.Compilation;
-            var location = LocationInfo.From(source.Locations.FirstOrDefault() ?? Location.None);
+            var location = LocationInfo.FromFirst(source.Locations);
             var diags = new List<DiagnosticInfo>();
             var resolver = new Resolver(compilation, diags, location);
             var hasError = false;

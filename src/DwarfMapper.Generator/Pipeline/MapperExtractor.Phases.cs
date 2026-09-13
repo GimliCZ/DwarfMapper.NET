@@ -1336,12 +1336,12 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 acc.Diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.GenericMapperMethodUnsupported,
-                    LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None),
+                    LocationInfo.FromFirst(method.Locations),
                     method.Name));
                 return;
             }
 
-            var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
+            var methodLocation = LocationInfo.FromFirst(method.Locations);
             methodDiagStart = acc.Diagnostics.Count;
 
             // Before any endpoint-specific handling, because the mistake is the same one at all of them: this

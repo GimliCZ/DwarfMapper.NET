@@ -673,7 +673,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     diagnostics?.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.ProvidesMapInvalidShape,
-                        LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None),
+                        LocationInfo.FromFirst(method.Locations),
                         method.Name));
                     continue;
                 }

@@ -205,7 +205,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                var loc = LocationInfo.From(fwd.Locations.FirstOrDefault() ?? Location.None);
+                var loc = LocationInfo.FromFirst(fwd.Locations);
                 var src = fwd.Parameters[0].Type;
                 var dto = fwd.ReturnType;
 

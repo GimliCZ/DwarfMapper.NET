@@ -1011,7 +1011,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                var loc = LocationInfo.From(m.Locations.FirstOrDefault() ?? Location.None);
+                var loc = LocationInfo.FromFirst(m.Locations);
 
                 // A partial declaration whose implementing part is absent has no body: C# erases it and every call
                 // to it, and where THIS generator supplies the missing part the call is into the method being
