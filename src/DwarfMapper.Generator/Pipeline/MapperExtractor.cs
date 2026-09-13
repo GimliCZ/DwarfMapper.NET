@@ -1542,12 +1542,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                string? use = null;
-                foreach (var na in attr.NamedArguments)
-                    if (na.Key == "Use" && na.Value.Value is string u)
-                    {
-                        use = u;
-                    }
+                var use = TryGetNamedArgument(attr.NamedArguments, "Use", out var u) ? u.Value as string : null;
 
                 // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven.
                 var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
