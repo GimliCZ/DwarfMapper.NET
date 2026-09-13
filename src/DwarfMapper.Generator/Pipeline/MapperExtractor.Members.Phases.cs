@@ -82,6 +82,21 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     The key a destination name looks up in <see cref="MemberLookups.SourceGroups" />: normalized under
+        ///     <c>NameConvention.Flexible</c>, as written otherwise, which is how the groups themselves were keyed.
+        /// </summary>
+        /// <remarks>
+        ///     One statement for the three lookups that ask it. Written inline at each, the DWARF080 lookup carried a
+        ///     Flexible arm no input reaches: a factory-owned member exists only on [GenerateMap] and nested pairs,
+        ///     which resolve with NameConvention 0. Asked here, both arms are reached by the lookups that do run
+        ///     under Flexible.
+        /// </remarks>
+        private static string SourceGroupKey(MemberLookups lookups, string name)
+        {
+            return lookups.Flexible ? NormalizeName(name) : name;
+        }
+
+        /// <summary>
         ///     The source member a <c>[MapValue]</c> for <paramref name="target" /> shadows: the first member of the
         ///     group auto-match would have used — keyed the way THIS pair matches, normalized under
         ///     <c>NameConvention.Flexible</c> and by the pair's comparer otherwise — that <c>[MapIgnoreSource]</c>
@@ -96,7 +111,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </remarks>
         private static string? ShadowedSourceMember(MemberRequest req, MemberLookups lookups, string target)
         {
-            if (!lookups.SourceGroups.TryGetValue(lookups.Flexible ? NormalizeName(target) : target, out var group))
+            if (!lookups.SourceGroups.TryGetValue(SourceGroupKey(lookups, target), out var group))
             {
                 return null;
             }
@@ -643,7 +658,7 @@ namespace DwarfMapper.Generator.Pipeline
                     //
                     // Only reported when a source member actually WOULD have supplied a value — a member nothing
                     // maps to loses nothing, and warning about it would be noise on every record type.
-                    if (req.FactoryExcludedMembers is not null && req.FactoryExcludedMembers.Contains(target.Name, StringComparer.Ordinal) && !req.Ignores.Contains(target.Name) && lookups.SourceGroups.ContainsKey(lookups.Flexible ? NormalizeName(target.Name) : target.Name))
+                    if (req.FactoryExcludedMembers is not null && req.FactoryExcludedMembers.Contains(target.Name, StringComparer.Ordinal) && !req.Ignores.Contains(target.Name) && lookups.SourceGroups.ContainsKey(SourceGroupKey(lookups, target.Name)))
                     {
                         acc.Diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.FactoryDropsMember,
@@ -773,7 +788,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
                 }
 
-                if (!lookups.SourceGroups.TryGetValue(lookups.Flexible ? NormalizeName(target.Name) : target.Name, out var matches))
+                if (!lookups.SourceGroups.TryGetValue(SourceGroupKey(lookups, target.Name), out var matches))
                 {
                     var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
                     foreach (var fi in lookups.FlattenInfos)

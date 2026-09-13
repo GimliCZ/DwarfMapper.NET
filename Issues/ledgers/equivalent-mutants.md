@@ -96,6 +96,23 @@ ceiling is recomputed then, in that commit, as the rule below requires. Three su
 rows have their `lineCurrent` refreshed (28 → 320, 274 → 325, 52 → 409) because the same change added the
 partial-declaration, `Size`, `[InlineArray]` and fixed-buffer comparisons above them.
 
+## Rows retired on 2026-09-13 — the DWARF080 lookup no longer carries its own ternary
+
+One pipeline row — `ResolveAutoMatchedMembers (DWARF080 source lookup)` (proven, 1) — adjudicated the
+Conditional-false mutant of `lookups.Flexible ? NormalizeName(target.Name) : target.Name` inside the DWARF080
+source lookup. Its proof was sound, and the round-30 coverage sweep reached the same conclusion independently: the
+Flexible arm there is unreachable, because the only callers that pass `FactoryExcludedMembers` build their options with
+`NameConvention: 0`. That unreachable arm is exactly what the sweep's per-branch rule removes. The three identical
+`Flexible ? NormalizeName(x) : x` keys in `MapperExtractor.Members.Phases.cs` (the DWARF064 shadow lookup, the DWARF080
+lookup and the auto-match lookup) became one `SourceGroupKey(lookups, name)`. The DWARF080 site now calls it and
+carries no conditional of its own, so the adjudicated mutant can no longer be generated. The row is **retired, not
+re-anchored**: the same mutation inside `SourceGroupKey` is NOT equivalent, because the DWARF064 and auto-match lookups
+reach its Flexible arm under `NameConvention.Flexible` and tests kill it there.
+
+Counts move with it: pipeline `provenEquivalent` 16 → 15. The **denominator is not re-measured here**: `scoreable`
+stays at the 2026-09-11 run's 304, so the ceiling is recomputed as (304 − 15) / 304 = 95.06 %. The next authoritative
+pipeline run re-measures both, and moves the ceiling in that commit.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -109,7 +126,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 304 | 93.42 % (2026-09-11, round-30 kill program) | 16 | 0 | 0 | 94.73 % |
+| pipeline | `stryker-config.pipeline.json` | 304 | 93.42 % (2026-09-11, round-30 kill program) | 15 | 0 | 0 | 95.06 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
@@ -338,11 +355,11 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "scoreable": 304,
       "measuredRawScore": 93.42,
       "measuredOn": "2026-09-11",
-      "provenEquivalent": 16,
+      "provenEquivalent": 15,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 94.73,
-      "rawCeilingFormula": "(304 - 16) / 304 — the round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
+      "rawCeiling": 95.06,
+      "rawCeilingFormula": "(304 - 15) / 304 — denominator NOT re-measured; one of the 16 rows below was retired on 2026-09-13 (section 'Rows retired on 2026-09-13'), the rest are unchanged. The round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
     }
   },
   "entries": [
@@ -1128,20 +1145,6 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "occurrences": 1,
       "category": "proven-equivalent",
       "proof": "HandledTargets is read afterwards only for LATER targets (WritableMembers yields each name once) and by the read-only silent-loss guard (names disjoint from writable targets); every other reader ran before this pass.",
-      "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveAutoMatchedMembers"
-    },
-    {
-      "leg": "pipeline",
-      "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
-      "member": "ResolveAutoMatchedMembers (DWARF080 source lookup)",
-      "lineAtProof": 642,
-      "lineCurrent": 642,
-      "mutator": "Conditional (false) mutation",
-      "original": "lookups.SourceGroups.ContainsKey(lookups.Flexible ? NormalizeName(target.Name) : target.Name)",
-      "mutated": "lookups.SourceGroups.ContainsKey(target.Name)",
-      "occurrences": 1,
-      "category": "proven-equivalent",
-      "proof": "The branch is guarded by req.FactoryExcludedMembers, which only the [GenerateMap] and synthesized-nested-pair callers of ResolveMembers pass, and both construct their MapperOptions with NameConvention: 0 — so lookups.Flexible is false on every input that reaches the ternary and both forms read target.Name. Planted and run against a Flexible [GenerateMap] factory fixture: identical output. WEAKER THAN THE OTHERS: rests on that wiring, and becomes killable the day a [GenerateMap] pair honours NameConvention.Flexible.",
       "anchor": "Issues/ledgers/pipeline-mutation-survivors.md § ResolveAutoMatchedMembers"
     },
     {

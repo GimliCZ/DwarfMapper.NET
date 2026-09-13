@@ -182,6 +182,10 @@ way: a `[DwarfMapper(NameConvention = NameConvention.Flexible)]` `[GenerateMap]`
 DWARF080 identically with the mutant planted, and the wiring above is why. Weaker because it rests on that
 wiring — the day a `[GenerateMap]` pair honours `Flexible`, this row is a killable mutant and a real hole
 (the lookup would miss even a same-spelled member).
+*Retired 2026-09-13:* the round-30 coverage sweep replaced this ternary, and its two twins (the DWARF064 shadow
+lookup and the auto-match lookup), with one `SourceGroupKey(lookups, name)`. The DWARF080 site no longer has a
+conditional to mutate, and the helper's own Flexible arm is reached through the other two lookups, so this mutant
+no longer exists. See `equivalent-mutants.md`, "Rows retired on 2026-09-13".
 
 **`""` → `"Stryker was here!"` as the extra-parameter member's `SourceName`** (line 731, String) — *proven.*
 The member carries `SourceAccessExpression`, and every consumer prefers it: the DWARF070 report (`Members.cs`

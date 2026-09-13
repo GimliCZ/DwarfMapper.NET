@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 58;
-        private const int PinnedTotalOccurrences = 69;
+        private const int PinnedEntryRows = 57;
+        private const int PinnedTotalOccurrences = 68;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -88,9 +88,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // empty-list guard, a loop whose only effect is idempotent, a snapshot nothing reads outside
             // its branch, a HandledTargets.Add no later reader can see, and three "" -> "Stryker was here!"
             // SourceName flips whose every consumer short-circuits or resolves the name against real
-            // members. Three are marked WEAKER (two rest on DWARF078's error-suppresses-emission
+            // members. Three were marked WEAKER (two rest on DWARF078's error-suppresses-emission
             // invariant, one on both factory-bearing callers passing NameConvention: 0).
-            ["pipeline|proven-equivalent"] = 16
+            // 2026-09-13: that NameConvention: 0 row is retired, 16 -> 15. The coverage sweep folded the DWARF080
+            // lookup's Flexible ternary into SourceGroupKey, so the adjudicated mutant no longer exists. Ledger
+            // section "Rows retired on 2026-09-13".
+            ["pipeline|proven-equivalent"] = 15
         };
 
         // ── shared ────────────────────────────────────────────────────────────────
