@@ -143,10 +143,10 @@ namespace DwarfMapper.Generator.Tests
                                public partial class M { public partial ImmutableNode Map(ImmutableNode n); }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.Contains(diags,
-                d =>
-                    d.Severity == DiagnosticSeverity.Error &&
-                    d.Id == "DWARF030");
+            // Exactly one, naming Next: V is an int and cannot carry the cycle.
+            var dwarf030 = Assert.Single(diags, d => d.Id == "DWARF030");
+            Assert.Equal(DiagnosticSeverity.Error, dwarf030.Severity);
+            Assert.StartsWith("Member 'Next' ", dwarf030.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
         // ── 8. Preserve mode: DwarfRefContext constructed with identity map flag ──────
@@ -599,7 +599,8 @@ namespace DwarfMapper.Generator.Tests
                                public partial class M { public partial ImmutableNode Map(ImmutableNode n); }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.Contains(diags, d => d.Id == "DWARF030");
+            var dwarf030 = Assert.Single(diags, d => d.Id == "DWARF030");
+            Assert.StartsWith("Member 'Next' ", dwarf030.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
     }
 }

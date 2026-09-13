@@ -156,6 +156,15 @@ namespace DwarfMapper.Generator.Model
     ///         the one edge excluded (a real cycle hidden, so no depth guard and a stack overflow on cyclic data).
     ///     </para>
     /// </param>
+    /// <param name="SourceReachesSourceType">
+    ///     Set on a constructor argument under <c>ReferenceHandling = Preserve</c> when the type of the source member
+    ///     it reads can lead back to the mapped source type — through a member, an element, a dictionary key or
+    ///     value, or a generic argument. Never emitted: it is DWARF030's oracle for a self-map, where an argument
+    ///     carries the SOURCE graph into the target by reference — bare (<c>next: n.Next</c>) or one level down, as
+    ///     the elements a same-type collection helper copies (<c>__r.Add(__item)</c>) — an edge the call graph cannot
+    ///     see because no method is called. A member typed <c>int</c> or an unrelated <c>Address</c> cannot carry the
+    ///     cycle, and used to be named all the same.
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -176,7 +185,8 @@ namespace DwarfMapper.Generator.Model
         bool ConverterReturnIsNullableRef = false,
         string? ShareEmptyFallback = null,
         bool ShareGuardsDefault = false,
-        string? ConverterParamTypeFqn = null) : IEquatable<MemberMap>
+        string? ConverterParamTypeFqn = null,
+        bool SourceReachesSourceType = false) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

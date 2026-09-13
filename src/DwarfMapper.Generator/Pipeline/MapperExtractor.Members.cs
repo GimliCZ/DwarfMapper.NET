@@ -693,6 +693,7 @@ namespace DwarfMapper.Generator.Pipeline
                             eNeedsCtx,
                             SourceMayBeNullRef(srcType),
                             ConverterParamTypeFqn: eConvParamType,
+                            SourceReachesSourceType: isPreserve && SourceMemberReachesType(srcType, sourceType, compilation, allowNonPublic),
                             // Same raw-assign rule as the member path: a nullable reference bound bare to a
                             // non-nullable parameter is null-forgiven by the emitter and reported as DWARF070
                             // below. It used to be set on members only, so `Alias = s.Alias!` and
@@ -790,6 +791,7 @@ namespace DwarfMapper.Generator.Pipeline
                         needsCtx,
                         SourceMayBeNullRef(srcMember.Type),
                         ConverterParamTypeFqn: convParamType,
+                        SourceReachesSourceType: isPreserve && SourceMemberReachesType(srcMember.Type, sourceType, compilation, allowNonPublic),
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, srcMember.Type, param.Type),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(conv,
                             srcMember.Type,
@@ -825,6 +827,67 @@ namespace DwarfMapper.Generator.Pipeline
 
             ctorArgs = args.ToArray();
             return allOk;
+        }
+
+        /// <summary>
+        ///     Can a value of <paramref name="memberType" /> hold a reference that leads back to
+        ///     <paramref name="sourceType" />? Follows readable members, array elements and generic type arguments
+        ///     (which covers <c>Nullable&lt;T&gt;</c>, every collection element and both dictionary halves); stops at
+        ///     special types, enums, delegates and type parameters. DWARF030's oracle for a constructor argument copied
+        ///     by reference in a self-map — see <see cref="MemberMap.SourceReachesSourceType" />.
+        /// </summary>
+        /// <remarks>
+        ///     Members are only descended in types declared in <paramref name="sourceType" />'s own assembly or in the
+        ///     compilation: a type compiled elsewhere can only name this one through a generic argument, which is
+        ///     always followed. Without that bound a member typed <c>CultureInfo</c> would walk half the BCL.
+        ///     A <c>[MapIgnore]</c>d member still counts as an edge — the question is what the copied reference can
+        ///     reach, and an ignored member is still reachable through it.
+        /// </remarks>
+        internal static bool SourceMemberReachesType(ITypeSymbol memberType, ITypeSymbol sourceType, Compilation compilation, bool allowNonPublic)
+        {
+            var sourceAssembly = sourceType.ContainingAssembly;
+            var visited = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+            var pending = new Stack<ITypeSymbol>();
+            pending.Push(memberType);
+            while (pending.Count > 0)
+            {
+                var type = pending.Pop();
+                if (SymbolEqualityComparer.Default.Equals(type, sourceType))
+                {
+                    return true;
+                }
+
+                if (!visited.Add(type))
+                {
+                    continue;
+                }
+
+                if (type is IArrayTypeSymbol array)
+                {
+                    pending.Push(array.ElementType);
+                    continue;
+                }
+
+                if (type is not INamedTypeSymbol named || named.TypeKind == TypeKind.Delegate)
+                {
+                    continue;
+                }
+
+                foreach (var typeArgument in named.TypeArguments)
+                    pending.Push(typeArgument);
+
+                if (named.SpecialType != SpecialType.None ||
+                    named.TypeKind is not (TypeKind.Class or TypeKind.Struct) ||
+                    !(SymbolEqualityComparer.Default.Equals(named.ContainingAssembly, sourceAssembly) || named.Locations.Any(l => l.IsInSource)))
+                {
+                    continue;
+                }
+
+                foreach (var (_, readableType) in ReadableMembers(named, compilation, allowNonPublic))
+                    pending.Push(readableType);
+            }
+
+            return false;
         }
 
         /// <summary>

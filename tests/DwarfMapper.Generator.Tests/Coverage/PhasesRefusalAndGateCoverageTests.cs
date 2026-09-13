@@ -85,7 +85,9 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                public partial class M { public partial Node Map(Node n); }
                                """;
 
-            var message = GeneratorAssert.Reports(src, Dwarf030)[0].GetMessage(CultureInfo.InvariantCulture);
+            // Names kids — the list whose elements carry the cycle — and only kids; it used to name v.
+            var message = Assert.Single(GeneratorAssert.Reports(src, Dwarf030)).GetMessage(CultureInfo.InvariantCulture);
+            Assert.StartsWith("Member 'kids' ", message, StringComparison.Ordinal);
             Assert.Contains("ReferenceHandling=Preserve", message, StringComparison.Ordinal);
         }
 

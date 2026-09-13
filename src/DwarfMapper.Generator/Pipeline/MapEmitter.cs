@@ -697,7 +697,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Step 2: Construct target. For the register-before-populate algorithm, the ctor
             // must be called WITHOUT graph-node members that participate in the cycle.
-            // DWARF030 is emitted at generator time for any ctor arg that is recursion-capable.
+            // DWARF030 is emitted at generator time for any ctor arg whose mapping leads back to this pair.
             //
             // A [MapConstructor] factory owns construction here exactly as it does on the ordinary path, and it
             // composes with register-before-populate without qualification: the factory takes the SOURCE and

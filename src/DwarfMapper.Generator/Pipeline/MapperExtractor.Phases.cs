@@ -156,145 +156,97 @@ namespace DwarfMapper.Generator.Pipeline
             }
         }
 
-        // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
-        // After recursion-capability is finalised, propagate IsPreserveMode and detect DWARF030.
-        private static void ReportCyclicConstructorParameters(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, List<DiagnosticInfo> diagnostics, bool isPreserveMode, Dictionary<string, int> declaredNameCount)
+        // ── DWARF030: a constructor argument that takes part in a reference cycle ──
+        // Register-before-populate needs the object to exist before the looping member is filled, and a constructor
+        // argument is filled before the object exists — so a cycle through one cannot be reconstructed. Only the
+        // argument that carries the cycle is named:
+        //   * an argument that CALLS a method is on the cycle when that call leads back to the method being
+        //     generated — including through a collection or dictionary helper, whose element call the registry
+        //     records because a helper is not a method model;
+        //   * in a self-map (S == T) an argument whose source member's type can lead back to the source type carries
+        //     the source graph into the target by reference — bare, or as the elements a same-type collection
+        //     helper copies without mapping them (MemberMap.SourceReachesSourceType).
+        // Runs on the call graph exactly as DetectDeclaredMethodsOnRecursionCycle left it: the later phases redirect
+        // converters to depth companions and dispatch wrappers, names that are not nodes of this graph.
+        //
+        // It used to name every converter-less argument of a recursion-capable self-map (`v` for
+        // `Node(int v, List<Node> kids)`, never `kids`), every argument of any other self-map (`V` beside `Next`),
+        // and nothing when the cycle ran through a collection between distinct types (`TreeDto(int v,
+        // List<TreeDto> kids)` compiled, and silently mapped a cyclic Tree into two TreeDto instances).
+        private static void ReportCyclicConstructorParameters(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, NestedMappingRegistry nestedRegistry, List<DiagnosticInfo> diagnostics, bool isPreserveMode, Dictionary<string, int> declaredNameCount)
         {
-            if (isPreserveMode)
+            if (!isPreserveMode)
             {
-                for (var i = 0; i < methods.Count; i++)
+                return;
+            }
+
+            // A copy: the helper edges answer this question only, and must not reach the recursion phases.
+            var graph = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (var node in allCallGraph)
+                graph[node.Key] = new HashSet<string>(node.Value, StringComparer.Ordinal);
+
+            foreach (var (helperName, elemMethod, elemParamTypeFqn) in nestedRegistry.HelperElementEdges)
+            {
+                if (!graph.TryGetValue(helperName, out var helperEdges))
                 {
-                    var m = methods[i];
-
-                    // ── DWARF030: detect cyclic constructor parameters ─────────────────
-                    // Two patterns:
-                    // (A) Explicit cycle: ctor arg has ConverterNeedsDepthCtx = true (calls recursion-capable
-                    //     synthesized method). The back-edge is injected via ctor → can't register-before-populate.
-                    // (B) Identity self-map cycle: S == T AND the method has ctor args that copy S? members
-                    //     by identity (no converter). Example: record ImmutableNode(int V, ImmutableNode? Next)
-                    //     mapped to itself — Next is copied as s.Next (source ref), not the target. The record
-                    //     is immutable so we can't fix it up. Even though this method may not be "recursion-capable"
-                    //     in the type-graph sense (S=T → implicit conversion → no synthesized method), the
-                    //     DATA can still be cyclic and the ctor arg prevents register-before-populate.
-                    if (m.ConstructorArguments.Count > 0)
-                    {
-                        // Pattern A: explicit recursion-capable ctor arg whose converter is on a
-                        // call-graph cycle that includes the OUTER method. Under Preserve, ALL auto-nested
-                        // object mappers are forced recursion-capable for uniform topology tracking, so
-                        // ConverterNeedsDepthCtx=true alone is not sufficient — we must also verify that
-                        // the converter can reach back to the outer method (i.e. they are on the SAME cycle),
-                        // otherwise an acyclic nested mapper (e.g. Address→AddressDto) would be falsely
-                        // flagged as cyclic just because it got forced-RC for Preserve threading.
-                        // A scalar ctor param (int, string, Guid, enum) will have ConverterMethod=null and
-                        // never reaches this branch.
-                        var outerMethodKey = DeclKey(m, declaredNameCount);
-                        foreach (var ctorArg in m.ConstructorArguments)
-                            if (ctorArg.ConverterMethod is not null &&
-                                ctorArg.ConverterNeedsDepthCtx &&
-                                CanReach(allCallGraph,
-                                    ctorArg.ConverterMethod,
-                                    outerMethodKey))
-                            {
-                                var loc = (LocationInfo?)null;
-                                diagnostics.Add(new DiagnosticInfo(
-                                    DiagnosticDescriptors.CyclicConstructorParameter,
-                                    loc,
-                                    ctorArg.TargetName));
-                            }
-
-                        // Pattern B: self-map (S == T) with any ctor arg that has no converter.
-                        // For S==T, direct-assignment ctor args copy the source reference into the target.
-                        // If the source has a cycle (n.Next = n), the target's ctor arg will hold the source,
-                        // not the target. Since the type is immutable (has ctor args), we can't fix this up.
-                        // We only flag ctor args that are of reference type (not int/string/etc.) — but since
-                        // we don't have type info here, we flag ALL ctor args when the method is S→S and
-                        // recursion-capable (proven by members using ConverterNeedsDepthCtx).
-                        // More precisely: the method must be recursion-capable to be affected.
-                        if (m.IsRecursionCapable && string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
-                        {
-                            foreach (var ctorArg in m.ConstructorArguments)
-                                // Only flag args with no converter (identity copy of potentially cyclic member).
-                                // Args with a converter have already been checked above (Pattern A) or map scalars.
-                                if (ctorArg.ConverterMethod is null && !ctorArg.ConverterNeedsDepthCtx)
-                                {
-                                    var loc = (LocationInfo?)null;
-                                    diagnostics.Add(new DiagnosticInfo(
-                                        DiagnosticDescriptors.CyclicConstructorParameter,
-                                        loc,
-                                        ctorArg.TargetName));
-                                }
-                        }
-                    }
-
-                    // Only recursion-capable methods need the Preserve-mode register-before-populate emission.
-                    if (!m.IsRecursionCapable)
-                    {
-                        continue;
-                    }
-
-                    // Mark the method as Preserve mode.
-                    methods[i] = m with
-                    {
-                        IsPreserveMode = true
-                    };
+                    helperEdges = new HashSet<string>(StringComparer.Ordinal);
+                    graph[helperName] = helperEdges;
                 }
 
-                // Pattern B (public declared methods): detect S==T self-recursive declared methods
-                // where the target has ctor args. These are recursion-capable by definition.
-                // The check above already covers it since we iterate ALL methods.
-                // Additional check: for public partial methods that are Preserve+RecursionCapable,
-                // check if the SOURCE type == RETURN type with ctor args — this covers user-declared
-                // self-mappers like Map(ImmutableNode n) → ImmutableNode.
-                // (This is already covered by the loop above for cases where m.IsRecursionCapable.)
-                //
-                // Special case: S==T where the method is NOT recursion-capable (pure identity copy,
-                // no auto-nest synthesized method). This happens for record self-maps. We detect it
-                // separately here because the isRecursionCapable gate filters them out above.
-                for (var i = 0; i < methods.Count; i++)
+                helperEdges.Add(ExactOverloadKey(elemMethod, elemParamTypeFqn, declaredNameCount) ?? elemMethod);
+            }
+
+            // One pair can be emitted twice — a declared method and the helper a nested edge reached — and would
+            // otherwise name the same parameter twice.
+            var reported = new HashSet<(string TargetType, string Parameter)>();
+            foreach (var m in methods)
+            {
+                if (m.ConstructorArguments.Count == 0)
                 {
-                    var m = methods[i];
-                    if (m.ConstructorArguments.Count == 0)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (m.IsRecursionCapable)
+                var outerKey = DeclKey(m, declaredNameCount);
+                var isSelfMap = string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal);
+                foreach (var ctorArg in m.ConstructorArguments)
+                {
+                    var onCycle = (isSelfMap && ctorArg.SourceReachesSourceType) ||
+                                  (ctorArg.ConverterMethod is not null &&
+                                   CanReach(graph, ExactOverloadKey(ctorArg.ConverterMethod, ctorArg.ConverterParamTypeFqn, declaredNameCount) ?? ctorArg.ConverterMethod, outerKey));
+                    if (onCycle && reported.Add((m.ReturnTypeFullName, ctorArg.TargetName)))
                     {
-                        continue; // already handled above
-                    }
-
-                    if (!m.ParameterIsReferenceType)
-                    {
-                        continue; // value types excluded
-                    }
-
-                    // S == T (same type) with ctor args and NOT recursion-capable:
-                    // This is the "record ImmutableNode(ImmutableNode? Next)" self-map case.
-                    // The method isn't recursion-capable because S=T uses implicit conversion (no auto-nest),
-                    // but at RUNTIME a cyclic ImmutableNode CAN exist. Under Preserve mode, this is
-                    // an unsupported pattern → DWARF030 for the cyclic ctor args.
-                    if (string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
-                        // Flag ctor args that have the same type as the source (cyclic back-edge).
-                        // Since we don't have type info here, flag ALL non-scalar ctor args where
-                        // the source name suggests it's a complex member (has a converter or is the cycle).
-                        // Conservative approach: flag all ctor args with no converter when S==T.
-                        // The scalar ctor args (int, string, etc.) would also get flagged — this is
-                        // acceptable since the real issue is that ANY ctor arg in this scenario is suspect
-                        // (the ENTIRE pattern of immutable S=T mapping with cycles is broken).
-                        // In practice, DWARF030 is a COMPILE ERROR — the user MUST fix the type design.
-                    {
-                        foreach (var ctorArg in m.ConstructorArguments)
-                        {
-                            var loc = (LocationInfo?)null;
-                            diagnostics.Add(new DiagnosticInfo(
-                                DiagnosticDescriptors.CyclicConstructorParameter,
-                                loc,
-                                ctorArg.TargetName));
-                        }
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.CyclicConstructorParameter,
+                            null,
+                            ctorArg.TargetName));
                     }
                 }
             }
+        }
 
+        // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
+        // After recursion-capability is finalised, mark the methods that need register-before-populate emission.
+        private static void MarkPreserveModeMethods(List<MapMethodModel> methods, bool isPreserveMode)
+        {
+            if (!isPreserveMode)
+            {
+                return;
+            }
+
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                // Only recursion-capable methods need the Preserve-mode register-before-populate emission.
+                if (!m.IsRecursionCapable)
+                {
+                    continue;
+                }
+
+                methods[i] = m with
+                {
+                    IsPreserveMode = true
+                };
+            }
         }
 
         // ── MF-B fix: Preserve + [MapDerivedType] dispatch wrapper synthesis ─────────

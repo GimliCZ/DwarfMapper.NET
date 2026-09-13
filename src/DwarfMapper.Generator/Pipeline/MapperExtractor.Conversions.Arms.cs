@@ -1177,7 +1177,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var elemConv,
                         out var elemNull,
                         out var elemNeedsCtx,
-                        out _,
+                        out var elemParamType,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1277,6 +1277,10 @@ namespace DwarfMapper.Generator.Pipeline
                     elemNeedsCtx,
                     elemForgivesArg,
                     elemForgivesResult);
+                if (elemConv is not null)
+                {
+                    req.NestedRegistry?.RecordHelperElementEdge(converterMethod, elemConv, elemParamType);
+                }
                 // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
                 // element is recursion-capable (Preserve, or None/SetNull self-referential element).
                 converterNeedsCtx = (req.IsPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
@@ -1380,7 +1384,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var keyConv,
                         out var keyNull,
                         out var keyNeedsCtx,
-                        out _,
+                        out var keyParamType,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1408,7 +1412,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var valConv,
                         out var valNull,
                         out var valNeedsCtx,
-                        out _,
+                        out var valParamType,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1500,6 +1504,15 @@ namespace DwarfMapper.Generator.Pipeline
                     valForgivesResult,
                     keyForgivesArg,
                     keyForgivesResult);
+                if (keyConv is not null)
+                {
+                    req.NestedRegistry?.RecordHelperElementEdge(converterMethod, keyConv, keyParamType);
+                }
+
+                if (valConv is not null)
+                {
+                    req.NestedRegistry?.RecordHelperElementEdge(converterMethod, valConv, valParamType);
+                }
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
