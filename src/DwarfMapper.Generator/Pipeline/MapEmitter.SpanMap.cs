@@ -86,7 +86,7 @@ namespace DwarfMapper.Generator.Pipeline
             sb.Append(indent).Append("        ").Append(dst).Append("[__i] = ")
                 .Append(CollectionConverter.ElementExpr(
                     needsLocal ? "__item" : src + "[__i]",
-                    elem?.ConverterMethod,
+                    elem?.EmitConverterMethod,
                     elemNh,
                     method.SpanTargetElementFullName,
                     elem?.ConverterNeedsDepthCtx ?? false,
