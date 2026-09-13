@@ -636,5 +636,24 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("[MapDenseEnumKeys] member 'Counts' also carries a [MapProperty]", message, StringComparison.Ordinal);
             Assert.Contains("remove one of them", message, StringComparison.Ordinal);
         }
+
+        // ── Shapes the proof reached only through these fixtures ─────────────────────────────────────────────
+
+        private static string DenseMap(string sourceMember, string destinationMember, string types)
+        {
+            return Shapes + types + "\n" +
+                   "public sealed class A { public " + sourceMember + " Counts { get; set; } }\n" +
+                   "public sealed class B { public " + destinationMember + " Counts { get; set; } }\n" +
+                   "[DwarfMapper] public partial class M { [MapDenseEnumKeys(\"Counts\")] public partial B Map(A a); }\n";
+        }
+
+        /// <summary>A key that is not a named type at all (an array) is not an enum, and is refused as one.</summary>
+        [Fact]
+        public void A_key_that_is_not_a_named_type_is_refused()
+        {
+            var d = Assert.Single(GeneratorAssert.Reports(DenseMap("Dictionary<int[], int>", "Counts3", ""), "DWARF105"));
+
+            Assert.Contains("is keyed by 'int[]', which is not an enum", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
     }
 }
