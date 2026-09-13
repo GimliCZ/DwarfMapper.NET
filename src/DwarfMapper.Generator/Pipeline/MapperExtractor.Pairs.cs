@@ -293,12 +293,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // reports DWARF042 instead of the directive vanishing silently.
                 var target = attr.ConstructorArguments[0].Value as string ?? string.Empty;
 
-                string? use = null;
-                foreach (var na in attr.NamedArguments)
-                    if (na.Key == "Use" && na.Value.Value is string u)
-                    {
-                        use = u;
-                    }
+                var use = TryGetNamedArgument(attr.NamedArguments, "Use", out var u) ? u.Value as string : null;
 
                 // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven (mirrors ReadMapValues).
                 var isConstant = attr.ConstructorArguments.Length == 2 && use is null;

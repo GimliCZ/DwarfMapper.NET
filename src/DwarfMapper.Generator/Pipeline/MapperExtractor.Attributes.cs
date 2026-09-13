@@ -76,17 +76,34 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                var offset = 0;
-                foreach (var named in attr.NamedArguments)
-                    if (named.Key == "Offset" && named.Value.Value is int o)
-                    {
-                        offset = o;
-                    }
+                var offset = TryGetNamedArgument(attr.NamedArguments, "Offset", out var o) && o.Value is int i ? i : 0;
 
                 members.Add((m, offset));
             }
 
             return members;
+        }
+
+        /// <summary>
+        ///     The value an attribute application sets for the named argument <paramref name="key" />, when it sets
+        ///     one.
+        /// </summary>
+        /// <remarks>
+        ///     One lookup for the readers of attributes that have a single settable property. There, a loop testing
+        ///     each named argument's key has an outcome no real application can produce: a key that is not the one
+        ///     property. Asked here, both answers are reachable, and a duplicate key is already CS0643.
+        /// </remarks>
+        internal static bool TryGetNamedArgument(ImmutableArray<KeyValuePair<string, TypedConstant>> namedArguments, string key, out TypedConstant value)
+        {
+            foreach (var named in namedArguments)
+                if (string.Equals(named.Key, key, StringComparison.Ordinal))
+                {
+                    value = named.Value;
+                    return true;
+                }
+
+            value = default;
+            return false;
         }
 
         /// <summary>

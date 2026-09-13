@@ -340,14 +340,9 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var overrides = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var named in attr.NamedArguments)
+                if (TryGetNamedArgument(attr.NamedArguments, "Overrides", out var named))
                 {
-                    if (named.Key != "Overrides")
-                    {
-                        continue;
-                    }
-
-                    foreach (var v in named.Value.Values)
+                    foreach (var v in named.Values)
                         if (v.Value is string s && s.Length > 0)
                         {
                             overrides.Add(s);
