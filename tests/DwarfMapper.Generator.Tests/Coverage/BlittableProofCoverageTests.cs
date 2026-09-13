@@ -1111,6 +1111,22 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.Equal(string.Empty, reason);
         }
 
+        [Theory]
+        [InlineData("int?", "int")]
+        [InlineData("int?", "long?")]
+        [InlineData("int?", "int*")]
+        public void CanReinterpret_nullable_field_against_a_different_field_returns_false(string sourceField, string destinationField)
+        {
+            // A Nullable<T> field pair is decided by the proof over the two T's: int? against long? recurses to int against
+            // long and is refused there. Against a plain field (int) or a type that is not a named type at all (int*), the
+            // pair is not two Nullable<T>s and the layouts already differ.
+            var (_, types) = Compile(
+                "namespace T { public unsafe struct SrcN { public " + sourceField + " X; } public unsafe struct DstN { public " + destinationField + " X; } }",
+                allowUnsafe: true);
+
+            Assert.False(BlittableProof.CanReinterpret(types["SrcN"], types["DstN"]));
+        }
+
         [Fact]
         public void IsSourceSequential_short_layout_overload_is_sequential()
         {
