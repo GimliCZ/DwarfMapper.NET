@@ -560,7 +560,7 @@ namespace DwarfMapper.Generator.Pipeline
         // The public Map(S s) method needs to create a DwarfRefContext if it calls (directly
         // or indirectly through its members) a recursion-capable synthesized pair.
         // We patch the already-added method models here.
-        private static void MarkRecursionCapableCallers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
+        internal static void MarkRecursionCapableCallers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
         {
             for (var i = 0; i < methods.Count; i++)
             {
