@@ -967,14 +967,8 @@ namespace DwarfMapper.Generator.Pipeline
             ReadDerivedTypeAttributes(IMethodSymbol method)
         {
             var result = new List<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
-            foreach (var attr in method.GetAttributes())
+            foreach (var (attr, cls) in WithNonNullKey(method.GetAttributes(), a => a.AttributeClass))
             {
-                var cls = attr.AttributeClass;
-                if (cls is null)
-                {
-                    continue;
-                }
-
                 // Generic form: MapDerivedTypeAttribute<TSource, TTarget>
                 if (cls.IsGenericType &&
                     cls.ConstructedFrom.ToDisplayString().StartsWith(
@@ -997,6 +991,25 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return result;
+        }
+
+        /// <summary>
+        ///     Each item paired with its key, skipping items whose key is null — for walks that need a nullable
+        ///     property narrowed before the loop body can use it.
+        /// </summary>
+        /// <remarks>
+        ///     Extracted from ReadDerivedTypeAttributes' <c>if (attr.AttributeClass is null) continue;</c> and tested
+        ///     directly (per-branch rule): Roslyn gives every AttributeData a class, so that skip was a branch no input
+        ///     could take, and an AttributeData without one cannot be constructed to test it.
+        /// </remarks>
+        internal static IEnumerable<(TItem Item, TKey Key)> WithNonNullKey<TItem, TKey>(IEnumerable<TItem> items, Func<TItem, TKey?> key)
+            where TKey : class
+        {
+            foreach (var item in items)
+                if (key(item) is { } k)
+                {
+                    yield return (item, k);
+                }
         }
 
         /// <summary>
