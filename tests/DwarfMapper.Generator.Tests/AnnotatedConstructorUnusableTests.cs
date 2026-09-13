@@ -79,6 +79,9 @@ namespace DwarfMapper.Generator.Tests
                 },
                 {
                     "static constructor", "[DwarfMapperConstructor] static Dst() { }", "STATIC constructor"
+                },
+                {
+                    "obsolete, two parameters", "[DwarfMapperConstructor] [System.Obsolete] public Dst(int a, int b) { A = a; }", "marked [Obsolete]"
                 }
             };
         }
