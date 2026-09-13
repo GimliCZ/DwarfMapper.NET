@@ -941,7 +941,8 @@ namespace DwarfMapper.Generator.Pipeline
             // either — and only when the message named it in the first place; adding a second sentence instead
             // would say the same thing twice about a pair that is usually public on both sides (fix round 2).
             var caveatTarget = verdict.DerivationCheckedWithinAssemblyOnly;
-            var caveatSource = namesTheSource && sourceVerdict is { DerivationCheckedWithinAssemblyOnly: true };
+            // namesTheSource already required a source verdict, so GetValueOrDefault reads the real one.
+            var caveatSource = namesTheSource && sourceVerdict.GetValueOrDefault().DerivationCheckedWithinAssemblyOnly;
 
             if (caveatTarget || caveatSource)
             {
