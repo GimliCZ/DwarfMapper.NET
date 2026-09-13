@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Pipeline;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 // Coverage suite for CollectionConverter's small named classification predicates — pure functions over
 // TargetKind, tested directly the same way BlittableProofCoverageTests tests CanReinterpret's siblings.
@@ -55,6 +57,19 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var (diagnostics, generated) = GeneratorTestHarness.Run(s);
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF027");
             Assert.Contains("private global::System.Collections.Generic.IEnumerable<int> __DwarfMapColl_", generated, StringComparison.Ordinal);
+        }
+
+        // HasPublicInstanceInt32 refuses a Count property with no getter at all. Every Count the corpus meets is
+        // readable; a set-only one is a class shape no collection fixture declares.
+        [Fact]
+        public void CountOf_a_class_whose_Count_has_no_getter_is_None()
+        {
+            var compilation = CSharpCompilation.Create("CollectionConverterCoverage",
+                [CSharpSyntaxTree.ParseText("namespace Demo { public class SetOnlyCount { public int Count { set { } } } }")],
+                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+
+            Assert.Equal(CollectionConverter.CountKind.None,
+                CollectionConverter.CountOf(compilation.GetTypeByMetadataName("Demo.SetOnlyCount")!));
         }
     }
 }
