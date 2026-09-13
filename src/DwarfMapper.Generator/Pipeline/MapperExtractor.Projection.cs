@@ -220,7 +220,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </param>
         /// <param name="ignoredSourceMembers">
         ///     Source members disowned by <c>[MapIgnoreSource]</c>, by real name, for the DWARF064 shadow rule this
-        ///     endpoint shares with the create map. Null means none were declared.
+        ///     endpoint shares with the create map. Empty when none were declared.
         /// </param>
         private static List<ProjectionMemberMap> ResolveProjectionMembers(
             ITypeSymbol sourceType,
@@ -234,7 +234,7 @@ namespace DwarfMapper.Generator.Pipeline
             EnumPolicy enumPolicy,
             string paramExpr,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
-                mapPropertyExtras = null,
+                mapPropertyExtras,
             // I19: the projection endpoint reads NullCollections like every other endpoint. It used to read it
             // nowhere at all, so a null source collection came back EMPTY through .Map (the documented AsEmpty
             // default) and NULL through .Project — the same member answering differently depending on which
@@ -244,15 +244,15 @@ namespace DwarfMapper.Generator.Pipeline
             // [DwarfMapper(ImplicitConversions = false)] a lossy-but-C#-implicit conversion (long -> double) was
             // an Error at .Map and produced no diagnostic at all at .Project — the strict TRUST setting silently
             // off at one endpoint. The one call site passes the mapper's real setting.
-            HashSet<string>? consumedSources = null,
-            IReadOnlyList<string>? flattenRoots = null,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
-                mapValues = null,
+            HashSet<string>? consumedSources,
+            IReadOnlyList<string> flattenRoots,
+            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
+                mapValues,
             // Source members disowned by [MapIgnoreSource], by real name. Read by the DWARF064 shadow rule, which
             // this endpoint shares with the create map through TryValidateMapValueTarget — and which reached
             // the create map's [MapIgnoreSource] set first and this one not at all, the "fixed at 1 of N sites"
-            // shape. Null means "none declared".
-            HashSet<string>? ignoredSourceMembers = null)
+            // shape. Empty means "none declared".
+            HashSet<string> ignoredSourceMembers)
         {
             // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
             // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -265,11 +265,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // A [MapValue]'d target is explicitly targeted too, exactly as ResolveMembers reads it: opting a
                 // retired member back in deliberately must keep working at both endpoints, and reading only
                 // [MapProperty] here would have made "at both endpoints" false the moment [MapValue] arrived.
-                if (mapValues is not null)
-                {
-                    foreach (var mv in mapValues)
-                        explicitTargets.Add(mv.Target);
-                }
+                foreach (var mv in mapValues)
+                    explicitTargets.Add(mv.Target);
 
                 ignores = new HashSet<string>(ignores, IgnoreNameComparer);
                 foreach (var name in ObsoleteMemberNames(targetType))
@@ -321,7 +318,7 @@ namespace DwarfMapper.Generator.Pipeline
             // cannot read is not a leaf this endpoint can pull up, and warnNullableHop: false because DWARF044
             // describes a null dereference in emitted C#, which a translated path does not perform (the dotted
             // [MapProperty] source below already makes that call, in the same words).
-            var flattenInfos = ResolveFlattenInfos(flattenRoots ?? Array.Empty<string>(),
+            var flattenInfos = ResolveFlattenInfos(flattenRoots,
                 sourceType,
                 comparer,
                 compilation,
@@ -517,9 +514,7 @@ namespace DwarfMapper.Generator.Pipeline
             // The validation is the create map's own, hoisted rather than copied — see TryValidateMapValueTarget.
             // What differs here is only what this endpoint can SEE: the public-only writable set, the projection
             // source lookup, and the constructor the projection actually calls.
-            foreach (var mv in mapValues ??
-                               Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
-                                   string? Use, string? ConstLiteral)>())
+            foreach (var mv in mapValues)
             {
                 if (!TryValidateMapValueTarget(mv.Target,
                         handled,
@@ -529,7 +524,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // The projection lookup is already keyed the way this pair matches and carries the real
                         // source name — the spelling [MapIgnoreSource] is read under, here and for source coverage.
                         name => sources.TryGetValue(name, out var shadowed)
-                                && !(ignoredSourceMembers?.Contains(shadowed.Name) ?? false)
+                                && !ignoredSourceMembers.Contains(shadowed.Name)
                             ? shadowed.Name
                             : null,
                         location,
