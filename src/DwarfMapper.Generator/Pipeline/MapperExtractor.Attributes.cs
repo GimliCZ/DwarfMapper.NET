@@ -396,7 +396,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 // Parameterless usage means "enabled" — the constructor's default.
-                return attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not bool b || b;
+                return IsEnabledFlag(attr.ConstructorArguments);
             }
 
             return null;
@@ -421,7 +421,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                var enabled = attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not bool b || b;
+                var enabled = IsEnabledFlag(attr.ConstructorArguments);
 
                 // B24 / DWARF099. The set is built here, so this is where a CONTRADICTION over one pair is
                 // visible: the resolver below returns the first match by declaration order, which made SOURCE
@@ -449,6 +449,36 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return result;
+        }
+
+        /// <summary>
+        ///     The <c>enabled</c> flag of a <c>(bool enabled = true)</c> attribute: no argument means the constructor's
+        ///     default of <see langword="true" />, a bool means itself, and anything else falls back to the default.
+        /// </summary>
+        /// <remarks>
+        ///     Extracted from ReadMapNullSkip and ReadPairNullSkips and tested directly because the "not a bool" answer
+        ///     cannot come from source: a constructor argument that does not bind — wrong type or wrong arity — reaches
+        ///     the generator as NO argument, so a non-bool constant in a bool parameter never arrives.
+        /// </remarks>
+        internal static bool IsEnabledFlag(ImmutableArray<TypedConstant> constructorArguments)
+        {
+            return constructorArguments.Length == 0 || constructorArguments[0].Value is not bool b || b;
+        }
+
+        /// <summary>
+        ///     The value of an attribute's single bool constructor argument, when it has exactly one and it is a bool.
+        ///     Extracted from ReadMethodAutoNest for the reason <see cref="IsEnabledFlag" /> states.
+        /// </summary>
+        internal static bool TryReadSingleBool(ImmutableArray<TypedConstant> constructorArguments, out bool value)
+        {
+            if (constructorArguments.Length == 1 && constructorArguments[0].Value is bool b)
+            {
+                value = b;
+                return true;
+            }
+
+            value = false;
+            return false;
         }
 
         /// <summary>The C# literal for a bool, spelled rather than lower-cased at runtime (CA1308).</summary>
@@ -655,7 +685,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool ReadMethodAutoNest(IMethodSymbol method, bool classDefault)
         {
             foreach (var attr in method.GetAttributes())
-                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.AutoNestFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is bool b)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.AutoNestFqn) && TryReadSingleBool(attr.ConstructorArguments, out var b))
                 {
                     return b;
                 }
