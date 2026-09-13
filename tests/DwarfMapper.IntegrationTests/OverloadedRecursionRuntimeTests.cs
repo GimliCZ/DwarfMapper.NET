@@ -43,6 +43,34 @@ namespace DwarfMapper.IntegrationTests
         public partial OvrOtherDto Map(OvrOther o);
     }
 
+    public class OvrLeafSrc
+    {
+        public int V { get; set; }
+
+        public OvrLeafSrc? Child { get; set; }
+    }
+
+    public class OvrLeafWrap
+    {
+        public OvrLeafDst? Inner { get; set; }
+    }
+
+    public class OvrLeafDst
+    {
+        public int V { get; set; }
+
+        public OvrLeafWrap Wrap { get; set; } = new();
+    }
+
+    [DwarfMapper]
+    public partial class OvrUnflattenLeafMapper
+    {
+        [MapProperty("Child", "Wrap.Inner", Use = "Map")]
+        public partial OvrLeafDst Map(OvrLeafSrc s);
+
+        public partial OvrOtherDto Map(OvrOther o);
+    }
+
     public abstract class OvrAnimal
     {
         public string Name { get; set; } = "";
@@ -117,6 +145,25 @@ namespace DwarfMapper.IntegrationTests
             Assert.Equal(1, dto.V);
             Assert.Equal(2, dto.Next!.V);
             Assert.Null(dto.Next.Next);
+        }
+
+        [Fact]
+        public void An_overloaded_self_map_cycling_through_an_unflatten_leaf_throws_the_depth_exception()
+        {
+            var node = new OvrLeafSrc { V = 1 };
+            node.Child = node;
+
+            Assert.Throws<DwarfMappingDepthException>(() => new OvrUnflattenLeafMapper().Map(node));
+        }
+
+        [Fact]
+        public void An_overloaded_self_map_through_an_unflatten_leaf_maps_an_acyclic_chain()
+        {
+            var dto = new OvrUnflattenLeafMapper().Map(new OvrLeafSrc { V = 1, Child = new OvrLeafSrc { V = 2 } });
+
+            Assert.Equal(1, dto.V);
+            Assert.Equal(2, dto.Wrap.Inner!.V);
+            Assert.Null(dto.Wrap.Inner.Wrap.Inner);
         }
 
         [Fact]

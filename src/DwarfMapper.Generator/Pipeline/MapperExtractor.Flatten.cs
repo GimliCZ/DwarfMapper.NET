@@ -292,7 +292,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var uConv,
                     out var uNullH,
                     out var uNeedsCtx,
-                    out _,
+                    out var uConvParamType,
                     autoNest,
                     nestedRegistry,
                     nullAsNull,
@@ -308,6 +308,10 @@ namespace DwarfMapper.Generator.Pipeline
                     uNeedsCtx,
                     SourceMayBeNullRef(uSrc!),
                     UnflattenIntermediateFqn: rootFqn,
+                    // The call-graph edge's overload disambiguator, as on every other member site: without it a leaf
+                    // converted by an overloaded `Map` that IS the caller fanned out to every overload but the caller,
+                    // so the cycle through the leaf was invisible and got no depth guard.
+                    ConverterParamTypeFqn: uConvParamType,
                     // Round 29 T2.9: the unflatten leaf writes its converter's result into a member of the
                     // intermediate, and answers the RETURN question the same way every other member edge does.
                     ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(uConv,
