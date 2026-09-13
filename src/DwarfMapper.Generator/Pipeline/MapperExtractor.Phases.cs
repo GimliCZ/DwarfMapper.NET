@@ -173,12 +173,20 @@ namespace DwarfMapper.Generator.Pipeline
         // `Node(int v, List<Node> kids)`, never `kids`), every argument of any other self-map (`V` beside `Next`),
         // and nothing when the cycle ran through a collection between distinct types (`TreeDto(int v,
         // List<TreeDto> kids)` compiled, and silently mapped a cyclic Tree into two TreeDto instances).
-        private static void ReportCyclicConstructorParameters(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, NestedMappingRegistry nestedRegistry, List<DiagnosticInfo> diagnostics, bool isPreserveMode, Dictionary<string, int> declaredNameCount)
+        //
+        // Anchored where the reader can act: a declared method's own declaration, or — for a synthesized pair, which
+        // has none — the declared method that first reached it. It used to carry no location at all, so an ERROR
+        // landed on the project node and named a parameter of a type the reader then had to find by hand.
+        private static void ReportCyclicConstructorParameters(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, NestedMappingRegistry nestedRegistry, Dictionary<int, LocationInfo?> publicMethodLocs, List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels, List<DiagnosticInfo> diagnostics, bool isPreserveMode, Dictionary<string, int> declaredNameCount)
         {
             if (!isPreserveMode)
             {
                 return;
             }
+
+            var nestedOrigins = new Dictionary<string, LocationInfo?>(StringComparer.Ordinal);
+            foreach (var (_, nestedName, origin) in pendingNestedModels)
+                nestedOrigins[nestedName] = origin;
 
             // A copy: the helper edges answer this question only, and must not reach the recursion phases.
             var graph = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -199,11 +207,18 @@ namespace DwarfMapper.Generator.Pipeline
             // One pair can be emitted twice — a declared method and the helper a nested edge reached — and would
             // otherwise name the same parameter twice.
             var reported = new HashSet<(string TargetType, string Parameter)>();
-            foreach (var m in methods)
+            for (var i = 0; i < methods.Count; i++)
             {
+                var m = methods[i];
                 if (m.ConstructorArguments.Count == 0)
                 {
                     continue;
+                }
+
+                // Declared methods are indexed; every other model with constructor arguments is a drained pair.
+                if (!publicMethodLocs.TryGetValue(i, out var location))
+                {
+                    nestedOrigins.TryGetValue(m.MethodName, out location);
                 }
 
                 var outerKey = DeclKey(m, declaredNameCount);
@@ -217,7 +232,7 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.CyclicConstructorParameter,
-                            null,
+                            location,
                             ctorArg.TargetName));
                     }
                 }
@@ -861,7 +876,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     the dependency visible — which is the point of cutting the method up, and the reason the
         ///     compiler caught it rather than a reviewer having to.
         /// </remarks>
-        private static void DetectDeclaredMethodsOnRecursionCycle(List<MapMethodModel> methods, NestedMappingRegistry nestedRegistry, List<(MapMethodModel Model, string MethodName)> pendingNestedModels, HashSet<string> recursionCapableNames, Dictionary<string, int> declaredNameCount, HashSet<string> nodesOnCycle, HashSet<string> selfRecursivePublicMethods, Dictionary<string, HashSet<string>> allCallGraph)
+        private static void DetectDeclaredMethodsOnRecursionCycle(List<MapMethodModel> methods, NestedMappingRegistry nestedRegistry, List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels, HashSet<string> recursionCapableNames, Dictionary<string, int> declaredNameCount, HashSet<string> nodesOnCycle, HashSet<string> selfRecursivePublicMethods, Dictionary<string, HashSet<string>> allCallGraph)
         {
 
             // Count declared methods per name to detect overloads.
@@ -880,7 +895,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Helper: get the graph key for a declared method.
             // Seed with synthesized method edges (already computed in registry, but not accessible here).
             // Re-derive from pending models (synthesized methods always have unique names).
-            foreach (var (model, _) in pendingNestedModels)
+            foreach (var (model, _, _) in pendingNestedModels)
             {
                 var callerName = model.MethodName;
                 if (!allCallGraph.ContainsKey(callerName))
@@ -3614,7 +3629,7 @@ namespace DwarfMapper.Generator.Pipeline
             MapperAccumulators acc,
             List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             Compilation genComp,
-            List<(MapMethodModel Model, string MethodName)> pendingNestedModels,
+            List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels,
             CancellationToken ct)
         {
 
@@ -3892,7 +3907,7 @@ namespace DwarfMapper.Generator.Pipeline
                     nestedTgt.IsReferenceType, // patched below
                     FactoryMethod: nestedFactory);
 
-                pendingNestedModels.Add((nestedModel, nestedName));
+                pendingNestedModels.Add((nestedModel, nestedName, nestedLocation));
             }
 
         }

@@ -399,7 +399,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
             ExtractGenerateMapPairs(ctx, decls, policy, acc, genPairs, genComp, genLoc, hostDirectives);
             // ── Drain the NestedMappingRegistry queue ────────────────────────────────
-            var pendingNestedModels = new List<(MapMethodModel Model, string MethodName)>();
+            var pendingNestedModels = new List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)>();
             DrainNestedMappingQueue(ctx, decls, policy, acc, genPairs, genComp, pendingNestedModels, ct);
             // ── Recursion-capability analysis ────────────────────────────────────────
             // Now that the full dependency graph is known, compute which pairs are on cycles.
@@ -419,7 +419,7 @@ namespace DwarfMapper.Generator.Pipeline
             // None mode is unaffected: isPreserveMode=false skips this block.
             if (isPreserveMode)
             {
-                foreach (var (_, name) in pendingNestedModels)
+                foreach (var (_, name, _) in pendingNestedModels)
                     // Only object-mapper pairs (__DwarfMap_Obj_* prefix). Collection helpers
                     // (__DwarfMapColl_*) and dict helpers (__DwarfMapDict_*) already receive
                     // the preserve treatment via isPreserve=true in CollectionConverter/DictionaryConverter.
@@ -435,7 +435,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Build a set of method names that are recursion-capable (for the public method check).
             var recursionCapableNames = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var (model, name) in pendingNestedModels)
+            foreach (var (model, name, _) in pendingNestedModels)
             {
                 var isRecursionCapable = nestedRegistry.IsRecursionCapable(name);
                 if (isRecursionCapable)
@@ -465,7 +465,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             DetectDeclaredMethodsOnRecursionCycle(methods, nestedRegistry, pendingNestedModels, recursionCapableNames, declaredNameCount, nodesOnCycle, selfRecursivePublicMethods, allCallGraph);
             // ── DWARF030: while converter names are still the call graph's own node names ──
-            ReportCyclicConstructorParameters(methods, allCallGraph, nestedRegistry, diagnostics, isPreserveMode, declaredNameCount);
+            ReportCyclicConstructorParameters(methods, allCallGraph, nestedRegistry, publicMethodLocs, pendingNestedModels, diagnostics, isPreserveMode, declaredNameCount);
             // ── None+Throw: upgrade collection/dict helpers whose element method is self-recursive ──
             UpgradeElementHelpersOnRecursionCycle(methods, nestedRegistry, recursionCapableNames, selfRecursivePublicMethods, nodesOnCycle, declaredNameCount);
             // ── Mark public methods and synthesized methods that call recursion-capable pairs ─

@@ -281,6 +281,87 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(["leaves"], NamedParameters(src));
         }
 
+        // ── Where the error is anchored ───────────────────────────────────────────────────────────────────────
+
+        private static int AnchorLine(string src)
+        {
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+            var dwarf030 = Assert.Single(diagnostics, d => d.Id == "DWARF030");
+            Assert.NotEqual(Location.None, dwarf030.Location);
+            return dwarf030.Location.GetLineSpan().StartLinePosition.Line;
+        }
+
+        private static int LineOf(string src, string marker) =>
+            Array.FindIndex(src.Split('\n'), l => l.Contains(marker, StringComparison.Ordinal));
+
+        [Fact]
+        public void The_error_is_anchored_at_the_declared_self_map()
+        {
+            var src = """
+                      using DwarfMapper;
+                      namespace Demo;
+                      public record ImmutableNode(int V, ImmutableNode? Next);
+                      """ + "\n" + Preserve + """
+
+                                              public partial class M
+                                              {
+                                                  public partial string Other(int x);
+                                                  public partial ImmutableNode Map(ImmutableNode n); // anchor
+                                              }
+                                              """;
+
+            Assert.Equal(LineOf(src, "// anchor"), AnchorLine(src));
+        }
+
+        [Fact]
+        public void A_nested_pair_error_is_anchored_at_the_declared_method_that_reached_it()
+        {
+            var src = """
+                      using DwarfMapper;
+                      namespace Demo;
+                      public class Child { public int X { get; set; } public Child? Next { get; set; } }
+                      public record ChildDto(int X, ChildDto? Next);
+                      public class Src { public int Id { get; set; } public Child C { get; set; } = new(); }
+                      public record Dst(int Id, ChildDto C);
+                      public class Unrelated { public int A { get; set; } }
+                      public class UnrelatedDto { public int A { get; set; } }
+                      """ + "\n" + Preserve + """
+
+                                              public partial class M
+                                              {
+                                                  public partial UnrelatedDto First(Unrelated u);
+                                                  public partial Dst Map(Src s); // anchor
+                                              }
+                                              """;
+
+            Assert.Equal(LineOf(src, "// anchor"), AnchorLine(src));
+        }
+
+        [Fact]
+        public void A_cycle_reached_through_a_collection_helper_is_anchored_at_the_declared_method()
+        {
+            var src = """
+                      using System.Collections.Generic;
+                      using DwarfMapper;
+                      namespace Demo;
+                      public class Tree { public int V { get; set; } public List<Tree> Kids { get; set; } = new(); }
+                      public class TreeDto
+                      {
+                          public TreeDto(int v, List<TreeDto> kids) { V = v; Kids = kids; }
+                          public int V { get; }
+                          public List<TreeDto> Kids { get; }
+                      }
+                      """ + "\n" + Preserve + """
+
+                                              public partial class M
+                                              {
+                                                  public partial TreeDto Map(Tree t); // anchor
+                                              }
+                                              """;
+
+            Assert.Equal(LineOf(src, "// anchor"), AnchorLine(src));
+        }
+
         // ── The type walk behind an argument copied by reference in a self-map ──────────────────────────────
 
         private const string WalkSource = """
