@@ -1209,6 +1209,16 @@ namespace DwarfMapper.Generator.Tests
 
         // ─── Refusals and passes the classifier reached only through these fixtures ────────
 
+        /// <summary>A static class holds no instance data, so there is nothing to lay out as a struct.</summary>
+        [Fact]
+        public void Refused_for_a_static_class()
+        {
+            var verdict = ClassifyType("namespace T { public static class Dto { public static int A; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("'Dto' is a static class and holds no instance data", verdict.Reason);
+        }
+
         /// <summary>
         ///     A chain of nested models deeper than the classifier's recursion cap. It is not a cycle, so only the cap
         ///     stops the walk, and the refusal names the cap rather than a layout rule.
