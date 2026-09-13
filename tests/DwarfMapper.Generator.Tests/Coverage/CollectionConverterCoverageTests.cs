@@ -71,5 +71,52 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.Equal(CollectionConverter.CountKind.None,
                 CollectionConverter.CountOf(compilation.GetTypeByMetadataName("Demo.SetOnlyCount")!));
         }
+
+        // A type parameter is read through its constraints: member lookup on a value of type T sees the members its
+        // constraint types declare, so T : ICollection<int> is an enumerable with a cheap Count. No generator input
+        // hands these a type parameter — DWARF053/DWARF054 refuse generic mappers before collection conversion runs.
+        private static ITypeParameterSymbol TypeParameter(string constraint)
+        {
+            var compilation = CSharpCompilation.Create("CollectionConverterTypeParameters",
+                [CSharpSyntaxTree.ParseText("using System.Collections.Generic; namespace Demo { public class Holder<T> " + constraint + " { } }")],
+                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            return compilation.GetTypeByMetadataName("Demo.Holder`1")!.TypeParameters[0];
+        }
+
+        [Fact]
+        public void A_type_parameter_constrained_to_ICollection_is_an_enumerable_with_a_Count()
+        {
+            var t = TypeParameter("where T : ICollection<int>");
+
+            Assert.True(CollectionConverter.TryGetEnumerableElement(t, out var element, out var count));
+            Assert.Equal(SpecialType.System_Int32, element.SpecialType);
+            Assert.Equal(CollectionConverter.CountKind.Count, count);
+        }
+
+        [Fact]
+        public void A_type_parameter_constrained_to_IReadOnlyCollection_has_a_Count()
+        {
+            Assert.Equal(CollectionConverter.CountKind.Count,
+                CollectionConverter.CountOf(TypeParameter("where T : IReadOnlyCollection<int>")));
+        }
+
+        [Fact]
+        public void A_type_parameter_constrained_to_a_non_collection_interface_is_not_an_enumerable_and_has_no_count()
+        {
+            // The constraint is walked to the end without a match, where the two tests above stop at the first one.
+            var t = TypeParameter("where T : System.IDisposable");
+
+            Assert.False(CollectionConverter.TryGetEnumerableElement(t, out _, out _));
+            Assert.Equal(CollectionConverter.CountKind.None, CollectionConverter.CountOf(t));
+        }
+
+        [Fact]
+        public void An_unconstrained_type_parameter_is_not_an_enumerable_and_has_no_count()
+        {
+            var t = TypeParameter("");
+
+            Assert.False(CollectionConverter.TryGetEnumerableElement(t, out _, out _));
+            Assert.Equal(CollectionConverter.CountKind.None, CollectionConverter.CountOf(t));
+        }
     }
 }

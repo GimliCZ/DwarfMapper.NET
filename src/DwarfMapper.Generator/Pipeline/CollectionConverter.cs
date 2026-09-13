@@ -1640,6 +1640,19 @@ namespace DwarfMapper.Generator.Pipeline
         private static IEnumerable<ITypeSymbol> Self(ITypeSymbol t)
         {
             yield return t;
+
+            // A type parameter reports no AllInterfaces of its own, even when constrained to interfaces: its interfaces
+            // are those of its constraint types, which member lookup on a T-typed value does see. Walk each constraint
+            // the same way.
+            if (t is ITypeParameterSymbol typeParameter)
+            {
+                foreach (var constraint in typeParameter.ConstraintTypes)
+                    foreach (var candidate in Self(constraint))
+                        yield return candidate;
+
+                yield break;
+            }
+
             foreach (var i in t.AllInterfaces)
                 yield return i;
         }
