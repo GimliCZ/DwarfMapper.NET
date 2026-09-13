@@ -589,7 +589,12 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>The type declaration that lexically contains the field (or the member it backs), as a (tree, span) key.</summary>
-        private static (SyntaxTree Tree, TextSpan Span)? DeclaringPart(IFieldSymbol f)
+        /// <remarks>
+        ///     Internal so a unit test can pass a field whose declaration is not a type declaration, such as an enum
+        ///     member: the proof asks it only about instance fields, which always sit inside one, so the "no type
+        ///     declaration" answer was never reached through it.
+        /// </remarks>
+        internal static (SyntaxTree Tree, TextSpan Span)? DeclaringPart(IFieldSymbol f)
         {
             var owner = f.DeclaringSyntaxReferences.Length > 0 ? f : f.AssociatedSymbol;
             if (owner is null || owner.DeclaringSyntaxReferences.Length == 0)

@@ -1119,5 +1119,15 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.False(BlittableProof.SameSpecialType(SpecialType.System_Int32, SpecialType.System_Int64));
             Assert.False(BlittableProof.SameSpecialType(SpecialType.None, SpecialType.None));
         }
+
+        [Fact]
+        public void DeclaringPart_of_an_enum_member_is_none()
+        {
+            // An enum member is a field declared inside an enum declaration, which is not a type declaration.
+            var (_, types) = Compile("namespace T { public enum Kind { A } }");
+            var member = types["Kind"].GetMembers("A").OfType<IFieldSymbol>().Single();
+
+            Assert.Null(BlittableProof.DeclaringPart(member));
+        }
     }
 }
