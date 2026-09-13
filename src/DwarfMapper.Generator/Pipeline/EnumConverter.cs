@@ -491,13 +491,12 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attribute in member.GetAttributes())
             {
                 var cls = attribute.AttributeClass;
-                if (cls is { Name: "EnumMemberAttribute" } && KnownNames.IsNamespace(cls.ContainingNamespace, "System.Runtime.Serialization"))
+                // Value is EnumMemberAttribute's only settable property, so it is looked up by name: a loop testing each
+                // named argument's key has an answer no application gives, because the compiler drops an unknown one.
+                if (cls is { Name: "EnumMemberAttribute" } && KnownNames.IsNamespace(cls.ContainingNamespace, "System.Runtime.Serialization") &&
+                    MapperExtractor.TryGetNamedArgument(attribute.NamedArguments, "Value", out var value) && value.Value is string v)
                 {
-                    foreach (var na in attribute.NamedArguments)
-                        if (na.Key == "Value" && na.Value.Value is string v)
-                        {
-                            return v;
-                        }
+                    return v;
                 }
             }
 
