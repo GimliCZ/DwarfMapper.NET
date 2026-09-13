@@ -91,5 +91,25 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(string.Empty, Requires(s));
         }
+
+        private const string Types = """
+                                     using DwarfMapper;
+                                     namespace Demo;
+                                     public class Doc { }
+                                     public class Model { }
+                                     internal class HiddenDoc { }
+                                     internal class HiddenModel { }
+
+                                     """;
+
+        /// <summary>
+        ///     A <c>Map&lt;T&gt;</c> call on a <c>dynamic</c> receiver is bound at run time, so there is no method to
+        ///     recognise as the facade and no pair to record.
+        /// </summary>
+        [Fact]
+        public void Facade_shaped_call_on_a_dynamic_receiver_is_not_detected()
+        {
+            Assert.Equal(string.Empty, Requires(Types + "public class C { public Model A(dynamic m, Doc d) => m.Map<Model>(d); }"));
+        }
     }
 }
