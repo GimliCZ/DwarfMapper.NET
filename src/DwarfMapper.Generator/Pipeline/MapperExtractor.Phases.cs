@@ -287,7 +287,7 @@ namespace DwarfMapper.Generator.Pipeline
         // PUBLIC dispatch by name to instead call the wrapper (with ConverterNeedsDepthCtx=true).
         // Any public method with patched members is promoted to IsRecursionCapable+IsPreserveMode
         // so the emitter creates a shared DwarfRefContext and threads it through all members.
-        private static void SynthesizePreserveDispatchWrappers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, Dictionary<string, SynthesizedMethod> synthesized, int maxDepth, bool isPreserveMode)
+        internal static void SynthesizePreserveDispatchWrappers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, Dictionary<string, SynthesizedMethod> synthesized, int maxDepth, bool isPreserveMode)
         {
             var dispatchWrapperByPublicName = new Dictionary<string, string>(
                 StringComparer.Ordinal);
