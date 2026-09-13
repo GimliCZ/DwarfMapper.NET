@@ -39,5 +39,25 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.True(MapperExtractor.TryRenderMapValueConstant(null, Seven, Int32, Compilation, out var literal, out _));
             Assert.Equal("7", literal);
         }
+
+        [Fact]
+        public void A_null_constant_is_refused_for_a_target_that_is_neither_a_reference_nor_a_named_type()
+        {
+            // An unconstrained type parameter is not a reference type and not a named type, so it is not Nullable<T>
+            // either. No mapping method's destination member is one, so this was an outcome no mapper reached.
+            var compilation = CSharpCompilation.Create("TryRenderMapValueConstantNull",
+                [CSharpSyntaxTree.ParseText("""
+                                            [System.AttributeUsage(System.AttributeTargets.Class)]
+                                            public sealed class ProbeAttribute : System.Attribute { public ProbeAttribute(object value) { } }
+                                            [Probe(null)]
+                                            public class G<T> { }
+                                            """)],
+                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            var generic = compilation.GetTypeByMetadataName("G`1")!;
+            var nullConstant = Assert.Single(generic.GetAttributes()).ConstructorArguments[0];
+
+            Assert.False(MapperExtractor.TryRenderMapValueConstant(null, nullConstant, generic.TypeParameters[0], compilation, out _, out var why));
+            Assert.Equal("[MapValue] cannot assign null to non-nullable type 'T'", why);
+        }
     }
 }

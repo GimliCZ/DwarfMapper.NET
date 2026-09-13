@@ -1648,24 +1648,11 @@ namespace DwarfMapper.Generator.Pipeline
                 return true;
             }
 
-            if (tc.Kind == TypedConstantKind.Enum)
+            // Enum or primitive (string/bool/char/numeric): one assignability rule, worded per kind.
+            var refusal = ConstantAssignmentRefusal(tc.Type, tc.Kind == TypedConstantKind.Enum, targetType, compilation);
+            if (refusal is not null)
             {
-                if (tc.Type is null || !HasImplicitConversion(compilation, tc.Type, targetType))
-                {
-                    why =
-                        $"[MapValue] enum constant of type '{tc.Type?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
-                    return false;
-                }
-
-                literal = RenderConstantLiteral(tc.Value, tc.Type, targetType);
-                return true;
-            }
-
-            // Primitive (string/bool/char/numeric).
-            if (tc.Type is not null && !HasImplicitConversion(compilation, tc.Type, targetType))
-            {
-                why =
-                    $"[MapValue] constant of type '{tc.Type.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
+                why = refusal;
                 return false;
             }
 
@@ -1673,6 +1660,26 @@ namespace DwarfMapper.Generator.Pipeline
             // and would not compile when assigned to float/decimal.
             literal = RenderConstantLiteral(tc.Value, tc.Type, targetType);
             return true;
+        }
+
+        /// <summary>
+        ///     Why a non-null <c>[MapValue]</c> constant of <paramref name="constantType" /> cannot be assigned to
+        ///     <paramref name="targetType" />, or <see langword="null" /> when it can.
+        /// </summary>
+        /// <remarks>
+        ///     Roslyn gives every non-null enum or primitive constant its type, so a missing
+        ///     <paramref name="constantType" /> is an outcome no attribute application produces. The enum and primitive
+        ///     arms each tested for it, and answered it in opposite ways. Asked once here, where a unit test can pass no
+        ///     type at all, it is refused: an assignment that cannot be shown to convert is not rendered.
+        /// </remarks>
+        internal static string? ConstantAssignmentRefusal(ITypeSymbol? constantType, bool isEnum, ITypeSymbol targetType, Compilation compilation)
+        {
+            if (constantType is not null && HasImplicitConversion(compilation, constantType, targetType))
+            {
+                return null;
+            }
+
+            return $"[MapValue] {(isEnum ? "enum constant" : "constant")} of type '{constantType?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
         }
 
         /// <summary>
