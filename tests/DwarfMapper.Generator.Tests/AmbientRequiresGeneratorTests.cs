@@ -111,5 +111,54 @@ namespace DwarfMapper.Generator.Tests
         {
             Assert.Equal(string.Empty, Requires(Types + "public class C { public Model A(dynamic m, Doc d) => m.Map<Model>(d); }"));
         }
+
+        /// <summary>
+        ///     A facade call passed a typeless <c>null</c> has no source type, so it names no pair to validate.
+        /// </summary>
+        [Fact]
+        public void Facade_call_passed_a_typeless_null_is_not_detected()
+        {
+            Assert.Equal(string.Empty, Requires(Types + "public class C { public Model A(IDwarfMapper m) => m.Map<Model>(null); }"));
+        }
+
+        /// <summary>
+        ///     A non-generic <c>[UsesMap]</c> given <c>null</c> for either type names no pair to validate.
+        /// </summary>
+        [Theory]
+        [InlineData("typeof(Demo.Doc), null", "Doc")]
+        [InlineData("null, typeof(Demo.Model)", "Model")]
+        public void UsesMap_given_null_for_a_type_is_not_recorded(string arguments, string declared)
+        {
+            Assert.Equal(string.Empty,
+                Requires("using DwarfMapper;\n[assembly: UsesMap(" + arguments + ")]\nnamespace Demo;\npublic class " + declared + " { }\n"));
+        }
+
+        /// <summary>
+        ///     A pair whose source or destination cannot be written in <c>typeof(...)</c> on an assembly attribute is
+        ///     not an ambient key: a type parameter, <c>dynamic</c>, a pointer or a function pointer, on either side.
+        /// </summary>
+        [Theory]
+        [InlineData("public class C { public Model A<T>(IDwarfMapper m, T item) => m.Map<Model>(item!); }")]
+        [InlineData("public class C { public T A<T>(IDwarfMapper m, Doc d) => m.Map<T>(d); }")]
+        [InlineData("public class C { public dynamic A(IDwarfMapper m, Doc d) => m.Map<dynamic>(d); }")]
+        [InlineData("public class C { public Model A(IDwarfMapper m, Doc d) => m.Map<dynamic, Model>(d); }")]
+        [InlineData("public unsafe class C { public void A(IDwarfMapper m, Doc d) { m.Map<int*>(d); } }")]
+        [InlineData("public unsafe class C { public Model A(IDwarfMapper m, Doc d) => m.Map<delegate*<void>, Model>(d); }")]
+        public void A_pair_with_an_unnameable_type_is_not_recorded(string consumer)
+        {
+            Assert.Equal(string.Empty, Requires(Types + consumer));
+        }
+
+        /// <summary>
+        ///     Only effectively-public pairs cross an assembly boundary, so an internal source or destination is
+        ///     in-assembly consumption and records nothing.
+        /// </summary>
+        [Theory]
+        [InlineData("public class C { internal Model A(IDwarfMapper m, HiddenDoc d) => m.Map<Model>(d); }")]
+        [InlineData("public class C { internal HiddenModel A(IDwarfMapper m, Doc d) => m.Map<HiddenModel>(d); }")]
+        public void A_pair_with_a_non_public_type_is_not_recorded(string consumer)
+        {
+            Assert.Equal(string.Empty, Requires(Types + consumer));
+        }
     }
 }
