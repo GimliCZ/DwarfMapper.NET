@@ -222,11 +222,10 @@ namespace DwarfMapper.Generator.Pipeline
 
             switch (type.TypeKind)
             {
-                case TypeKind.Pointer:
-                case TypeKind.FunctionPointer:
-                case TypeKind.Dynamic:
+                // A pointer, a function pointer, `dynamic` and a type parameter are not named types, so the
+                // named-type test below refuses them, in these same words. Listing them here as well left that
+                // test with no input to refuse.
                 case TypeKind.Delegate:
-                case TypeKind.TypeParameter:
                 case TypeKind.Error:
                     reason = $"'{type.ToDisplayString()}' is a shape the immutability proof cannot see through";
                     return ImmutabilityVerdict.Unprovable;
