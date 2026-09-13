@@ -122,7 +122,7 @@ namespace DwarfMapper.Generator
                     foreach (var entry in entries)
                         spc.ReportDiagnostic(Diagnostic.Create(
                             DiagnosticDescriptors.HandWrittenManifestAttribute,
-                            entry.Location?.ToLocation() ?? Location.None,
+                            LocationInfo.ToLocationOrNone(entry.Location),
                             entry.AttributeName));
                 });
 
@@ -592,7 +592,7 @@ namespace DwarfMapper.Generator
 
             spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.NoCodeGenerated,
-                first?.ToLocation() ?? Location.None,
+                LocationInfo.ToLocationOrNone(first),
                 model.ClassName,
                 string.Join(", ", ids)));
         }

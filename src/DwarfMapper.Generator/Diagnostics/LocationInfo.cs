@@ -16,6 +16,19 @@ namespace DwarfMapper.Generator.Diagnostics
         }
 
         /// <summary>
+        ///     <paramref name="info" />'s <see cref="Location" />, or <see cref="Location.None" /> for a diagnostic that has
+        ///     no position — the degradation every report site relies on when <see cref="From" /> could not keep one.
+        /// </summary>
+        /// <remarks>
+        ///     One statement for the report sites that spelled it inline. Those sites only ever receive a located
+        ///     diagnostic through a compilation, so the no-position answer is reached here, where the unit test asks it.
+        /// </remarks>
+        public static Location ToLocationOrNone(LocationInfo? info)
+        {
+            return info is null ? Location.None : info.ToLocation();
+        }
+
+        /// <summary>
         ///     <see cref="From" /> for a symbol's FIRST declaration location, or <see cref="Location.None" /> when it has
         ///     none. Every symbol the generator anchors a diagnostic at is declared in source, so the empty case is not
         ///     reached through a compilation — it is one helper, tested directly, instead of six inline fallbacks.
