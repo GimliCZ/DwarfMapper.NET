@@ -153,37 +153,14 @@ namespace DwarfMapper.Generator.Pipeline
             // Only effectively-public pairs are ambient (cross-assembly) — and only such types can appear in the
             // generated [assembly: DwarfRequiresMap(typeof(...))] without an accessibility error. Internal/nested
             // consumption is in-assembly; use the concrete mapper there.
-            if (!IsEffectivelyPublic(source) || !IsEffectivelyPublic(destination))
+            // The ONE statement of the rule, shared with facade and ambient-registration gating: a second copy lived here
+            // and had already drifted from the registration side's walk once it was rewritten.
+            if (!MapperExtractor.IsEffectivelyPublic(source) || !MapperExtractor.IsEffectivelyPublic(destination))
             {
                 return null;
             }
 
             return (source.ToDisplayString(Fq), destination.ToDisplayString(Fq));
-        }
-
-        private static bool IsEffectivelyPublic(ITypeSymbol type)
-        {
-            if (type is IArrayTypeSymbol arr)
-            {
-                return IsEffectivelyPublic(arr.ElementType);
-            }
-
-            for (ISymbol? s = type; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
-                if (s.DeclaredAccessibility != Accessibility.Public)
-                {
-                    return false;
-                }
-
-            if (type is INamedTypeSymbol named)
-            {
-                foreach (var typeArgument in named.TypeArguments)
-                    if (!IsEffectivelyPublic(typeArgument))
-                    {
-                        return false;
-                    }
-            }
-
-            return true;
         }
     }
 }

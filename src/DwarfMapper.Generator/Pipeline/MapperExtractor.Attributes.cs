@@ -218,7 +218,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     into generic type arguments — so e.g. <c>ICollection&lt;Internal&gt;</c> / <c>Internal[]</c> are NOT
         ///     effectively public, while <c>ICollection&lt;PublicDto&gt;</c> is.
         /// </summary>
-        private static bool IsEffectivelyPublic(ITypeSymbol t)
+        internal static bool IsEffectivelyPublic(ITypeSymbol t)
         {
             if (t is IArrayTypeSymbol arr)
             {
