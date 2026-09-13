@@ -1987,7 +1987,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             element = null!;
             isReadOnly = false;
-            if (t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && n.ContainingNamespace is { Name: "System" } ns && ns.ContainingNamespace?.IsGlobalNamespace == true && (string.Equals(n.Name, "Span", StringComparison.Ordinal) || string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal)))
+            if (t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && KnownNames.IsNamespace(n.ContainingNamespace, "System") && (string.Equals(n.Name, "Span", StringComparison.Ordinal) || string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal)))
             {
                 element = n.TypeArguments[0];
                 isReadOnly = string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal);
