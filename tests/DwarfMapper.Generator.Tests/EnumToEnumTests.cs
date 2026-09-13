@@ -105,6 +105,26 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void Flags_ByName_missing_target_member_reports_DWARF015()
+        {
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               [Flags] public enum Src { None = 0, A = 1, B = 2, C = 4 }
+                               [Flags] public enum Dst { None = 0, A = 1, B = 2 }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARF015" &&
+                     d.GetMessage(CultureInfo.InvariantCulture).Contains("'C'", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void ByName_names_a_warning_level_obsolete_member_under_a_pragma()
         {
             // [Obsolete("old", false)] is still a legal value, so the exhaustive switch names it, inside the scoped
