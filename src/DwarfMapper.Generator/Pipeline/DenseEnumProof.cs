@@ -36,23 +36,19 @@ namespace DwarfMapper.Generator.Pipeline
         private const string FlagsFqn = "System.FlagsAttribute";
 
         /// <summary>
-        ///     What a proven pair emits: the destination inline array's length and element type, and the enum the
-        ///     source dictionary is keyed by.
+        ///     What a proven pair emits: the destination inline array's length, and the enum the source dictionary is
+        ///     keyed by.
         /// </summary>
         internal readonly struct DensePlan
         {
-            public DensePlan(int length, ITypeSymbol elementType, ITypeSymbol keyType)
+            public DensePlan(int length, ITypeSymbol keyType)
             {
                 Length = length;
-                ElementType = elementType;
                 KeyType = keyType;
             }
 
             /// <summary>The <c>[InlineArray(n)]</c> count — the exclusive upper bound on every emitted index.</summary>
             public int Length { get; }
-
-            /// <summary>The inline array's element type, which the source's value type must match.</summary>
-            public ITypeSymbol ElementType { get; }
 
             /// <summary>The enum the source dictionary is keyed by.</summary>
             public ITypeSymbol KeyType { get; }
@@ -169,7 +165,7 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            plan = new DensePlan(length, elementType, enumKey);
+            plan = new DensePlan(length, enumKey);
             reason = "";
             return true;
         }
