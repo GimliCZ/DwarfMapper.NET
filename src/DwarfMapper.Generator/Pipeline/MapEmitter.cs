@@ -1241,26 +1241,26 @@ namespace DwarfMapper.Generator.Pipeline
             var arms = method.DerivedTypeArms;
             var hasAfter = method.AfterHooks.Count > 0;
 
-            // Determine ctx var for this dispatch method. EmitMethod's general preamble computes both
-            // isPublicWithCtx (public method, creates __dwarf_ctx) AND isSynthesizedRecursive (private
-            // synthesized helper, recursion-capable) because most methods can be either shape — but a
-            // [MapDerivedType] dispatch method never can: MapperExtractor.Phases.cs's ONE construction
-            // site for a DerivedTypeArms-bearing model hardcodes IsPartial: true (it is always the
-            // user-declared public partial method carrying the attribute; no pass ever changes IsPartial
-            // after construction, only IsRecursionCapable, via the later whole-graph recursion-capability
-            // fixup). So "isSynthesizedRecursive" here is unconditionally false and "depth + 1" can never
-            // be the depth argument passed to an arm's converter — round 30 coverage sweep, confirmed with
-            // a self-referential arm probe before simplifying away the dead half of this ternary pair, and
-            // by checking every "IsPartial = " write site in MapperExtractor.Phases.cs: none touches a
-            // DerivedTypeArms-bearing model (SynthesizePreserveDispatchWrappers explicitly skips
-            // DerivedTypeArms.Count > 0 methods when patching, and MarkRecursionCapableCallers' companion
-            // synthesis can only trigger for a method with self-calling Members/ConstructorArguments, which
-            // a dispatch method never has — its recursion, if any, lives in DerivedTypeArms, a field none
-            // of these passes scan). A ctx-accepting SYNTHESIZED dispatch shape does exist in this codebase
-            // for the Preserve+[MapDerivedType] case, but it is a raw-text __DwarfMap_Disp_* wrapper built
-            // by BuildDispatchWrapperCode (MapperExtractor.Members.cs) and stored straight into the
-            // `synthesized` dictionary — never a MapMethodModel, never routed through this method at all.
-            var ctxVarName = method.IsRecursionCapable ? "__dwarf_ctx" : "ctx";
+            // Determine ctx var and depth arg for this dispatch method — the same two shapes EmitMethod's
+            // general preamble distinguishes:
+            //   public-with-ctx      : the user's partial method creates __dwarf_ctx and passes depth 0;
+            //   synthesized-recursive: a private (ctx, depth) companion forwards ctx and depth + 1.
+            //
+            // A dispatch model CAN be the second shape. MarkRecursionCapableCallers synthesizes a depth
+            // companion for every partial method whose NAME is in selfRecursivePublicMethods (keyed by name,
+            // not by DeclKey), via `m with { IsPartial = false, … }` — which carries DerivedTypeArms along.
+            // So when a [MapDerivedType] dispatch method shares its name with an overload that is on a cycle
+            // (`AnimalDto Map(Animal)` next to `DogDto Map(Dog)` whose Friend maps back through Map), the
+            // dispatch method gets a `__DwarfMap_Depth_Map(Animal a, ctx, depth)` companion whose body is
+            // emitted here. Round 30's 7635d71 deleted this branch as dead on the premise that a
+            // DerivedTypeArms-bearing model is always partial; the companion then referenced the public
+            // method's `__dwarf_ctx` local — CS0103 in the consumer's .g.cs. BuildDispatchWrapperCode
+            // (MapperExtractor.Members.cs) is the other ctx-accepting dispatch shape and forwards the same
+            // `ctx, depth + 1`.
+            var isSynthesizedRecursive = !method.IsPartial && method.IsRecursionCapable;
+            var isPublicWithCtx = method.IsPartial && method.IsRecursionCapable;
+            var ctxVarName = isPublicWithCtx ? "__dwarf_ctx" : "ctx";
+            var depthPassFwd = isSynthesizedRecursive ? "depth + 1" : "0";
 
             // Before hooks (if any)
             foreach (var before in method.EmitBeforeHooks)
@@ -1292,10 +1292,7 @@ namespace DwarfMapper.Generator.Pipeline
                     .Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
                 if (arm.ConverterNeedsDepthCtx)
                 {
-                    // Always depth 0: this dispatch method is never itself a synthesized recursive helper
-                    // (see the ctxVarName comment above), so it is always the first tracked call — the
-                    // shape "depth + 1" exists for is unreachable here.
-                    sb.Append(", ").Append(ctxVarName).Append(", 0");
+                    sb.Append(", ").Append(ctxVarName).Append(", ").Append(depthPassFwd);
                 }
 
                 sb.AppendLine("),");

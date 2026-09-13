@@ -465,5 +465,42 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.DoesNotReport(src, "DWARF109");
             GeneratorAssert.EmitsCompilableCode(src);
         }
+
+        [Fact]
+        public void Overloaded_recursive_dispatch_method_depth_companion_forwards_its_own_ctx_and_depth()
+        {
+            // Regression for round 30's 7635d71, which deleted EmitDerivedDispatchBody's synthesized-recursive
+            // branch as dead on the premise that a [MapDerivedType] model is always partial. It is not:
+            // MarkRecursionCapableCallers keys selfRecursivePublicMethods by NAME, so a dispatch method sharing
+            // the name `Map` with an overload on a cycle (Dog.Friend maps back through Map) gets a private
+            // `__DwarfMap_Depth_Map(Animal a, ctx, depth)` companion carrying its arms. With the branch gone
+            // that companion's arm passed the public method's `__dwarf_ctx` local — CS0103 in a .g.cs.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public abstract class Animal { public string Name { get; set; } = ""; public Animal? Friend { get; set; } }
+                               public class Dog : Animal { public string Breed { get; set; } = ""; }
+                               public class AnimalDto { public string Name { get; set; } = ""; public AnimalDto? Friend { get; set; } }
+                               public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                               public class Zoo { public Animal Star { get; set; } = new Dog(); }
+                               public class ZooDto { public AnimalDto Star { get; set; } = new DogDto(); }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M
+                               {
+                                   [MapDerivedType<Dog, DogDto>]
+                                   public partial AnimalDto Map(Animal a);
+                                   public partial DogDto Map(Dog d);
+                                   public partial ZooDto Map(Zoo z);
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            const string arm = "global::Demo.Dog __s => __DwarfMap_Obj_global__Demo_Dog_global__Demo_DogDto_";
+            // The public dispatch method opens the context; its companion forwards the one it was handed.
+            Assert.Contains("private global::Demo.AnimalDto __DwarfMap_Depth_Map(global::Demo.Animal a, global::DwarfMapper.DwarfRefContext ctx, int depth)", generated, StringComparison.Ordinal);
+            Assert.Contains("(__s, __dwarf_ctx, 0),", generated, StringComparison.Ordinal);
+            Assert.Contains("(__s, ctx, depth + 1),", generated, StringComparison.Ordinal);
+            Assert.Contains(arm, generated, StringComparison.Ordinal);
+        }
     }
 }
