@@ -103,5 +103,24 @@ namespace DwarfMapper.Generator.Tests
             Assert.Single(generated.Split('\n'), l => l.Contains("__r |= global::Demo.Dst.A;", StringComparison.Ordinal));
             Assert.DoesNotContain("Dst.AliasA", generated, StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void An_enum_with_an_attribute_other_than_Flags_maps_by_a_plain_switch()
+        {
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               [Serializable] public enum Src { Red, Green }
+                               public enum Dst { Red, Green }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("v switch", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__r |=", generated, StringComparison.Ordinal);
+        }
     }
 }

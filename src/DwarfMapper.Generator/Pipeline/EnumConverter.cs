@@ -314,7 +314,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsFlagsEnum(INamedTypeSymbol enumType)
         {
             foreach (var attribute in enumType.GetAttributes())
-                if (attribute.AttributeClass is { Name: "FlagsAttribute" } a && KnownNames.IsNamespace(a.ContainingNamespace, "System"))
+                if (KnownNames.IsAttributeNamed(attribute.AttributeClass, "FlagsAttribute", "System"))
                 {
                     return true;
                 }
