@@ -1485,7 +1485,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     method, or <c>"0"</c> from the public entry point). Only used when
         ///     <see cref="MemberMap.ConverterNeedsDepthCtx" /> is true.
         /// </param>
-        private static void AppendValueExpression(
+        internal static void AppendValueExpression(
             StringBuilder sb,
             MemberMap member,
             string paramName,
