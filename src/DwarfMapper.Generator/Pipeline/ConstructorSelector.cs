@@ -331,12 +331,15 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             bool allowNonPublic)
         {
-            if (!IsAccessible(ctor, compilation, allowNonPublic))
+            // Static first: a static constructor is declared private, so the accessibility test would otherwise answer
+            // for it, and UnusableReason (which follows this order) would tell the caller to widen an accessibility
+            // C# does not allow on a static constructor (CS0515).
+            if (ctor.IsStatic)
             {
                 return false;
             }
 
-            if (ctor.IsStatic)
+            if (!IsAccessible(ctor, compilation, allowNonPublic))
             {
                 return false;
             }
@@ -385,7 +388,10 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics)
         {
-            foreach (var ctor in target.InstanceConstructors)
+            // Static constructors too: Roslyn lists them apart from InstanceConstructors, and one can carry the
+            // attribute. Walking instance constructors alone dropped that directive without a word, the one case this
+            // report exists for.
+            foreach (var ctor in target.InstanceConstructors.Concat(target.StaticConstructors))
             {
                 if (ctor.IsImplicitlyDeclared || !IsAnnotated(ctor))
                 {
@@ -415,6 +421,11 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             bool allowNonPublic)
         {
+            if (ctor.IsStatic)
+            {
+                return "it is a STATIC constructor, which never constructs the destination — the directive " + "belongs on an instance constructor.";
+            }
+
             if (!IsAccessible(ctor, compilation, allowNonPublic))
             {
                 // Two different remedies, and giving the wrong one is worse than giving none. AllowNonPublic
@@ -427,11 +438,6 @@ namespace DwarfMapper.Generator.Pipeline
                        (assemblyCanReachIt
                            ? "and this mapper does not set [DwarfMapper(AllowNonPublic = true)]. Set that " + "option, or make the constructor public."
                            : "which no mapper option can reach from another type — [DwarfMapper(AllowNonPublic " + "= true)] widens the filter only as far as this assembly can see. Make the " + "constructor internal (with that option set) or public.");
-            }
-
-            if (ctor.IsStatic)
-            {
-                return "it is a STATIC constructor, which never constructs the destination — the directive " + "belongs on an instance constructor.";
             }
 
             if (ctor.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, target))

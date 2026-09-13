@@ -1866,6 +1866,7 @@ The message names the constructor and the **specific** filter that rejected it, 
 | Marked `[Obsolete]` | Drop the `[Obsolete]`, or annotate a supported constructor |
 | A copy constructor (its single parameter is the destination type) | Annotate a constructor whose parameters come from the source type |
 | A `ref` / `out` parameter | Take it by value or by `in` (CS1620 — `ref`/`out` cannot be written as a named argument), or annotate a different constructor |
+| A `static` constructor | Move the annotation to an instance constructor — a static constructor never constructs the destination |
 
 **An absent annotation is silent, and that is the rule rather than an oversight.** This reports a directive that
 was *written and discarded*; where nothing was written, nothing was discarded. It is raised once per mapping

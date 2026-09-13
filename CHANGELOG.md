@@ -417,6 +417,12 @@ so a version with no section here ships with no notes.
   generated for that type. **Remedy:** put `[MapTo]` on a non-generic source type, or map the closed pair with the
   `[DwarfMapper]` class model.
 
+- **`[DwarfMapperConstructor]` on a `static` constructor was ignored without a word.** `DWARF098` reports an
+  annotated constructor the selector declines, and "it is a static constructor" was one of its reasons, but the
+  report only looked at instance constructors, so that reason never fired and the directive was silently
+  dropped. It now reports `DWARF098` (Warning). The mapping is unchanged. **Remedy:** move the annotation to an
+  instance constructor.
+
 - **Naming anything in your own code after a C# keyword — `@class`, `@event`, `@record` — produced generated
   code that did not compile, in twenty-seven distinct places.** `@class` is legal C# and people write it,
   particularly in DTOs generated from a JSON or OpenAPI schema; the `@` is syntax, so the compiler hands a
