@@ -1134,6 +1134,23 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.Equal(0, size);
         }
 
+        [Theory]
+        [InlineData("string length", "(\"3\")")]
+        [InlineData("", "")]
+        public void InlineArrayLength_look_alike_attribute_without_an_int_length_is_zero(string parameter, string argument)
+        {
+            var (_, types) = Compile($$"""
+                                       namespace T { [System.Runtime.CompilerServices.InlineArray{{argument}}] public struct Odd3 { private int _e0; } }
+                                       namespace System.Runtime.CompilerServices
+                                       {
+                                           [System.AttributeUsage(System.AttributeTargets.Struct)]
+                                           public sealed class InlineArrayAttribute : System.Attribute { public InlineArrayAttribute({{parameter}}) { } }
+                                       }
+                                       """);
+
+            Assert.Equal(0, BlittableProof.InlineArrayLength(types["Odd3"]));
+        }
+
         [Fact]
         public void EnumUnderlying_answers_an_enum_its_backing_type_and_anything_else_none()
         {
