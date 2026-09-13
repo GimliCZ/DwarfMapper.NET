@@ -693,7 +693,7 @@ namespace DwarfMapper.Generator.Pipeline
                             eNeedsCtx,
                             SourceMayBeNullRef(srcType),
                             ConverterParamTypeFqn: eConvParamType,
-                            SourceReachesSourceType: isPreserve && SourceMemberReachesType(srcType, sourceType, compilation, allowNonPublic),
+                            SourceReachesSourceType: isPreserve && sourceType.IsReferenceType && SourceMemberReachesType(srcType, sourceType, compilation, allowNonPublic),
                             // Same raw-assign rule as the member path: a nullable reference bound bare to a
                             // non-nullable parameter is null-forgiven by the emitter and reported as DWARF070
                             // below. It used to be set on members only, so `Alias = s.Alias!` and
@@ -791,7 +791,7 @@ namespace DwarfMapper.Generator.Pipeline
                         needsCtx,
                         SourceMayBeNullRef(srcMember.Type),
                         ConverterParamTypeFqn: convParamType,
-                        SourceReachesSourceType: isPreserve && SourceMemberReachesType(srcMember.Type, sourceType, compilation, allowNonPublic),
+                        SourceReachesSourceType: isPreserve && sourceType.IsReferenceType && SourceMemberReachesType(srcMember.Type, sourceType, compilation, allowNonPublic),
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, srcMember.Type, param.Type),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(conv,
                             srcMember.Type,

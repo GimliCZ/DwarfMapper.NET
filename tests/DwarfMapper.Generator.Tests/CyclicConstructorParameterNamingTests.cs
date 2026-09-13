@@ -164,6 +164,62 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void A_struct_self_map_through_a_list_of_itself_is_not_a_reference_cycle()
+        {
+            // A struct has no identity to register, and the list it holds registers itself before it is filled — so
+            // the list's own cycle is reconstructed and there is nothing an argument could fail to point back to.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public readonly record struct P(int X, List<P> Kids);
+                               """ + Preserve + " public partial class M { public partial P Map(P p); }";
+
+            Assert.Empty(NamedParameters(src));
+        }
+
+        [Fact]
+        public void An_explicitly_mapped_constructor_argument_is_named_by_the_same_rule()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node
+                               {
+                                   public Node(int v, Node? next) { V = v; Next = next; }
+                                   public int V { get; }
+                                   public Node? Next { get; }
+                               }
+                               """ + Preserve + """
+                                                 public partial class M
+                                                 {
+                                                     [MapProperty("Next", "next")] [MapProperty("V", "v")]
+                                                     public partial Node Map(Node n);
+                                                 }
+                                                 """;
+
+            Assert.Equal(["next"], NamedParameters(src));
+        }
+
+        [Fact]
+        public void An_explicitly_mapped_struct_self_map_through_a_list_of_itself_is_not_a_reference_cycle()
+        {
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public readonly struct P
+                               {
+                                   public P(int x, List<P> kids) { X = x; Kids = kids; }
+                                   public int X { get; }
+                                   public List<P> Kids { get; }
+                               }
+                               """ + Preserve + " public partial class M { [MapProperty(\"Kids\", \"kids\")] public partial P Map(P p); }";
+
+            Assert.Empty(NamedParameters(src));
+        }
+
+        [Fact]
         public void A_source_back_reference_the_target_never_maps_is_not_a_cycle()
         {
             // Customer.Orders leads back to Order, but CustomerDto has no Orders: mapping the argument never returns
