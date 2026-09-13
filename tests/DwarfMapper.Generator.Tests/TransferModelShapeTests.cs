@@ -1206,5 +1206,25 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
             Assert.Equal("'Dto' is used as a 'DbSet<Dto>' in this compilation, so it is an ORM entity", verdict.Reason);
         }
+
+        // ─── Refusals and passes the classifier reached only through these fixtures ────────
+
+        /// <summary>
+        ///     A chain of nested models deeper than the classifier's recursion cap. It is not a cycle, so only the cap
+        ///     stops the walk, and the refusal names the cap rather than a layout rule.
+        /// </summary>
+        [Fact]
+        public void Refused_for_nested_models_deeper_than_the_recursion_cap()
+        {
+            var source = new System.Text.StringBuilder("#nullable enable\nnamespace T {\n");
+            for (var i = 0; i < 18; i++)
+                source.Append("public sealed class C").Append(i).Append(" { public C").Append(i + 1).Append(" I { get; set; } }\n");
+            source.Append("public sealed class C18 { public int A { get; set; } }\n}\n");
+
+            var verdict = ClassifyType(source.ToString(), "C0");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("nests transfer models more than 16 deep", verdict.Reason, StringComparison.Ordinal);
+        }
     }
 }
