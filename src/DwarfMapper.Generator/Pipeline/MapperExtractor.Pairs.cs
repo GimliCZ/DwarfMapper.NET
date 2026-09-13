@@ -284,11 +284,14 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length == 0 ||
-                    attr.ConstructorArguments[0].Value is not string target)
+                if (attr.ConstructorArguments.Length == 0)
                 {
                     continue;
                 }
+
+                // A null target name names no member, exactly as a name matching none does. It is kept, so the pair
+                // reports DWARF042 instead of the directive vanishing silently.
+                var target = attr.ConstructorArguments[0].Value as string ?? string.Empty;
 
                 string? use = null;
                 foreach (var na in attr.NamedArguments)
