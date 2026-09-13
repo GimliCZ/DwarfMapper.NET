@@ -66,7 +66,7 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    if (srcTypeByName.TryGetValue(m.SourceName, out var st) && (st.IsReferenceType || IsNullableValue(st, out _)))
+                    if (IsNullCapableSourceMember(srcTypeByName, m.SourceName))
                         // The emitter now guards this with `if (src.X is not null) dst.X = …;`, so inside that
                         // guard flow analysis already proves non-null: no CS8601, hence no '!' and no DWARF070.
                         // SkipNullSourceMembers IS the fix DWARF070 would have told them to apply.

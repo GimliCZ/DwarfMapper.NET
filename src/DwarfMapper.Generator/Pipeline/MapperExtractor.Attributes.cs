@@ -107,6 +107,21 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Whether <paramref name="sourceName" /> is a readable source member that can hold null: the members
+        ///     SkipNullSourceMembers defers behind a null test. False for a name the source does not declare.
+        /// </summary>
+        /// <remarks>
+        ///     Every member that reaches this question was resolved from a readable source member, so through a mapper
+        ///     the name is always found. "Not a member" is answered here once, where the unit test asks it, instead of
+        ///     as an inline lookup miss no input takes. A pure predicate, kept beside the other attribute and member
+        ///     readers rather than among the seam-stage passes whose golden-corpus reach extracted-reach measures.
+        /// </remarks>
+        internal static bool IsNullCapableSourceMember(IReadOnlyDictionary<string, ITypeSymbol> sourceTypeByName, string sourceName)
+        {
+            return sourceTypeByName.TryGetValue(sourceName, out var type) && (type.IsReferenceType || IsNullableValue(type, out _));
+        }
+
+        /// <summary>
         ///     Every well-formed <c>[MapCollectionKey("Collection", "Key")]</c> on a mapping method, as written.
         /// </summary>
         /// <remarks>
