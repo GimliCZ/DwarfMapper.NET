@@ -74,7 +74,8 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string>? ConsumedCtorParams,
             HashSet<string>? RequiredMustInitialize,
             NestedMappingRegistry? NestedRegistry,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
+            // Never null: ResolveMembers settles "no list" as "an empty list" before this is built.
+            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
                 MapValues,
             IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? ValueProviders,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? ExtraParams,

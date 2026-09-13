@@ -122,9 +122,7 @@ namespace DwarfMapper.Generator.Pipeline
             MemberRequest req,
             MemberLookups lookups,
             MemberAccumulators acc){
-            foreach (var mv in req.MapValues ??
-                               Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
-                                   string? Use, string? ConstLiteral)>())
+            foreach (var mv in req.MapValues)
             {
                 var mvTgt = mv.Target;
                 if (!TryValidateMapValueTarget(mvTgt,

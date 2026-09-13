@@ -51,7 +51,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             bool allowNonPublic,
             HashSet<string> ignores,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
+            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
                 mapValues,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics)
@@ -85,7 +85,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (mapValues is not null && mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, member)))
+                if (mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, member)))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DenseEnumInvalid,
                         location,

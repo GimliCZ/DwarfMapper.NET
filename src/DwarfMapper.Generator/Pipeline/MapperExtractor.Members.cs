@@ -107,15 +107,18 @@ namespace DwarfMapper.Generator.Pipeline
             NullStrategy nullStrategy,
             IReadOnlyList<string> flattenRoots,
             List<string> reinterpretMembers,
-            HashSet<string>? consumedCtorParams = null,
-            HashSet<string>? requiredMustInitialize = null,
-            NestedMappingRegistry? nestedRegistry = null,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>? mapValues = null,
+            // REQUIRED, like mapValues below, because every caller has one to pass and always did: as optional
+            // parameters their `null` defaults were never taken, and each carried a null branch no input reached
+            // (ISSUE-044's reason, the other way round — a default nobody uses is a guard nobody tests).
+            IReadOnlyCollection<string> mapperReservedConverters,
+            HashSet<string>? consumedCtorParams,
+            HashSet<string>? requiredMustInitialize,
+            NestedMappingRegistry? nestedRegistry,
+            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)> mapValues,
             IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
             Dictionary<string, string>? stringFormats = null,
-            IReadOnlyCollection<string>? mapperReservedConverters = null,
             // True when every `required` destination member is already satisfied without the object initializer
             // having to assign it, so omitting one cannot produce CS9035. Two distinct situations qualify:
             //
@@ -158,11 +161,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
-                if (mapValues is not null)
-                {
-                    foreach (var mv in mapValues)
-                        explicitTargets.Add(mv.Target);
-                }
+                foreach (var mv in mapValues) explicitTargets.Add(mv.Target);
 
                 ignores = new HashSet<string>(ignores, IgnoreNameComparer);
                 foreach (var name in ObsoleteMemberNames(targetType))
@@ -223,23 +222,18 @@ namespace DwarfMapper.Generator.Pipeline
             // this, such a method is silently reused for every member whose types happen to line up.
             // Seeded with the mapper-wide set so a helper dedicated on ANOTHER method is withheld here too,
             // then topped up from this method's own attributes.
-            var reservedConverters = mapperReservedConverters is null
-                ? new HashSet<string>(StringComparer.Ordinal)
-                : new HashSet<string>(mapperReservedConverters, StringComparer.Ordinal);
+            var reservedConverters = new HashSet<string>(mapperReservedConverters, StringComparer.Ordinal);
             foreach (var em in explicitMaps)
                 if (em.Use is not null)
                 {
                     reservedConverters.Add(em.Use);
                 }
 
-            if (mapValues is not null)
-            {
-                foreach (var mv in mapValues)
-                    if (mv.Use is not null)
-                    {
-                        reservedConverters.Add(mv.Use);
-                    }
-            }
+            foreach (var mv in mapValues)
+                if (mv.Use is not null)
+                {
+                    reservedConverters.Add(mv.Use);
+                }
 
             // Where THIS call's diagnostics start. `diagnostics` is the mapper CLASS's list and every method on
             // the class appends to it, so the dense post-pass — which reads the list back to avoid reporting a
@@ -372,8 +366,7 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm));
                     }
-                    else if (mapValues is not null &&
-                             mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
+                    else if (mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
                     {
                         // [MapValue] claims the member before auto-matching ever looks at it, so the share would
                         // never be consulted — and the member IS writable, so the name check below would pass it

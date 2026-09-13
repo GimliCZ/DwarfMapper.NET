@@ -1986,6 +1986,7 @@ namespace DwarfMapper.Generator.Pipeline
                 policy.NullStrategy,
                 flattenRoots,
                 reinterpretMembers,
+                decls.MapperReservedConverters,
                 consumedParams,
                 requiredMustInitialize,
                 acc.NestedRegistry,
@@ -1994,7 +1995,6 @@ namespace DwarfMapper.Generator.Pipeline
                 extraParams,
                 mapPropExtras,
                 stringFormats,
-                decls.MapperReservedConverters,
                 // NOT gated on objInitOnly: a parameterless constructor can still carry
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
                 // would. Gating here produced a false DWARF079 on that shape.
@@ -2483,6 +2483,7 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     updFlatten,
                     updReinterpret,
+                    decls.MapperReservedConverters,
                     null,
                     null,
                     acc.NestedRegistry,
@@ -2490,7 +2491,6 @@ namespace DwarfMapper.Generator.Pipeline
                     decls.ValueProviders,
                     mapPropertyExtras: updMapPropExtras,
                     stringFormats: ReadStringFormats(method),
-                    mapperReservedConverters: decls.MapperReservedConverters,
                     // Update-into writes into an instance the CALLER already constructed, so there is no
                     // object initializer to omit a member from and `required` cannot be violated here.
                     // Without this, ignoring a required member on an update-into method reported a false
@@ -3464,6 +3464,7 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     Array.Empty<string>(),
                     new List<string>(),
+                    decls.MapperReservedConverters,
                     genConsumed,
                     genRequiredInit,
                     acc.NestedRegistry,
@@ -3473,7 +3474,6 @@ namespace DwarfMapper.Generator.Pipeline
                     // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
                     // directive and does not thread this drops the format in silence — D20 in miniature.
                     stringFormats: genFormats,
-                    mapperReservedConverters: decls.MapperReservedConverters,
                     requiredMembersAlreadySatisfied: genCtorSetsRequired,
                     factoryExcludedMembers: genFactoryExcluded,
                     ignoredSourceMembers: ClassIgnoredSources(decls));
@@ -3755,15 +3755,15 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     new List<string>(),
                     new List<string>(), // no flatten/reinterpret
+                    // A synthesized nested mapper must not adopt a dedicated converter either — the author never wrote
+                    // this pair, so they certainly did not offer it one.
+                    decls.MapperReservedConverters,
                     nestedConsumed,
                     nestedRequiredMustInit,
                     acc.NestedRegistry,
                     MatchPairValues(decls.PairValues, nestedTgt),
                     decls.ValueProviders,
                     mapPropertyExtras: nestedExtras,
-                    // A acc.Synthesized nested mapper must not adopt a dedicated converter either — the author
-                    // never wrote this pair, so they certainly did not offer it one.
-                    mapperReservedConverters: decls.MapperReservedConverters,
                     requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
                     factoryExcludedMembers: nestedFactoryExcluded,
                     ignoredSourceMembers: ClassIgnoredSources(decls));
