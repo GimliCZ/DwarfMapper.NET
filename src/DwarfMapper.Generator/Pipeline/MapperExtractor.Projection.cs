@@ -1083,7 +1083,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // ── UNSAFE: string↔T parsable (ParsableConverter would fire) ─────────
             if ((srcType.SpecialType == SpecialType.System_String && tgtType.TypeKind != TypeKind.Enum && TypeInterfaces.ImplementsIParsable(compilation, tgtType)) ||
-                (tgtType.SpecialType == SpecialType.System_String && srcType.SpecialType != SpecialType.System_String && srcType.TypeKind != TypeKind.Enum && (TypeInterfaces.ImplementsIFormattable(srcType) || srcType.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char)))
+                (tgtType.SpecialType == SpecialType.System_String && srcType.SpecialType != SpecialType.System_String && srcType.TypeKind != TypeKind.Enum && IsStringFormattable(srcType)))
             {
                 EmitDwarf028(diagnostics,
                     location,
@@ -2007,6 +2007,21 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return false;
+        }
+
+        /// <summary>
+        ///     Whether turning <paramref name="source" /> into a string goes through a formatting call a query provider
+        ///     cannot translate: an <c>IFormattable</c> type, or <c>bool</c> / <c>char</c>, whose <c>ToString</c> the
+        ///     runtime resolver calls too.
+        /// </summary>
+        /// <remarks>
+        ///     <c>char</c> is named explicitly because a core library need not declare it <c>IFormattable</c>. The modern
+        ///     BCL does, so through a real compilation the interface test always answers first; the unit test builds a
+        ///     core library that does not.
+        /// </remarks>
+        internal static bool IsStringFormattable(ITypeSymbol source)
+        {
+            return TypeInterfaces.ImplementsIFormattable(source) || source.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char;
         }
 
         /// <summary>
