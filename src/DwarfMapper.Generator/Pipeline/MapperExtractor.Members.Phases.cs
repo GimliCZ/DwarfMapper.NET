@@ -140,12 +140,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (mv.IsConstant)
                 {
-                    string literal;
-                    if (mv.ConstLiteral is not null)
-                    {
-                        literal = mv.ConstLiteral;
-                    }
-                    else if (!TryFormatConstant(mv.Value, mvTgtType, req.Compilation, out literal, out var why))
+                    if (!TryRenderMapValueConstant(mv.ConstLiteral, mv.Value, mvTgtType, req.Compilation, out var literal, out var why))
                     {
                         acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, req.Location, why));
                         continue;

@@ -1596,6 +1596,35 @@ namespace DwarfMapper.Generator.Pipeline
                 : formatted;
         }
 
+        /// <summary>
+        ///     The C# literal a constant <c>[MapValue]</c> assigns: <paramref name="constLiteral" /> when the value arrived
+        ///     pre-rendered (a <c>MapConfig</c> convention method), otherwise <see cref="TryFormatConstant" />'s rendering of
+        ///     the attribute's <paramref name="value" /> for <paramref name="targetType" />.
+        /// </summary>
+        /// <remarks>
+        ///     Shared by the create map and the projection. They differ only in what they can receive: the projection reads
+        ///     method-level <c>[MapValue]</c> alone, which never arrives pre-rendered, so an inline "pre-rendered?" test there
+        ///     had an outcome no mapper reaches. Asked here, both answers are reached, the pre-rendered one through the
+        ///     create map's <c>MapConfig</c> path.
+        /// </remarks>
+        internal static bool TryRenderMapValueConstant(
+            string? constLiteral,
+            TypedConstant value,
+            ITypeSymbol targetType,
+            Compilation compilation,
+            out string literal,
+            out string why)
+        {
+            if (constLiteral is not null)
+            {
+                literal = constLiteral;
+                why = "";
+                return true;
+            }
+
+            return TryFormatConstant(value, targetType, compilation, out literal, out why);
+        }
+
         private static bool TryFormatConstant(
             TypedConstant tc,
             ITypeSymbol targetType,
