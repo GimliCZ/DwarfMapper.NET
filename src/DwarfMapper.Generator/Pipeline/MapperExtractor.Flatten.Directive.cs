@@ -196,7 +196,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Detect hetero mode: abstract/interface node base OR [MapDerivedType] pairs present.
             var nodeIsAbstractOrInterface =
                 nodeType.TypeKind == TypeKind.Interface || nodeType.IsAbstract;
-            var effectiveDerivedPairs = req.RawDerivedPairs ?? Array.Empty<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
+            var effectiveDerivedPairs = req.RawDerivedPairs;
             var isHetero = nodeIsAbstractOrInterface || effectiveDerivedPairs.Count > 0;
             // Every field below is settled by this point and none is written again -- checked, because a
             // snapshot of locals still being assigned would go stale with nothing downstream noticing.

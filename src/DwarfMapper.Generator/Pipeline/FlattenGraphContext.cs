@@ -31,7 +31,7 @@ namespace DwarfMapper.Generator.Pipeline
             NestedMappingRegistry NestedRegistry,
             bool IsPreserve,
             bool AllowNonPublic,
-            IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>? RawDerivedPairs);
+            IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> RawDerivedPairs);
 
 
         /// <summary>

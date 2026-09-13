@@ -633,7 +633,7 @@ namespace DwarfMapper.Generator.Pipeline
                 bool isPreserve,
                 bool allowNonPublic,
                 HashSet<string> consumedTargets,
-                IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>? rawDerivedPairs = null)
+                IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> rawDerivedPairs)
         {
             var directives = new List<FlattenGraphDirective>();
             var injected = new List<MemberMap>();
