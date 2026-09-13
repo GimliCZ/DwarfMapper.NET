@@ -18,11 +18,14 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length != 1 ||
-                    attr.ConstructorArguments[0].Value is not string method)
+                if (attr.ConstructorArguments.Length != 1)
                 {
                     continue;
                 }
+
+                // A null factory name names no method, exactly as a name matching none does. It is kept, so the pair
+                // reports DWARF059 (or DWARF056 when no pair matches) instead of the directive vanishing silently.
+                var method = attr.ConstructorArguments[0].Value as string ?? string.Empty;
 
                 result.Add(new PairConstructor
                 {
