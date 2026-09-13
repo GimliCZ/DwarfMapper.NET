@@ -2,8 +2,8 @@
 
 // ReadPairNullSkips reads the pair-scoped [MapNullSkip<TSource, TTarget>] / [MapNullSkip<TSource, TTarget>(bool)] on a
 // mapper class: no argument means enabled, a bool means itself. As for the method-scoped form, two outcomes had never
-// executed: an explicit `false` that turns the pair off under a mapper-wide SkipNullSourceMembers, and a value that is
-// not a bool — mid-edit, with CS1503 already in the compilation — which must fall back to the constructor's default.
+// executed: an explicit `false` that turns the pair off under a mapper-wide SkipNullSourceMembers, and an argument that
+// does not bind (a non-bool constant reaches the generator as NO argument) — mid-edit, with CS1503 already in the compilation — which must fall back to the constructor's default.
 namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class MapNullSkipPairScopedCoverageTests
@@ -29,7 +29,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         [Fact]
-        public void A_value_that_is_not_a_bool_falls_back_to_the_constructor_default_of_enabled()
+        public void An_argument_that_does_not_bind_falls_back_to_the_constructor_default_of_enabled()
         {
             var (_, generated) = GeneratorTestHarness.Run(Types + """
                                                                   [DwarfMapper]

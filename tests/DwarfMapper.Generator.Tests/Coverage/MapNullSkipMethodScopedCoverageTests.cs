@@ -2,7 +2,7 @@
 
 // ReadMapNullSkip reads a method-scoped [MapNullSkip] / [MapNullSkip(bool)]: no argument means enabled (the constructor's
 // default), a bool means itself. Two outcomes had never executed: an explicit `false` that carves one method out of a
-// mapper-wide SkipNullSourceMembers, and a value that is not a bool at all — what a consumer has on screen mid-edit,
+// mapper-wide SkipNullSourceMembers, and an argument that does not bind at all (a non-bool constant reaches the generator as NO argument) — what a consumer has on screen mid-edit,
 // with CS1503 already in the compilation. That one must fall back to the constructor's default rather than cast.
 namespace DwarfMapper.Generator.Tests.Coverage
 {
@@ -28,7 +28,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         [Fact]
-        public void A_value_that_is_not_a_bool_falls_back_to_the_constructor_default_of_enabled()
+        public void An_argument_that_does_not_bind_falls_back_to_the_constructor_default_of_enabled()
         {
             var (_, generated) = GeneratorTestHarness.Run(Types + """
                                                                   [DwarfMapper]
