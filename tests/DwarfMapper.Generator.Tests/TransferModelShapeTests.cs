@@ -1268,5 +1268,39 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
             Assert.Equal(4, verdict.Size);
         }
+
+        /// <summary>An expression-bodied constructor that only assigns its parameter carries no logic.</summary>
+        [Fact]
+        public void Eligible_with_an_expression_bodied_constructor_that_assigns_its_parameter()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public Dto(int a) => A = a; public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(4, verdict.Size);
+        }
+
+        /// <summary>An expression-bodied constructor that computes the value is logic a struct rewrite would lose.</summary>
+        [Fact]
+        public void Refused_for_an_expression_bodied_constructor_that_computes_its_value()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public Dto(int a) => A = a + 1; public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("the constructor of 'Dto' does more than assign its members", verdict.Reason);
+        }
+
+        /// <summary>
+        ///     A partial constructor's defining declaration has no body, and the implementing one carries it. The
+        ///     bodiless half is passed over and the implementing half is the one judged.
+        /// </summary>
+        [Fact]
+        public void Eligible_with_a_partial_constructor_whose_implementation_only_assigns()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed partial class Dto { public partial Dto(int a); public partial Dto(int a) { A = a; } public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(4, verdict.Size);
+        }
     }
 }
