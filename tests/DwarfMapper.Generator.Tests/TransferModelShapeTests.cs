@@ -1189,5 +1189,22 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(0, TransferModelShape.CompilationFacts.Gather(compilation).EntityCount);
         }
+
+        /// <summary>
+        ///     The DbSet sweep walks every member of every type, and a context also declares members that carry no
+        ///     type to test: an event and a nested class. They are passed over, and the DbSet beside them still marks
+        ///     its entity.
+        /// </summary>
+        [Fact]
+        public void The_DbSet_sweep_passes_over_members_that_are_not_properties_fields_or_methods()
+        {
+            var verdict = ClassifyType(
+                "namespace Microsoft.EntityFrameworkCore { public class DbSet<T> { } } " +
+                "namespace T { public sealed class Dto { public int Id { get; set; } } " +
+                "public class Ctx { public Microsoft.EntityFrameworkCore.DbSet<Dto> Rows { get; set; } public event System.Action Changed; public class Nested { } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("'Dto' is used as a 'DbSet<Dto>' in this compilation, so it is an ORM entity", verdict.Reason);
+        }
     }
 }
