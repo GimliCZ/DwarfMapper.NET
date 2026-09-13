@@ -211,6 +211,30 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     A null name on the member form. The constructor argument is not a string, so the message falls back
+        ///     to a placeholder rather than printing the word "null" as though it were a member name.
+        /// </summary>
+        [Fact]
+        public void Member_form_MapProperty_with_a_null_name_reports_a_placeholder()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Source { public string Name { get; set; } = ""; }
+                               public class Target { public string Name { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapProperty(null)]
+                                   public partial Target Map(Source s);
+                               }
+                               """;
+            var message = Assert.Single(GeneratorAssert.Reports(src, "DWARF088")).GetMessage(CultureInfo.InvariantCulture);
+            Assert.StartsWith("[MapProperty(\"…\")] on this mapping method", message, StringComparison.Ordinal);
+            Assert.Contains("[MapProperty(\"…\", \"<destination>\")].", message, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     Both directives written on MEMBERS of the mapper, each in both of its placements. The mapper's own
         ///     members belong to no pair, so every one is read by nothing. The message names the attribute and the
         ///     member, and its remedy depends on the placement. For the member form it says to name the
