@@ -635,7 +635,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     For synthesized private methods:
         ///     <code>
         ///   if (ctx.TryGetReference(s, out var __dwarf_cached)) return (T)__dwarf_cached;
-        ///   var __dwarf_t = new T(ctorArg1: ..., ctorArg2: ...);
+        ///   var __dwarf_t = new T(ctorArg1: ..., ctorArg2: ...) { InitOnlyOrRequired = ... };
         ///   ctx.SetReference(s, __dwarf_t);
         ///   __dwarf_t.Member1 = ...;
         ///   return __dwarf_t;
@@ -708,6 +708,15 @@ namespace DwarfMapper.Generator.Pipeline
             // the factory. Found while fixing R18-03: the declared pair used the factory and this path did not.
             var hasCtorArgs = method.ConstructorArguments.Count > 0;
 
+            // An init-only or required member can only be written in the object initializer (CS8852 / CS9035), so it
+            // is filled with the constructor arguments, before registration, rather than in Step 4. That is safe for
+            // exactly the reason it is safe for a constructor argument: DWARF030 has already refused every such
+            // member whose mapping leads back to this pair, so nothing below can need the instance registered yet.
+            // Under a factory the factory owns them and they never reach Members.
+            var initializerMembers = method.EmitFactoryMethod is null
+                ? method.Members.Where(IsPreserveInitializerMember).ToList()
+                : new List<MemberMap>();
+
             if (method.EmitFactoryMethod is not null)
             {
                 sb.Append(indent).Append("    var __dwarf_t = ").Append(method.EmitFactoryMethod)
@@ -728,13 +737,15 @@ namespace DwarfMapper.Generator.Pipeline
                     }
                     else
                     {
-                        sb.AppendLine(");");
+                        sb.Append(')');
+                        AppendPreserveInitializer(sb, initializerMembers, p, ctxVarName, depthPassFwd, indent);
                     }
                 }
             }
             else
             {
-                sb.Append(indent).Append("    var __dwarf_t = new ").Append(method.ReturnTypeFullName).AppendLine("();");
+                sb.Append(indent).Append("    var __dwarf_t = new ").Append(method.ReturnTypeFullName).Append("()");
+                AppendPreserveInitializer(sb, initializerMembers, p, ctxVarName, depthPassFwd, indent);
             }
 
             // Step 3: Register BEFORE populating members — the critical invariant.
@@ -752,6 +763,11 @@ namespace DwarfMapper.Generator.Pipeline
                     member.SkipIfSourceNull)
                 {
                     continue; // deferred
+                }
+
+                if (initializerMembers.Contains(member))
+                {
+                    continue; // written in the object initializer above
                 }
 
                 sb.Append(indent).Append("    __dwarf_t.").Append(member.EmitTargetName).Append(" = ");
@@ -787,6 +803,38 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Step 5: Return the fully-populated target.
             sb.Append(indent).AppendLine("    return __dwarf_t;");
+        }
+
+        // A member the register-before-populate form writes in its object initializer: init-only or required, and not
+        // one of the deferred kinds, which are assigned post-construction on every path.
+        private static bool IsPreserveInitializerMember(MemberMap member)
+        {
+            return member.MustInitialize &&
+                   member.UnflattenIntermediateFqn is null &&
+                   member.WhenPredicate is null &&
+                   !member.SkipIfSourceNull;
+        }
+
+        // Closes the `new T(...)` / `new T()` the caller opened: `;` alone when nothing must be initialized — the shape
+        // this emitter always wrote, so no existing output moves — or an object initializer carrying those members.
+        private static void AppendPreserveInitializer(StringBuilder sb, List<MemberMap> initializerMembers, string p, string ctxVarName, string depthPassFwd, string indent)
+        {
+            if (initializerMembers.Count == 0)
+            {
+                sb.AppendLine(";");
+                return;
+            }
+
+            sb.AppendLine();
+            sb.Append(indent).AppendLine("    {");
+            foreach (var member in initializerMembers)
+            {
+                sb.Append(indent).Append("        ").Append(member.EmitTargetName).Append(" = ");
+                AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
+                sb.AppendLine(",");
+            }
+
+            sb.Append(indent).AppendLine("    };");
         }
 
         /// <summary>
