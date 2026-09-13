@@ -69,6 +69,34 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         [Fact]
+        public void A_two_parameter_after_hook_for_a_different_source_leaves_a_struct_list_on_the_block_copy()
+        {
+            // The hook's TARGET parameter is the element's target type, but its SOURCE parameter is not the element's
+            // source: it does not apply to this pair, so it cannot keep the list off the block copy.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct P { public int X; public int Y; }
+                               public struct P2 { public int X; public int Y; }
+                               public struct Q { public long Z; }
+                               public class Src { public List<P> Items { get; set; } = new(); public Q Other { get; set; } }
+                               public class Dst { public List<P2> Items { get; set; } = new(); public P2 Other { get; set; } }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapProperty("Other", "Other", Use = nameof(ToP2))]
+                                   public partial Dst Map(Src s);
+                                   private static P2 ToP2(Q q) => new() { X = (int)q.Z };
+                                   [AfterMap] private static void Finish(Q s, ref P2 d) { }
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.DoesNotContain("__d[__i++] = __DwarfMap_Obj_global__Demo_P_global__Demo_P2_", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Preserve_recursive_self_map_through_constructor_arguments_is_refused()
         {
             const string src = """
