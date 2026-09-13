@@ -427,7 +427,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The returning form (<c>TDest Update(TSource, TDest)</c>) registers identically — the emitted lambda
         ///     calls it as a statement and discards the result, since the caller already holds the instance.
         /// </remarks>
-        private static bool IsAmbientUpdateRegisterable(MapMethodModel m)
+        internal static bool IsAmbientUpdateRegisterable(MapMethodModel m)
         {
             // I17: a WITHHELD method (its own DWARF001 refused it) is never emitted, so a facade,
             // DI or registry entry pointing at it would not compile. It stays in `Methods` for the
@@ -682,11 +682,24 @@ namespace DwarfMapper.Generator.Pipeline
             return fullyQualified.StartsWith("global::", StringComparison.Ordinal) && fullyQualified.IndexOfAny(BadTypeChars) < 0;
         }
 
-        private static string ShortName(string fullyQualified)
+        /// <summary>
+        ///     <paramref name="fullyQualified" /> without its leading <c>global::</c>, or unchanged when it has none.
+        /// </summary>
+        /// <remarks>
+        ///     Both callers only ever pass a <c>global::</c>-qualified name: <see cref="ShortName" /> runs after
+        ///     <see cref="IsPlainNamedType" /> required the prefix, and a mapper's full name is always qualified. So the
+        ///     "no prefix" answer was an outcome neither inline copy reached. Stated once here, both answers are tested.
+        /// </remarks>
+        internal static string WithoutGlobalPrefix(string fullyQualified)
         {
-            var s = fullyQualified.StartsWith("global::", StringComparison.Ordinal)
+            return fullyQualified.StartsWith("global::", StringComparison.Ordinal)
                 ? fullyQualified.Substring("global::".Length)
                 : fullyQualified;
+        }
+
+        private static string ShortName(string fullyQualified)
+        {
+            var s = WithoutGlobalPrefix(fullyQualified);
             var dot = s.LastIndexOf('.');
             // Unescaped, because the caller CONCATENATES onto this ("To" + …). The type name arrives from
             // ToDisplayString and is therefore already escaped where it needs to be, so a target type the
@@ -698,9 +711,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>Stable, unique private-field identifier for a mapper's cached singleton.</summary>
         private static string FieldName(string mapperFullName)
         {
-            var s = mapperFullName.StartsWith("global::", StringComparison.Ordinal)
-                ? mapperFullName.Substring("global::".Length)
-                : mapperFullName;
+            var s = WithoutGlobalPrefix(mapperFullName);
             // ISSUE-007: '.' -> '_' is not injective, so two DISTINCT mapper types can collapse onto one field
             // name (A.B_C.M and A.B.C.M both give __A_B_C_M) and the aggregate would declare the field twice ->
             // CS0102 out of generated code. Both call sites dedupe by exact FQN, so only a genuine collision of
