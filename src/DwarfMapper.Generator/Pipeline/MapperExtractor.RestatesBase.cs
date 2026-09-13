@@ -34,7 +34,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? classLocation,
             List<DiagnosticInfo> diagnostics)
         {
-            var declarations = ReadRestatesBase(classSymbol);
+            var declarations = ReadRestatesBase(classSymbol, classLocation);
             if (declarations.Count == 0)
             {
                 return;
@@ -58,10 +58,8 @@ namespace DwarfMapper.Generator.Pipeline
                 }
             }
 
-            foreach (var (derivedSrc, derivedTgt, overrides, loc) in declarations)
+            foreach (var (derivedSrc, derivedTgt, overrides, location) in declarations)
             {
-                var location = loc ?? classLocation;
-
                 var derived = declaredPairs.Find(p =>
                     SymbolEqualityComparer.Default.Equals(p.Src, derivedSrc) && SymbolEqualityComparer.Default.Equals(p.Tgt, derivedTgt));
 
@@ -328,7 +326,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         private static List<(ITypeSymbol Src, ITypeSymbol Tgt, HashSet<string> Overrides, LocationInfo? Loc)>
-            ReadRestatesBase(INamedTypeSymbol classSymbol)
+            ReadRestatesBase(INamedTypeSymbol classSymbol, LocationInfo? classLocation)
         {
             var result = new List<(ITypeSymbol, ITypeSymbol, HashSet<string>, LocationInfo?)>();
 
@@ -349,9 +347,8 @@ namespace DwarfMapper.Generator.Pipeline
                         }
                 }
 
-                var loc = attr.ApplicationSyntaxReference is { } r
-                    ? LocationInfo.From(Location.Create(r.SyntaxTree, r.Span))
-                    : null;
+                // Anchored at the attribute, or at the mapper class when the attribute has no position of its own.
+                var loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference, classLocation);
 
                 result.Add((ac.TypeArguments[0], ac.TypeArguments[1], overrides, loc));
             }

@@ -36,6 +36,16 @@ namespace DwarfMapper.Generator.Diagnostics
             return reference is null ? null : From(reference.GetSyntax().GetLocation());
         }
 
+        /// <summary>
+        ///     <see cref="FromReference(SyntaxReference?)" />, or <paramref name="fallback" /> when that has no location —
+        ///     for a reader that anchors a directive at its enclosing declaration when the directive itself has no
+        ///     position.
+        /// </summary>
+        public static LocationInfo? FromReference(SyntaxReference? reference, LocationInfo? fallback)
+        {
+            return FromReference(reference) ?? fallback;
+        }
+
         public static LocationInfo? From(Location location)
         {
             if (location is null || location.SourceTree is null)
