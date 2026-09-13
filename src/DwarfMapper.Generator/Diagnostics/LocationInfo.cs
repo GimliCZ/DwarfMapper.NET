@@ -39,6 +39,17 @@ namespace DwarfMapper.Generator.Diagnostics
         }
 
         /// <summary>
+        ///     <see cref="From" /> for a symbol's first IN-SOURCE location, or <paramref name="fallback" /> when it has
+        ///     none or <see cref="From" /> declines it. A caller that has already proven a source declaration never
+        ///     reaches the fallback through a compilation, so the fallback is answered here, where the unit test asks it.
+        /// </summary>
+        internal static LocationInfo? FromFirstInSource(ImmutableArray<Location> locations, LocationInfo? fallback)
+        {
+            var declared = locations.FirstOrDefault(l => l.IsInSource);
+            return (declared is null ? null : From(declared)) ?? fallback;
+        }
+
+        /// <summary>
         ///     <see cref="From" /> for the syntax a reference points at — typically an attribute's
         ///     <see cref="AttributeData.ApplicationSyntaxReference" /> — or <see langword="null" /> when there is none. An
         ///     attribute read from a referenced assembly's metadata has no application syntax; one helper answers that

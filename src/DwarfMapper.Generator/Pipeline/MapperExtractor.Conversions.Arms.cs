@@ -529,8 +529,7 @@ namespace DwarfMapper.Generator.Pipeline
             // struct), so this location exists whenever a layout came back. LocationInfo.From can still decline
             // a span it cannot map onto a live IDE snapshot, and the member's own location is a better answer
             // there than none at all.
-            var declared = element.Locations.FirstOrDefault(l => l.IsInSource);
-            var location = (declared is null ? null : LocationInfo.From(declared)) ?? req.Location;
+            var location = LocationInfo.FromFirstInSource(element.Locations, req.Location);
 
             var message =
                 $"'{element.ToDisplayString()}' is {layout.Size.ToString(CultureInfo.InvariantCulture)} bytes with " +
