@@ -105,5 +105,22 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             GeneratorAssert.DoesNotReport(src, Dwarf030);
         }
+
+        [Fact]
+        public void A_mapping_method_returning_neither_a_named_type_nor_an_array_is_refused()
+        {
+            // `dynamic` is neither an INamedTypeSymbol nor an IArrayTypeSymbol: the create-map endpoint refuses it as
+            // DWARF003 before anything tries to resolve members against a type that has none.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial dynamic Map(Src s); }
+                               """;
+
+            var message = Assert.Single(GeneratorAssert.Reports(src, "DWARF003")).GetMessage(CultureInfo.InvariantCulture);
+            Assert.Contains("'Map'", message, StringComparison.Ordinal);
+        }
     }
 }
