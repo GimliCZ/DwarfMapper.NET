@@ -1112,6 +1112,29 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         [Fact]
+        public void IsSourceSequential_short_layout_overload_is_sequential()
+        {
+            // StructLayoutAttribute(short) carries its kind as a short, not an int; 0 is Sequential.
+            var (_, types) = Compile("using System.Runtime.InteropServices; namespace T { [StructLayout((short)0)] public struct S { public int X; } }");
+
+            Assert.True(BlittableProof.IsSourceSequential(types["S"], out var pack, out var size));
+            Assert.Equal(0, pack);
+            Assert.Equal(0, size);
+        }
+
+        [Fact]
+        public void IsSourceSequential_layout_attribute_without_arguments_is_sequential()
+        {
+            // [StructLayout] with no kind is CS7036 in the consumer's source; with no kind to read, the struct keeps the
+            // C# default.
+            var (_, types) = Compile("using System.Runtime.InteropServices; namespace T { [StructLayout] public struct S { public int X; } }");
+
+            Assert.True(BlittableProof.IsSourceSequential(types["S"], out var pack, out var size));
+            Assert.Equal(0, pack);
+            Assert.Equal(0, size);
+        }
+
+        [Fact]
         public void EnumUnderlying_answers_an_enum_its_backing_type_and_anything_else_none()
         {
             var (compilation, types) = Compile("namespace T { public enum Kind : long { A } public class C { } }");
@@ -1128,6 +1151,21 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.True(BlittableProof.SameSpecialType(SpecialType.System_Int32, SpecialType.System_Int32));
             Assert.False(BlittableProof.SameSpecialType(SpecialType.System_Int32, SpecialType.System_Int64));
             Assert.False(BlittableProof.SameSpecialType(SpecialType.None, SpecialType.None));
+        }
+
+        [Fact]
+        public void IsSourceSequential_pack_and_size_that_are_not_ints_are_ignored()
+        {
+            // Pack = "x" and Size = "y" are CS0029 in the consumer's source. The compiler still records both named
+            // arguments, as error constants with no value, so neither is read as a pack or a size.
+            var (_, types) = Compile("""
+                                     using System.Runtime.InteropServices;
+                                     namespace T { [StructLayout(LayoutKind.Sequential, Pack = "x", Size = "y")] public struct S { public int X; } }
+                                     """);
+
+            Assert.True(BlittableProof.IsSourceSequential(types["S"], out var pack, out var size));
+            Assert.Equal(0, pack);
+            Assert.Equal(0, size);
         }
 
         [Fact]
