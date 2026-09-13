@@ -1489,7 +1489,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.MemberFormDirectiveOnMapper,
-                        member.Locations.FirstOrDefault() is { } loc ? LocationInfo.From(loc) : null,
+                        LocationInfo.FromFirst(member.Locations),
                         message));
                 }
             }
