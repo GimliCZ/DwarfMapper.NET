@@ -943,42 +943,10 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    // Resolve the edge target: if the converter is an overloaded declared method,
-                    // we can't determine which overload without param-type info, so we add edges
-                    // to ALL overloads of that name.  For non-overloaded names and synthesized
-                    // names, add the name directly.
-                    if (ExactOverloadKey(mem.ConverterMethod, mem.ConverterParamTypeFqn, declaredNameCount) is { } memKey)
-                    {
-                        allCallGraph[callerKey].Add(memKey);
-                    }
-                    else if (declaredNameCount.TryGetValue(mem.ConverterMethod, out var oc) && oc > 1)
-                        // Add edges to all OTHER overloads (not the method itself — a converter can't be
-                        // a self-call when it was auto-matched to a DIFFERENT overload by parameter type).
-                    {
-                        for (var j = 0; j < methods.Count; j++)
-                        {
-                            var ov = methods[j];
-                            if (!ov.IsPartial)
-                            {
-                                continue;
-                            }
-
-                            if (!string.Equals(ov.MethodName, mem.ConverterMethod, StringComparison.Ordinal))
-                            {
-                                continue;
-                            }
-
-                            var ovKey = DeclKey(ov, declaredNameCount);
-                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
-                            {
-                                allCallGraph[callerKey].Add(ovKey);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        allCallGraph[callerKey].Add(mem.ConverterMethod);
-                    }
+                    // The exact overload when resolution recorded it; otherwise the bare name, which
+                    // ExpandBareOverloadedEdges below turns into every overload but the caller when it is overloaded.
+                    // (It was fanned out here AND there, in three identical copies of that loop.)
+                    allCallGraph[callerKey].Add(ExactOverloadKey(mem.ConverterMethod, mem.ConverterParamTypeFqn, declaredNameCount) ?? mem.ConverterMethod);
                 }
 
                 foreach (var arg in m.ConstructorArguments)
@@ -988,36 +956,7 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    if (ExactOverloadKey(arg.ConverterMethod, arg.ConverterParamTypeFqn, declaredNameCount) is { } argKey)
-                    {
-                        allCallGraph[callerKey].Add(argKey);
-                    }
-                    else if (declaredNameCount.TryGetValue(arg.ConverterMethod, out var oc) && oc > 1)
-                    {
-                        for (var j = 0; j < methods.Count; j++)
-                        {
-                            var ov = methods[j];
-                            if (!ov.IsPartial)
-                            {
-                                continue;
-                            }
-
-                            if (!string.Equals(ov.MethodName, arg.ConverterMethod, StringComparison.Ordinal))
-                            {
-                                continue;
-                            }
-
-                            var ovKey = DeclKey(ov, declaredNameCount);
-                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
-                            {
-                                allCallGraph[callerKey].Add(ovKey);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        allCallGraph[callerKey].Add(arg.ConverterMethod);
-                    }
+                    allCallGraph[callerKey].Add(ExactOverloadKey(arg.ConverterMethod, arg.ConverterParamTypeFqn, declaredNameCount) ?? arg.ConverterMethod);
                 }
 
                 // A [MapDerivedType] dispatch method has no members: its calls are its ARMS. Without these edges
@@ -1054,45 +993,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
-            // For synthesized methods calling overloaded declared methods, also expand edges
-            // so DFS can follow the full cycle. If synth-method calls "Map" and there are
-            // two overloads "Map§A" and "Map§B", add edges to all variants except self.
-            foreach (var callerKey in allCallGraph.Keys.ToList())
-            {
-                var edges = allCallGraph[callerKey];
-                var expandedEdges = new List<string>();
-                foreach (var edge in edges)
-                    if (declaredNameCount.TryGetValue(edge, out var oc) && oc > 1)
-                        // Replace simple name with qualified variants (excluding self to avoid false cycles).
-                    {
-                        for (var j = 0; j < methods.Count; j++)
-                        {
-                            var ov = methods[j];
-                            if (!ov.IsPartial)
-                            {
-                                continue;
-                            }
-
-                            if (!string.Equals(ov.MethodName, edge, StringComparison.Ordinal))
-                            {
-                                continue;
-                            }
-
-                            var ovKey = DeclKey(ov, declaredNameCount);
-                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
-                            {
-                                expandedEdges.Add(ovKey);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        expandedEdges.Add(edge);
-                    }
-
-                edges.Clear();
-                foreach (var e in expandedEdges) edges.Add(e);
-            }
+            ExpandBareOverloadedEdges(allCallGraph, methods, declaredNameCount);
 
             // Find which declared methods are on a cycle (can reach themselves in allCallGraph).
             // ISSUE-023: one Tarjan SCC pass answers "is this node on a cycle?" for EVERY node, replacing a
@@ -1297,6 +1198,51 @@ namespace DwarfMapper.Generator.Pipeline
             return declaredNameCount.TryGetValue(mm.MethodName, out var cnt) && cnt > 1
                 ? mm.MethodName + "\u00a7" + mm.ParameterTypeFullName
                 : mm.MethodName;
+        }
+
+        /// <summary>
+        ///     Replaces every edge that is a bare OVERLOADED declared name with edges to each of that name's overloads
+        ///     except the caller itself — the only safe reading of a name that does not say which overload it meant.
+        /// </summary>
+        /// <remarks>
+        ///     Internal and unit-tested because no generator input reaches it any more: since c56b9e5 and 3dfe5c5 every
+        ///     member, constructor-argument and arm edge that calls a user-declared method records the exact overload
+        ///     (<see cref="ExactOverloadKey" />), and the None-mode helper edges skip overloaded element methods. It
+        ///     stays as the fallback for a future edge that does not, rather than being argued away — the overloaded
+        ///     fan-out is how 7635d71 and the unflatten-leaf hole both hid. Excluding the caller is also what hid
+        ///     them: a bare self-call is never a cycle here.
+        /// </remarks>
+        internal static void ExpandBareOverloadedEdges(Dictionary<string, HashSet<string>> graph, List<MapMethodModel> methods, Dictionary<string, int> declaredNameCount)
+        {
+            foreach (var callerKey in graph.Keys.ToList())
+            {
+                var edges = graph[callerKey];
+                var expandedEdges = new List<string>();
+                foreach (var edge in edges)
+                    if (declaredNameCount.TryGetValue(edge, out var oc) && oc > 1)
+                    {
+                        foreach (var ov in methods)
+                        {
+                            if (!ov.IsPartial || !string.Equals(ov.MethodName, edge, StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
+
+                            var ovKey = DeclKey(ov, declaredNameCount);
+                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
+                            {
+                                expandedEdges.Add(ovKey);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        expandedEdges.Add(edge);
+                    }
+
+                edges.Clear();
+                foreach (var e in expandedEdges) edges.Add(e);
+            }
         }
 
         /// <summary>
