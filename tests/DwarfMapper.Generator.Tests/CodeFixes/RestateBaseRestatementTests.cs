@@ -270,6 +270,45 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     A base attribute whose target member is written in a form the fix cannot read — a constant identifier, a
+        ///     <c>nameof</c> with more than one argument, or a call that is not <c>nameof</c> at all — names no member it
+        ///     can compare. It cannot be matched against the derived pair's configuration, so it is restated as a new
+        ///     attribute with its argument carried over verbatim, rather than silently dropped.
+        /// </summary>
+        [Fact]
+        public async Task A_base_attribute_whose_target_the_fix_cannot_read_is_added_verbatim()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Command { public string Raw { get; set; } = ""; }
+                               public class AliasCommand : Command { public string Alias { get; set; } = ""; }
+                               public class CommandDto { public string Text { get; set; } = ""; public string Memo { get; set; } = ""; public string Tag { get; set; } = ""; public string Skip { get; set; } = ""; }
+                               public class AliasCommandDto : CommandDto { public string Alias { get; set; } = ""; }
+
+                               [DwarfMapper]
+                               [GenerateMap<Command, CommandDto>]
+                               [MapIgnore<CommandDto>(SkipMember)]
+                               [MapIgnore<CommandDto>(nameof(CommandDto.Memo, CommandDto.Tag))]
+                               [MapIgnore<CommandDto>(Pick("Skip"))]
+                               [GenerateMap<AliasCommand, AliasCommandDto>]
+                               [RestatesBase<AliasCommand, AliasCommandDto>]
+                               [MapProperty<AliasCommand, AliasCommandDto>("Raw", "Text")]
+                               public partial class M
+                               {
+                               }
+                               """;
+
+            var fixedText = await RestateAsync(src,
+                "MapProperty<AliasCommand, AliasCommandDto>(\"Raw\", \"Text\")").ConfigureAwait(true);
+
+            Assert.Contains("MapIgnore<AliasCommandDto>(SkipMember)", fixedText, StringComparison.Ordinal);
+            Assert.Contains("MapIgnore<AliasCommandDto>(nameof(CommandDto.Memo, CommandDto.Tag))", fixedText,
+                StringComparison.Ordinal);
+            Assert.Contains("MapIgnore<AliasCommandDto>(Pick(\"Skip\"))", fixedText, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     An attribute for a DIFFERENT pair is not the base's, and must not be dragged into the
         ///     restatement. Both type arguments have to match, not either one.
         /// </summary>
