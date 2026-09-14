@@ -34,5 +34,14 @@ namespace DwarfMapper.IntegrationTests
             Assert.Null(ex.SourceType);
             Assert.Empty(ex.AmbiguousInterfaces);
         }
+
+        [Fact]
+        public void DwarfMapValidationException_inner_constructor_keeps_the_message_and_the_inner_exception()
+        {
+            var ex = new DwarfMapValidationException("custom", Inner);
+
+            Assert.Equal("custom", ex.Message);
+            Assert.Same(Inner, ex.InnerException);
+        }
     }
 }
