@@ -27,5 +27,25 @@ namespace DwarfMapper.IntegrationTests
 
             Assert.Empty(attribute.Targets);
         }
+
+        [Fact]
+        public void MapValueAttribute_constant_form_keeps_target_and_value_and_no_Use()
+        {
+            var attribute = new MapValueAttribute("Source", "api-v2");
+
+            Assert.Equal("Source", attribute.Target);
+            Assert.Equal("api-v2", attribute.Value);
+            Assert.Null(attribute.Use);
+        }
+
+        [Fact]
+        public void MapValueAttribute_computed_form_keeps_target_and_Use_and_no_value()
+        {
+            var attribute = new MapValueAttribute("CreatedAt") { Use = "Now" };
+
+            Assert.Equal("CreatedAt", attribute.Target);
+            Assert.Equal("Now", attribute.Use);
+            Assert.Null(attribute.Value);
+        }
     }
 }
