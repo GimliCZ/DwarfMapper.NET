@@ -232,6 +232,44 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     A look-alike carrying THREE type arguments — <c>[MapProperty&lt;A, B, C&gt;]</c> parses, but no pair-scoped
+        ///     attribute has that shape — is not pair-scoped. It is neither restated nor treated as the derived pair's own
+        ///     configuration, and the genuine base attribute beside it is still restated.
+        /// </summary>
+        [Fact]
+        public async Task A_three_type_argument_look_alike_is_not_pair_scoped()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Command { public string Raw { get; set; } = ""; public string Note { get; set; } = ""; }
+                               public class AliasCommand : Command { public string Alias { get; set; } = ""; }
+                               public class CommandDto { public string Text { get; set; } = ""; public string Memo { get; set; } = ""; }
+                               public class AliasCommandDto : CommandDto { public string Alias { get; set; } = ""; }
+
+                               [DwarfMapper]
+                               [GenerateMap<Command, CommandDto>]
+                               [MapProperty<Command, CommandDto>("Note", "Memo")]
+                               [MapProperty<Command, CommandDto, CommandDto>("Raw", "Text")]
+                               [GenerateMap<AliasCommand, AliasCommandDto>]
+                               [RestatesBase<AliasCommand, AliasCommandDto>]
+                               [MapProperty<AliasCommand, AliasCommandDto>("Raw", "Text")]
+                               public partial class M
+                               {
+                               }
+                               """;
+
+            var fixedText = await RestateAsync(src,
+                "MapProperty<AliasCommand, AliasCommandDto>(\"Raw\", \"Text\")").ConfigureAwait(true);
+
+            Assert.Contains("MapProperty<AliasCommand, AliasCommandDto>(\"Note\", \"Memo\")", fixedText,
+                StringComparison.Ordinal);
+            // Left exactly once, where the author wrote it; never retargeted or duplicated.
+            Assert.Equal(1, fixedText.Split("MapProperty<Command, CommandDto, CommandDto>").Length - 1);
+            Assert.DoesNotContain("MapProperty<AliasCommand, AliasCommandDto, ", fixedText, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     An attribute for a DIFFERENT pair is not the base's, and must not be dragged into the
         ///     restatement. Both type arguments have to match, not either one.
         /// </summary>
