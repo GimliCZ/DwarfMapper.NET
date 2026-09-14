@@ -392,31 +392,12 @@ namespace DwarfMapper
             }
         }
 
-        private readonly struct Key : IEquatable<Key>
-        {
-            public readonly Type Source;
-            public readonly Type Destination;
-
-            public Key(Type source, Type destination)
-            {
-                Source = source;
-                Destination = destination;
-            }
-
-            public bool Equals(Key other)
-            {
-                return Source == other.Source && Destination == other.Destination;
-            }
-
-            public override bool Equals(object? obj)
-            {
-                return obj is Key k && Equals(k);
-            }
-
-            public override int GetHashCode()
-            {
-                return unchecked((Source.GetHashCode() * 397) ^ Destination.GetHashCode());
-            }
-        }
+        // A record struct, so the compiler owns the equality. The hand-written IEquatable<Key> it replaces carried two
+        // members no honest input distinguishes: Equals(object), which ConcurrentDictionary never calls on a struct
+        // key it compares through IEquatable, and the Source-mismatch arm of Equals(Key), reachable only through an
+        // engineered hash collision. Both sat in the runtime mutation leg as permanent undetected mutants (one
+        // NoCoverage, one ruled-in-practice), and deleting Equals(object) by hand trips the struct-equality analyzers.
+        // Owner ruling, round 30 (2026-09-14). Field-wise equality over two Type references is what it was before.
+        private readonly record struct Key(Type Source, Type Destination);
     }
 }

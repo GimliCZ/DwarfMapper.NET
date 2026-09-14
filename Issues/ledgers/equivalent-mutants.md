@@ -113,6 +113,27 @@ Counts move with it: pipeline `provenEquivalent` 16 → 15. The **denominator is
 stays at the 2026-09-11 run's 304, so the ceiling is recomputed as (304 − 15) / 304 = 95.06 %. The next authoritative
 pipeline run re-measures both, and moves the ceiling in that commit.
 
+## Rows retired on 2026-09-14 — `DwarfMapperRegistry.Key` equality is compiler-generated
+
+One runtime row — `Key.Equals(Key)` (ruled-in-practice, 1) — adjudicated the Logical mutant `Source ==
+other.Source && Destination == other.Destination` → `||` under the round-20 CF 5.4 ruling: `ConcurrentDictionary`
+compares hash codes before `Equals`, so a half-matching key never reaches it. The ruling was sound. What changed
+is the code: by owner ruling (Issues/ledgers/round30-ledger.md § Owner rulings), `Key` is now a
+`private readonly record struct Key(Type Source, Type Destination)`, so the compiler generates `Equals(Key)`,
+`Equals(object)` and `GetHashCode`. Stryker mutates source, not compiler-generated members, so neither this mutant
+nor the `Equals(object)` NoCoverage block (never a ledger row, filed as round-20 I1) can be generated any more. The
+row is **retired, not re-anchored**: there is no expression left to carry it.
+
+Why the owner took it: the runtime leg measured 95.45 % (`StrykerOutput/2026-09-14.19-15-03`) against `break` 97, and
+with the hand-written equality the honest ceiling was 127/132 = 96.21 %. Two `DwarfRefContext` depth-clamp boundary
+mutants had been counted as killed at the 97.60 % pin only by an accidental static kill (`killedBy` =
+`GeneratedDocsAreCurrentTests.The_api_reference_matches_the_public_surface`, `coveredBy = 0`). Removing the two
+permanently-undetected `Key` mutants makes 97 honestly reachable again instead of lowering the floor.
+
+Counts move with it: runtime `ruledInPractice` 1 → 0. `rawCeiling` excludes ruled rows, so it does not move. The
+**denominator is not re-measured here**; the next runtime run re-measures it, and adjudicates the upper
+clamp mutant (`maxDepth > AbsoluteMaxDepth` → `>=`, the same proof as the existing lower-clamp row) in that commit.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -124,7 +145,7 @@ recomputes the ceilings in the same commit.
 |---|---|---:|---:|---:|---:|---:|---:|
 | generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
-| runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
+| runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 0 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
@@ -359,10 +380,10 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "measuredRawScore": 97.6,
       "measuredOn": "2026-08-27",
       "provenEquivalent": 2,
-      "ruledInPractice": 1,
+      "ruledInPractice": 0,
       "probablyEquivalent": 1,
       "rawCeiling": 98.4,
-      "rawCeilingFormula": "(125 - 2) / 125"
+      "rawCeilingFormula": "(125 - 2) / 125 — the Key.Equals(Key) ruled-in-practice row was retired on 2026-09-14 (Key became a readonly record struct, owner ruling); the denominator is re-measured by the next runtime run"
     },
     "codefixes": {
       "config": "stryker-config.codefixes.json",
@@ -650,20 +671,6 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "probably-equivalent",
       "proof": "Diverges only on a ONE-element list, which DwarfMapperRegistry.Map can never construct the exception with: a single accepting interface resolves (candidates.Count == 1 returns before the throw), so Map passes null or a >= 2-element list. The only distinguishing input is a direct public-ctor call with a 1-element list, which the ctor's own doc excludes ('when there was more than one') - a test on it would pin undocumented off-contract behaviour. Probably rather than proven because that call IS expressible; the grade records the plan's P2 disposition: adjudicate, do not chase.",
       "anchor": "Issues/ledgers/E3-E1-report.md § Round-22 P2 appendix, probably equivalent (Count: > 1 boundary); Issues/ledgers/round21-sdd-ledger.md § T7"
-    },
-    {
-      "leg": "runtime",
-      "file": "src/DwarfMapper/DwarfMapperRegistry.cs",
-      "member": "Key.Equals(Key)",
-      "lineAtProof": 291,
-      "lineCurrent": 356,
-      "mutator": "Logical",
-      "original": "Source == other.Source && Destination == other.Destination",
-      "mutated": "Source == other.Source || Destination == other.Destination",
-      "occurrences": 1,
-      "category": "ruled-in-practice",
-      "proof": "Maintainer ruling, round-20 CF 5.4: Key is a private readonly struct whose only consumer is ConcurrentDictionary, which compares hash codes BEFORE consulting Equals; a half-matching key differs in hash, so Equals is never reached with one. Divergence requires an engineered hash collision with exactly one matching component, which no honest test produces. (E3-E1 listed it as hole #6 before the ruling; line drifted 291 -> 282 by T7's measurement.)",
-      "anchor": "Issues/round20/CARRY-FORWARD.md item 5.4; stryker-config.runtime.json comment"
     },
     {
       "leg": "codefixes",

@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 57;
-        private const int PinnedTotalOccurrences = 68;
+        private const int PinnedEntryRows = 56;
+        private const int PinnedTotalOccurrences = 67;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -65,7 +65,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // boundary (probably — divergence needs a 1-element list only an off-contract direct ctor call
             // can supply).
             ["runtime|proven-equivalent"] = 2,
-            ["runtime|ruled-in-practice"] = 1,
+            // Round 30 (2026-09-14) retired the one ruled-in-practice row, Key.Equals(Key) && -> ||: by owner ruling
+            // DwarfMapperRegistry.Key became a readonly record struct, so its equality is compiler-generated and the
+            // mutant cannot be generated. The 'runtime|ruled-in-practice' pin went with it (a pin is a category that
+            // exists in the rows — see the Count check below). Correction and retirement are in
+            // equivalent-mutants.md, same commit.
             ["runtime|probably-equivalent"] = 1,
             // Round 27 added the code-fixes leg and ran a kill program on it: 52.54 % to 87.01 %, 61 mutants
             // killed. These 23 are what remained, every one dispositioned, with the case analysis in
