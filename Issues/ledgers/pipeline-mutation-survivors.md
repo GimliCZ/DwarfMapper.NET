@@ -20,6 +20,13 @@ anchor to, in the shape of [`codefixes-mutation-survivors.md`](codefixes-mutatio
 | 2026-09-09 pin (`StrykerOutput/2026-09-09.06-09-56`) | 304 | 273 | 29 | 2 | 89.80 % |
 | 2026-09-11, before (`StrykerOutput/2026-09-11.09-25-59`) | 304 | 247 | 56 | 1 | 81.25 % |
 | 2026-09-11, after the kill program (`StrykerOutput/2026-09-11.13-02-15`) | 304 | **284** | 19 | 1 | **93.42 %** |
+| 2026-09-14, generator-sweep checkpoint, clean tree (`StrykerOutput/2026-09-14.12-00-50`) | 283 | 266 | 17 | 0 | **93.99 %** |
+
+The 2026-09-14 re-measure moved the denominator 304 → 283 inside `MapperExtractor.Members.Phases.cs`, the only
+file with scoreable mutants in either run, and stayed inside the pinned [93, 94) band, so `break` did not move.
+Against the 15 proven-equivalent rows now current in `equivalent-mutants.md`, `rawCeiling` is (283 − 15) / 283 =
+94.69 %. The mutant-by-mutant re-adjudication of the 17 survivors against the 20 below has not been done here;
+the next pipeline kill program owns it.
 
 The mutant-by-mutant diff of the two 2026-09-11 reports is one-way: **37 Survived → Killed**, no other
 status change, and the 37 are exactly the mutants the tests in commit `0b94ad0` were written against. The

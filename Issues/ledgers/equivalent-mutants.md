@@ -122,11 +122,11 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 409 | 88.26 % (2026-09-11, round-30 coverage sweep checkpoint) | 16 | 0 | 0 | 96.08 % |
+| generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 304 | 93.42 % (2026-09-11, round-30 kill program) | 15 | 0 | 0 | 95.06 % |
+| pipeline | `stryker-config.pipeline.json` | 283 | 93.99 % (2026-09-14, round-30 generator sweep checkpoint) | 15 | 0 | 0 | 94.69 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
@@ -148,6 +148,25 @@ happened to close branches this leg was already generating mutants against. Equa
 ConstructorSelector and LocationInfo are unchanged. The remaining 35 BlittableProof survivors + 1
 uncovered, and ConstructorSelector's 4 survivors + 7 uncovered, are still the next kill program's
 worklist.
+
+**Generator RE-MEASURED 2026-09-14** (round-30 generator coverage sweep, assembly-end checkpoint;
+`StrykerOutput/2026-09-14.12-57-57`, detached from a hash-verified clean tree): 409 → **415** scoreable,
+361 → **378** killed, 40 → 37 survived, 8 → 0 uncovered, 0 timeouts, so `break`/`low` moved 88 → 91 and
+`high` 90 → 92 in `stryker-config.json` in the same commit. Per file, killed/survived/uncovered:
+ConstructorSelector 135/4/7 → 141/4/0 (the sweep's DWARF098-reason and accessibility-word extractions and
+the static-constructor fix), LocationInfo 10/0/0 → 27/1/0 (the population grew with
+`LocationInfo.FromFirstInSource`), EquatableArray unchanged, BlittableProof 196/35/1 → 190/31/0 with no
+commit to that file (its scoreable count fell 232 → 221 as Ignored rose 78 → 83 — recorded as observed,
+not attributed). The 16 proven rows are untouched, so `rawCeiling` is (415 − 16) / 415 = 96.14 %. The
+same day's first attempt (91.33 %, two timeouts) ran on a tree contaminated by a harness-killed run's
+planted mutants and is not the measurement.
+
+**Pipeline RE-MEASURED 2026-09-14** (same checkpoint, `StrykerOutput/2026-09-14.12-00-50`, clean tree):
+304 → **283** scoreable, 284 → 266 killed, 19 → 17 survived, 1 → 0 uncovered, 0 timeouts — **93.99 %**,
+inside the pinned [93, 94) band, so `break` stays 93. Every scoreable mutant is in
+`MapperExtractor.Members.Phases.cs`, as in the 2026-09-11 run (the two context-record files carried none
+then either); the denominator moved inside that one file. The 15 proven rows are untouched, so `rawCeiling`
+is (283 − 15) / 283 = 94.69 %, and the score sits two undetected mutants under it.
 
 
 **Testing leg added 2026-09-09**, and it is the first row here whose reason is a REGRESSION rather than a
@@ -297,14 +316,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
   "legs": {
     "generator": {
       "config": "stryker-config.json",
-      "scoreable": 409,
-      "measuredRawScore": 88.26,
-      "measuredOn": "2026-09-11",
+      "scoreable": 415,
+      "measuredRawScore": 91.08,
+      "measuredOn": "2026-09-14",
       "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 96.08,
-      "rawCeilingFormula": "(409 - 16) / 409 — denominator refreshed from the round-29 Phase 2 gate run (StrykerOutput/2026-09-06.21-10-32, 356 killed of 409 scoreable), which is also the run that moved break 84 -> 87. The 16 proven rows are UNCHANGED: this re-measure moved the denominator, not the adjudication, and no row was added, retired or re-proved here — re-adjudication needs its own case analysis (invariant R3)."
+      "rawCeiling": 96.14,
+      "rawCeilingFormula": "(415 - 16) / 415 — denominator refreshed from the round-30 generator-sweep checkpoint run (StrykerOutput/2026-09-14.12-57-57, 378 killed of 415 scoreable, 0 timeouts, clean tree), which is also the run that moved break 88 -> 91. The 16 proven rows are UNCHANGED: this re-measure moved the denominator, not the adjudication, and no row was added, retired or re-proved here — re-adjudication needs its own case analysis (invariant R3)."
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -352,14 +371,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "pipeline": {
       "config": "stryker-config.pipeline.json",
-      "scoreable": 304,
-      "measuredRawScore": 93.42,
-      "measuredOn": "2026-09-11",
+      "scoreable": 283,
+      "measuredRawScore": 93.99,
+      "measuredOn": "2026-09-14",
       "provenEquivalent": 15,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 95.06,
-      "rawCeilingFormula": "(304 - 15) / 304 — denominator NOT re-measured; one of the 16 rows below was retired on 2026-09-13 (section 'Rows retired on 2026-09-13'), the rest are unchanged. The round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
+      "rawCeiling": 94.69,
+      "rawCeilingFormula": "(283 - 15) / 283 — denominator re-measured at the round-30 generator-sweep checkpoint (StrykerOutput/2026-09-14.12-00-50, 266 killed of 283 scoreable, 0 timeouts, clean tree; break stays 93); one of the 16 rows below was retired on 2026-09-13 (section 'Rows retired on 2026-09-13'), the rest are unchanged. The round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
     }
   },
   "entries": [
