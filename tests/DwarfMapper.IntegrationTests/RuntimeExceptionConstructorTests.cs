@@ -43,5 +43,27 @@ namespace DwarfMapper.IntegrationTests
             Assert.Equal("custom", ex.Message);
             Assert.Same(Inner, ex.InnerException);
         }
+
+        [Fact]
+        public void DwarfMappingDepthException_message_constructor_keeps_the_message_and_zero_depths()
+        {
+            var ex = new DwarfMappingDepthException("custom");
+
+            Assert.Equal("custom", ex.Message);
+            Assert.Null(ex.InnerException);
+            Assert.Equal(0, ex.MaxDepth);
+            Assert.Equal(0, ex.ActualDepth);
+        }
+
+        [Fact]
+        public void DwarfMappingDepthException_inner_constructor_keeps_the_message_and_the_inner_exception()
+        {
+            var ex = new DwarfMappingDepthException("custom", Inner);
+
+            Assert.Equal("custom", ex.Message);
+            Assert.Same(Inner, ex.InnerException);
+            Assert.Equal(0, ex.MaxDepth);
+            Assert.Equal(0, ex.ActualDepth);
+        }
     }
 }
