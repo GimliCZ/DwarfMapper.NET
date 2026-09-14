@@ -387,7 +387,7 @@ namespace DwarfMapper.Generator.Tests
         /// <summary>
         ///     The FsNode fixture with extra members on the derived node and DTO types, and any supporting types.
         /// </summary>
-        private static string FsNodeSourceWith(string folderExtra, string fileExtra, string folderDtoExtra, string fileDtoExtra, string types = "")
+        private static string FsNodeSourceWith(string folderExtra, string fileExtra, string folderDtoExtra, string fileDtoExtra, string types = "", string mapperOptions = "")
         {
             return $$"""
                      using DwarfMapper;
@@ -402,7 +402,7 @@ namespace DwarfMapper.Generator.Tests
                      public class FileDto   : FsNodeDto { public long Size { get; set; } {{fileDtoExtra}} }
                      public class Tree    { public FsNode? Root { get; set; } public string Label { get; set; } = ""; }
                      public class TreeDto { public List<FsNodeDto> Nodes { get; set; } = new(); public string Label { get; set; } = ""; }
-                     [DwarfMapper]
+                     [DwarfMapper{{mapperOptions}}]
                      public partial class M
                      {
                          [FlattenGraph(nameof(Tree.Root), nameof(TreeDto.Nodes))]
@@ -470,27 +470,51 @@ namespace DwarfMapper.Generator.Tests
                 d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("'Blob'", StringComparison.Ordinal));
         }
 
-        // ── 19. A nested-object leaf on a derived node is left unassigned ─────────────
+        // ── 19. A complex data leaf on a derived node: flattened, or DWARF075 under Preserve ─────────────
+
+        private const string AddressTypes =
+            "public class Address { public string City { get; set; } = \"\"; } public class AddressDto { public string City { get; set; } = \"\"; }";
 
         /// <summary>
-        ///     Pins the MF-D skip (c86a185): a derived-node leaf whose conversion is a COMPLEX synthesized helper
-        ///     (object, collection or dictionary) is not assigned, because that helper may take the (ctx, depth) tail
-        ///     the flat-node helper cannot pass. The member keeps its default and nothing is reported, which is the same
-        ///     silent shape SF-LEAFDIAG removed for an unmappable leaf. It is recorded for the owner, not changed here:
-        ///     a fix that assigns or reports it should update this test deliberately.
+        ///     3ade4ee (ISSUE-001) ruled on the homogeneous flat-node helper: a data leaf whose conversion is a COMPLEX
+        ///     synthesized helper (object, collection, dictionary) is FLATTENED outside Preserve, and reported as
+        ///     DWARF075 under Preserve, where the helper may become recursion-capable and the one-argument call would
+        ///     not compile. The derived-node helper built for each [MapDerivedType] arm has the same leaf loop and was
+        ///     not changed with it: it still skipped the member in every mode, with no diagnostic — the MF-D shape this
+        ///     test used to pin as left unassigned.
         /// </summary>
+        [Theory]
+        [InlineData("public Address Addr { get; set; } = new();", "public AddressDto Addr { get; set; } = new();", "Addr = ")]
+        [InlineData("public List<Address> Addrs { get; set; } = new();", "public List<AddressDto> Addrs { get; set; } = new();", "Addrs = ")]
+        public void HeteroFlattenGraph_complex_leaf_on_a_derived_node_is_flattened_outside_Preserve(string fileMember, string fileDtoMember, string assignment)
+        {
+            var src = FsNodeSourceWith("", fileMember, "", fileDtoMember, AddressTypes);
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF075");
+
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains(assignment, generated, StringComparison.Ordinal);
+        }
+
         [Fact]
-        public void HeteroFlattenGraph_nested_object_leaf_on_a_derived_node_is_left_unassigned()
+        public void HeteroFlattenGraph_complex_leaf_on_a_derived_node_reports_DWARF075_under_Preserve()
         {
             var src = FsNodeSourceWith("",
                 "public Address Addr { get; set; } = new();",
                 "",
                 "public AddressDto Addr { get; set; } = new();",
-                "public class Address { public string City { get; set; } = \"\"; } public class AddressDto { public string City { get; set; } = \"\"; }");
+                AddressTypes,
+                "(ReferenceHandling = ReferenceHandlingStrategy.Preserve)");
+
             var (diags, generated) = GeneratorTestHarness.Run(src);
-            Assert.DoesNotContain(diags, d => d.Id.StartsWith("DWARF", StringComparison.Ordinal));
-            Assert.DoesNotContain("Addr =", generated, StringComparison.Ordinal);
-            GeneratorAssert.CompilesClean(src);
+            var dwarf075 = Assert.Single(diags, d => d.Id == "DWARF075");
+            Assert.Equal(
+                "[FlattenGraph] cannot flatten member 'Addr' of type 'Demo.Address' under ReferenceHandling = Preserve; " +
+                "it is left at the destination's default. Map the member explicitly, or use ReferenceHandling = None " +
+                "for this mapper.",
+                dwarf075.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
+            Assert.DoesNotContain("Addr = ", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
         }
 
         // ── 20. The same simple leaf helper on two arms is synthesized once ───────────

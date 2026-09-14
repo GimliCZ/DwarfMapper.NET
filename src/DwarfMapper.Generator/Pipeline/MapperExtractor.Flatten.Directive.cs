@@ -359,31 +359,12 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    // MF-D: a acc.Synthesized COMPLEX helper (object mapper, collection helper, dict helper) may be
-                    // force-marked recursion-capable (3-param) by the Preserve post-processing, which would then
-                    // mismatch the single-argument call the flat-node helper emits.
-                    // Unsafe prefixes: __DwarfMap_Obj_, __DwarfMap_Coll_, __DwarfMap_Dict_
-                    // Safe prefixes:   __DwarfMap_Num_, __DwarfMap_Enum_, __DwarfMap_Pars_, __DwarfMap_Blit_
-                    //
-                    // That hazard is real ONLY under Preserve: the force-marking block is guarded by
-                    // `if (isPreserveMode)`, so in None/SetNull mode the helper stays single-arg and is safe to
-                    // call. This used to `continue` unconditionally, which silently left a data-bearing leaf
-                    // (a `List<string> Tags`, a nested `Money Price`) at the DTO's default with no diagnostic —
-                    // distinct from EDGE members, which are nulled deliberately as documented topology
-                    // degradation. So: flatten it when we can, and when we genuinely cannot, say so.
-                    if (GeneratedNames.IsComplexHelper(leafConv))
+                    // MF-D / ISSUE-001: a complex helper cannot be called from a flat node under Preserve (reported
+                    // as DWARF075); anywhere else the leaf is flattened. The decision is shared with the derived-arm
+                    // loop — see FlatLeafBlockedUnderPreserve. EDGE members are different: nulled deliberately below.
+                    if (FlatLeafBlockedUnderPreserve(req, acc, leaf.Name, leaf.Type, leafConv))
                     {
-                        if (req.IsPreserve)
-                        {
-                            acc.Diagnostics.Add(new DiagnosticInfo(
-                                DiagnosticDescriptors.FlattenGraphLeafNotFlattened,
-                                req.Location,
-                                $"[FlattenGraph] cannot flatten member '{leaf.Name}' of type " + $"'{leaf.Type.ToDisplayString()}' under ReferenceHandling = Preserve; it is left " + "at the destination's default. Map the member explicitly, or use " + "ReferenceHandling = None for this mapper."));
-                            continue;
-                        }
-
-                        // Not Preserve — fall through and emit the leaf; the merge below registers the complex
-                        // helper in the main dict so the call resolves.
+                        continue;
                     }
 
                     // Safe: emit the leaf member.  Merge any non-complex throw-away entries

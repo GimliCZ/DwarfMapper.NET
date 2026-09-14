@@ -425,6 +425,13 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A `[FlattenGraph]` with `[MapDerivedType]` arms silently dropped a nested-object or collection member of a
+  derived node.** A member such as `Address Addr` or `List<Address> Addrs` on `File : FsNode` was left at the
+  destination's default in every mode, with no diagnostic. The same leaf on a non-derived graph node has been
+  flattened since ISSUE-001, and reported as `DWARF075` under `ReferenceHandling = Preserve`, where it genuinely
+  cannot be emitted; the per-arm helper was never given that fix. It now is: the member is flattened outside
+  Preserve, and reported as `DWARF075` under Preserve.
+
 - **A pair declared both as a generated map and as a `[ProvidesMap]` was registered twice in the ambient
   registry.** The ambient registration deduplicated generated maps and hand-written `[ProvidesMap]` methods in
   two separate sets, so the same `(source, destination)` — or a collection shape a generated map already
