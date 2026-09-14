@@ -64,8 +64,17 @@ namespace DwarfMapper.Generator.Core
             // Reachable when the member lives in the mapper's own assembly, or its assembly grants
             // [InternalsVisibleTo] to the mapper's assembly. (IsSymbolAccessibleWithin is unreliable for
             // property accessors scoped to an IAssemblySymbol, so check assembly identity / IVT directly.)
-            var memberAsm = member.ContainingAssembly;
-            return memberAsm is not null && (SymbolEqualityComparer.Default.Equals(memberAsm, compilation.Assembly) || memberAsm.GivesAccessTo(compilation.Assembly));
+            return AssemblyGrantsAccess(member.ContainingAssembly, compilation.Assembly);
+        }
+
+        /// <summary>
+        ///     True when code in <paramref name="consumer" /> can see <paramref name="owner" />'s internal members: they
+        ///     are one assembly, or <paramref name="owner" /> grants <c>[InternalsVisibleTo]</c>. A member always has a
+        ///     containing assembly, so the <see langword="null" /> owner is answered here, where the unit test asks it.
+        /// </summary>
+        internal static bool AssemblyGrantsAccess(IAssemblySymbol? owner, IAssemblySymbol consumer)
+        {
+            return owner is not null && (SymbolEqualityComparer.Default.Equals(owner, consumer) || owner.GivesAccessTo(consumer));
         }
 
         // ISSUE-044: no defaults on purpose. `(null, false)` is a real answer — "public members only, no
