@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 56;
-        private const int PinnedTotalOccurrences = 67;
+        private const int PinnedEntryRows = 57;
+        private const int PinnedTotalOccurrences = 68;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -64,7 +64,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // TryGetValue out-contract and Register's ThrowIfNull) and the FormatMessage 'Count: > 1'
             // boundary (probably — divergence needs a 1-element list only an off-contract direct ctor call
             // can supply).
-            ["runtime|proven-equivalent"] = 2,
+            // Round 30 (2026-09-14) added the DwarfRefContext upper-clamp row ('>' -> '>=' at AbsoluteMaxDepth), the
+            // mirror of the lower-clamp proof, with its accidental-static-kill evidence (same commit).
+            ["runtime|proven-equivalent"] = 3,
             // Round 30 (2026-09-14) retired the one ruled-in-practice row, Key.Equals(Key) && -> ||: by owner ruling
             // DwarfMapperRegistry.Key became a readonly record struct, so its equality is compiler-generated and the
             // mutant cannot be generated. The 'runtime|ruled-in-practice' pin went with it (a pin is a category that

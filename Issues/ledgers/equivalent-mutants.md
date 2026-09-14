@@ -145,7 +145,7 @@ recomputes the ceilings in the same commit.
 |---|---|---:|---:|---:|---:|---:|---:|
 | generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
-| runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 0 | 1 | 98.40 % |
+| runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
@@ -205,6 +205,18 @@ again, so the floor and the row above do not move. One status changed with no co
 `BlittableProof.cs:336`'s `sizeA != sizeB → ==` went Killed → **Timeout**. A timeout still counts as
 detected, so the score is identical, but it is exactly the reclassification R2's error text warns about.
 Recorded as observed, not attributed.
+
+**Runtime RE-MEASURED 2026-09-14** (round-30 owner ruling; `StrykerOutput/2026-09-14.20-10-34`, detached from a
+clean tree): **97.62 %** (123 killed of 126 scoreable; 3 survived, 0 uncovered, 0 timeouts), inside [97, 98), so
+`break` stays 97. The route here: the previous run (`19-15-03`) measured 95.45 % (126/132) against break 97. A
+position-tolerant diff against the 2026-09-07 pin attributed that to three things. First, one real survivor from
+`77dc345`, killed by `5fe0d76`. Second, two `DwarfRefContext` depth-clamp boundary mutants whose earlier kills were
+accidental static kills by a docs-generation test. Third, the two hand-written `Key` equality mutants, which could
+never be detected. By owner ruling `DwarfMapperRegistry.Key` became a `readonly record struct` (`e01ff23`), so
+compiler-generated equality took those two, and the hand-written `GetHashCode` arithmetic with them, out of the
+population: 132 → 126. The three undetected mutants are now exactly the three proven rows — the lower clamp (existing),
+the **upper clamp (added here, same proof mirrored)** and the facade TryGet guard — so `rawCeiling` is
+(126 − 3) / 126 = 97.61 % and the score sits at the leg's honest ceiling.
 
 
 **Testing leg added 2026-09-09**, and it is the first row here whose reason is a REGRESSION rather than a
@@ -376,14 +388,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "runtime": {
       "config": "stryker-config.runtime.json",
-      "scoreable": 125,
-      "measuredRawScore": 97.6,
-      "measuredOn": "2026-08-27",
-      "provenEquivalent": 2,
+      "scoreable": 126,
+      "measuredRawScore": 97.62,
+      "measuredOn": "2026-09-14",
+      "provenEquivalent": 3,
       "ruledInPractice": 0,
       "probablyEquivalent": 1,
-      "rawCeiling": 98.4,
-      "rawCeilingFormula": "(125 - 2) / 125 — the Key.Equals(Key) ruled-in-practice row was retired on 2026-09-14 (Key became a readonly record struct, owner ruling); the denominator is re-measured by the next runtime run"
+      "rawCeiling": 97.61,
+      "rawCeilingFormula": "(126 - 3) / 126 — denominator re-measured after the Key record-struct ruling (StrykerOutput/2026-09-14.20-10-34, 123 killed of 126 scoreable, 0 timeouts, clean tree; break stays 97). The Key.Equals(Key) ruled-in-practice row was retired the same day; the DwarfRefContext upper-clamp row was added with its proof. The three undetected mutants are exactly the three proven rows (lower clamp, upper clamp, facade TryGet guard), so the score sits at the leg's honest ceiling."
     },
     "codefixes": {
       "config": "stryker-config.codefixes.json",
@@ -643,6 +655,20 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "proven-equivalent",
       "proof": "The two forms differ on exactly one input, maxDepth == 1, and agree there: the original falls through '1 > AbsoluteMaxDepth' (false) and yields maxDepth = 1; the mutant takes the clamp branch and yields the literal 1. Identical output for every input. (The sibling L77 Conditional-false mutant is a REAL hole - E3-E1 #8 - not this entry.) UPDATED 2026-08-27: round 27 introduced src/Shared/DwarfLimits.cs and replaced the literal 1 with DwarfLimits.MinMaxDepth. The proof is UNCHANGED because MinMaxDepth == 1: the two forms still differ only at maxDepth == 1, where both yield 1. The expression text is updated because the row’s identity is leg+file+member+mutator+original, and an identity naming source that no longer exists matches no mutant Stryker can generate.",
       "anchor": "Issues/ledgers/E3-E1-report.md § the equivalent mutant (DwarfRefContext L77 Equality)"
+    },
+    {
+      "leg": "runtime",
+      "file": "src/DwarfMapper/DwarfRefContext.cs",
+      "member": "DwarfRefContext..ctor (upper clamp)",
+      "lineAtProof": 106,
+      "lineCurrent": 106,
+      "mutator": "Equality",
+      "original": "maxDepth > DwarfLimits.AbsoluteMaxDepth",
+      "mutated": "maxDepth >= DwarfLimits.AbsoluteMaxDepth",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The two forms differ on exactly one input, maxDepth == AbsoluteMaxDepth, and agree there: the original takes the fall-through arm and yields maxDepth, which IS AbsoluteMaxDepth; the mutant takes the clamp arm and yields the constant AbsoluteMaxDepth. Identical value for every input, so no test can distinguish them — the mirror of the lower-clamp row above. Its 2026-09-07 'kill' was an accidental static kill (static=True, coveredBy=0, killedBy only GeneratedDocsAreCurrentTests.The_api_reference_matches_the_public_surface); it survived honestly in StrykerOutput/2026-09-14.19-15-03 and 2026-09-14.20-10-34.",
+      "anchor": "Issues/ledgers/round30-ledger.md § Owner rulings (runtime mutation floor); Issues/ledgers/E3-E1-report.md § the equivalent mutant (DwarfRefContext L77 Equality)"
     },
     {
       "leg": "runtime",
