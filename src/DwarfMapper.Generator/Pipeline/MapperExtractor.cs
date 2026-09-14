@@ -598,7 +598,28 @@ namespace DwarfMapper.Generator.Pipeline
                 EquatableArray.From(containingTypes),
                 EquatableArray.From(conventionRefs),
                 registerCollectionShapes,
-                EquatableArray.From(handWrittenProvides));
+                EquatableArray.From(handWrittenProvides),
+                // A co-located mapper is a new top-level internal class, so the assembly can always name it.
+                separateEmit || IsNameableFromAssembly(classSymbol));
+        }
+
+        /// <summary>
+        ///     True when code at namespace scope in the same assembly can name <paramref name="type" />: it and every
+        ///     type it is nested in are <c>public</c>, <c>internal</c> or <c>protected internal</c>. A <c>private</c>,
+        ///     <c>protected</c> or <c>private protected</c> link anywhere in the chain hides it from the assembly's
+        ///     top-level generated classes.
+        /// </summary>
+        internal static bool IsNameableFromAssembly(INamedTypeSymbol type)
+        {
+            for (var current = type; current is not null; current = current.ContainingType)
+            {
+                if (current.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes

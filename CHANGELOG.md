@@ -410,6 +410,14 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A `[DwarfMapper]` class nested as `private`, `protected` or `private protected` broke the whole assembly's
+  build.** The mapper itself was generated correctly inside its containing type, but the assembly-wide generated
+  classes — the `x.ToDto()` convenience extensions, `AddDwarfMappers()` and the ambient registration — are top-level
+  and hold a `new()` of every mapper, and they cannot name one hidden inside another type: `CS0122` in generated
+  files, with no DwarfMapper diagnostic. Those three now leave such a mapper out, the same way the ambient registry
+  already leaves out a map whose types another assembly cannot name. The mapper is still generated and callable
+  wherever its author can reach it; `internal`, `protected internal` and `public` nested mappers keep all three.
+
 - **`[FlattenGraph]` into a `struct` node DTO generated code that did not compile.** The directive accepts a node
   DTO that is "a class or struct with a public constructor", but the flat-node helper it synthesizes opened with
   `return null!;` for a null node, which a value type rejects: `CS0037` in a generated file, with no DwarfMapper

@@ -43,6 +43,12 @@ namespace DwarfMapper.Generator.Model
     ///     HOLDS a collection mapped to the collection, say) which the author wants reachable through the ambient
     ///     facade anyway. Registered exactly like a generated map — a declaration, not reflection.
     /// </param>
+    /// <param name="IsNameableFromAssembly">
+    ///     Whether code at namespace scope in this assembly can name the mapper — false when it, or a type it is
+    ///     nested in, is <c>private</c>, <c>protected</c> or <c>private protected</c>. The extension facade, the DI
+    ///     registration and the ambient registration are top-level classes that hold a <c>new()</c> of each mapper, so
+    ///     they leave such a mapper out; its own generated half is emitted inside the containing type and is unaffected.
+    /// </param>
     public sealed record MapperClassModel(
         string Namespace,
         string ClassName,
@@ -56,7 +62,8 @@ namespace DwarfMapper.Generator.Model
         EquatableArray<string> ContainingTypes = default,
         EquatableArray<string> ConventionMethodNames = default,
         bool RegisterCollectionShapes = true,
-        EquatableArray<HandWrittenProvide> HandWrittenProvides = default) : IEquatable<MapperClassModel>
+        EquatableArray<HandWrittenProvide> HandWrittenProvides = default,
+        bool IsNameableFromAssembly = true) : IEquatable<MapperClassModel>
     {
         /// <summary>
         ///     Unique per generated file. Includes the containing types: <c>Outer.M</c> and a namespace-level <c>M</c>

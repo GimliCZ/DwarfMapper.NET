@@ -179,7 +179,10 @@ namespace DwarfMapper.Generator
             var ownProvided = mappers.Collect().Combine(coLocated.Collect())
                 .Select(static (pair, _) =>
                 {
-                    var usable = pair.Left.AddRange(pair.Right).Where(static m => !m.HasBlockingError).ToList();
+                    // Same filter as EmitAggregates' registration, so the manifest never claims a pair it did not register.
+                    var usable = pair.Left.AddRange(pair.Right)
+                        .Where(static m => !m.HasBlockingError && m.IsNameableFromAssembly)
+                        .ToList();
                     return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
                 });
 
@@ -470,6 +473,11 @@ namespace DwarfMapper.Generator
             }
 
             ReportDivergentSynthesizedPairs(spc, usable);
+
+            // The three aggregates below are top-level classes that NAME each mapper. One nested as private,
+            // protected or private protected cannot be named from there (CS0122 in a generated file), so it is left
+            // out of all three — as the ambient registry already leaves out a map whose types it cannot name.
+            usable = usable.Where(static m => m.IsNameableFromAssembly).ToList();
 
             var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable, publicExtensions);
             if (facade is not null)
