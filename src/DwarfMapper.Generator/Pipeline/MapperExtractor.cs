@@ -543,6 +543,17 @@ namespace DwarfMapper.Generator.Pipeline
                         pi.Loc,
                         $"[MapIgnore<{pi.Target.ToDisplayString()}>(\"{pi.Member}\")] matches no mapped pair targeting {pi.Target.ToDisplayString()}"));
                 }
+                // DWARF095, pair-scoped: the type argument matched a pair, so DWARF056 stays quiet, but the name
+                // matches no member of that type — consumed, yet excluding nothing. Judged against the type alone
+                // (not an endpoint walk), so no liveness blinding applies.
+                else if (!IgnorableMemberNames(pi.Target, ctx.SemanticModel.Compilation, allowNonPublic, ignorableNamesMemo)
+                             .Contains(pi.Member))
+                {
+                    var target = pi.Target.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnscopedIgnoreNoMatch,
+                        pi.Loc,
+                        $"[MapIgnore<{target}>(\"{pi.Member}\")] on mapper '{classSymbol.Name}' names no destination member of " + $"'{target}' — it excludes nothing (directive names match exactly, " + "including case); fix the name or remove the attribute"));
+                }
 
             foreach (var pv in pairValues)
                 if (!pv.Consumed)

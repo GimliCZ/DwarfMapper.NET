@@ -417,6 +417,13 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A pair-scoped `[MapIgnore<T>("Name")]` naming no member of `T` excluded nothing, silently.** `DWARF056` already
+  reported a pair-scoped ignore whose *type argument* matched no mapped pair, and `DWARF095` an unscoped
+  `[MapIgnore("Name")]` whose *name* matched no destination member. The pair-scoped form fell between them: its type
+  matched a pair, its name matched nothing — a typo such as `[MapIgnore<Dto>("Extar")]` — and the member it meant to
+  exclude went on being mapped with no diagnostic. It now reports **`DWARF095`** (Warning), naming the attribute,
+  the mapper and the type it was judged against. **Remedy:** fix the name or remove the attribute.
+
 - **`DWARF012` named the wrong attribute for three of the four conflicts it reports.** A destination member that
   is `[MapIgnore]`d and also named by `[Reinterpret]`, `[MapShare]` or `[MapDenseEnumKeys]` was reported as
   "mapped via `[MapProperty]`", sending the reader to look for an attribute that was not there. The message now

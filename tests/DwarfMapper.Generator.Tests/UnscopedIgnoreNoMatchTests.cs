@@ -127,6 +127,61 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF095");
         }
 
+        // ── Pair-scoped site ─────────────────────────────────────────────────────────
+
+        private const string PairTypes = """
+                                         using DwarfMapper;
+                                         namespace Demo;
+                                         public class Src { public int Id { get; set; } public int Extra { get; set; } }
+                                         public class Dst { public int Id { get; set; } public int Extra { get; set; } }
+
+                                         """;
+
+        /// <summary>
+        ///     The pair-scoped form had half the guard. <c>DWARF056</c> reports a <c>[MapIgnore&lt;T&gt;]</c> whose TYPE
+        ///     argument matches no mapped pair, but one whose type matched and whose NAME matches no member of that
+        ///     type was consumed, excluded nothing, and said nothing — the same dead directive DWARF095 exists for.
+        /// </summary>
+        [Fact]
+        public void A_pair_scoped_MapIgnore_naming_no_member_of_its_matched_type_reports_DWARF095()
+        {
+            var (diagnostics, generated) = GeneratorTestHarness.Run(PairTypes +
+                                                                   "[DwarfMapper][GenerateMap<Src, Dst>][MapIgnore<Dst>(\"Extar\")] public partial class M { }\n");
+
+            var dead = Assert.Single(diagnostics, d => d.Id == "DWARF095");
+            Assert.Equal(
+                "[MapIgnore<Dst>(\"Extar\")] on mapper 'M' names no destination member of 'Dst' — it excludes nothing " +
+                "(directive names match exactly, including case); fix the name or remove the attribute",
+                dead.GetMessage(CultureInfo.InvariantCulture));
+            Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF056");
+            Assert.Contains("Extra = src.Extra", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_pair_scoped_MapIgnore_naming_a_real_member_is_honoured_and_reports_nothing()
+        {
+            var (diagnostics, generated) = GeneratorTestHarness.Run(PairTypes +
+                                                                   "[DwarfMapper][GenerateMap<Src, Dst>][MapIgnore<Dst>(\"Extra\")] public partial class M { }\n");
+
+            Assert.DoesNotContain(diagnostics, d => d.Id is "DWARF095" or "DWARF056");
+            Assert.DoesNotContain("Extra =", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A pair-scoped ignore whose TYPE matches no pair is DWARF056's alone — its name was never judged against
+        ///     a destination, so calling it dead as well would be two ids about one mistake.
+        /// </summary>
+        [Fact]
+        public void A_pair_scoped_MapIgnore_matching_no_pair_reports_DWARF056_only()
+        {
+            var (diagnostics, _) = GeneratorTestHarness.Run(PairTypes +
+                                                           "public class Other { public int Id { get; set; } }\n" +
+                                                           "[DwarfMapper][GenerateMap<Src, Dst>][MapIgnore<Other>(\"Nope\")] public partial class M { }\n");
+
+            Assert.Contains(diagnostics, d => d.Id == "DWARF056");
+            Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF095");
+        }
+
         // ── Class site ───────────────────────────────────────────────────────────────
 
         [Fact]

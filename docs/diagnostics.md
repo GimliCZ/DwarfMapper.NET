@@ -1764,6 +1764,10 @@ class's pairs legitimately matches nothing on the others and is not reported. A 
 async-stream **element** pair is [`DWARF090`](#dwarf090)'s report (the directive is dropped element-wise),
 not this one.
 
+A **pair-scoped** `[MapIgnore<TTarget>("Name")]` whose type argument matches a mapped pair but whose name
+matches no member of `TTarget` reports this id too — the message names the attribute as written and the type
+it was judged against. Its *type* argument matching no pair is [`DWARF056`](#dwarf056)'s report instead.
+
 **Fix:** fix the name (the message quotes it as written), or remove the attribute. To ignore a member of a
 specific pair from the class, prefer the pair-scoped `[MapIgnore<TTarget>("Name")]`, which
 [`DWARF056`](#dwarf056) guards against typos in the type argument the same way.
