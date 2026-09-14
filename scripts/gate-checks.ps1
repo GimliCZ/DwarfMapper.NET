@@ -462,6 +462,58 @@ function Assert-NoMutatedProductBinaries {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Invoke-DecontaminatedMutationLeg — runs one mutation leg so that its planted mutants are removed on EVERY
+# exit, and refuses to start a leg on a tree that is already contaminated.
+#
+# WHY (round 30, measured twice in one day). Each leg used to end with Remove-PlantedMutants and
+# Assert-NoMutatedProductBinaries as its LAST two statements, after Assert-LegScoreWithinBand. So:
+#   * a leg that beat its floor by a full point THREW at the R2 band check - as it must - and never reached
+#     the sweep, leaving six mutated DwarfMapper.Generator.dll copies in tests/**/bin/Release;
+#   * a leg killed from outside (the harness stopped one for low memory) never reached it either, and the NEXT
+#     leg measured on the contaminated tree and reported a score that described a mutated product.
+# The finally closes the first. The pre-flight closes the second, which no finally can: a killed process runs
+# nothing, so the only place to catch its leftovers is the start of the next leg.
+#
+# The body's own failure is re-thrown after decontamination, so an R2 or below-break red still fails the run
+# with its own message. If the post-leg sweep ALSO fails, both are reported - neither hides the other.
+function Invoke-DecontaminatedMutationLeg {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][scriptblock]$Body
+    )
+
+    Assert-NoMutatedProductBinaries -Leg "$Leg (pre-flight)" -Root $Root
+
+    $failure = $null
+    try {
+        & $Body
+    }
+    catch {
+        $failure = $_
+    }
+    finally {
+        # In a finally so a stopped pipeline (Ctrl+C, a -TimeoutMinutes kill) still removes what was planted.
+        Remove-PlantedMutants -Leg $Leg -Root $Root
+    }
+
+    try {
+        Assert-NoMutatedProductBinaries -Leg $Leg -Root $Root
+    }
+    catch {
+        if ($failure) {
+            throw ("mutation leg '$Leg' failed: $($failure.Exception.Message)" + [Environment]::NewLine +
+                   "and its decontamination sweep ALSO failed: $($_.Exception.Message)")
+        }
+        throw
+    }
+
+    if ($failure) {
+        throw $failure
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # Package-size ceiling (round-23 S6; the RESEARCH-97-PERCENT-GATES "package/binary size ratchet" row).
 #
 # The shipped .nupkg has a MEASURED ceiling in whole KB, and the ceiling equals the measurement truncated

@@ -107,6 +107,82 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             }
         }
 
+        /// <summary>
+        ///     The leg wrapper decontaminates on EVERY exit, and refuses to start on a contaminated tree.
+        ///     <para>
+        ///         Round 30 measured the hole this closes, twice in one day. Each leg used to run its sweep as the
+        ///         LAST statements of its block, after Assert-LegScoreWithinBand — so a leg that failed R2 (as a
+        ///         leg that beats its floor by a point must) threw past Remove-PlantedMutants and left six mutated
+        ///         DwarfMapper.Generator.dll copies in tests/**/bin/Release. A harness-killed leg never reached the
+        ///         sweep at all, and the next leg then measured on that contaminated tree and reported a number.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void The_leg_wrapper_decontaminates_when_the_leg_throws_and_refuses_a_contaminated_start()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "dwarfmapper-legwrap-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                MakeTree(Path.Combine(dir, "leg-throws"), false, true, true);
+                MakeTree(Path.Combine(dir, "already-planted"), true, true, true);
+                MakeTree(Path.Combine(dir, "clean-leg"), false, true, true);
+
+                WriteTemp(Path.Combine(dir, "battery.ps1"),
+                    PwshBattery.ScriptPrelude +
+                    """
+                    $plantedCopy = 'tests/DwarfMapper.CorpusTests/bin/Debug/DwarfMapper.Generator.dll'
+                    Show 'thrown-leg' {
+                        Invoke-DecontaminatedMutationLeg -Leg 'fake' -Root (Join-Path $WorkDir 'leg-throws') -Body {
+                            # What Stryker does to an analyzer-only reference, then an R2 failure.
+                            Set-Content -LiteralPath (Join-Path (Join-Path $WorkDir 'leg-throws') $plantedCopy) `
+                                -Value 'mutated bytes StrykerNamespace.MutantControl' -NoNewline
+                            throw 'R2 boom'
+                        }
+                    }
+                    Show 'pre-flight' {
+                        Invoke-DecontaminatedMutationLeg -Leg 'fake' -Root (Join-Path $WorkDir 'already-planted') -Body {
+                            Set-Content -LiteralPath (Join-Path $WorkDir 'already-planted-ran.txt') -Value 'ran'
+                        }
+                    }
+                    Show 'clean-leg' {
+                        Invoke-DecontaminatedMutationLeg -Leg 'fake' -Root (Join-Path $WorkDir 'clean-leg') -Body {
+                            Set-Content -LiteralPath (Join-Path $WorkDir 'clean-leg-ran.txt') -Value 'ran'
+                        }
+                    }
+                    """);
+
+                var cases = PwshBattery.Run(dir, 3, "the mutation-leg decontamination wrapper");
+                var corpusCopy = Path.Combine("tests", "DwarfMapper.CorpusTests", "bin", "Debug", "DwarfMapper.Generator.dll");
+
+                // A throwing leg still surfaces ITS OWN failure — the wrapper must not swallow an R2 red — and the
+                // mutant it planted is gone regardless.
+                Assert.StartsWith("THREW", cases["thrown-leg"], StringComparison.Ordinal);
+                Assert.Contains("R2 boom", cases["thrown-leg"], StringComparison.Ordinal);
+                Assert.False(File.Exists(Path.Combine(dir, "leg-throws", corpusCopy)),
+                    "the leg threw after planting a mutant, and the wrapper left the mutant in the test bin — the " + "round-30 contamination.");
+
+                // A tree that is already contaminated is refused before the leg spends an hour measuring on it.
+                Assert.StartsWith("THREW", cases["pre-flight"], StringComparison.Ordinal);
+                Assert.Contains("MUTATED", cases["pre-flight"], StringComparison.Ordinal);
+                Assert.Contains("CorpusTests", cases["pre-flight"], StringComparison.Ordinal);
+                Assert.False(File.Exists(Path.Combine(dir, "already-planted-ran.txt")),
+                    "the leg body ran on a tree that already carried a mutated product assembly.");
+
+                // The control: a clean leg runs and passes, and a clean product copy is left where it is.
+                Assert.StartsWith("OK", cases["clean-leg"], StringComparison.Ordinal);
+                Assert.True(File.Exists(Path.Combine(dir, "clean-leg-ran.txt")), "the clean leg's body never ran.");
+                Assert.True(File.Exists(Path.Combine(dir, "clean-leg", corpusCopy)),
+                    "the wrapper removed a CLEAN product assembly — only marked copies may be deleted.");
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
+            }
+        }
+
         [Fact]
         public void Every_mutation_leg_calls_the_sweep_in_housekeeping_and_in_ci()
         {
@@ -117,17 +193,37 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var gateChecks = File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "gate-checks.ps1"));
             Assert.Contains("function Assert-NoMutatedProductBinaries", gateChecks, StringComparison.Ordinal);
 
+            // The wrapper owns the sweep, and owns it in a finally: a leg that throws must still be swept.
+            var wrapperStart = gateChecks.IndexOf("function Invoke-DecontaminatedMutationLeg", StringComparison.Ordinal);
+            Assert.True(wrapperStart >= 0, "scripts/gate-checks.ps1 no longer defines Invoke-DecontaminatedMutationLeg.");
+            var wrapperEnd = gateChecks.IndexOf("\nfunction ", wrapperStart + 1, StringComparison.Ordinal);
+            var wrapper = wrapperEnd < 0 ? gateChecks[wrapperStart..] : gateChecks[wrapperStart..wrapperEnd];
+            Assert.Contains("finally", wrapper, StringComparison.Ordinal);
+            Assert.Contains("Remove-PlantedMutants", wrapper, StringComparison.Ordinal);
+            Assert.Contains("Assert-NoMutatedProductBinaries", wrapper, StringComparison.Ordinal);
+
             var housekeeping = File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
-            var legCalls = Regex.Matches(housekeeping, @"Assert-NoMutatedProductBinaries ").Count;
-            // SIX since round 29 added the testing-toolkit verifier leg. A literal, not a count derived from
-            // the leg list: deriving it would make this assertion agree with whatever housekeeping.ps1
+            // SIX legs since round 29 added the testing-toolkit verifier leg. Literals, not counts derived from
+            // the leg list: deriving them would make these assertions agree with whatever housekeeping.ps1
             // happens to do, which is the one thing a sweep check must not do.
             //
-            // (The comment here read "FOUR" and the assertion read 5 — the round-27 pipeline leg moved the
-            // number and not the sentence. Corrected while moving it to 6, because a pin whose comment
-            // disagrees with its value is a pin nobody can review.)
-            Assert.True(legCalls == 6,
-                $"scripts/housekeeping.ps1 calls Assert-NoMutatedProductBinaries {legCalls} time(s), expected " + "exactly 6 (one per mutation leg) — a leg that is not swept can leave a mutated product " + "assembly in a test bin, and the next incremental build keeps it (I4).");
+            // Since round 30 every leg runs THROUGH the wrapper, so housekeeping calls the sweep functions
+            // directly zero times: a direct call is a leg that has stepped outside the finally again.
+            var wrapperCalls = Regex.Matches(housekeeping, @"Invoke-DecontaminatedMutationLeg -Leg ").Count;
+            Assert.True(wrapperCalls == 6,
+                $"scripts/housekeeping.ps1 calls Invoke-DecontaminatedMutationLeg {wrapperCalls} time(s), expected " + "exactly 6 (one per mutation leg) — a leg outside the wrapper is not swept when it throws, and " + "leaves a mutated product assembly in a test bin (I4).");
+            Assert.True(Regex.Matches(housekeeping, @"(?m)^\s*(Remove-PlantedMutants|Assert-NoMutatedProductBinaries) ").Count == 0,
+                "scripts/housekeeping.ps1 calls Remove-PlantedMutants / Assert-NoMutatedProductBinaries directly — " + "that leg sweeps only on success. Route it through Invoke-DecontaminatedMutationLeg.");
+
+            // And each leg's Stryker run sits inside ITS OWN wrapper call, not beside it.
+            foreach (var leg in new[] { "generator", "doc tooling", "runtime", "code fixes", "pipeline", "testing" })
+            {
+                var call = housekeeping.IndexOf($"Invoke-DecontaminatedMutationLeg -Leg '{leg}'", StringComparison.Ordinal);
+                Assert.True(call >= 0, $"scripts/housekeeping.ps1: the '{leg}' leg is not run through Invoke-DecontaminatedMutationLeg.");
+                var next = housekeeping.IndexOf("Invoke-DecontaminatedMutationLeg -Leg ", call + 1, StringComparison.Ordinal);
+                var body = next < 0 ? housekeeping[call..] : housekeeping[call..next];
+                Assert.Contains($"Invoke-StrykerLeg -Leg '{leg}'", body, StringComparison.Ordinal);
+            }
 
             // CI runs the SAME function rather than a re-implementation, so the ci.yml step must dot-source
             // the gate file. A bash re-write of the scan would be a second thing to keep in step, which is
