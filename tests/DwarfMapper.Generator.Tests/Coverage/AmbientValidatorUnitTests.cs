@@ -7,7 +7,12 @@ using Microsoft.CodeAnalysis.CSharp;
 // Unit tests for AmbientValidator answers no compilation reaches (per-branch rule: extract or expose, test directly):
 //   - IsHandWritten without a syntax reference: every attribute of the compilation's own assembly has one;
 //   - EmitValidateDiExtension with nothing consumed: its only caller runs it after EmitValidateMethod, which already
-//     returns empty for an empty set.
+//     returns empty for an empty set;
+//   - EmitValidateMethod with nothing consumed: a validation root that consumes nothing DOES reach it, but not
+//     deterministically under the test harness. The consumed set includes every referenced assembly's
+//     DwarfRequiresMap manifest, and GeneratorTestHarness builds its shared reference set once from the assemblies
+//     the process has loaded by then. Two full runs of the suite differed exactly here (4 hits, then 0) with no
+//     change to AmbientValidator, so the branch is pinned directly rather than left to test order.
 namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class AmbientValidatorUnitTests
@@ -36,6 +41,12 @@ namespace DwarfMapper.Generator.Tests.Coverage
         public void An_attribute_in_a_generated_file_is_not_hand_written()
         {
             Assert.False(AmbientValidator.IsHandWritten(AttributeReferenceIn("Manifest" + GeneratedSourceExtensions.GeneratedFileSuffix)));
+        }
+
+        [Fact]
+        public void Nothing_consumed_emits_no_Validate_method()
+        {
+            Assert.Equal(string.Empty, AmbientValidator.EmitValidateMethod(Array.Empty<(string, string)>(), autoValidate: true, hasOwnRegistration: true));
         }
 
         [Fact]

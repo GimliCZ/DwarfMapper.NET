@@ -517,6 +517,50 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        /// <summary>
+        ///     The other two complex prefixes' Preserve answer, on a derived node: a DICTIONARY of objects is a complex
+        ///     helper too, so it is reported, not called. Pinned because FlatLeafBlockedUnderPreserve asks
+        ///     IsComplexHelper only under Preserve, and no other Preserve fixture carries a dictionary leaf.
+        /// </summary>
+        [Fact]
+        public void HeteroFlattenGraph_dictionary_leaf_on_a_derived_node_reports_DWARF075_under_Preserve()
+        {
+            var src = FsNodeSourceWith("",
+                "public Dictionary<string, Address> ByCity { get; set; } = new();",
+                "",
+                "public Dictionary<string, AddressDto> ByCity { get; set; } = new();",
+                AddressTypes,
+                "(ReferenceHandling = ReferenceHandlingStrategy.Preserve)");
+
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            var dwarf075 = Assert.Single(diags, d => d.Id == "DWARF075");
+            Assert.Contains("member 'ByCity'", dwarf075.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            Assert.DoesNotContain("ByCity = ", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        /// <summary>
+        ///     A SIMPLE synthesized helper (here the enum one) is never force-marked recursion-capable, so under Preserve
+        ///     the leaf is still flattened — the safe-prefix half of the ISSUE-001 split. Without it, a helper that
+        ///     treated every synthesized name as complex would pass every other test here.
+        /// </summary>
+        [Fact]
+        public void HeteroFlattenGraph_enum_leaf_on_a_derived_node_is_flattened_under_Preserve()
+        {
+            var src = FsNodeSourceWith("",
+                "public Kind K { get; set; }",
+                "",
+                "public KindDto K { get; set; }",
+                "public enum Kind { A, B } public enum KindDto { A, B }",
+                "(ReferenceHandling = ReferenceHandlingStrategy.Preserve)");
+
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF075");
+
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("K = __DwarfMap_EnumName_", generated, StringComparison.Ordinal);
+        }
+
         // ── 20. The same simple leaf helper on two arms is synthesized once ───────────
 
         [Fact]
