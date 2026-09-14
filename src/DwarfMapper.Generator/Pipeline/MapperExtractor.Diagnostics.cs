@@ -138,7 +138,9 @@ namespace DwarfMapper.Generator.Pipeline
                 severity));
         }
 
-        private static string AccessibilityText(Accessibility a)
+        // Internal so its no-accessibility fallback is testable: every symbol it is asked about is a declared
+        // class or method, which never reports NotApplicable.
+        internal static string AccessibilityText(Accessibility a)
         {
             return a switch
             {
