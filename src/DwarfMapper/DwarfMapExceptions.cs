@@ -79,6 +79,13 @@ namespace DwarfMapper
             IReadOnlyList<Type>? ambiguousInterfaces,
             bool isUpdate = false)
         {
+            // The typed constructors take non-nullable types, but a nullable-oblivious caller can pass null, and an
+            // exception constructor must not throw while composing its own message. Each name is read once: the
+            // iterator remedy below is reached only when sourceType is non-null, so a `sourceType?.Name` written
+            // inside it carried a null arm no input can reach.
+            var sourceName = sourceType?.Name;
+            var destinationName = destinationType?.Name;
+
             // Update-into has its own key space, so "no map" here means something different from the create case:
             // a create-map for the same pair may well exist. Saying so stops the reader hunting for a
             // registration that is already there.
@@ -87,7 +94,7 @@ namespace DwarfMapper
                 return $"No DwarfMapper UPDATE-INTO map is registered for '{sourceType}' -> '{destinationType}'. " +
                        "A create-map for the same pair does not satisfy this — they are different operations " +
                        "and are keyed separately. Declare a two-parameter partial method, e.g. " +
-                       $"`public partial void Update({sourceType?.Name} source, {destinationType?.Name} " +
+                       $"`public partial void Update({sourceName} source, {destinationName} " +
                        "destination);`, on a public mapper with a parameterless constructor.";
             }
 
@@ -97,16 +104,16 @@ namespace DwarfMapper
                        "registered directly or on a base type, and more than one of its interfaces has a " +
                        $"registration ({string.Join(", ", ambiguousInterfaces.Select(i => i.Name))}). Interface " +
                        "order is not defined, so no map was chosen. Declare the pair for the concrete source " +
-                       $"type: [GenerateMap<{sourceType?.Name}, {destinationType?.Name}>].";
+                       $"type: [GenerateMap<{sourceName}, {destinationName}>].";
             }
 
             // A compiler-generated iterator (Where/Select/SelectMany) can never be named by an attribute, so the
             // generic "declare the pair" advice is unactionable for it. Say the thing that actually works.
-            var isIterator = sourceType?.Name.Contains('<', StringComparison.Ordinal) == true || sourceType?.IsNestedPrivate == true;
+            var isIterator = sourceName?.Contains('<', StringComparison.Ordinal) == true || sourceType?.IsNestedPrivate == true;
 
             var remedy = isIterator
-                ? $"'{sourceType?.Name}' is a compiler-generated LINQ iterator — no [GenerateMap] attribute can " + "name it. Materialize the sequence before mapping (.ToList()), or declare the pair for the " + "interface it implements, e.g. [GenerateMap<IEnumerable<T>, " + $"{destinationType?.Name}>]."
-                : $"Declare [GenerateMap<{sourceType?.Name}, {destinationType?.Name}>] in a referenced assembly " + "(its module initializer self-registers the map), or inject that assembly's concrete mapper " + "directly.";
+                ? $"'{sourceName}' is a compiler-generated LINQ iterator — no [GenerateMap] attribute can " + "name it. Materialize the sequence before mapping (.ToList()), or declare the pair for the " + "interface it implements, e.g. [GenerateMap<IEnumerable<T>, " + $"{destinationName}>]."
+                : $"Declare [GenerateMap<{sourceName}, {destinationName}>] in a referenced assembly " + "(its module initializer self-registers the map), or inject that assembly's concrete mapper " + "directly.";
 
             return $"No DwarfMapper map is registered for '{sourceType}' -> '{destinationType}'. Lookup tried the " + "runtime type, its base types, and its interfaces. " + remedy;
         }
