@@ -441,6 +441,23 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                     [DwarfMapper(NullStrategy = NullStrategy.SetDefault)] public partial class M { public partial B Map(A a); }
                                                     """, "DwarfGenerator");
 
+            // Round 30 (corpus hole, owner-approved): no case set SkipNullSourceMembers, so the golden corpus never
+            // executed ApplySkipNullSourceMembers past its option check — the deferrable-target walk and the
+            // IsNullCapableSourceMember lookup were locked by nothing, which extracted-reach measured (49/52) the
+            // moment that predicate sat in a seam file. One member per arm of the decision: Name (nullable
+            // REFERENCE into a non-nullable target — guarded, and its DWARF070 cleared), Count (nullable value type —
+            // guarded), Id (non-nullable value type — never null, left in the initializer) and Code (init-only
+            // target — cannot be deferred, left in the initializer). `#nullable enable` because under the runner's
+            // default Disable the reference annotation is Oblivious and the reference arm is not the one taken.
+            yield return ("SkipNullSourceMembers", """
+                                                   #nullable enable
+                                                   using DwarfMapper;
+                                                   namespace Demo;
+                                                   public class A { public int Id { get; set; } public string? Name { get; set; } public int? Count { get; set; } public string? Code { get; set; } }
+                                                   public class B { public int Id { get; set; } public string Name { get; set; } = ""; public int Count { get; set; } public string? Code { get; init; } }
+                                                   [DwarfMapper(SkipNullSourceMembers = true)] public partial class M { public partial B Map(A a); }
+                                                   """, "DwarfGenerator");
+
             yield return ("PreserveReferences", """
                                                 using DwarfMapper;
                                                 namespace Demo;

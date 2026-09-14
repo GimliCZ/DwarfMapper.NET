@@ -81,6 +81,12 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "NullStrategySetDefault", ".GetValueOrDefault()"
                 },
                 {
+                    // The deferred guard on the nullable-REFERENCE member — the arm the corpus never took. Emitted
+                    // only when ApplySkipNullSourceMembers ran to IsNullCapableSourceMember and marked the member;
+                    // without the option the same member is a plain initializer assignment.
+                    "SkipNullSourceMembers", "if (a.Name is not null) "
+                },
+                {
                     "PreserveReferences", "TryGetReference"
                 },
                 {
