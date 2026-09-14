@@ -164,6 +164,18 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Error,
             true);
 
+        // The target-side twin of DWARFR13. typeof(Dto<>) — or typeof(Outer<>.Dto), a class nested in an unbound generic
+        // type — names no type the registry can construct or name in `ToDto(this Src source)`. It was refused, but by
+        // the parameterless-constructor check (DWARFR09), which read an unbound type's constructors and said the wrong
+        // thing: Dto<T> has a constructor, and a caller who adds another changes nothing. Checked before that one.
+        public static readonly DiagnosticDescriptor OpenGenericTarget = new(
+            "DWARFR14",
+            "A [MapTo] target type cannot be an open generic",
+            "[MapTo] target {0} is an open generic type; the registry can only map to a closed type — close its type arguments in the typeof(...), or map the pair with the [DwarfMapper] class model",
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
         public static readonly DiagnosticDescriptor RecursiveNesting = new(
             "DWARFR06",
             "Recursive nested mapping is not supported by the registry",

@@ -425,6 +425,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapTo(typeof(Dto<>))]` was refused for the wrong reason.** An open generic target — or `typeof(Outer<>.Dto)`,
+  a class nested in an unbound generic type — was refused as `DWARFR09`, "has no public parameterless
+  constructor", although `Dto<T>` has one and adding another changed nothing. It now reports **`DWARFR14`**,
+  naming the open type. **Remedy:** close the type arguments (`typeof(Dto<int>)`), or map the pair with the
+  `[DwarfMapper]` class model.
+
 - **A `[FlattenGraph]` with `[MapDerivedType]` arms silently dropped a nested-object or collection member of a
   derived node.** A member such as `Address Addr` or `List<Address> Addrs` on `File : FsNode` was left at the
   destination's default in every mode, with no diagnostic. The same leaf on a non-derived graph node has been

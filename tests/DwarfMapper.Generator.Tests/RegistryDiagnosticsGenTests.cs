@@ -727,6 +727,40 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(s);
         }
 
+        // ── DWARFR14 — an open generic [MapTo] target ───────────────────────────────────────────────
+        // typeof(Dto<>) names no type the registry can construct. It WAS refused, but as DWARFR09 "has no public
+        // parameterless constructor" — loud, and the wrong reason: Dto<T> has one, and adding another changes nothing.
+        // A class nested in an unbound generic type, typeof(Outer<>.Dto), is not generic itself and is just as open.
+        [Theory]
+        [InlineData("[MapTo(typeof(Dto<>))] public class Src { public int A { get; set; } } public class Dto<T> { public int A { get; set; } }", "Demo.Dto<>")]
+        [InlineData("[MapTo(typeof(Outer<>.Dto))] public class Src { public int A { get; set; } } public class Outer<T> { public class Dto { public int A { get; set; } } }", "Demo.Outer<>.Dto")]
+        public void An_open_generic_MapTo_target_reports_DWARFR14_not_DWARFR09(string types, string shown)
+        {
+            var s = "using DwarfMapper;\nnamespace Demo;\n" + types;
+            var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+
+            var r14 = Assert.Single(diagnostics, d => d.Id == "DWARFR14");
+            Assert.Equal(
+                $"[MapTo] target {shown} is an open generic type; the registry can only map to a closed type — close its " +
+                "type arguments in the typeof(...), or map the pair with the [DwarfMapper] class model",
+                r14.GetMessage(CultureInfo.InvariantCulture));
+            Assert.DoesNotContain(diagnostics, d => d.Id is "DWARFR09" or "DWARFR01");
+            Assert.Empty(generated);
+            GeneratorAssert.EmitsCompilableCode(s);
+        }
+
+        [Fact]
+        public void A_closed_generic_MapTo_target_is_not_DWARFR14()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             [MapTo(typeof(Dto<int>))] public class Src { public int A { get; set; } }
+                             public class Dto<T> { public int A { get; set; } }
+                             """;
+            Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR14");
+        }
+
         // The MESSAGE, not just the id — and this one is the reason the gate two facts below exists. DWARFR11
         // shipped with a literal `{ ... }` in its MessageFormat, which is an unescaped format-specifier brace:
         // string.Format throws FormatException, Roslyn catches it and hands back the UNFORMATTED string, and the

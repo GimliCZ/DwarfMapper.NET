@@ -71,6 +71,21 @@ namespace DwarfMapper.Generator.Registry
                 });
         }
 
+        /// <summary>
+        ///     Whether <paramref name="type" /> is <c>typeof(Dto&lt;&gt;)</c>, or is nested in a type written unbound
+        ///     (<c>typeof(Outer&lt;&gt;.Dto)</c>) — which is not generic itself and is just as open (DWARFR14).
+        /// </summary>
+        private static bool IsOpenGeneric(INamedTypeSymbol type)
+        {
+            for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
+                if (t.IsUnboundGenericType)
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
         private static Model Extract(GeneratorAttributeSyntaxContext ctx)
         {
             var source = (INamedTypeSymbol)ctx.TargetSymbol;
@@ -190,6 +205,16 @@ namespace DwarfMapper.Generator.Registry
             for (var ti = 0; ti < targetCount; ti++)
             {
                 var target = targets[ti];
+
+                // Before every other target check: an unbound type's constructors and members describe no type that
+                // exists, so the parameterless-constructor check below used to answer for it — with the wrong reason.
+                if (IsOpenGeneric(target))
+                {
+                    diags.Add(new DiagnosticInfo(RegistryDiagnostics.OpenGenericTarget, location, target.ToDisplayString()));
+                    hasError = true;
+                    continue;
+                }
+
                 if (!IsMappableTarget(target, source))
                 {
                     diags.Add(new DiagnosticInfo(RegistryDiagnostics.InvalidTarget, location, target.ToDisplayString()));
