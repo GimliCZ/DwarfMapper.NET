@@ -110,5 +110,50 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("ImmutableDictionary.CreateBuilder<", generated, StringComparison.Ordinal);
             Assert.Contains("if (src is null) return null;", generated, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     The MUTABLE twin of the test above: a None-mode cycle through a nullable <c>Dictionary&lt;,&gt;</c> under
+        ///     <c>NullCollections = AsNull</c> re-synthesizes a helper that keeps a null source null.
+        /// </summary>
+        [Fact]
+        public void A_None_mode_cycle_through_a_nullable_mutable_dictionary_keeps_a_null_source_null()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public class Node { public int Id { get; set; } public Dictionary<string, Node>? Children { get; set; } }
+                               public class NodeDto { public int Id { get; set; } public Dictionary<string, NodeDto>? Children { get; set; } }
+                               [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext", generated, StringComparison.Ordinal);
+            Assert.Contains("if (src is null) return null;", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A source that is only an <c>IEnumerable&lt;KeyValuePair&lt;,&gt;&gt;</c> has no <c>Count</c> to pre-size the
+        ///     destination with, and the re-synthesized helper must build the dictionary without one.
+        /// </summary>
+        [Fact]
+        public void A_None_mode_cycle_through_a_countless_pair_sequence_re_synthesizes_without_pre_sizing()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public class Node { public int Id { get; set; } public IEnumerable<KeyValuePair<string, Node>> Children { get; set; } = new Dictionary<string, Node>(); }
+                               public class NodeDto { public int Id { get; set; } public Dictionary<string, NodeDto> Children { get; set; } = new(); }
+                               [DwarfMapper]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext", generated, StringComparison.Ordinal);
+            Assert.Contains("global::Demo.NodeDto>();", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("src.Count", generated, StringComparison.Ordinal);
+        }
     }
 }

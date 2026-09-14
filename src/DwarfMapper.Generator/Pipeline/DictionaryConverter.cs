@@ -327,7 +327,9 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>Dictionary&lt;ChildDto, int&gt;</c> through a declared <c>ChildDto? ToDto(Child)</c> was CS8600
         ///     on the cast and CS8604 on the indexer, inside the consumer's .g.cs.
         /// </summary>
-        private static bool SourceKeyIsNullableRef(ITypeSymbol srcType)
+        // Internal, with its twin below, so the lookup's not-a-pair answers are testable: every dictionary source
+        // the converter admits implements IEnumerable<KeyValuePair<K, V>>, so no compilation reaches them.
+        internal static bool SourceKeyIsNullableRef(ITypeSymbol srcType)
         {
             var key = srcType.AllInterfaces.Prepend(srcType)
                 .OfType<INamedTypeSymbol>()
@@ -338,7 +340,7 @@ namespace DwarfMapper.Generator.Pipeline
             return key is { IsReferenceType: true, NullableAnnotation: NullableAnnotation.Annotated };
         }
 
-        private static bool SourceValueIsNullableRef(ITypeSymbol srcType)
+        internal static bool SourceValueIsNullableRef(ITypeSymbol srcType)
         {
             // Every admitted dictionary source implements the interface, so the lookup always answers; a
             // single expression keeps that fact from leaving an unreachable fallback behind.
