@@ -339,5 +339,17 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
             Assert.NotNull(provider);
             Assert.Same(WellKnownFixAllProviders.BatchFixer, provider);
         }
+
+        /// <summary>
+        ///     The fix answers to <c>DWARF085</c> and to nothing else — the exact set: a second id would offer to rewrite a
+        ///     class's pair-scoped attributes on a diagnostic that never compared a restatement with its base.
+        /// </summary>
+        [Fact]
+        public void The_fix_is_registered_for_DWARF085_alone()
+        {
+            var ids = new RestateBaseConfigurationCodeFixProvider().FixableDiagnosticIds;
+
+            Assert.Equal("DWARF085", Assert.Single(ids));
+        }
     }
 }
