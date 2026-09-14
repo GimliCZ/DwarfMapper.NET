@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Text;
 using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -103,16 +102,9 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static string MethodName(ITypeSymbol src, ITypeSymbol tgt)
         {
-            return GeneratedNames.Numeric + Sanitize(src) + "__" + Sanitize(tgt) + "_" + StableHash.Fnv1a("Num|" + Fq(src) + "|" + Fq(tgt));
-        }
-
-        private static string Sanitize(ITypeSymbol t)
-        {
-            var s = Fq(t);
-            var sb = new StringBuilder(s.Length);
-            foreach (var ch in s)
-                sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
-            return sb.ToString();
+            // No sanitizing: TryCreate admits only the ten integral special types, and each displays as its C#
+            // keyword (sbyte … ulong, nint, nuint — System.IntPtr included), which is already a valid identifier part.
+            return GeneratedNames.Numeric + Fq(src) + "__" + Fq(tgt) + "_" + StableHash.Fnv1a("Num|" + Fq(src) + "|" + Fq(tgt));
         }
     }
 }
