@@ -228,5 +228,30 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
             Assert.Empty(actions);
         }
+
+        /// <summary>
+        ///     A diagnostic located OUTSIDE any method declaration offers nothing: there is no forward method to invert.
+        ///     The guard's null-conditional (<c>forward?.Parent</c>) is what declines it — without it, reading the parent
+        ///     of a missing method would throw inside the IDE's lightbulb instead of simply offering no fix.
+        /// </summary>
+        [Fact]
+        public async Task A_diagnostic_outside_any_method_offers_no_fix()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Person { public int Id { get; set; } }
+                               public class PersonDto { public int Id { get; set; } }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [ReverseMap]
+                                   public partial PersonDto ToDto(Person p);
+                               }
+                               """;
+
+            var (actions, _) = await OfferedFor(src, "using DwarfMapper;").ConfigureAwait(true);
+
+            Assert.Empty(actions);
+        }
     }
 }
