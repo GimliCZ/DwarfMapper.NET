@@ -126,7 +126,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
-| pipeline | `stryker-config.pipeline.json` | 283 | 93.99 % (2026-09-14, round-30 generator sweep checkpoint) | 15 | 0 | 0 | 94.69 % |
+| pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
@@ -167,6 +167,23 @@ inside the pinned [93, 94) band, so `break` stays 93. Every scoreable mutant is 
 `MapperExtractor.Members.Phases.cs`, as in the 2026-09-11 run (the two context-record files carried none
 then either); the denominator moved inside that one file. The 15 proven rows are untouched, so `rawCeiling`
 is (283 − 15) / 283 = 94.69 %, and the score sits two undetected mutants under it.
+
+**Pipeline RE-MEASURED again 2026-09-14** (round-30 de-silence batch, assembly-end checkpoint;
+`StrykerOutput/2026-09-14.17-59-19`, clean tree): 283 → **284** scoreable, 266 → **267** killed, 17 survived,
+0 uncovered, 0 timeouts — **94.01 %**, which floors to 94, so R2 threw and `break`/`low` moved 93 → 94 (`high`
+94 → 95) in `stryker-config.pipeline.json` in the same commit. A position-tolerant diff against `12-00-50`
+shows exactly one changed population: the `"[MapProperty]"` `MessageArg2` string literal that `0d62dd1`
+(DWARF012 names its directive) added to `MapperExtractor.Members.Phases.cs`, killed by that commit's own
+`IgnoreConflictDirectiveNameTests`. That commit also inserted a line, so a position-keyed pairing reports every
+mutant below it as removed-and-added; none changed status. The 17 survivors are the same 17. The 15 proven rows
+are untouched, so `rawCeiling` is (284 − 15) / 284 = 94.71 %, and the score sits two undetected mutants under it.
+Headroom is zero: 94 % of 284 needs 267 detected.
+
+**Generator re-run 2026-09-14** (same checkpoint, `StrykerOutput/2026-09-14.17-04-32`): 91.08 % (378/415)
+again, so the floor and the row above do not move. One status changed with no commit to the file:
+`BlittableProof.cs:336`'s `sizeA != sizeB → ==` went Killed → **Timeout**. A timeout still counts as
+detected, so the score is identical, but it is exactly the reclassification R2's error text warns about.
+Recorded as observed, not attributed.
 
 
 **Testing leg added 2026-09-09**, and it is the first row here whose reason is a REGRESSION rather than a
@@ -371,14 +388,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "pipeline": {
       "config": "stryker-config.pipeline.json",
-      "scoreable": 283,
-      "measuredRawScore": 93.99,
+      "scoreable": 284,
+      "measuredRawScore": 94.01,
       "measuredOn": "2026-09-14",
       "provenEquivalent": 15,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 94.69,
-      "rawCeilingFormula": "(283 - 15) / 283 — denominator re-measured at the round-30 generator-sweep checkpoint (StrykerOutput/2026-09-14.12-00-50, 266 killed of 283 scoreable, 0 timeouts, clean tree; break stays 93); one of the 16 rows below was retired on 2026-09-13 (section 'Rows retired on 2026-09-13'), the rest are unchanged. The round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
+      "rawCeiling": 94.71,
+      "rawCeilingFormula": "(284 - 15) / 284 — denominator re-measured at the round-30 de-silence batch checkpoint (StrykerOutput/2026-09-14.17-59-19, 267 killed of 284 scoreable, 0 timeouts, clean tree; break 93 -> 94 by R2; the one new scoreable mutant is 0d62dd1's MessageArg2 literal, killed by its own test); one of the 16 rows below was retired on 2026-09-13 (section 'Rows retired on 2026-09-13'), the rest are unchanged. The round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
     }
   },
   "entries": [
