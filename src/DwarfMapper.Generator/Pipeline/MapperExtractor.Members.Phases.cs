@@ -290,7 +290,8 @@ namespace DwarfMapper.Generator.Pipeline
                 if (req.Ignores.Contains(tgtName))
                 {
                     // Contradictory: [MapIgnore] and [MapProperty] target the same member.
-                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, req.Location, tgtName));
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, req.Location, tgtName,
+                        MessageArg2: "[MapProperty]"));
                     continue;
                 }
 

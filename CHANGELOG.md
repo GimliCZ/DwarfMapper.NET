@@ -410,6 +410,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`DWARF012` named the wrong attribute for three of the four conflicts it reports.** A destination member that
+  is `[MapIgnore]`d and also named by `[Reinterpret]`, `[MapShare]` or `[MapDenseEnumKeys]` was reported as
+  "mapped via `[MapProperty]`", sending the reader to look for an attribute that was not there. The message now
+  names the directive that was actually written, and the rule's title is **Conflicting [MapIgnore] and a mapping
+  directive**. Severity and id are unchanged, so existing suppressions keep working.
+
 - **A `[DwarfMapper]` class nested as `private`, `protected` or `private protected` broke the whole assembly's
   build.** The mapper itself was generated correctly inside its containing type, but the assembly-wide generated
   classes — the `x.ToDto()` convenience extensions, `AddDwarfMappers()` and the ambient registration — are top-level

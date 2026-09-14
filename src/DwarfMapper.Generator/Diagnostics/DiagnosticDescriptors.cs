@@ -100,8 +100,11 @@ namespace DwarfMapper.Generator.Diagnostics
 
         public static readonly DiagnosticDescriptor IgnoreExplicitConflict = new(
             "DWARF012",
-            "Conflicting [MapIgnore] and [MapProperty]",
-            "Destination member '{0}' is both ignored via [MapIgnore] and mapped via [MapProperty]; remove one",
+            "Conflicting [MapIgnore] and a mapping directive",
+            // {1} is the directive the consumer wrote — [MapProperty], [Reinterpret], [MapShare] or
+            // [MapDenseEnumKeys] — carried as MessageArg2 by each report site. The text once named [MapProperty]
+            // for all four, sending three of them looking for an attribute that is not on the method.
+            "Destination member '{0}' is both ignored via [MapIgnore] and mapped via {1}; remove one",
             Category,
             DiagnosticSeverity.Error,
             true,

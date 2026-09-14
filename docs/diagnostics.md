@@ -176,9 +176,11 @@ one, or pin the intended one with `[MapProperty]`.
 A destination member has more than one `[MapProperty]`. **Fix:** keep a single mapping for it.
 
 ## dwarf012
-**Conflicting [MapIgnore] and [MapProperty]** · Error
+**Conflicting [MapIgnore] and a mapping directive** · Error
 
-A member is both ignored and mapped. **Fix:** remove one of the two attributes.
+A member is both ignored and mapped. The message names the directive that maps it — `[MapProperty]`,
+`[Reinterpret]`, `[MapShare]` or `[MapDenseEnumKeys]` — so you know which attribute conflicts with the
+`[MapIgnore]`. **Fix:** remove one of the two attributes.
 
 ## dwarf013
 **Ambiguous conversion method** · Error

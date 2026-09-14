@@ -17,7 +17,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF009` | Error | MapProperty source not found |
 | `DWARF010` | Error | Ambiguous source member |
 | `DWARF011` | Error | Duplicate explicit mapping |
-| `DWARF012` | Error | Conflicting [MapIgnore] and [MapProperty] |
+| `DWARF012` | Error | Conflicting [MapIgnore] and a mapping directive |
 | `DWARF013` | Error | Ambiguous conversion method |
 | `DWARF014` | Error | Conversion method not found |
 | `DWARF015` | Error | Incomplete enum mapping |

@@ -396,7 +396,8 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (ignores.Contains(tgtName))
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName,
+                        MessageArg2: "[MapProperty]"));
                     continue;
                 }
 

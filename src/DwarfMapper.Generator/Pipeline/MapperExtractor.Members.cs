@@ -346,7 +346,8 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var rm in reinterpretMembers)
                     if (ignores.Contains(rm))
                     {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, rm));
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, rm,
+                            MessageArg2: "[Reinterpret]"));
                     }
                     else if (!writableNames.Contains(rm))
                     {
@@ -366,7 +367,8 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var sm in shareMembers)
                     if (ignores.Contains(sm))
                     {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm));
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm,
+                            MessageArg2: "[MapShare]"));
                     }
                     else if (mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
                     {

@@ -81,7 +81,8 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (ignores.Contains(member))
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, member));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, member,
+                        MessageArg2: "[MapDenseEnumKeys]"));
                     continue;
                 }
 
