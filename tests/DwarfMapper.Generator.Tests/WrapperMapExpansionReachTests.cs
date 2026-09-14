@@ -286,5 +286,33 @@ namespace DwarfMapper.Generator.Tests
                                         """,
                     "DWARF093")[0].Severity);
         }
+
+        /// <summary>
+        ///     The payload may be a FIELD. The shape check counts instance fields typed as the type parameter alongside
+        ///     properties, skipping only compiler-generated backing fields; every wrapper fixture carried its payload
+        ///     as a property, so the explicit-field count had never run.
+        /// </summary>
+        [Fact]
+        public void A_wrapper_whose_payload_is_a_field_expands()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Envelope<T> { public T Payload = default!; public int Status { get; set; } }
+                                  public class Src { public int Id { get; set; } }
+                                  public class Dst { public int Id { get; set; } }
+                                  [DwarfMapper]
+                                  [GenerateMap<Src, Dst>]
+                                  [GenerateWrapperMap(typeof(Envelope<>))]
+                                  public partial class M { }
+                                  """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(source);
+
+            Assert.Contains("public global::Demo.Envelope<global::Demo.Dst> Map(global::Demo.Envelope<global::Demo.Src> src)",
+                generated,
+                StringComparison.Ordinal);
+            Assert.Contains("Payload = Map(src.Payload),", generated, StringComparison.Ordinal);
+        }
     }
 }
