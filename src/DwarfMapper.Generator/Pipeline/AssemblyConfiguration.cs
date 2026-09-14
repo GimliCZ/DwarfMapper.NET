@@ -83,8 +83,12 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // PublicExtensions is the attribute's only settable property, and the compiler drops a named
+                // argument naming anything else, so every named argument here IS PublicExtensions. A second option
+                // on DwarfMapperOptionsAttribute must bring back a test of the key. A wrong-typed value is kept as
+                // an error constant, which is not a bool and changes nothing.
                 foreach (var named in attribute.NamedArguments)
-                    if (named.Key == "PublicExtensions" && named.Value.Value is bool b)
+                    if (named.Value.Value is bool b)
                     {
                         publicExtensions = b;
                     }
