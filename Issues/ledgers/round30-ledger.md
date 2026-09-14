@@ -65,3 +65,29 @@ With `Key` hand-written, the honest ceiling was 127/132 = 96.21 %, so 97 was unr
 
 **(A) was chosen.** Equality stays field-wise over the same two `Type` references, so lookup behaviour is unchanged;
 the runtime leg's re-measure confirms the score.
+
+### `MapConfig` has no runtime coverage, by design (2026-09-14)
+
+**Ruling:** the only runtime test that instantiated `MapConfig<TSource, TTarget>` —
+`IntegrationTests/MapConfigRuntimeTests.MapConfig_surface_compiles_and_chains` — is retired. `MapConfig`'s runtime
+line coverage is **0 by design**, not a gap to close.
+
+**Why.** `MapConfig` is compile-time-only surface. Its constructor is private, and every member is `=> this`. The
+generator reads configuration method bodies syntactically and never executes them, so in a real application no
+`MapConfig` member ever runs. The retired test built its instance with
+`Activator.CreateInstance(typeof(MapConfig<S, T>), true)`: reflection bypassing a private constructor, which the
+standing rules forbid, and which predates round 30. It covered six members and could never reach the other five
+(the converter `Map`, `MapWhen`, the reference-type `MapOr`, the computed `Value`, `Construct`) without extending the
+same bypass. The members can't be deleted either: `PublicAPI.Shipped.txt` ships them.
+
+**Options put to the owner:**
+- **(1)** retire the reflection test, and rely on the generator and compile tests that already prove every
+  operation type-checks and is read;
+- **(2)** exempt `MapConfig` from runtime coverage but keep the test;
+- **(3)** add an `EditorBrowsable(Never)` factory so a test can instantiate without reflection.
+
+**(1) was chosen.** (3) would grow public API only to serve a test.
+
+**What still guards the surface:** `Generator.Tests/MapConfigGeneratorTests` and
+`Coverage/MapConfigOperationCoverageTests` compile every operation, and assert what the generator emits for it. Every
+other test in `MapConfigRuntimeTests` runs the generated mappers.

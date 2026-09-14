@@ -916,23 +916,6 @@ namespace DwarfMapper.IntegrationTests
 
     public class MapConfigRuntimeTests
     {
-        [Fact]
-        public void MapConfig_surface_compiles_and_chains()
-        {
-            // The type exists purely so selector lambdas type-check. It is never used by the generator at runtime;
-            // this test only proves the fluent surface compiles and chains.
-            var c = Activator.CreateInstance(typeof(MapConfig<S, T>), true) as MapConfig<S, T>;
-            Assert.NotNull(c);
-            var back = c
-                .Map(t => t.Total, s => s.Count)
-                .Map(t => t.Full, s => s.Name)
-                .Ignore(t => t.Full)
-                .IgnoreSource(s => s.Name)
-                .Value(t => t.Total, 7)
-                .MapOr(t => t.Total, s => s.Count, 0);
-            Assert.Same(c, back);
-        }
-
         // Parity proof: a MapConfig<S,T> `.Map` rename must produce the same PairProp IR — and therefore the same
         // generated behaviour — as the pair-scoped [MapProperty<S,T>] attribute form for the identical rename.
         [Fact]
@@ -1409,20 +1392,6 @@ namespace DwarfMapper.IntegrationTests
             });
             Assert.Equal(5f, attrResult.F);
             Assert.Equal(attrResult.F, configResult.F);
-        }
-
-        private sealed class S
-        {
-            public string? Name { get; set; }
-
-            public int Count { get; set; }
-        }
-
-        private sealed class T
-        {
-            public string? Full { get; set; }
-
-            public int Total { get; set; }
         }
     }
 }
