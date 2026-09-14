@@ -256,8 +256,9 @@ namespace DwarfMapper.Generator.Pipeline
             if (rootType is not INamedTypeSymbol rootNamed ||
                 !rootType.IsReferenceType ||
                 rootType.TypeKind != TypeKind.Class ||
+                // InstanceConstructors never holds the static constructor, so no IsStatic test is needed here.
                 !rootNamed.InstanceConstructors.Any(c =>
-                    c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length == 0))
+                    c.DeclaredAccessibility == Accessibility.Public && c.Parameters.Length == 0))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid,
                     location,

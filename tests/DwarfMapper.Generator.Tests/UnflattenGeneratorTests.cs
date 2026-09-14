@@ -284,5 +284,38 @@ namespace DwarfMapper.Generator.Tests
             var (diags, _) = GeneratorTestHarness.Run(src);
             Assert.NotNull(Find(diags, "DWARF046"));
         }
+
+        /// <summary>
+        ///     The synthesized <c>new Addr()</c> needs a constructor that is BOTH public and parameterless. A public
+        ///     constructor that takes arguments is not it, and neither is a parameterless one the generated code
+        ///     cannot call, so the intermediate is refused in both cases even though it is a writable class.
+        /// </summary>
+        [Theory]
+        [InlineData("public Addr(int zip) { }")]
+        [InlineData("internal Addr() { }")]
+        public void Intermediate_without_a_public_parameterless_constructor_reports_DWARF045(string constructor)
+        {
+            var src = """
+                      using DwarfMapper;
+                      namespace Demo;
+
+                      """
+                      + "public class Addr { " + constructor + " public string City { get; set; } = \"\"; }\n"
+                      + """
+                        public class S { public string City { get; set; } = ""; }
+                        public class D { public Addr? Address { get; set; } }
+                        [DwarfMapper] public partial class M
+                        {
+                            [MapProperty(nameof(S.City), "Address.City")]
+                            public partial D Map(S s);
+                        }
+                        """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            var dwarf045 = Find(diags, "DWARF045");
+            Assert.NotNull(dwarf045);
+            Assert.Contains("must be a class with a public parameterless constructor",
+                dwarf045.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
     }
 }
