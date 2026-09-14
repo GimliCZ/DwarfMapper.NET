@@ -585,6 +585,19 @@ namespace DwarfMapper.Generator.Pipeline
                         .OrderBy(n => n, StringComparer.Ordinal).ToList()
                     : new List<string>();
 
+            // A co-located mapper is a new top-level internal class, so the assembly can always name it. Any other
+            // mapper hidden inside a private / protected / private protected type is left out of the aggregates
+            // (they cannot reference it) — and told so, rather than silently (DWARF110).
+            var hidingLink = separateEmit ? null : FirstUnnameableLink(classSymbol);
+            if (hidingLink is not null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapperLeftOutOfAggregates,
+                    LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                    classSymbol.ToDisplayString(NestedTypeNameFormat),
+                    MessageArg2: $"'{hidingLink.ToDisplayString(NestedTypeNameFormat)}' is " +
+                                 AccessibilityText(hidingLink.DeclaredAccessibility)));
+            }
+
             return new MapperClassModel(
                 classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
                 emitClassName,
@@ -599,27 +612,35 @@ namespace DwarfMapper.Generator.Pipeline
                 EquatableArray.From(conventionRefs),
                 registerCollectionShapes,
                 EquatableArray.From(handWrittenProvides),
-                // A co-located mapper is a new top-level internal class, so the assembly can always name it.
-                separateEmit || IsNameableFromAssembly(classSymbol));
+                hidingLink is null);
         }
 
         /// <summary>
-        ///     True when code at namespace scope in the same assembly can name <paramref name="type" />: it and every
-        ///     type it is nested in are <c>public</c>, <c>internal</c> or <c>protected internal</c>. A <c>private</c>,
-        ///     <c>protected</c> or <c>private protected</c> link anywhere in the chain hides it from the assembly's
-        ///     top-level generated classes.
+        ///     The type that stops code at namespace scope in the same assembly from naming <paramref name="type" />:
+        ///     the first of <paramref name="type" /> and the types it is nested in, innermost first, whose
+        ///     accessibility is not <c>public</c>, <c>internal</c> or <c>protected internal</c>. <see langword="null" />
+        ///     when every link is reachable, so the assembly's top-level generated classes can name it.
         /// </summary>
-        internal static bool IsNameableFromAssembly(INamedTypeSymbol type)
+        /// <summary>
+        ///     A nested type's name qualified by its CONTAINING types and nothing else — <c>Outer.Inner.M</c> — which is
+        ///     how a reader finds it in their own file. <see cref="SymbolDisplayFormat.MinimallyQualifiedFormat" />
+        ///     prints a nested type as its bare name, which names the wrong thing when two types nest an <c>M</c>.
+        /// </summary>
+        private static readonly SymbolDisplayFormat NestedTypeNameFormat = new(
+            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
+            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters);
+
+        internal static INamedTypeSymbol? FirstUnnameableLink(INamedTypeSymbol type)
         {
             for (var current = type; current is not null; current = current.ContainingType)
             {
                 if (current.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal))
                 {
-                    return false;
+                    return current;
                 }
             }
 
-            return true;
+            return null;
         }
 
         // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes

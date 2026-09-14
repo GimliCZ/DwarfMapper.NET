@@ -2485,6 +2485,20 @@ gives `Dog`'s pair a working hook but leaves the base-typed `Finish(ref AnimalDt
 against it — DWARF109 keeps firing. There is no `ref`-typed overload set that clears this for every pair at
 once; dropping `ref` is the only fix that generalizes.
 
+## dwarf110
+**Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry** · Info
+
+A `[DwarfMapper]` class nested inside another type is generated normally — its partial half is emitted inside
+the containing type and works wherever the class is visible. Three generated classes, however, live at
+namespace scope and hold a `new()` of every mapper: the `x.ToDto()` convenience extensions, `AddDwarfMappers()`
+and the ambient registration. When the mapper, or any type it is nested in, is `private`, `protected` or
+`private protected`, those classes cannot name it, so DwarfMapper leaves the mapper out of all three and reports
+this, naming the type that hides it.
+
+**Fix:** if you want the mapper registered and reachable through the extensions and `IDwarfMapper`, make it and
+every type it is nested in `internal`, `protected internal` or `public`. If keeping it private is the point,
+suppress this in `.editorconfig` (`dotnet_diagnostic.DWARF110.severity = none`).
+
 ---
 
 ## Runtime exceptions

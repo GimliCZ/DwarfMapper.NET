@@ -112,5 +112,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF107` | Warning | A converter's nullable return is stored where null is forbidden |
 | `DWARF108` | Warning | OnCycle = SetNull requires a reference-type destination |
 | `DWARF109` | Error | [AfterMap] by-ref target type does not exactly match this pair's destination |
+| `DWARF110` | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry |
 
-104 diagnostics.
+105 diagnostics.

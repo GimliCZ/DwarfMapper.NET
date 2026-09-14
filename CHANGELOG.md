@@ -53,6 +53,13 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF110` (Info): a mapper nested out of reach is told it was left out of the aggregates.** A
+  `[DwarfMapper]` class that is `private`, `protected` or `private protected` — or nested in a type that is — is
+  left out of the generated `x.ToDto()` extensions, `AddDwarfMappers()` and the ambient registry, because those
+  top-level classes cannot name it (see *Fixed*). That exclusion was silent; it is now reported at the mapper,
+  naming the type that hides it. **Remedy:** make the mapper and every type it is nested in `internal`,
+  `protected internal` or `public`, or suppress the rule if keeping it private is intended.
+
 - **`DwarfMapper.Testing.LensLaws` fuzzes the two lens laws an update-into endpoint should satisfy, over a
   destination that already holds data.** `RoundTrip.Verify` already checks *PutGet*
   (`Back(Forward(x))` equals `x`); the bidirectional-transformation literature names two more, and both are

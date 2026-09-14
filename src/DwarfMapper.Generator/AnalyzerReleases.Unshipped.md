@@ -114,6 +114,7 @@ DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a 
 DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
 DWARF108 | DwarfMapper | Warning | OnCycle = SetNull requires a reference-type destination
 DWARF109 | DwarfMapper | Error | [AfterMap] by-ref target type does not exactly match this pair's destination
+DWARF110 | DwarfMapper | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

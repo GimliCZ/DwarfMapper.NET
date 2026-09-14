@@ -2099,5 +2099,33 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Error,
             true,
             helpLinkUri: HelpBase + "dwarf109");
+
+        /// <summary>
+        ///     DWARF110 (Info) — a <c>[DwarfMapper]</c> class that code at namespace scope cannot name, because it or
+        ///     a type it is nested in is <c>private</c>, <c>protected</c> or <c>private protected</c>, is left out
+        ///     of the generated extension methods, <c>AddDwarfMappers()</c> and the ambient registry.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Those three are top-level generated classes that hold a <c>new()</c> of every mapper, and they
+        ///         cannot see a type hidden inside another. Emitting the reference anyway was CS0122 in generated
+        ///         files and a broken build for the whole assembly (round 30). Leaving the mapper out is the fix;
+        ///         leaving it out SILENTLY is not — an author who nests a mapper may well expect
+        ///         <c>AddDwarfMappers()</c> to register it. Info, because the mapper itself is generated and works
+        ///         wherever it is visible: nothing is broken, one expectation is not met.
+        ///     </para>
+        ///     <para>Args: {0} = the mapper's name, {1} = which containing type hides it and how.</para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor MapperLeftOutOfAggregates = new(
+            "DWARF110",
+            "Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry",
+            "Mapper '{0}' cannot be named from outside the types it is nested in ({1}), so it is left out " +
+            "of the generated extension methods, AddDwarfMappers() and the ambient registry. The mapper itself is " +
+            "still generated and usable wherever it is visible. To include it, make it and every type it is nested " +
+            "in internal, protected internal or public.",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            helpLinkUri: HelpBase + "dwarf110");
     }
 }
