@@ -503,7 +503,7 @@ namespace DwarfMapper.Generator
 
             // Ambient cross-assembly registry: a module initializer self-registers this assembly's stateless,
             // public-typed create-maps into DwarfMapperRegistry, plus the [assembly: DwarfProvidesMap] manifest.
-            var (ambient, unregisterable) = AggregateEmitter.EmitAmbientRegistration(usable);
+            var (ambient, unregisterable, shadowed) = AggregateEmitter.EmitAmbientRegistration(usable);
             if (ambient is not null)
             {
                 spc.AddNormalizedSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
@@ -514,6 +514,13 @@ namespace DwarfMapper.Generator
                     DiagnosticDescriptors.AmbientMapperNotRegistered,
                     Location.None,
                     mapper));
+
+            // DWARF111: a [ProvidesMap] whose pair this assembly already registers, so the method is not registered.
+            foreach (var message in shadowed)
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.ProvidesMapAlreadyProvided,
+                    Location.None,
+                    message));
         }
 
         private static void Execute(SourceProductionContext spc, MapperClassModel model)

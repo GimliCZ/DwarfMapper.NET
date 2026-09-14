@@ -171,5 +171,65 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("global::Demo.P1.Provide((global::Demo.Src)__s)", ambient, StringComparison.Ordinal);
             Assert.DoesNotContain("global::Demo.P2.Provide", ambient, StringComparison.Ordinal);
         }
+
+        private const string PairTypes = """
+                                          using System.Collections.Generic;
+                                          using DwarfMapper;
+                                          namespace Demo;
+                                          public class Src { public int Id { get; set; } }
+                                          public class Dst { public int Id { get; set; } }
+                                          """;
+
+        private const string DirectRegistration =
+            "DwarfMapperRegistry.Register(typeof(global::Demo.Src), typeof(global::Demo.Dst),";
+
+        private const string DirectManifest =
+            "[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::Demo.Src), typeof(global::Demo.Dst))]";
+
+        [Theory]
+        [InlineData("P1", "P2")] // the generated map's mapper comes first in hint-name order
+        [InlineData("Z9", "A0")] // the [ProvidesMap] mapper comes first — the generated map must still be the one kept
+        public void A_pair_both_generated_and_ProvidesMap_is_registered_once_by_the_generated_map(string generatedHost, string providerHost)
+        {
+            // The create table used to deduplicate generated maps and [ProvidesMap] methods in two separate sets, so a
+            // pair declared both ways was registered TWICE into one key: a second Register call the registry records as
+            // a competing provider (IsAmbiguous turns true on this assembly's own pair), and a repeated manifest line.
+            // [ProvidesMap] exists for shapes the generator cannot express, so the generated map is the one kept.
+            var s = PairTypes + $$"""
+
+                                  [DwarfMapper][GenerateMap<Src, Dst>] public partial class {{generatedHost}} { }
+                                  [DwarfMapper] public partial class {{providerHost}} { [ProvidesMap] public static Dst Provide(Src s) => new() { Id = s.Id }; }
+                                  """;
+
+            var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
+            var lines = ambient.Split('\n');
+
+            Assert.Single(lines, line => line.Contains(DirectRegistration, StringComparison.Ordinal));
+            Assert.Single(lines, line => line.Contains(DirectManifest, StringComparison.Ordinal));
+            Assert.Contains($".Map((global::Demo.Src)__s)", ambient, StringComparison.Ordinal);
+            Assert.DoesNotContain($"global::Demo.{providerHost}.Provide", ambient, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_ProvidesMap_colliding_with_a_generated_collection_shape_is_registered_once_by_the_shape()
+        {
+            // The same split, one level out: a generated map also registers its collection shapes, and a hand-written
+            // provider of one of those exact shapes was registered on top of it.
+            var s = PairTypes + """
+
+                                [DwarfMapper][GenerateMap<Src, Dst>] public partial class P1 { }
+                                [DwarfMapper] public partial class P2
+                                {
+                                    [ProvidesMap] public static List<Dst> ProvideAll(IEnumerable<Src> s) => new();
+                                }
+                                """;
+
+            var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
+            var lines = ambient.Split('\n');
+
+            const string shape = "DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.List<global::Demo.Dst>),";
+            Assert.Single(lines, line => line.Contains(shape, StringComparison.Ordinal));
+            Assert.DoesNotContain("global::Demo.P2.ProvideAll", ambient, StringComparison.Ordinal);
+        }
     }
 }

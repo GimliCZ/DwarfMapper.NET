@@ -113,5 +113,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF108` | Warning | OnCycle = SetNull requires a reference-type destination |
 | `DWARF109` | Error | [AfterMap] by-ref target type does not exactly match this pair's destination |
 | `DWARF110` | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry |
+| `DWARF111` | Warning | [ProvidesMap] method is not registered because its pair is already provided |
 
-105 diagnostics.
+106 diagnostics.

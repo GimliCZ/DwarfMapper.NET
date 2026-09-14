@@ -2127,5 +2127,37 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Info,
             true,
             helpLinkUri: HelpBase + "dwarf110");
+
+        /// <summary>
+        ///     <c>DWARF111</c> (Warning) — a <c>[ProvidesMap]</c> method is not registered, because its pair (or
+        ///     collection shape) is already registered by a generated map or by an earlier <c>[ProvidesMap]</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The attribute asks for exactly one thing, a registration, and gets none — silently, before this.
+        ///         The same-assembly counterpart of <c>DWARF063</c>, which counts distinct ASSEMBLIES. Warning like
+        ///         <c>DWARF063</c>: the author owns both sides, and the marked method does nothing.
+        ///     </para>
+        ///     <para>
+        ///         Deliberately NOT reported: two generated (or update-into) maps of one pair. A first cut did, and
+        ///         broke eight of this repo's own builds, every hit a mapper differing only in class-level policy
+        ///         (Preserve vs SetNull, a by-value enum variant, attribute vs config) — and the Gallery's
+        ///         same-mapper Replace/Patch variants besides. Whether that first-wins drop deserves an Info is an
+        ///         owner question, recorded with that measurement.
+        ///     </para>
+        ///     <para>
+        ///         Reported with <c>Location.None</c> from the aggregate stage (the model carries no location), so the
+        ///         message leads with its id and names the method, the pair and what already registers it. Args: {0} =
+        ///         the whole message after the id, built by <c>AggregateEmitter.EmitAmbientRegistration</c>.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ProvidesMapAlreadyProvided = new(
+            "DWARF111",
+            "[ProvidesMap] method is not registered because its pair is already provided",
+            "DWARF111: {0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf111");
     }
 }

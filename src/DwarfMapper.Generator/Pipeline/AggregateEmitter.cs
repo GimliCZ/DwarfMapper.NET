@@ -190,9 +190,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     whose source AND destination are effectively public are registered — internal types cannot be named
         ///     by another assembly, so they have no cross-assembly (ambient) meaning. Returns the source (or
         ///     <c>null</c> when nothing to register) and the full names of mappers that have eligible public maps but
-        ///     no parameterless constructor (reported as DWARF062 — they cannot self-register without DI).
+        ///     no parameterless constructor (reported as DWARF062 — they cannot self-register without DI), and the
+        ///     DWARF111 message for every provider dropped because this assembly already registers its pair.
         /// </summary>
-        public static (string? Source, IReadOnlyList<string> Unregisterable) EmitAmbientRegistration(
+        public static (string? Source, IReadOnlyList<string> Unregisterable, IReadOnlyList<string> Shadowed) EmitAmbientRegistration(
             IReadOnlyList<MapperClassModel> models)
         {
             var regs = new List<(string Source, string Dest, string Field, string Method, bool MayReturnNull)>();
@@ -205,6 +206,12 @@ namespace DwarfMapper.Generator.Pipeline
             var fields = new SortedSet<string>(StringComparer.Ordinal);
             var unregisterable = new List<string>();
             var seenPairs = new HashSet<string>(StringComparer.Ordinal);
+            // Which `Mapper.Method` registered each key, so a [ProvidesMap] that is dropped can be told what it lost
+            // to (DWARF111). The generated owners cover generated maps AND the collection shapes they register.
+            var generatedCreateOwners = new Dictionary<string, string>(StringComparer.Ordinal);
+            var handWrittenOwners = new Dictionary<string, string>(StringComparer.Ordinal);
+            var handWrittenHosts = new List<(MapperClassModel Model, string MapperFullName)>();
+            var shadowed = new List<string>();
 
             foreach (var model in models.OrderBy(m => m.HintName, StringComparer.Ordinal))
             {
@@ -237,14 +244,19 @@ namespace DwarfMapper.Generator.Pipeline
                              .OrderBy(m => m.ParameterTypeFullName, StringComparer.Ordinal)
                              .ThenBy(m => m.ReturnTypeFullName, StringComparer.Ordinal))
                 {
-                    // First provider of a (source, dest) pair in this assembly wins; a second same-assembly
-                    // provider is dropped here (cross-assembly ambiguity is tracked by the registry at runtime).
-                    if (!seenPairs.Add(method.ParameterTypeFullName + " " + method.ReturnTypeFullName))
+                    // First provider of a (source, dest) pair in this assembly wins; a second generated map of the pair
+                    // is dropped here WITHOUT a report. Mappers differing only in class-level policy (Preserve vs
+                    // SetNull, a by-value enum variant) are the ordinary reason for two: a first cut of DWARF111 that
+                    // reported them broke eight of this repo's own builds, every hit deliberate. Cross-assembly
+                    // ambiguity is DWARF063's.
+                    var pairKey = method.ParameterTypeFullName + " " + method.ReturnTypeFullName;
+                    if (!seenPairs.Add(pairKey))
                     {
                         continue;
                     }
 
                     fields.Add(mapperFullName);
+                    generatedCreateOwners[pairKey] = mapperFullName + "." + method.EmitMethodName;
                     regs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName, FieldName(mapperFullName),
                         method.EmitMethodName, method.ReturnIsNullableRef));
 
@@ -256,6 +268,9 @@ namespace DwarfMapper.Generator.Pipeline
                     foreach (var (dest, asArray) in CollectionShapesFor(method))
                         if (seenCollectionPairs.Add(method.ParameterTypeFullName + " " + dest))
                         {
+                            // Keyed the way the registry sees it — IEnumerable<TSource>, not the element source.
+                            generatedCreateOwners[CollectionSourceOf(method.ParameterTypeFullName) + " " + dest] =
+                                mapperFullName + "." + method.EmitMethodName;
                             collectionRegs.Add((method.ParameterTypeFullName, dest, FieldName(mapperFullName),
                                 method.EmitMethodName, asArray, method.ReturnIsNullableRef));
                         }
@@ -275,14 +290,42 @@ namespace DwarfMapper.Generator.Pipeline
                         FieldName(mapperFullName), method.EmitMethodName));
                 }
 
+                if (model.HandWrittenProvides.Count != 0)
+                {
+                    handWrittenHosts.Add((model, mapperFullName));
+                }
+            }
+
+            // Hand-written providers are placed only after EVERY generated create key is known. [ProvidesMap] exists
+            // for shapes the generator cannot express, so a pair — or a collection shape — a generated map already
+            // registers keeps the generated map, whichever mapper comes first in hint-name order. Judged in one pass
+            // over the models, the two kinds were deduplicated in separate sets and a pair declared both ways was
+            // registered twice into one key, which DwarfMapperRegistry records as a competing provider.
+            foreach (var (model, mapperFullName) in handWrittenHosts)
+            {
                 foreach (var provide in model.HandWrittenProvides
                              .OrderBy(p => p.SourceTypeFullName, StringComparer.Ordinal)
                              .ThenBy(p => p.TargetTypeFullName, StringComparer.Ordinal))
                 {
-                    if (!seenHandWritten.Add(provide.SourceTypeFullName + " " + provide.TargetTypeFullName))
+                    var key = provide.SourceTypeFullName + " " + provide.TargetTypeFullName;
+                    var provider = mapperFullName + "." + provide.EmitMethodName;
+                    if (generatedCreateOwners.TryGetValue(key, out var generatedOwner))
                     {
+                        shadowed.Add(ShadowedProvide(provider, provide.SourceTypeFullName, provide.TargetTypeFullName,
+                            "the generated map '" + Display(generatedOwner) + "' already registers, so the method is not " +
+                            "registered; [ProvidesMap] is for shapes the generator cannot express. Remove the attribute."));
                         continue;
                     }
+
+                    if (!seenHandWritten.Add(key))
+                    {
+                        shadowed.Add(ShadowedProvide(provider, provide.SourceTypeFullName, provide.TargetTypeFullName,
+                            "[ProvidesMap] method '" + Display(handWrittenOwners[key]) + "' already registers, so the " +
+                            "method is not registered. Remove all but one."));
+                        continue;
+                    }
+
+                    handWrittenOwners[key] = provider;
 
                     // A static [ProvidesMap] is invoked on the TYPE, so it needs no cached instance — and a
                     // mapper hosting only static ones therefore needs no parameterless constructor either.
@@ -304,7 +347,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (regs.Count == 0 && updateRegs.Count == 0 && handWrittenRegs.Count == 0)
             {
-                return (null, unregisterable);
+                return (null, unregisterable, shadowed);
             }
 
             var sb = new StringBuilder();
@@ -415,7 +458,23 @@ namespace DwarfMapper.Generator.Pipeline
 
             sb.AppendLine("    }");
             sb.AppendLine("}");
-            return (sb.ToString(), unregisterable);
+            return (sb.ToString(), unregisterable, shadowed);
+        }
+
+        /// <summary>The DWARF111 message (after its id) for a <c>[ProvidesMap]</c> method whose key is already taken.</summary>
+        private static string ShadowedProvide(string provider, string source, string destination, string takenBy)
+        {
+            return "[ProvidesMap] method '" + Display(provider) + "' provides '" + Display(source) + "' -> '" +
+                   Display(destination) + "', which " + takenBy;
+        }
+
+        /// <summary>
+        ///     A type or member name as a reader writes it. The emitter's names are <c>global::</c>-rooted for emitted
+        ///     code, and a location-less message is read, not compiled.
+        /// </summary>
+        private static string Display(string fullyQualified)
+        {
+            return fullyQualified.Replace("global::", string.Empty);
         }
 
         /// <summary>

@@ -53,6 +53,14 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF111` (Warning): a `[ProvidesMap]` method that is not registered says so.** When the same
+  `(source, destination)` — or a collection shape — is already registered in the assembly by a generated map (see
+  *Fixed*) or by an earlier `[ProvidesMap]`, the marked method is left out of the ambient registry. That was
+  silent; `DWARF063` reports the same event across assemblies only. It is now reported, naming the method, the
+  pair and what already registers it. Two *generated* maps of one pair are still not reported: mappers that differ
+  only in class-level policy are the ordinary reason for two. **Remedy:** remove the attribute, or all but one of
+  two `[ProvidesMap]` methods.
+
 - **`DWARF110` (Info): a mapper nested out of reach is told it was left out of the aggregates.** A
   `[DwarfMapper]` class that is `private`, `protected` or `private protected` — or nested in a type that is — is
   left out of the generated `x.ToDto()` extensions, `AddDwarfMappers()` and the ambient registry, because those
@@ -416,6 +424,15 @@ so a version with no section here ships with no notes.
   is in `Issues/round29/WITHDRAWN-generated-views.md`.
 
 ### Fixed
+
+- **A pair declared both as a generated map and as a `[ProvidesMap]` was registered twice in the ambient
+  registry.** The ambient registration deduplicated generated maps and hand-written `[ProvidesMap]` methods in
+  two separate sets, so the same `(source, destination)` — or a collection shape a generated map already
+  registers, such as `IEnumerable<Src>` → `List<Dst>` — got two `DwarfMapperRegistry.Register` calls and a
+  repeated `[assembly: DwarfProvidesMap]` line. The registry kept the first, but recorded the second as a
+  competing provider, so `DwarfMapperRegistry.IsAmbiguous` reported the assembly's own pair as provided "by more
+  than one assembly". The generated map is now the one registered, whichever mapper comes first: `[ProvidesMap]`
+  exists for shapes the generator cannot express.
 
 - **A pair-scoped `[MapIgnore<T>("Name")]` naming no member of `T` excluded nothing, silently.** `DWARF056` already
   reported a pair-scoped ignore whose *type argument* matched no mapped pair, and `DWARF095` an unscoped

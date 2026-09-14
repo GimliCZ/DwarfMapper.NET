@@ -2503,6 +2503,27 @@ this, naming the type that hides it.
 every type it is nested in `internal`, `protected internal` or `public`. If keeping it private is the point,
 suppress this in `.editorconfig` (`dotnet_diagnostic.DWARF110.severity = none`).
 
+## dwarf111
+**[ProvidesMap] method is not registered because its pair is already provided** · Warning
+
+A `[ProvidesMap]` method asks for one thing — an ambient registration — and does not get it, because the same
+`(source, destination)` is already registered in this assembly:
+
+- **by a generated map** — including a collection shape a generated map registers, such as `IEnumerable<Src>` →
+  `List<Dst>`, and `[ProvidesMap]` on the generated method itself. The generated map is kept whichever mapper
+  comes first: `[ProvidesMap]` is for shapes the generator cannot express;
+- **by an earlier `[ProvidesMap]`** of the same pair — the first mapper in name order is kept.
+
+Reported without a location, so the message names the method, the pair and what already registers it. A mapper
+that cannot self-register ([`DWARF062`](#dwarf062)) is not a competing provider. The same event across
+assemblies is [`DWARF063`](#dwarf063).
+
+Two **generated** maps of one pair in one assembly are not reported: mappers that differ only in class-level
+policy (`Preserve` vs `SetNull`, say) are the ordinary reason for two, and the registry keeps the first in name
+order.
+
+**Fix:** remove the `[ProvidesMap]` attribute — or, for two `[ProvidesMap]` methods, all but one.
+
 ---
 
 ## Runtime exceptions
