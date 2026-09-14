@@ -204,5 +204,29 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
             Assert.Empty(actions);
         }
+
+        /// <summary>
+        ///     A forward method whose first parameter has NO type offers nothing. <c>__arglist</c> is the one parameter a
+        ///     method declaration can carry without a type, and the inverse is built from that type, so there is nothing
+        ///     to build it from — a fix offered anyway would emit an inverse method taking a missing type.
+        /// </summary>
+        [Fact]
+        public async Task A_forward_method_whose_first_parameter_has_no_type_offers_no_fix()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class PersonDto { public int Id { get; set; } }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [ReverseMap]
+                                   public PersonDto ToDto(__arglist) => new();
+                               }
+                               """;
+
+            var (actions, _) = await OfferedFor(src, "ToDto(__arglist)").ConfigureAwait(true);
+
+            Assert.Empty(actions);
+        }
     }
 }
