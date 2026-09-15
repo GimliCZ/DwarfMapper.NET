@@ -106,6 +106,17 @@ namespace DwarfMapper.Testing.Tests
         public int SharedField;
     }
 
+    // A flatten-graph node whose collection edges may hold ANY object, not only nodes: the breadth-first search
+    // has to skip a null and a non-node element in a list edge and in a dictionary's values.
+    internal sealed class LooseNode
+    {
+        public int V { get; set; }
+
+        public List<object?>? Items { get; set; }
+
+        public Dictionary<string, object?>? ByName { get; set; }
+    }
+
     /// <summary>
     ///     Negative controls for <see cref="GraphOracleComparer" />: each proves that a specific violation IS
     ///     reported, not merely that a correct mapping is silent.
@@ -205,6 +216,42 @@ namespace DwarfMapper.Testing.Tests
                 typeof(OddMembersNode),
                 typeof(OddMembersNode)));
             Assert.StartsWith("FlattenGraph count mismatch", violation, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The flatten-graph search follows collection and dictionary edges, and it enqueues only the elements
+        ///     that are nodes. A null element and a non-node element are skipped in a list edge, and so are a null
+        ///     value and a non-node value in a dictionary. Exactly three nodes are reachable: the entry, the list
+        ///     child and the dictionary child. So three results pass, and two report the count mismatch naming
+        ///     both numbers.
+        /// </summary>
+        [Fact]
+        public void Flatten_graph_search_skips_null_and_non_node_elements_of_list_and_dictionary_edges()
+        {
+            var src = new LooseNode
+            {
+                V = 1,
+                Items = new List<object?> { null, "not a node", new LooseNode { V = 2 } },
+                ByName = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["empty"] = null,
+                    ["text"] = "not a node",
+                    ["child"] = new LooseNode { V = 3 }
+                }
+            };
+
+            Assert.Empty(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1 }, new LooseNode { V = 2 }, new LooseNode { V = 3 } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+
+            var violation = Assert.Single(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1 }, new LooseNode { V = 2 } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+            Assert.Equal("FlattenGraph count mismatch: BFS-reachable=3, result.Count=2", violation);
         }
 
         /// <summary>
