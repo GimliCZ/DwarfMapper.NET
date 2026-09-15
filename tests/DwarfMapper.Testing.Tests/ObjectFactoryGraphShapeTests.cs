@@ -254,6 +254,20 @@ namespace DwarfMapper.Testing.Tests
             Assert.Contains("'NoSuchProperty' not found on LoopNode", ex.Message, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     A two-node cycle over a property the node type does not have is refused by name. Silently building
+        ///     two unconnected nodes would hand a cycle-handling test a fixture with no cycle in it.
+        /// </summary>
+        [Fact]
+        public void MakeTwoNodeCycle_rejects_a_property_the_node_type_does_not_have()
+        {
+            var ex = Assert.Throws<ArgumentException>(() =>
+                ObjectFactoryV2.MakeTwoNodeCycle(typeof(CycleNode), "NoSuchProperty", new Random(10)));
+
+            Assert.Equal("nextPropName", ex.ParamName);
+            Assert.Contains("'NoSuchProperty' not found on CycleNode", ex.Message, StringComparison.Ordinal);
+        }
+
         /// <summary>The seedless overload is the one a caller reaches for first, and it was never called.</summary>
         [Fact]
         public void The_seedless_overload_produces_a_populated_instance()
