@@ -115,6 +115,10 @@ namespace DwarfMapper.Testing.Tests
         public List<object?>? Items { get; set; }
 
         public Dictionary<string, object?>? ByName { get; set; }
+
+        public int[]? Numbers { get; set; }
+
+        public List<int>? Counts { get; set; }
     }
 
     /// <summary>
@@ -137,6 +141,8 @@ namespace DwarfMapper.Testing.Tests
     /// </remarks>
     public class GraphOracleSensitivityTests
     {
+        private static readonly int[] OneTwo = { 1, 2 };
+
         // ── Topology ─────────────────────────────────────────────────────────────────
 
         private static (OracleNode Src, OracleNodeDto Shared, OracleNodeDto Duplicated) Diamond()
@@ -252,6 +258,32 @@ namespace DwarfMapper.Testing.Tests
                 typeof(LooseNode),
                 typeof(LooseNode)));
             Assert.Equal("FlattenGraph count mismatch: BFS-reachable=3, result.Count=2", violation);
+        }
+
+        /// <summary>
+        ///     A result DTO's array or generic collection of PLAIN data is not a navigation edge. An <c>int[]</c>
+        ///     and a <c>List&lt;int&gt;</c> name no DTO type, so they may be populated after flattening. A
+        ///     collection whose element type could hold a DTO is a navigation edge, and it must be null: here that
+        ///     is <c>List&lt;object?&gt;</c>, since <c>object</c> is assignable from the DTO type. That is the
+        ///     control.
+        /// </summary>
+        [Fact]
+        public void Flatten_graph_does_not_treat_arrays_or_generics_of_plain_data_as_navigation_edges()
+        {
+            var src = new LooseNode { V = 1 };
+
+            Assert.Empty(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1, Numbers = OneTwo, Counts = new List<int> { 3 } } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+
+            var violation = Assert.Single(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1, Items = new List<object?>() } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+            Assert.StartsWith("FlattenGraph edge not degraded: LooseNode.Items", violation, StringComparison.Ordinal);
         }
 
         /// <summary>
