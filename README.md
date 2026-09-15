@@ -1147,7 +1147,7 @@ Generated from the gates' own files, never hand-typed — see `QualityBadgeRende
 [![mutation generator](https://img.shields.io/badge/mutation%20generator-91.08%25-brightgreen)](stryker-config.json)
 [![mutation doctooling](https://img.shields.io/badge/mutation%20doctooling-95.85%25-brightgreen)](stryker-config.doctooling.json)
 [![mutation runtime](https://img.shields.io/badge/mutation%20runtime-97.62%25-brightgreen)](stryker-config.runtime.json)
-[![mutation codefixes](https://img.shields.io/badge/mutation%20codefixes-87.01%25-brightgreen)](stryker-config.codefixes.json)
+[![mutation codefixes](https://img.shields.io/badge/mutation%20codefixes-87.15%25-brightgreen)](stryker-config.codefixes.json)
 [![mutation pipeline](https://img.shields.io/badge/mutation%20pipeline-94.01%25-brightgreen)](stryker-config.pipeline.json)
 [![mutation testing](https://img.shields.io/badge/mutation%20testing-82.73%25-brightgreen)](stryker-config.testing.json)
 

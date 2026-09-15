@@ -36,6 +36,44 @@ both give `false` for the error-kind constant. So the refactor was behaviour-equ
 compile-error one included. Only the stated reason was wrong. Nothing to change in code; the correction is the
 record.
 
+### `caef954` — "the scoreable denominator is unaffected" was checked against the wrong lines
+
+**The claim** (`refactor(codefixes): thread the pair-scoped generic name so RestateBase carries no unreachable
+non-generic arms`, 2026-09-14), under MUTATION IMPACT:
+
+> Every mutant on the removed lines (245-248, 319-320, 325-329) was CompileError under Stryker Safe Mode, so the
+> scoreable denominator is unaffected.
+
+The first sentence is true. The conclusion does not follow from it, because the refactor also CHANGED lines it did
+not remove, and the codefixes leg has zero headroom: 154/177 = 87.01 % against `break` 87.
+
+**Measured**, each run through `scripts/housekeeping.ps1 -MutationLeg 'code fixes'`:
+
+| run | tree | scoreable | killed | score | what it showed |
+|---|---|---:|---:|---:|---|
+| `2026-09-14.21-01-28` | af59cee, before the refactor | 177 | 154 | 87.01 % | baseline |
+| `2026-09-14.21-30-01` | first cut of the refactor | 157 | 137 | 87.26 % | **Safe Mode dropped every mutant in `WithRestatement`** |
+| `2026-09-14.21-56-25` | caef954 | 179 | 155 | **86.59 %** | below break; one new survivor |
+| `2026-09-15.18-27-07` | 7f96555 | 179 | 156 | 87.15 % | passes; the 23 undetected are the 23 ledger rows |
+
+- **The first cut passed by accident.** It tested with `if (PairScopedName(attribute) is not { } generic) continue;`.
+  Stryker negates that pattern, which leaves `generic` unassigned (CS0165). Stryker cannot attribute that compile
+  error to a single mutant, so Safe Mode removes every mutation in the enclosing method. About 20 mutants vanished
+  from `WithRestatement`, four ledger rows among them, and the score went UP. caef954 is the amended commit: a plain
+  local and an `is null` test, with a comment saying why.
+- **On the lines caef954 changed:**
+  - three killed mutants no longer exist (line 126's LogicalNot on `IsPairScoped`, and the two Boolean `return false`
+    flips at 248/254);
+  - the new `PairScopedName` ternary and `Retarget`'s ternary, which is now scoreable, added five.
+  - Net: killed +1, survived +1, giving 155/179. The new survivor is `true ? generic : null`: the existing
+    three-type-argument look-alike names the source first, so no one-argument reading could match it.
+- **7f96555** kills it with a look-alike that names the base TARGET first (RED against the planted mutant).
+
+**Consequence:** no behavioural error, and the leg now stands at 87.15 %. The records carry the new denominator:
+`legs.codefixes` in `equivalent-mutants.md`, the per-leg summary, and `codefixes-mutation-survivors.md`. **The
+lesson** is recorded for the rest of the sweep: before a refactor on a leg with no headroom, diff the mutation
+report on CHANGED lines, not only on removed ones. Grep the leg log for `Safe Mode` on every file touched.
+
 ## Owner rulings
 
 ### Runtime mutation floor, and `DwarfMapperRegistry.Key` (2026-09-14)

@@ -146,7 +146,7 @@ recomputes the ceilings in the same commit.
 | generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
-| codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
+| codefixes | `stryker-config.codefixes.json` | 179 | 87.15 % (2026-09-15, round-30 RestateBase refactor) | 22 | 0 | 1 | 87.70 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
@@ -399,14 +399,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "codefixes": {
       "config": "stryker-config.codefixes.json",
-      "scoreable": 177,
-      "measuredRawScore": 87.01,
-      "measuredOn": "2026-08-26",
+      "scoreable": 179,
+      "measuredRawScore": 87.15,
+      "measuredOn": "2026-09-15",
       "provenEquivalent": 22,
       "ruledInPractice": 0,
       "probablyEquivalent": 1,
-      "rawCeiling": 87.57,
-      "rawCeilingFormula": "(177 - 22) / 177"
+      "rawCeiling": 87.70,
+      "rawCeilingFormula": "(179 - 22) / 179 — denominator re-measured after the round-30 RestateBase refactor (StrykerOutput/2026-09-15.18-27-07, 156 killed of 179 scoreable, clean tree at 7f96555; break stays 87). The refactor removed three killed mutants on changed lines and added the PairScopedName and Retarget ternaries; the one new survivor was killed by 7f96555. The 23 undetected mutants are exactly the 23 rows below, unchanged."
     },
     "testing": {
       "config": "stryker-config.testing.json",

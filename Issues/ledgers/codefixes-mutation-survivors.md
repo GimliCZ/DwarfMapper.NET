@@ -18,12 +18,17 @@ This file carries the case analysis behind every mutant that remains. The machin
 | batch 2 — restatement shapes | 177 | 141 | 27 | 9 | 79.66 % |
 | batch 3 — pair parsing, target selection | 177 | 150 | 20 | 7 | 84.75 % |
 | batch 4 — argument-less attributes | 177 | **154** | 19 | 4 | **87.01 %** |
+| round 30 — RestateBase refactor (caef954, 7f96555) | 179 | **156** | 19 | 4 | **87.15 %** |
 
 Per provider at the end: `ResolveExplicitOnlyMember` 90.3 %, `RestateBaseConfiguration` 87.6 %,
 `AddMapIgnore` 87.5 %, `AddReverseMapInverse` 80.0 %.
 
-**`rawCeiling` is 87.57 %** — `(177 − 22) / 177`. The measured 87.01 % therefore sits exactly one
-probably-equivalent mutant below the highest score this leg can honestly reach.
+**`rawCeiling` is 87.70 %** — `(179 − 22) / 179`, re-measured 2026-09-15 after the round-30 RestateBase refactor
+(was `(177 − 22) / 177` = 87.57 % at round 27). The measured 87.15 % therefore sits exactly one probably-equivalent
+mutant below the highest score this leg can honestly reach, as the round-27 87.01 % did. The refactor removed three
+killed mutants on the lines it changed and added the `PairScopedName` and `Retarget` ternaries; the one new survivor,
+`true ? generic : null`, is killed by
+`RestateBaseRestatementTests.A_three_type_argument_look_alike_naming_the_base_target_first_is_not_restated`.
 
 ## What the 61 kills were about
 
