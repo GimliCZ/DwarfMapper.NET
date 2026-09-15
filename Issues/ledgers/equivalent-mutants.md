@@ -148,12 +148,14 @@ The round-30 coverage sweep then found the RIGHT operand unreachable:
 So whenever an addition is made, the class has at least one attribute list, and `LastOrDefault()` is never null there.
 The fallback was removed: the trivia now comes from `AttributeLists[AttributeLists.Count - 1]`, which is the same node
 `LastOrDefault()` returned on every input that reaches the line. With no `??` left, the adjudicated mutant can no
-longer be generated. The row is **retired, not re-anchored**: the indexer's own mutant (`Count - 1` → `Count + 1`)
-is out of range and throws, so it is killed rather than equivalent.
+longer be generated. The row is **retired, not re-anchored**. No equivalent mutant takes its place. Stryker generates
+no mutant for the index arithmetic, and a hand-planted `Count + 1` fails ten RestateBase tests with
+`ArgumentOutOfRangeException`.
 
 Counts move with it: codefixes `probablyEquivalent` 1 → 0. `rawCeiling` excludes only proven rows, so it does not
-move. The **denominator is not re-measured here**. The next codefixes run re-measures it, and should read
-157/179 = 87.70 %, the leg's honest ceiling.
+move on the retirement itself. **Re-measured the same day** (`StrykerOutput/2026-09-15.18-55-18`, clean tree at
+48213d0): 156/178 = 87.64 %. That is one scoreable mutant fewer than the 7f96555 run, and the missing one is exactly
+this survivor. The leg's 22 undetected mutants are its 22 proven rows, so the measured score equals `rawCeiling`.
 
 ## Per-leg summary — counts, raw ceilings, offsets
 
@@ -167,7 +169,7 @@ recomputes the ceilings in the same commit.
 | generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
-| codefixes | `stryker-config.codefixes.json` | 179 | 87.15 % (2026-09-15, round-30 RestateBase refactor) | 22 | 0 | 0 | 87.70 % |
+| codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
@@ -420,14 +422,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "codefixes": {
       "config": "stryker-config.codefixes.json",
-      "scoreable": 179,
-      "measuredRawScore": 87.15,
+      "scoreable": 178,
+      "measuredRawScore": 87.64,
       "measuredOn": "2026-09-15",
       "provenEquivalent": 22,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 87.70,
-      "rawCeilingFormula": "(179 - 22) / 179 — denominator re-measured after the round-30 RestateBase refactor (StrykerOutput/2026-09-15.18-27-07, 156 killed of 179 scoreable, clean tree at 7f96555; break stays 87). The refactor removed three killed mutants on changed lines and added the PairScopedName and Retarget ternaries; the one new survivor was killed by 7f96555. The 23 undetected mutants are exactly the 23 rows below, unchanged."
+      "rawCeiling": 87.64,
+      "rawCeilingFormula": "(178 - 22) / 178 — denominator re-measured after the probably-equivalent trivia row was retired (StrykerOutput/2026-09-15.18-55-18, 156 killed of 178 scoreable, clean tree at 48213d0; break stays 87). Against the 7f96555 run (156/179) the only change is that retired survivor, gone because the `??` it mutated is gone; Stryker generates no mutant for the indexer that replaced it. The 22 undetected mutants are exactly the 22 proven rows below, so the measured score IS the leg's honest ceiling."
     },
     "testing": {
       "config": "stryker-config.testing.json",

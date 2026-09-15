@@ -19,6 +19,7 @@ This file carries the case analysis behind every mutant that remains. The machin
 | batch 3 — pair parsing, target selection | 177 | 150 | 20 | 7 | 84.75 % |
 | batch 4 — argument-less attributes | 177 | **154** | 19 | 4 | **87.01 %** |
 | round 30 — RestateBase refactor (caef954, 7f96555) | 179 | **156** | 19 | 4 | **87.15 %** |
+| round 30 — trivia fallback removed (48213d0) | 178 | **156** | 18 | 4 | **87.64 %** |
 
 Per provider at the end: `ResolveExplicitOnlyMember` 90.3 %, `RestateBaseConfiguration` 87.6 %,
 `AddMapIgnore` 87.5 %, `AddReverseMapInverse` 80.0 %.
@@ -26,7 +27,8 @@ Per provider at the end: `ResolveExplicitOnlyMember` 90.3 %, `RestateBaseConfigu
 **`rawCeiling` is 87.70 %** — `(179 − 22) / 179`, re-measured 2026-09-15 after the round-30 RestateBase refactor
 (was `(177 − 22) / 177` = 87.57 % at round 27). The measured 87.15 % therefore sits exactly one probably-equivalent
 mutant below the highest score this leg can honestly reach, as the round-27 87.01 % did. That probably-equivalent
-row was retired the same round (see "The one that is not proven" below), which leaves the ceiling itself reachable. The refactor removed three
+row was retired the same round (see "The one that is not proven" below). **Re-measured after it, the leg reads
+87.64 % = `(178 − 22) / 178`**: every undetected mutant is proven, and the measured score is the ceiling. The refactor removed three
 killed mutants on the lines it changed and added the `PairScopedName` and `Retarget` ternaries; the one new survivor,
 `true ? generic : null`, is killed by
 `RestateBaseRestatementTests.A_three_type_argument_look_alike_naming_the_base_target_first_is_not_restated`.
@@ -134,5 +136,6 @@ the `??` fallback cannot run:
 - `toCopy` is filled only from `classDecl.AttributeLists`.
 
 So the class always has a last attribute list at that point. The fallback was removed in favour of
-`AttributeLists[AttributeLists.Count - 1]`. The mutant can no longer be generated, and the indexer's own
-`Count + 1` mutant throws, so a test kills it. The leg's undetected mutants are now all proven.
+`AttributeLists[AttributeLists.Count - 1]`. The mutant can no longer be generated. Stryker produces none for the
+index arithmetic, and a hand-planted `Count + 1` throws in ten RestateBase tests. The leg's undetected mutants are
+now all proven.
