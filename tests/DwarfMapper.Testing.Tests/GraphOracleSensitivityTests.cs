@@ -265,6 +265,24 @@ namespace DwarfMapper.Testing.Tests
             Assert.StartsWith("root.SharedField", fieldDiff, StringComparison.Ordinal);
         }
 
+        // ── Scalar equality ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        ///     The value oracle's floating-point tolerance applies only when BOTH sides have the same floating
+        ///     type. A double against an int, or a float against a double, falls through to <c>Equals</c>, which is
+        ///     false across boxed types, so the pair is reported. The controls are the same type on both sides a
+        ///     hair apart, inside the tolerance, which report nothing.
+        /// </summary>
+        [Fact]
+        public void Value_compare_applies_the_float_tolerance_only_between_the_same_floating_type()
+        {
+            Assert.Empty(GraphOracleComparer.ValueDiff(1.0, 1.0 + 1e-12));
+            Assert.Empty(GraphOracleComparer.ValueDiff(1f, 1.0000005f));
+
+            Assert.StartsWith("root", Assert.Single(GraphOracleComparer.ValueDiff(1.0, 1)), StringComparison.Ordinal);
+            Assert.StartsWith("root", Assert.Single(GraphOracleComparer.ValueDiff(1f, 1.0)), StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Topology_reports_a_cycle_the_target_did_not_close()
         {
