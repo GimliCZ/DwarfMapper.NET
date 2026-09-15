@@ -200,6 +200,15 @@ namespace DwarfMapper.Testing.Tests
         public bool FromCtor { get; }
     }
 
+    /// <summary>A class whose only constructor refuses every argument it is handed.</summary>
+    public sealed class RefusingConstructor
+    {
+        public RefusingConstructor(int value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "always refused");
+        }
+    }
+
     /// <summary>A <c>[Flags]</c> enum with a SIGNED underlying type, the counterpart of <see cref="WideBits" />.</summary>
     [Flags]
     public enum NarrowBits
@@ -592,6 +601,21 @@ namespace DwarfMapper.Testing.Tests
             Assert.All(Enumerable.Range(0, 40),
                 seed => Assert.True(Assert.IsType<ExplicitParameterlessStruct>(
                     ObjectFactoryV2.Create(typeof(ExplicitParameterlessStruct), new Random(seed), 0, false)).FromCtor));
+        }
+
+        /// <summary>
+        ///     A constructor that throws on the arguments seeded for it fails the fixture loudly, naming the type,
+        ///     with the constructor's own exception inside. There is no retry and no fallback (owner ruling
+        ///     2026-09-15). A bare <c>TargetInvocationException</c> used to escape instead, naming nothing.
+        /// </summary>
+        [Fact]
+        public void A_constructor_that_throws_on_its_seeded_arguments_fails_naming_the_type()
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => ObjectFactoryV2.Create(typeof(RefusingConstructor), new Random(26), 0, false));
+
+            Assert.Contains(typeof(RefusingConstructor).FullName!, ex.Message, StringComparison.Ordinal);
+            Assert.IsType<ArgumentOutOfRangeException>(ex.InnerException);
         }
 
         /// <summary>

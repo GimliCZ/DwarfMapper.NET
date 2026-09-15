@@ -549,7 +549,21 @@ namespace DwarfMapper.Testing
 
                 // Falls through to the member loops below. This used to return here, so every member the
                 // constructor does not set stayed at its default for every seed (owner ruling 2026-09-15).
-                instance = chosen.Invoke(pvals);
+                try
+                {
+                    instance = chosen.Invoke(pvals);
+                }
+                catch (TargetInvocationException ex)
+                {
+                    // Loud and named, with no retry and no fallback (owner ruling 2026-09-15): a constructor that
+                    // refuses a legal value of its own parameter types is a fixture gap the test author must see.
+                    throw new InvalidOperationException(
+                        "ObjectFactoryV2 cannot build " + type.FullName + ": its constructor (" +
+                        string.Join(", ", parms.Select(x => x.ParameterType.Name)) +
+                        ") threw on the arguments seeded for it. The factory does not retry; build this fixture by hand, or give the type a constructor that accepts any value of its parameter types.",
+                        ex.InnerException);
+                }
+
                 bound = parms;
             }
 
