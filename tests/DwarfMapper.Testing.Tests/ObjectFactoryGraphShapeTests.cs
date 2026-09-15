@@ -150,6 +150,56 @@ namespace DwarfMapper.Testing.Tests
         public string? LabelFromCtor { get; }
     }
 
+    /// <summary>Two public constructors that leave distinct marks, so a test can see which one ran.</summary>
+    public sealed class TwoConstructors
+    {
+        public TwoConstructors()
+        {
+            Via = "parameterless";
+        }
+
+        public TwoConstructors(int seeded)
+        {
+            Via = "int";
+            Seeded = seeded;
+        }
+
+        public string Via { get; }
+
+        public int Seeded { get; }
+    }
+
+    /// <summary>
+    ///     A struct with a declared constructor. Its implicit default is a second way to build it, and one that
+    ///     reflection does not list. Only the declared constructor sets <c>FromCtor</c>.
+    /// </summary>
+    public readonly record struct StructWithCtor
+    {
+        public StructWithCtor(int value)
+        {
+            Value = value;
+            FromCtor = true;
+        }
+
+        public int Value { get; }
+
+        public bool FromCtor { get; }
+    }
+
+    /// <summary>
+    ///     A struct that DECLARES its parameterless constructor. That constructor is its only construction shape:
+    ///     there is no separate implicit default to choose.
+    /// </summary>
+    public readonly record struct ExplicitParameterlessStruct
+    {
+        public ExplicitParameterlessStruct()
+        {
+            FromCtor = true;
+        }
+
+        public bool FromCtor { get; }
+    }
+
     /// <summary>A <c>[Flags]</c> enum with a SIGNED underlying type, the counterpart of <see cref="WideBits" />.</summary>
     [Flags]
     public enum NarrowBits
@@ -492,6 +542,56 @@ namespace DwarfMapper.Testing.Tests
             Assert.Contains(made, m => m.Name is not null);
             Assert.All(made, m => Assert.Equal(m.LabelFromCtor, m.Label));
             Assert.All(made, m => Assert.Equal(m.CountFromCtor, m.Count));
+        }
+
+        private static readonly string[] BothConstructors = ["int", "parameterless"];
+
+        private static readonly bool[] BothWays = [false, true];
+
+        /// <summary>
+        ///     Every public constructor is chosen by some seed. The factory used to call the parameterless
+        ///     constructor whenever there was one, so no other constructor ever ran (owner ruling 2026-09-15).
+        /// </summary>
+        [Fact]
+        public void Every_public_constructor_is_chosen_by_some_seed()
+        {
+            var via = Enumerable.Range(0, 40)
+                .Select(seed => Assert.IsType<TwoConstructors>(
+                    ObjectFactoryV2.Create(typeof(TwoConstructors), new Random(seed), 0, false)).Via)
+                .Distinct()
+                .OrderBy(v => v, StringComparer.Ordinal)
+                .ToList();
+
+            Assert.Equal(BothConstructors, via);
+        }
+
+        /// <summary>
+        ///     A struct with a declared constructor is built both ways across seeds: through that constructor, and
+        ///     through its implicit default, which is then populated like any other instance.
+        /// </summary>
+        [Fact]
+        public void A_struct_with_a_declared_constructor_is_also_built_through_its_implicit_default()
+        {
+            var fromCtor = Enumerable.Range(0, 40)
+                .Select(seed => Assert.IsType<StructWithCtor>(
+                    ObjectFactoryV2.Create(typeof(StructWithCtor), new Random(seed), 0, false)).FromCtor)
+                .Distinct()
+                .OrderBy(b => b)
+                .ToList();
+
+            Assert.Equal(BothWays, fromCtor);
+        }
+
+        /// <summary>
+        ///     A struct that declares its parameterless constructor is always built through it. Its implicit
+        ///     default is not offered as a second choice, because the declared constructor IS the parameterless one.
+        /// </summary>
+        [Fact]
+        public void A_struct_that_declares_its_parameterless_constructor_is_always_built_through_it()
+        {
+            Assert.All(Enumerable.Range(0, 40),
+                seed => Assert.True(Assert.IsType<ExplicitParameterlessStruct>(
+                    ObjectFactoryV2.Create(typeof(ExplicitParameterlessStruct), new Random(seed), 0, false)).FromCtor));
         }
 
         /// <summary>

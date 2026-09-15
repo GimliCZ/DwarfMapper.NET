@@ -507,50 +507,50 @@ namespace DwarfMapper.Testing
             }
 
             // ── Class / struct / record ──────────────────────────────────────────
-            var ctor = type.GetConstructor(Type.EmptyTypes);
+            // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection happened to return
+            // first. Reflection member order is not contractually stable, so the factory's output was not a pure
+            // function of the seed, and seed-determinism is the property the entire fuzz corpus rests on. Order by
+            // parameter count, then by signature.
+            var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .OrderBy(c => c.GetParameters().Length)
+                .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
+                    StringComparer.Ordinal)
+                .ToArray();
+
+            // A struct can always be built without arguments. When it declares no parameterless constructor, that
+            // way is its implicit default, which reflection does not list, so it counts as one more choice: the last.
+            var implicitDefault = type.IsValueType && type.GetConstructor(Type.EmptyTypes) is null;
+            var choices = ctors.Length + (implicitDefault ? 1 : 0);
+            if (choices == 0)
+            {
+                // Only a class gets here: every one of its constructors is non-public.
+                return null;
+            }
+
+            // The seed picks the construction shape (owner ruling 2026-09-15); only the parameterless constructor
+            // used to run whenever there was one. The draw happens only when there IS a choice, so a type with a
+            // single construction shape keeps the rng sequence, and so the fixtures, it had before.
+            var pick = choices == 1 ? 0 : rng.Next(choices);
             object? instance;
             ParameterInfo[] bound = [];
-            if (ctor is null)
+            if (pick == ctors.Length)
             {
-                // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection
-                // happened to return first. Reflection member order is not contractually stable, so the
-                // factory's output was not a pure function of the seed, and seed-determinism is the
-                // property the entire fuzz corpus rests on. Order by parameter count, then by signature.
-                var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-                if (ctors.Length == 0)
-                {
-                    if (!type.IsValueType)
-                    {
-                        return null;
-                    }
-
-                    // A struct with no declared constructor has no PUBLIC constructor at all (its parameterless one
-                    // is implicit), so it is default-constructed here and then populated below like any other type.
-                    // Returning the default instead left every such struct all zeros in every fuzz fixture, so struct
-                    // mapping was only ever fuzzed with default values (found 2026-09-15, fixed by owner ruling).
-                    instance = Activator.CreateInstance(type);
-                }
-                else
-                {
-                    var pc = ctors
-                        .OrderBy(c => c.GetParameters().Length)
-                        .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
-                            StringComparer.Ordinal)
-                        .First();
-                    var parms = pc.GetParameters();
-                    var pvals = new object?[parms.Length];
-                    for (var i = 0; i < parms.Length; i++)
-                        pvals[i] = Create(parms[i].ParameterType, rng, depth + 1);
-
-                    // Falls through to the member loops below. This used to return here, so every member the
-                    // constructor does not set stayed at its default for every seed (owner ruling 2026-09-15).
-                    instance = pc.Invoke(pvals);
-                    bound = parms;
-                }
+                // The implicit default, populated below. A struct with no declared constructor used to be returned
+                // as this default, all zeros in every fuzz fixture (found 2026-09-15, fixed by owner ruling).
+                instance = Activator.CreateInstance(type);
             }
             else
             {
-                instance = ctor.Invoke(null);
+                var chosen = ctors[pick];
+                var parms = chosen.GetParameters();
+                var pvals = new object?[parms.Length];
+                for (var i = 0; i < parms.Length; i++)
+                    pvals[i] = Create(parms[i].ParameterType, rng, depth + 1);
+
+                // Falls through to the member loops below. This used to return here, so every member the
+                // constructor does not set stayed at its default for every seed (owner ruling 2026-09-15).
+                instance = chosen.Invoke(pvals);
+                bound = parms;
             }
 
             // A member named like a constructor parameter was already set from its seeded argument, so it is not
