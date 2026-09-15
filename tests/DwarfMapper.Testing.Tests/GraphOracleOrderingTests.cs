@@ -142,9 +142,71 @@ namespace DwarfMapper.Testing.Tests
             Assert.Empty(diffs);
         }
 
+        /// <summary>
+        ///     An unordered collection is sorted when its FIRST element is scalar, but the elements after it can be
+        ///     anything a consumer put there. The sort key has to survive all of them:
+        ///     <list type="bullet">
+        ///         <item>a <c>null</c>, which sorts first;</item>
+        ///         <item>a float and a double, which are keyed by round-trip text;</item>
+        ///         <item>an <c>IFormattable</c> scalar, and a string, which is not <c>IFormattable</c>;</item>
+        ///         <item>an object whose <c>ToString</c> returns null;</item>
+        ///         <item>objects whose <c>ToString</c> throws <c>InvalidOperationException</c> or
+        ///         <c>ArgumentException</c>, which compare as equal rather than taking the whole comparison down.</item>
+        ///     </list>
+        ///     The set is compared against itself, so the pinned outcome is "no diffs, no exception".
+        /// </summary>
+        [Fact]
+        public void Sorting_an_unordered_set_tolerates_whatever_follows_its_scalar_first_element()
+        {
+            // Two null-text elements side by side, so the sort compares one against the other and the
+            // null-text key is read on BOTH sides of a comparison.
+            var set = new HashSet<object?>
+            {
+                1,
+                new NullText(),
+                new NullText(),
+                null,
+                1.5f,
+                2.5,
+                "text",
+                new ThrowsInvalidOperationOnToString(),
+                new ThrowsArgumentOnToString()
+            };
+
+            Assert.Empty(GraphOracleComparer.ValueDiff(Wrap(set), Wrap(set)));
+        }
+
         private sealed class Holder<T>
         {
             public T? Val { get; set; }
         }
+
+        private sealed class NullText
+        {
+            public override string? ToString()
+            {
+                return null;
+            }
+        }
+
+        // CA1065: throwing from ToString is exactly the consumer shape the oracle's sort-key catch exists for.
+        // MA0015: ToString has no parameter to name; the fixture only needs an ArgumentException to escape it.
+#pragma warning disable CA1065, MA0015
+        private sealed class ThrowsInvalidOperationOnToString
+        {
+            public override string ToString()
+            {
+                throw new InvalidOperationException("no text for this value");
+            }
+        }
+
+        private sealed class ThrowsArgumentOnToString
+        {
+            public override string ToString()
+            {
+                throw new ArgumentException("no text for this value");
+            }
+        }
+#pragma warning restore CA1065, MA0015
     }
 }
