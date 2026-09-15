@@ -78,6 +78,34 @@ namespace DwarfMapper.Testing.Tests
         }
     }
 
+    // A cross-type pair where the ACTUAL side cannot supply some of the expected members: `Missing` and
+    // `MissingField` do not exist on it at all, and `Hidden` exists but is write-only. Internal for the same
+    // CA1044 reason as OddMembersNode.
+    internal sealed class WideExpected
+    {
+        public int V { get; set; }
+
+        public int Missing { get; set; }
+
+        public int Hidden { get; set; }
+
+        public int MissingField;
+
+        public int SharedField;
+    }
+
+    internal sealed class NarrowActual
+    {
+        public int V { get; set; }
+
+        public int Hidden
+        {
+            set => V = value;
+        }
+
+        public int SharedField;
+    }
+
     /// <summary>
     ///     Negative controls for <see cref="GraphOracleComparer" />: each proves that a specific violation IS
     ///     reported, not merely that a correct mapping is silent.
@@ -212,6 +240,29 @@ namespace DwarfMapper.Testing.Tests
             var diff = Assert.Single(
                 GraphOracleComparer.CrossTypeDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 2 }));
             Assert.StartsWith("root.V", diff, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A member the ACTUAL type cannot supply is not compared: a property it lacks, a property it has only
+        ///     a setter for, and a field it lacks. Cross-type comparison is by name across two different types, so
+        ///     a destination that legitimately drops or hides a member must not read as a value difference, or
+        ///     crash on a getter that is not there. The shared member is still compared, which is the control.
+        /// </summary>
+        [Fact]
+        public void Cross_type_compare_skips_members_the_actual_type_lacks_or_cannot_read()
+        {
+            var expected = new WideExpected { V = 1, Missing = 5, Hidden = 6, MissingField = 7, SharedField = 3 };
+
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected, new NarrowActual { V = 1, SharedField = 3 }));
+
+            var propertyDiff = Assert.Single(
+                GraphOracleComparer.CrossTypeDiff(expected, new NarrowActual { V = 2, SharedField = 3 }));
+            Assert.StartsWith("root.V", propertyDiff, StringComparison.Ordinal);
+
+            // And a field BOTH types have is still compared by the field loop that skips the missing one.
+            var fieldDiff = Assert.Single(
+                GraphOracleComparer.CrossTypeDiff(expected, new NarrowActual { V = 1, SharedField = 4 }));
+            Assert.StartsWith("root.SharedField", fieldDiff, StringComparison.Ordinal);
         }
 
         [Fact]
