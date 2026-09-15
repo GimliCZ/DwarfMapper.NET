@@ -116,7 +116,8 @@ namespace DwarfMapper.CodeFixes
                         ? joined!.Split('|')
                         : [];
 
-                if (NamesAGenericType(targetId!) || Array.Exists(nested, NamesAGenericType))
+                if (!IsTypeHandle(targetId!) || !Array.TrueForAll(nested, IsTypeHandle) ||
+                    NamesAGenericType(targetId!) || Array.Exists(nested, NamesAGenericType))
                 {
                     continue;
                 }
@@ -186,6 +187,21 @@ namespace DwarfMapper.CodeFixes
                 1 => $"{TitleHead}'{name}' + 1 nested transfer model",
                 _ => $"{TitleHead}'{name}' + {nestedCount.ToString(CultureInfo.InvariantCulture)} nested transfer models"
             };
+        }
+
+        /// <summary>
+        ///     True when a handle is a TYPE <c>DocumentationCommentId</c>, i.e. starts with <c>T:</c> — the only
+        ///     form <see cref="DocumentationCommentId.GetFirstSymbolForDeclarationId" /> resolves to a type.
+        /// </summary>
+        /// <remarks>
+        ///     The generator always writes the prefix, so a handle without one comes from a hand-built or
+        ///     foreign diagnostic. Offering the fix for it would register a lightbulb whose conversion resolves
+        ///     nothing and silently changes nothing; declining it here, off the string, costs no compilation.
+        ///     Owner ruling 2026-09-15 (Issues/ledgers/round30-ledger.md).
+        /// </remarks>
+        private static bool IsTypeHandle(string declarationId)
+        {
+            return declarationId.StartsWith("T:", StringComparison.Ordinal);
         }
 
         /// <summary>

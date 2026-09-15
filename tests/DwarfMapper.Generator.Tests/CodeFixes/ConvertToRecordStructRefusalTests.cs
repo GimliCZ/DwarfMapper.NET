@@ -108,23 +108,39 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
-        ///     A handle missing its <c>T:</c> prefix — not a shape the generator writes, but one a hand-built or
-        ///     foreign diagnostic can carry — is still offered, titled by its last name segment, and rewrites
-        ///     NOTHING: <see cref="DocumentationCommentId.GetFirstSymbolForDeclarationId" /> resolves only a
-        ///     prefixed id, so the conversion takes its unresolvable-root refusal and returns the solution
-        ///     unchanged. Pinned as today's behaviour: a malformed handle costs a no-op lightbulb, never a
-        ///     partial rewrite.
+        ///     A handle missing its <c>T:</c> prefix is never offered the fix. The generator does not write that
+        ///     shape, but a hand-built or foreign diagnostic can carry it, and
+        ///     <see cref="DocumentationCommentId.GetFirstSymbolForDeclarationId" /> resolves only a prefixed id. An
+        ///     offered action would therefore change nothing: a lightbulb that promises a rewrite and does not
+        ///     deliver one. Like the generic refusal, this is read off the id STRING, so it costs no compilation
+        ///     and happens before any action is registered. Owner ruling 2026-09-15; it replaces the earlier pin
+        ///     of the no-op action.
         /// </summary>
         [Fact]
-        public async Task A_handle_without_its_T_prefix_is_titled_by_its_last_segment_and_rewrites_nothing()
+        public async Task A_handle_without_its_T_prefix_is_never_offered_the_fix()
         {
-            var properties = ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "Demo.Money");
+            var actions = await OfferSyntheticAsync(
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "Demo.Money"))
+                .ConfigureAwait(true);
 
-            var action = Assert.Single(await OfferSyntheticAsync(properties).ConfigureAwait(true));
-            Assert.EndsWith("'Money'", action.Title, StringComparison.Ordinal);
+            Assert.Empty(actions);
+        }
 
-            var text = await ApplySyntheticAsync(_fixture.Document(Reported), properties).ConfigureAwait(true);
-            Assert.Equal(Reported, text);
+        /// <summary>
+        ///     The same refusal for a NESTED handle. A prefix-less nested id would resolve to nothing at apply
+        ///     time and take the whole conversion down, which is the same no-op action by the other door. The
+        ///     control is <see cref="An_unresolvable_nested_handle_leaves_the_solution_untouched" />'s real handle,
+        ///     which is offered and converts.
+        /// </summary>
+        [Fact]
+        public async Task A_nested_handle_without_its_T_prefix_takes_the_whole_offer_down()
+        {
+            var actions = await OfferSyntheticAsync(ImmutableDictionary<string, string?>.Empty
+                    .Add("TransferModelId", "T:Demo.OrderDto")
+                    .Add("NestedTransferModelIds", "Demo.Money"))
+                .ConfigureAwait(true);
+
+            Assert.Empty(actions);
         }
 
         /// <summary>

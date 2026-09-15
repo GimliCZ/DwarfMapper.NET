@@ -136,7 +136,7 @@ other test in `MapConfigRuntimeTests` runs the generated mappers.
 named exemption class from the 2026-09-10 rule that every branch is reachable-and-tested or removed. **No `!`, no
 throw, no behaviour change.** Their uncovered lines are the exemption, not a gap.
 
-**The class, as of 62e44b9:**
+**The class** (line numbers as of the commit that adds `IsTypeHandle`, which shifted `ConvertToRecordStruct` by +16):
 
 | provider | lines | guard |
 |---|---|---|
@@ -144,10 +144,10 @@ throw, no behaviour change.** Their uncovered lines are the exemption, not a gap
 | `AddReverseMapInverseCodeFixProvider` | 38-40 | `root is null` after `GetSyntaxRootAsync` |
 | `ResolveExplicitOnlyMemberCodeFixProvider` | 47-49 | `root is null` after `GetSyntaxRootAsync` |
 | `RestateBaseConfigurationCodeFixProvider` | 51-53 | `root is null` after `GetSyntaxRootAsync` |
-| `ConvertToRecordStructCodeFixProvider` | 249-251 | `compilation is null` after `GetCompilationAsync` |
-| `ConvertToRecordStructCodeFixProvider` | 310-312 | `documentId is null` after `Solution.GetDocumentId(tree)` |
-| `ConvertToRecordStructCodeFixProvider` | 336, 340-342 | `target is null` after `GetDocument`; `documentRoot is null` after `GetSyntaxRootAsync` |
-| `ConvertToRecordStructCodeFixProvider` | 297, 373 | `GetDocumentationCommentId() ?? model.Name` |
+| `ConvertToRecordStructCodeFixProvider` | 265-267 | `compilation is null` after `GetCompilationAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 326-328 | `documentId is null` after `Solution.GetDocumentId(tree)` |
+| `ConvertToRecordStructCodeFixProvider` | 352, 356-358 | `target is null` after `GetDocument`; `documentRoot is null` after `GetSyntaxRootAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 313, 389 | `GetDocumentationCommentId() ?? model.Name` |
 
 **Why they are unreachable here.** Each API's contract permits null, but not for the inputs a C# code fix is handed.
 - A code fix is registered only against a diagnostic in a C# source document. Such a document always supports
