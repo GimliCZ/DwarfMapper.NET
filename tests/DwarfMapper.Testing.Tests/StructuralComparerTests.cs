@@ -44,6 +44,26 @@ namespace DwarfMapper.Testing.Tests
             Assert.Equal("2", last.Actual);
         }
 
+        /// <summary>
+        ///     The floating-point tolerance applies only when BOTH sides have the same floating type. A double
+        ///     against an int, or a float against a double, falls through to <c>Equals</c>, which is false across
+        ///     boxed types. So the pair is reported, even though both sides render as "1". A comparer that applied
+        ///     the tolerance on the expected side's type alone would call a type mismatch equal.
+        /// </summary>
+        [Fact]
+        public void A_floating_value_against_a_different_numeric_type_is_a_difference()
+        {
+            // The controls: the same floating type on both sides, a hair apart, is inside the tolerance.
+            Assert.Empty(StructuralComparer.Diff(1.0, 1.0 + 1e-12));
+            Assert.Empty(StructuralComparer.Diff(1f, 1.0000005f));
+
+            var doubleVsInt = Assert.Single(StructuralComparer.Diff(1.0, 1));
+            Assert.Equal("root", doubleVsInt.Path);
+
+            var floatVsDouble = Assert.Single(StructuralComparer.Diff(1f, 1.0));
+            Assert.Equal("root", floatVsDouble.Path);
+        }
+
         [Fact]
         public void Equal_objects_have_no_diffs()
         {
