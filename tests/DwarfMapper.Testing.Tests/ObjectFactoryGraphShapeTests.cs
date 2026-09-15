@@ -429,6 +429,19 @@ namespace DwarfMapper.Testing.Tests
         }
 
         /// <summary>
+        ///     A dictionary whose KEY type the factory cannot build comes back EMPTY rather than throwing. A null
+        ///     dictionary key throws, so every key that comes back null is skipped. Here that is every key: the key
+        ///     type has no public constructor, so the dictionary stays empty.
+        /// </summary>
+        [Fact]
+        public void A_dictionary_whose_key_type_cannot_be_built_comes_back_empty()
+        {
+            var made = ObjectFactoryV2.Create(typeof(Dictionary<NoPublicConstructor, int>), new Random(18), 0, false);
+
+            Assert.Empty(Assert.IsType<Dictionary<NoPublicConstructor, int>>(made));
+        }
+
+        /// <summary>
         ///     A user-defined generic CLASS is not mistaken for any of the generic shapes the factory special-cases
         ///     (lists, sets, dictionaries, immutable collections, two-argument interfaces). It falls through every
         ///     one of them and is built as an ordinary class, with its members populated.
@@ -478,9 +491,10 @@ namespace DwarfMapper.Testing.Tests
         }
 
         /// <summary>
-        ///     A dictionary the factory DOES build below the depth cap is never left empty: when the size roll
-        ///     comes up zero, a back-fill puts one entry in. An empty dictionary would exercise none of the
-        ///     generator's dictionary paths, which is the whole reason a fixture asks for one.
+        ///     A dictionary the factory DOES build below the depth cap is never left empty, as long as its key type
+        ///     can be built. There are two reasons. The size roll below the cap is at least one. And the first key
+        ///     drawn can never be a duplicate. An empty dictionary would exercise none of the generator's
+        ///     dictionary paths, which is the whole reason a fixture asks for one.
         /// </summary>
         /// <remarks>
         ///     The property may still be NULL -- nullable members are deliberately null sometimes, because a

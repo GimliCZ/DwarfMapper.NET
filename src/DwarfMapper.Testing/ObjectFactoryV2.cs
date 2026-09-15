@@ -746,16 +746,6 @@ namespace DwarfMapper.Testing
                 dict[key] = val;
             }
 
-            // Guarantee at least one entry for non-depth-capped cases
-            if (dict.Count == 0 && depth < DefaultMaxDepth)
-            {
-                var key = Create(keyType, rng, depth + 1, false); // a null dictionary key throws
-                if (key is not null)
-                {
-                    dict[key] = Create(valType, rng, depth + 1);
-                }
-            }
-
             return dict;
         }
 
