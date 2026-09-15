@@ -106,6 +106,46 @@ namespace DwarfMapper.Testing.Tests
         public int SharedField;
     }
 
+    // An enumerable that is neither a collection nor hands out a disposable enumerator. Checking whether it is
+    // empty means actually enumerating it, and afterwards there is nothing to dispose.
+    internal sealed class BareEnumerable : System.Collections.IEnumerable
+    {
+        private readonly int _count;
+
+        public BareEnumerable(int count)
+        {
+            _count = count;
+        }
+
+        public System.Collections.IEnumerator GetEnumerator()
+        {
+            return new BareEnumerator(_count);
+        }
+
+        private sealed class BareEnumerator : System.Collections.IEnumerator
+        {
+            private readonly int _count;
+            private int _position;
+
+            public BareEnumerator(int count)
+            {
+                _count = count;
+            }
+
+            public object Current => _position;
+
+            public bool MoveNext()
+            {
+                return _position++ < _count;
+            }
+
+            public void Reset()
+            {
+                _position = 0;
+            }
+        }
+    }
+
     // A flatten-graph node whose collection edges may hold ANY object, not only nodes: the breadth-first search
     // has to skip a null and a non-node element in a list edge and in a dictionary's values.
     internal sealed class LooseNode
@@ -374,6 +414,29 @@ namespace DwarfMapper.Testing.Tests
             Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, null));
 
             Assert.Equal("root: expected <null>, actual 5", Assert.Single(GraphOracleComparer.CrossTypeDiff(null, 5)));
+        }
+
+        /// <summary>
+        ///     A null source against an EMPTY destination collection is the documented null-to-empty mapping, not
+        ///     a difference. Whether a collection is empty has to be judged even when it is neither an
+        ///     <c>ICollection</c> with a count nor an enumerable whose enumerator can be disposed. An empty bare
+        ///     enumerable is accepted; one with an element is reported against the null.
+        /// </summary>
+        [Fact]
+        public void A_null_source_against_a_bare_enumerable_is_judged_by_enumerating_it()
+        {
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, new BareEnumerable(0)));
+
+            var diff = Assert.Single(GraphOracleComparer.CrossTypeDiff(null, new BareEnumerable(1)));
+            Assert.StartsWith("root: expected <null>, actual ", diff, StringComparison.Ordinal);
+
+            // And an empty compiler-generated iterator, whose enumerator IS disposable, is accepted the same way.
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, NothingYielded()));
+        }
+
+        private static IEnumerable<int> NothingYielded()
+        {
+            yield break;
         }
 
         // ── Scalar equality ──────────────────────────────────────────────────────────
