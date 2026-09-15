@@ -68,6 +68,8 @@ namespace DwarfMapper.Testing.Tests
     {
         public int V { get; set; }
 
+        public OddMembersNode? Next { get; set; }
+
         public int this[int index] => V + index;
 
         public int Sink
@@ -175,6 +177,26 @@ namespace DwarfMapper.Testing.Tests
                 typeof(OddMembersNode),
                 typeof(OddMembersNode)));
             Assert.StartsWith("FlattenGraph count mismatch", violation, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The topology oracle's member walk skips an indexer and a write-only property, and still follows the
+        ///     reference edge beside them. A self-cycle mapped to a self-cycle is preserved. The same cycle mapped
+        ///     onto a SECOND instance is the shared-node violation, reported at the edge.
+        /// </summary>
+        [Fact]
+        public void Topology_skips_indexers_and_write_only_properties_and_still_checks_the_edges()
+        {
+            var src = new OddMembersNode { V = 1 };
+            src.Next = src;
+
+            var closed = new OddMembersNode { V = 1 };
+            closed.Next = closed;
+            Assert.Empty(GraphOracleComparer.TopologyDiff(src, closed));
+
+            var open = new OddMembersNode { V = 1, Next = new OddMembersNode { V = 1 } };
+            var violation = Assert.Single(GraphOracleComparer.TopologyDiff(src, open));
+            Assert.StartsWith("root.Next: shared source node", violation, StringComparison.Ordinal);
         }
 
         [Fact]
