@@ -268,6 +268,31 @@ namespace DwarfMapper.Testing.Tests
             Assert.Contains("'NoSuchProperty' not found on CycleNode", ex.Message, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     An owner graph wired through a property one of its types does not have is refused by name, naming the
+        ///     type that lacks it. A half-wired owner graph would be missing exactly the back-edge a
+        ///     reference-handling test was built to exercise.
+        /// </summary>
+        [Fact]
+        public void MakeOwnerGraph_rejects_a_property_one_of_its_types_does_not_have()
+        {
+            var ex = Assert.Throws<ArgumentException>(() => ObjectFactoryV2.MakeOwnerGraph(typeof(OwnerA),
+                typeof(OwnerB),
+                typeof(OwnerC),
+                typeof(OwnerD),
+                "NoSuchProperty",
+                nameof(OwnerB.C),
+                nameof(OwnerB.D),
+                nameof(OwnerC.B),
+                nameof(OwnerC.D),
+                nameof(OwnerD.B),
+                nameof(OwnerD.C),
+                new Random(14)));
+
+            Assert.Equal("propName", ex.ParamName);
+            Assert.Contains("'NoSuchProperty' not found on OwnerA", ex.Message, StringComparison.Ordinal);
+        }
+
         /// <summary>The seedless overload is the one a caller reaches for first, and it was never called.</summary>
         [Fact]
         public void The_seedless_overload_produces_a_populated_instance()
