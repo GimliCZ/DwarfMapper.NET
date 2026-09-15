@@ -41,6 +41,12 @@ namespace DwarfMapper.Testing.Tests
         public string Title { get; set; } = "";
     }
 
+    /// <summary>An interface nothing in the loaded assemblies implements: there is no concrete candidate to draw.</summary>
+    public interface IUnimplemented
+    {
+        int Value { get; set; }
+    }
+
     public class HoldsAbstract
     {
         public ShapeBase Shape { get; set; } = new Square();
@@ -119,6 +125,22 @@ namespace DwarfMapper.Testing.Tests
 
             Assert.Contains(values, v => v is not null);
             Assert.All(values.Where(v => v is not null), v => Assert.IsType<Square>(v));
+        }
+
+        /// <summary>
+        ///     When substitution has nothing to substitute, an abstract or interface position comes back null
+        ///     rather than throwing. That happens in two ways: the loaded assemblies offer no concrete,
+        ///     parameterless-constructible implementation, or the depth cap has been reached, so no candidate is
+        ///     even looked for. Both are asked for with <c>allowNull: false</c>, so the null comes from the
+        ///     fallback and not from the deliberate null draw.
+        /// </summary>
+        [Fact]
+        public void An_abstract_position_with_nothing_to_substitute_comes_back_null()
+        {
+            Assert.Null(ObjectFactoryV2.Create(typeof(IUnimplemented), new Random(21), 0, false));
+
+            // ShapeBase HAS a concrete candidate (Square); at the cap it is not looked for.
+            Assert.Null(ObjectFactoryV2.Create(typeof(ShapeBase), new Random(22), 6, false));
         }
 
         [Fact]
