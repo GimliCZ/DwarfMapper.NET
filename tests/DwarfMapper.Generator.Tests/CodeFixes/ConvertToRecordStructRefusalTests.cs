@@ -257,10 +257,11 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         ///     <para>
         ///         Found while chasing the round-29 Codecov report, which flagged the null-<c>AccessorList</c>
         ///         guard in <c>WithInitAccessor</c> as uncovered. The guard exists because an expression-bodied
-        ///         property has no accessor list to rewrite — but it is unreachable THROUGH THE DIAGNOSTIC,
-        ///         because the classifier declines the type before the fix is ever offered. Two attempts to
-        ///         cover it failed for exactly that reason; the honest conclusion is that the line is defensive
-        ///         rather than untested, and this test records the refusal that makes it so.
+        ///         property has no accessor list to rewrite — and the GENERATOR never reaches it, because the
+        ///         classifier declines the type before the fix is ever offered. A diagnostic the generator did
+        ///         not just produce still can: a stale one left in an IDE, or one from a mismatched analyzer
+        ///         version. <see cref="A_stale_handle_to_a_model_with_a_computed_property_keeps_the_property_as_written" />
+        ///         drives the guard that way; this test records why the generator path never does.
         ///     </para>
         ///     <para>
         ///         The refusal is also right on its own terms: a computed property has no backing state, so a
@@ -284,6 +285,37 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                                           public class D { public List<OrderDto> Rows { get; set; } }
                                           [DwarfMapper] public partial class M { public partial D Map(C c); }
                                           """, "DWARF103");
+        }
+
+        /// <summary>
+        ///     A STALE <c>DWARF103</c> naming a model that has since gained an expression-bodied property still
+        ///     reaches the fix, because a code fix reads a diagnostic it did not produce. The rewrite keeps the
+        ///     computed property exactly as written: it has no accessor list, so there is no <c>set</c> to turn
+        ///     into <c>init</c>, and inventing one would give the struct state the class never had. The
+        ///     auto-property beside it is still rewritten, which is the control.
+        /// </summary>
+        [Fact]
+        public async Task A_stale_handle_to_a_model_with_a_computed_property_keeps_the_property_as_written()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class OrderDto
+                                  {
+                                      public long Id { get; set; }
+                                      public long Doubled => Id * 2;
+                                  }
+                                  """;
+
+            var text = await ApplySyntheticAsync(
+                    _fixture.Document(source),
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Demo.OrderDto"))
+                .ConfigureAwait(true);
+
+            Assert.Contains("readonly record struct OrderDto", text, StringComparison.Ordinal);
+            Assert.Contains("public long Doubled => Id * 2;", text, StringComparison.Ordinal);
+            Assert.Contains("init;", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("set;", text, StringComparison.Ordinal);
         }
 
         /// <summary>
