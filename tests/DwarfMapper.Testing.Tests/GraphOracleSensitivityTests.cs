@@ -363,6 +363,19 @@ namespace DwarfMapper.Testing.Tests
             Assert.StartsWith("root.SharedField", fieldDiff, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     With no declared types, CrossTypeDiff takes each side's type from its value, and a null value has no
+        ///     type to take. Two nulls are equal and produce nothing. A null against a value is reported with the
+        ///     null named, rather than the missing type turning into an exception.
+        /// </summary>
+        [Fact]
+        public void Cross_type_diff_without_declared_types_handles_null_values()
+        {
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, null));
+
+            Assert.Equal("root: expected <null>, actual 5", Assert.Single(GraphOracleComparer.CrossTypeDiff(null, 5)));
+        }
+
         // ── Scalar equality ──────────────────────────────────────────────────────────
 
         /// <summary>
