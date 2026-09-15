@@ -55,6 +55,15 @@ namespace DwarfMapper.Testing.Tests
     {
     }
 
+    /// <summary>
+    ///     A two-type-argument interface that is NOT an immutable dictionary, and that nothing implements: the
+    ///     factory's immutable-dictionary branch must let it through to ordinary substitution.
+    /// </summary>
+    public interface IPairLookup<in TKey, out TValue>
+    {
+        TValue Find(TKey key);
+    }
+
     /// <summary>An interface nothing in the loaded assemblies implements: there is no concrete candidate to draw.</summary>
     public interface IUnimplemented
     {
@@ -172,6 +181,26 @@ namespace DwarfMapper.Testing.Tests
                 .ToList();
 
             Assert.Equal(new[] { typeof(TwoWayLeft), typeof(TwoWayRight) }, drawn);
+        }
+
+        /// <summary>
+        ///     The immutable-dictionary branch claims exactly the immutable dictionaries. The interface
+        ///     <c>IImmutableDictionary&lt;K,V&gt;</c> and the concrete <c>ImmutableDictionary&lt;K,V&gt;</c> are both
+        ///     built as a real immutable dictionary. A two-argument interface that is neither is let through to
+        ///     ordinary substitution, which here finds no implementation and yields null.
+        /// </summary>
+        [Fact]
+        public void Only_immutable_dictionaries_take_the_immutable_dictionary_branch()
+        {
+            var viaInterface = ObjectFactoryV2.Create(
+                typeof(System.Collections.Immutable.IImmutableDictionary<string, int>), new Random(23), 0, false);
+            Assert.IsAssignableFrom<System.Collections.Immutable.IImmutableDictionary<string, int>>(viaInterface);
+
+            var concrete = ObjectFactoryV2.Create(
+                typeof(System.Collections.Immutable.ImmutableDictionary<string, int>), new Random(24), 0, false);
+            Assert.IsType<System.Collections.Immutable.ImmutableDictionary<string, int>>(concrete);
+
+            Assert.Null(ObjectFactoryV2.Create(typeof(IPairLookup<string, int>), new Random(25), 0, false));
         }
 
         [Fact]
