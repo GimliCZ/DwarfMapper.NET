@@ -60,6 +60,22 @@ namespace DwarfMapper.Testing.Tests
     }
 #pragma warning restore CA1819
 
+    // The two property shapes every reflection walker in the oracle has to SKIP rather than read: an indexer
+    // (GetValue without index arguments throws) and a write-only property (GetValue with no getter throws).
+    // Internal because CA1044 rejects a write-only property on an externally visible type; the oracle reflects
+    // on public properties, so the type's own visibility does not change what it walks.
+    internal sealed class OddMembersNode
+    {
+        public int V { get; set; }
+
+        public int this[int index] => V + index;
+
+        public int Sink
+        {
+            set => V = value;
+        }
+    }
+
     /// <summary>
     ///     Negative controls for <see cref="GraphOracleComparer" />: each proves that a specific violation IS
     ///     reported, not merely that a correct mapping is silent.
@@ -116,6 +132,24 @@ namespace DwarfMapper.Testing.Tests
             Assert.StartsWith("root.Right: shared source node", violation, StringComparison.Ordinal);
             Assert.Contains("but got a different instance", violation, StringComparison.Ordinal);
             Assert.False(GraphOracleComparer.TopologyPreserved(src, duplicated));
+        }
+
+        // ── Property shapes the walkers must skip ────────────────────────────────────
+
+        /// <summary>
+        ///     The value oracle skips an indexer and a write-only property instead of reading them. Either read
+        ///     would throw inside the oracle, so a consumer type carrying one would fail every comparison. The
+        ///     ordinary property beside them is still compared: equal instances are silent, and a changed value
+        ///     is reported at its path.
+        /// </summary>
+        [Fact]
+        public void Value_compare_skips_indexers_and_write_only_properties_and_still_reports_a_real_difference()
+        {
+            Assert.Empty(GraphOracleComparer.ValueDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 1 }));
+
+            var diff = Assert.Single(
+                GraphOracleComparer.ValueDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 2 }));
+            Assert.StartsWith("root.V", diff, StringComparison.Ordinal);
         }
 
         [Fact]
