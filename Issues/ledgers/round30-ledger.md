@@ -129,3 +129,58 @@ same bypass. The members can't be deleted either: `PublicAPI.Shipped.txt` ships 
 **What still guards the surface:** `Generator.Tests/MapConfigGeneratorTests` and
 `Coverage/MapConfigOperationCoverageTests` compile every operation, and assert what the generator emits for it. Every
 other test in `MapConfigRuntimeTests` runs the generated mappers.
+
+### Roslyn null-return guards in the code fixes are a named exemption (2026-09-15)
+
+**Ruling:** the code fixes' guards against a Roslyn workspace API returning null stay in the source. They are one
+named exemption class from the 2026-09-10 rule that every branch is reachable-and-tested or removed. **No `!`, no
+throw, no behaviour change.** Their uncovered lines are the exemption, not a gap.
+
+**The class, as of 62e44b9:**
+
+| provider | lines | guard |
+|---|---|---|
+| `AddMapIgnoreCodeFixProvider` | 36-38 | `root is null` after `GetSyntaxRootAsync` |
+| `AddReverseMapInverseCodeFixProvider` | 38-40 | `root is null` after `GetSyntaxRootAsync` |
+| `ResolveExplicitOnlyMemberCodeFixProvider` | 47-49 | `root is null` after `GetSyntaxRootAsync` |
+| `RestateBaseConfigurationCodeFixProvider` | 51-53 | `root is null` after `GetSyntaxRootAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 249-251 | `compilation is null` after `GetCompilationAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 310-312 | `documentId is null` after `Solution.GetDocumentId(tree)` |
+| `ConvertToRecordStructCodeFixProvider` | 336, 340-342 | `target is null` after `GetDocument`; `documentRoot is null` after `GetSyntaxRootAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 297, 373 | `GetDocumentationCommentId() ?? model.Name` |
+
+**Why they are unreachable here.** Each API's contract permits null, but not for the inputs a C# code fix is handed.
+- A code fix is registered only against a diagnostic in a C# source document. Such a document always supports
+  syntax trees, and its project always supports compilation.
+- A declaring syntax tree of a source symbol belongs to a document of the solution that compiled it, and an id the
+  solution just returned always names one of its documents.
+- A named type resolved through `DocumentationCommentId.GetFirstSymbolForDeclarationId` has an id by construction.
+
+**Why they stay, not `!`.** The round-27 ledger already recorded the reasoning (`codefixes-mutation-survivors.md`, "The
+`root is null` early return"): this is a defensive check on an API whose contract genuinely permits null, not dead
+code that no input can reach. A `!` would trade a dead line for a `NullReferenceException` inside the consumer's
+lightbulb, on the day a host meets that contract.
+
+**Options put to the owner:**
+- **(1)** a named exemption;
+- **(2)** replace each guard with `!` plus a reason line, retiring the four `root is null` proven-equivalent ledger
+  rows and their R3 pins;
+- **(3)** throw `InvalidOperationException` instead of returning. Loud, but still unreachable, so coverage would not
+  close.
+
+**(1) was chosen.** Mutation is unaffected: the four `root is null` returns stay proven-equivalent rows in the codefixes
+leg, and `ConvertToRecordStructCodeFixProvider` is not in that leg's mutate globs. **Scope:** only the rows above. A
+new null guard is not covered by this ruling; it needs its own proof that no input reaches it.
+
+### A `DWARF103` handle without its `T:` prefix is refused at registration (2026-09-15)
+
+**Ruling:** the record-struct fix offers no action for a `TransferModelId`, or any nested id, that does not start with
+`T:`. This replaces `9317064`'s pin, which recorded today's behaviour: one action, titled by the last segment,
+rewriting nothing.
+
+**Why.** `DocumentationCommentId.GetFirstSymbolForDeclarationId` resolves only a prefixed id, so an offered action for
+a prefix-less handle is a lightbulb that promises a rewrite and silently delivers none. The generator never writes
+that shape, so only a hand-built or foreign diagnostic carries it. Like the generic refusal beside it, the check reads
+the id STRING: it costs no compilation, and an unoffered fix is a non-event.
+
+**Options put to the owner:** refuse at registration, or keep the pinned no-op. **Refusal was chosen.**
