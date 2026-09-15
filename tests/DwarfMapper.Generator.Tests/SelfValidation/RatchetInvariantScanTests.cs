@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 57;
-        private const int PinnedTotalOccurrences = 68;
+        private const int PinnedEntryRows = 56;
+        private const int PinnedTotalOccurrences = 67;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -84,8 +84,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // count guards whose bodies are no-ops when the collection is empty. The one 'probably' is the
             // trivia source for an added attribute list, which Formatter.Annotation has normalised away in
             // every case tried -- evidence, not a proof.
+            // Round 30 (2026-09-15) retired that 'probably' row: the round-30 sweep proved the `?? classDecl`
+            // fallback unreachable (an addition is only made from one of the class's own attribute lists) and
+            // removed it, so the mutant cannot be generated. The 'codefixes|probably-equivalent' pin went with it.
             ["codefixes|proven-equivalent"] = 22,
-            ["codefixes|probably-equivalent"] = 1,
             // Round 30's pipeline kill program (2026-09-11) is the first adjudication for that leg: sixteen
             // proven rows, case analyses in Issues/ledgers/pipeline-mutation-survivors.md (same commit).
             // Three shared lemmas carry the skip-null chain and the extras guards (member-name keys never

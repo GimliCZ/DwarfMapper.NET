@@ -169,7 +169,7 @@ namespace DwarfMapper.CodeFixes
                 }
 
                 additions.Add(SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(rewritten))
-                    .WithTriviaFrom(classDecl.AttributeLists.LastOrDefault() ?? (SyntaxNode)classDecl));
+                    .WithTriviaFrom(classDecl.AttributeLists[classDecl.AttributeLists.Count - 1]));
             }
 
             if (replacements.Count == 0 && additions.Count == 0)

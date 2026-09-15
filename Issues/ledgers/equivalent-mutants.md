@@ -134,6 +134,27 @@ Counts move with it: runtime `ruledInPractice` 1 → 0. `rawCeiling` excludes ru
 **denominator is not re-measured here**; the next runtime run re-measures it, and adjudicates the upper
 clamp mutant (`maxDepth > AbsoluteMaxDepth` → `>=`, the same proof as the existing lower-clamp row) in that commit.
 
+## Rows retired on 2026-09-15 — an added attribute list has no fallback trivia source left
+
+One codefixes row — `WithRestatement` (probably-equivalent, 1) — covered the Null-coalescing mutant
+`classDecl.AttributeLists.LastOrDefault() ?? (SyntaxNode)classDecl` → `(SyntaxNode)classDecl`. It never had a proof.
+It had only evidence: `Formatter.Annotation` normalised the two trivia sources identically in every case tried.
+
+The round-30 coverage sweep then found the RIGHT operand unreachable:
+- `additions.Add` runs only inside the loop over `toCopy`;
+- `toCopy` is filled only while iterating `classDecl.AttributeLists`;
+- `classDecl` is a parameter the method never reassigns, and a `SyntaxList` is immutable.
+
+So whenever an addition is made, the class has at least one attribute list, and `LastOrDefault()` is never null there.
+The fallback was removed: the trivia now comes from `AttributeLists[AttributeLists.Count - 1]`, which is the same node
+`LastOrDefault()` returned on every input that reaches the line. With no `??` left, the adjudicated mutant can no
+longer be generated. The row is **retired, not re-anchored**: the indexer's own mutant (`Count - 1` → `Count + 1`)
+is out of range and throws, so it is killed rather than equivalent.
+
+Counts move with it: codefixes `probablyEquivalent` 1 → 0. `rawCeiling` excludes only proven rows, so it does not
+move. The **denominator is not re-measured here**. The next codefixes run re-measures it, and should read
+157/179 = 87.70 %, the leg's honest ceiling.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -146,7 +167,7 @@ recomputes the ceilings in the same commit.
 | generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
-| codefixes | `stryker-config.codefixes.json` | 179 | 87.15 % (2026-09-15, round-30 RestateBase refactor) | 22 | 0 | 1 | 87.70 % |
+| codefixes | `stryker-config.codefixes.json` | 179 | 87.15 % (2026-09-15, round-30 RestateBase refactor) | 22 | 0 | 0 | 87.70 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 82.73 % (2026-09-09, round-29 verifier leg) | 0 | 0 | 0 | 100.00 % |
 
@@ -404,7 +425,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "measuredOn": "2026-09-15",
       "provenEquivalent": 22,
       "ruledInPractice": 0,
-      "probablyEquivalent": 1,
+      "probablyEquivalent": 0,
       "rawCeiling": 87.70,
       "rawCeilingFormula": "(179 - 22) / 179 — denominator re-measured after the round-30 RestateBase refactor (StrykerOutput/2026-09-15.18-27-07, 156 killed of 179 scoreable, clean tree at 7f96555; break stays 87). The refactor removed three killed mutants on changed lines and added the PairScopedName and Retarget ternaries; the one new survivor was killed by 7f96555. The 23 undetected mutants are exactly the 23 rows below, unchanged."
     },
@@ -892,20 +913,6 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "occurrences": 1,
       "category": "proven-equivalent",
       "proof": "getInnermostNodeForTie chooses between a node and its direct parent when the two share an identical span. Every caller immediately walks upward with FirstAncestorOrSelf<T>, and a tie means one candidate is the parent of the other, so both have the same ancestors above the tied pair and the search lands on the same node either way.",
-      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
-    },
-    {
-      "leg": "codefixes",
-      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
-      "member": "WithRestatement",
-      "lineAtProof": 168,
-      "lineCurrent": 172,
-      "mutator": "Null coalescing mutation (remove left)",
-      "original": "classDecl.AttributeLists.LastOrDefault() ?? (SyntaxNode)classDecl",
-      "mutated": "(SyntaxNode)classDecl",
-      "occurrences": 1,
-      "category": "probably-equivalent",
-      "proof": "Chooses the node whose trivia the added attribute list copies: the last existing attribute list, or the class declaration when there is none. The result is re-annotated with Formatter.Annotation immediately afterwards, so the normalised output has been identical in every case tried. NOT a proof -- a formatting-sensitive input may yet distinguish them, which is why this is probably- rather than proven-equivalent.",
       "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
     },
     {
