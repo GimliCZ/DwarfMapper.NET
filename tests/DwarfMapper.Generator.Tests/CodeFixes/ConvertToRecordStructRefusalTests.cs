@@ -149,6 +149,37 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     <b>A nested model declared as a <c>record</c> takes the whole rewrite down.</b> The conversion
+        ///     rewrites <c>class</c> declarations only; a handle that resolves to a type whose declaration is
+        ///     anything else — here a <c>record</c>, which a stale diagnostic can name after the consumer changed
+        ///     the type — cannot be converted, and converting the root without it is the half-transitive outcome
+        ///     that is worse than none. The control is the same document with no nested handle, which converts.
+        /// </summary>
+        [Fact]
+        public async Task A_nested_model_declared_as_a_record_leaves_the_solution_untouched()
+        {
+            const string source = """
+                                  namespace Demo;
+                                  public sealed record Tag { public int Value { get; set; } }
+                                  public sealed class OrderDto { public long Id { get; set; } public Tag Tag { get; set; } }
+                                  """;
+            var document = _fixture.Document(source);
+
+            var refused = await ApplySyntheticAsync(document, ImmutableDictionary<string, string?>.Empty
+                    .Add("TransferModelId", "T:Demo.OrderDto")
+                    .Add("NestedTransferModelIds", "T:Demo.Tag"))
+                .ConfigureAwait(true);
+
+            Assert.Equal(source, refused);
+
+            var control = await ApplySyntheticAsync(document,
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Demo.OrderDto"))
+                .ConfigureAwait(true);
+
+            Assert.Contains("readonly record struct OrderDto", control, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     An empty NESTED list means "no nested models", not "one model with an empty name". The
         ///     generator writes the property only when there is something in it, so this is the shape a
         ///     hand-built or older diagnostic takes — and reading it as a single blank handle would abort a
