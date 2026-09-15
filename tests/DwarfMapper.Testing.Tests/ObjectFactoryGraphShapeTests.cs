@@ -293,6 +293,24 @@ namespace DwarfMapper.Testing.Tests
             Assert.Contains("'NoSuchProperty' not found on OwnerA", ex.Message, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     A diamond wired through a property the root type does not have is refused by name. Without the
+        ///     refusal, a root with only one side pointing at the shared child would not be a diamond, and a
+        ///     sharing test built on it would measure nothing.
+        /// </summary>
+        [Fact]
+        public void MakeDiamond_rejects_a_property_the_root_type_does_not_have()
+        {
+            var ex = Assert.Throws<ArgumentException>(() => ObjectFactoryV2.MakeDiamond(typeof(DiamondRoot),
+                typeof(DiamondChild),
+                "NoSuchProperty",
+                nameof(DiamondRoot.Right),
+                new Random(15)));
+
+            Assert.Equal("propName", ex.ParamName);
+            Assert.Contains("'NoSuchProperty' not found on DiamondRoot", ex.Message, StringComparison.Ordinal);
+        }
+
         /// <summary>The seedless overload is the one a caller reaches for first, and it was never called.</summary>
         [Fact]
         public void The_seedless_overload_produces_a_populated_instance()
