@@ -216,3 +216,36 @@ three are Benchmarks, Conformance and Gallery; they built but did not run. Check
 - **Conformance.** It has no call to `ObjectFactoryV2.Create` and no `Fuzzer.` call, so it is unaffected.
 - **Gallery.** The only match is `26_InformedDumps.cs`, and there `Fuzzer` appears only in a comment. The fixture its
   `RoundTrip.Verify` builds, `Coin`, is a class with an implicit parameterless constructor, so it is unaffected.
+
+### `ObjectFactoryV2` fills every construction shape (2026-09-15)
+
+**Owner instruction:** "We should always attempt to fully fill all cases during testing. Even with implicite or
+explicite constructors, seeds. We should also fill all arguments with all case seeds."
+
+**Rulings:**
+- **(1) Choosing the constructor.** When a type offers more than one way to be constructed, the seed picks one. The
+  choices are the public constructors in a deterministic order, plus the implicit default of a struct. A settable
+  member that the chosen constructor's parameters do not already set is filled afterwards. The seed is drawn only
+  when there are two or more choices, so a type with a single construction shape keeps its current rng sequence.
+- **(2) A constructor that throws.** If a constructor throws on its seeded arguments, the factory lets the error out,
+  naming the type. There is no retry and no fallback.
+- **(3) `Queue<T>` and `Stack<T>`** get collection branches, populated like `List<T>`.
+
+**Options put to the owner for (2):**
+- let it throw and fix `Queue<T>`/`Stack<T>`;
+- try the next constructor;
+- redraw once without nulls.
+
+**Letting it throw was chosen.**
+
+**Probe evidence** (temporary logging in the construction path, run across Testing.Tests, IntegrationTests,
+CompilerTests and Generator.Tests, then reverted):
+- **No constructor threw anywhere.** Generator.Tests logged 126 construction calls that went through a record's
+  single positional constructor and 126 that went through a struct with no declared constructor. CompilerTests never
+  reaches the path.
+- **Only two multi-constructor types reach the path:** `Queue<T>` and `Stack<T>`, with 53 calls, all in
+  Generator.Tests. Before (3) they were built by their parameterless constructor and always came out empty. Under
+  (1), `Queue<T>(int capacity)` would be handed a negative edge value. That is the case that decided (2) and (3)
+  together.
+- **Before (1)**, a type with a parameterized constructor had none of its remaining members filled, and only the
+  constructor with the fewest parameters was ever called.
