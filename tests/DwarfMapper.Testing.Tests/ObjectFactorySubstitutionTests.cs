@@ -41,6 +41,20 @@ namespace DwarfMapper.Testing.Tests
         public string Title { get; set; } = "";
     }
 
+    /// <summary>An abstract type with TWO concrete candidates, so the candidate list is genuinely ordered before the draw.</summary>
+    public abstract class TwoWayBase
+    {
+        public int Id { get; set; }
+    }
+
+    public sealed class TwoWayLeft : TwoWayBase
+    {
+    }
+
+    public sealed class TwoWayRight : TwoWayBase
+    {
+    }
+
     /// <summary>An interface nothing in the loaded assemblies implements: there is no concrete candidate to draw.</summary>
     public interface IUnimplemented
     {
@@ -141,6 +155,23 @@ namespace DwarfMapper.Testing.Tests
 
             // ShapeBase HAS a concrete candidate (Square); at the cap it is not looked for.
             Assert.Null(ObjectFactoryV2.Create(typeof(ShapeBase), new Random(22), 6, false));
+        }
+
+        /// <summary>
+        ///     With more than one concrete candidate, each of them is drawn across seeds, and nothing else is. The
+        ///     candidates are ordered by full name before the draw, so which one a seed gets does not depend on the
+        ///     order the runtime happens to enumerate assemblies in.
+        /// </summary>
+        [Fact]
+        public void An_abstract_type_with_two_candidates_draws_each_of_them_across_seeds()
+        {
+            var drawn = Enumerable.Range(0, Seeds)
+                .Select(seed => ObjectFactoryV2.Create(typeof(TwoWayBase), new Random(seed), 0, false)!.GetType())
+                .Distinct()
+                .OrderBy(t => t.Name, StringComparer.Ordinal)
+                .ToList();
+
+            Assert.Equal(new[] { typeof(TwoWayLeft), typeof(TwoWayRight) }, drawn);
         }
 
         [Fact]
