@@ -349,6 +349,14 @@ namespace DwarfMapper.Testing
                     return MakeHashSet(args[0], rng, depth);
                 }
 
+                // ── Queue<T>, Stack<T> → built from a generated List<T> through their IEnumerable<T> constructor.
+                // They used to fall through to the class path, where the parameterless constructor built them EMPTY
+                // for every seed (53 construction calls in Generator.Tests, 2026-09-15 probe).
+                if (gtd == typeof(Queue<>) || gtd == typeof(Stack<>))
+                {
+                    return Activator.CreateInstance(type, MakeList(args[0], rng, depth));
+                }
+
                 // ── ImmutableArray<T>
                 if (gtd == typeof(ImmutableArray<>))
                 {

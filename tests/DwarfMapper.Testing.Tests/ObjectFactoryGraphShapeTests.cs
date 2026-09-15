@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections;
 using System.Globalization;
 
 namespace DwarfMapper.Testing.Tests
@@ -426,6 +427,23 @@ namespace DwarfMapper.Testing.Tests
         public void A_class_with_no_public_constructor_comes_back_null()
         {
             Assert.Null(ObjectFactoryV2.Create(typeof(NoPublicConstructor), new Random(17), 0));
+        }
+
+        /// <summary>
+        ///     A queue or a stack is populated like any other collection. Both used to reach the class path, where
+        ///     their parameterless constructor built them EMPTY for every seed, so no fixture ever carried an
+        ///     element in one.
+        /// </summary>
+        [Theory]
+        [InlineData(typeof(Queue<int>))]
+        [InlineData(typeof(Stack<int>))]
+        public void A_queue_or_a_stack_is_populated_across_seeds(Type collectionType)
+        {
+            var sizes = Enumerable.Range(0, 40)
+                .Select(seed => ((ICollection)ObjectFactoryV2.Create(collectionType, new Random(seed), 0, false)!).Count)
+                .ToList();
+
+            Assert.Contains(sizes, size => size > 0);
         }
 
         /// <summary>
