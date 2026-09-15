@@ -128,6 +128,27 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     A model in the GLOBAL namespace has a handle with no dot to cut at — <c>T:Money</c> — so the title
+        ///     takes the whole name after the prefix, and the conversion itself is unaffected: the handle
+        ///     resolves like any other and the type is rewritten.
+        /// </summary>
+        [Fact]
+        public async Task A_global_namespace_model_is_titled_by_its_name_and_converted()
+        {
+            const string source = """
+                                  public sealed class Money { public long Units { get; set; } }
+                                  """;
+            var properties = ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Money");
+
+            var action = Assert.Single(await ConvertToRecordStructFixture
+                .OfferForAsync(_fixture.Document(source), Synthetic(properties)).ConfigureAwait(true));
+            Assert.EndsWith("'Money'", action.Title, StringComparison.Ordinal);
+
+            var text = await ApplySyntheticAsync(_fixture.Document(source), properties).ConfigureAwait(true);
+            Assert.Contains("readonly record struct Money", text, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     An empty NESTED list means "no nested models", not "one model with an empty name". The
         ///     generator writes the property only when there is something in it, so this is the shape a
         ///     hand-built or older diagnostic takes — and reading it as a single blank handle would abort a
