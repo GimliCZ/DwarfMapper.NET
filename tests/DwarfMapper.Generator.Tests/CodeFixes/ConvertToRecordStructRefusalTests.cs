@@ -108,6 +108,26 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     A handle missing its <c>T:</c> prefix — not a shape the generator writes, but one a hand-built or
+        ///     foreign diagnostic can carry — is still offered, titled by its last name segment, and rewrites
+        ///     NOTHING: <see cref="DocumentationCommentId.GetFirstSymbolForDeclarationId" /> resolves only a
+        ///     prefixed id, so the conversion takes its unresolvable-root refusal and returns the solution
+        ///     unchanged. Pinned as today's behaviour: a malformed handle costs a no-op lightbulb, never a
+        ///     partial rewrite.
+        /// </summary>
+        [Fact]
+        public async Task A_handle_without_its_T_prefix_is_titled_by_its_last_segment_and_rewrites_nothing()
+        {
+            var properties = ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "Demo.Money");
+
+            var action = Assert.Single(await OfferSyntheticAsync(properties).ConfigureAwait(true));
+            Assert.EndsWith("'Money'", action.Title, StringComparison.Ordinal);
+
+            var text = await ApplySyntheticAsync(_fixture.Document(Reported), properties).ConfigureAwait(true);
+            Assert.Equal(Reported, text);
+        }
+
+        /// <summary>
         ///     An empty NESTED list means "no nested models", not "one model with an empty name". The
         ///     generator writes the property only when there is something in it, so this is the shape a
         ///     hand-built or older diagnostic takes — and reading it as a single blank handle would abort a
