@@ -185,3 +185,34 @@ that shape, so only a hand-built or foreign diagnostic carries it. Like the gene
 the id STRING: it costs no compilation, and an unoffered fix is a non-event.
 
 **Options put to the owner:** refuse at registration, or keep the pinned no-op. **Refusal was chosen.**
+
+### `ObjectFactoryV2` populates a struct that has no declared constructor (2026-09-15)
+
+**Ruling:** a struct with no declared constructor has no public constructor that reflection can see. It is now
+default-constructed and then populated like any other type (`f3d2ca6`). Before, the factory returned its default,
+so every such struct in every fuzz fixture was all zeros. Struct mapping was only ever fuzzed with default values.
+
+**Options put to the owner:**
+- **(1)** ship the fix;
+- **(2)** pin today's all-default behaviour with a test;
+- **(3)** make population opt-in.
+
+**(1) was chosen.**
+
+**Correction to `f3d2ca6`'s blast-radius claim.** The commit says "all four projects referencing `DwarfMapper.Testing`
+stayed green". Four is the number of TEST projects that reference it. Seven projects reference it in all. The other
+three are Benchmarks, Conformance and Gallery; they built but did not run. Checked afterwards:
+
+- **Benchmarks.** `RealisticPayloads` feeds `ObjectFactoryV2` output to every category.
+  - Changed: `Vec3Src` is a struct with no declared constructor, so the Blit payloads went from all-zero floats to
+    seeded floats. That affects `Program.cs` (`_blit`, salt 4) and `CollectionSweep.cs` (salt 7).
+  - Unchanged: every other payload type is a class. `FlatSrc`, `NestedSrc`, `FlOrder`, `FlCustomer`, `EnumSrc`,
+    `NmSrc` and `FzA` have an implicit parameterless constructor. `ShBadge` has one parameterized constructor and no
+    settable members.
+  - Figures: both blit arms copy bytes whatever the values are. The seeded floats are 0, ±1, MinValue, MaxValue or
+    `NextDouble() * 1000`, with no subnormals. So the Blit rows are expected not to move. That expectation is **not
+    re-measured**. The recorded 2.13× (Dict) and 3.29× (allocation) figures come from non-struct payloads and are
+    unaffected.
+- **Conformance.** It has no call to `ObjectFactoryV2.Create` and no `Fuzzer.` call, so it is unaffected.
+- **Gallery.** The only match is `26_InformedDumps.cs`, and there `Fuzzer` appears only in a comment. The fixture its
+  `RoundTrip.Verify` builds, `Coin`, is a class with an implicit parameterless constructor, so it is unaffected.
