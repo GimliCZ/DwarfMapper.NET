@@ -103,6 +103,16 @@ namespace DwarfMapper.Testing.Tests
         Delta = 8
     }
 
+    /// <summary>A class whose only constructor is private: the factory has no public way to build one.</summary>
+    public sealed class NoPublicConstructor
+    {
+        private NoPublicConstructor()
+        {
+        }
+
+        public int X { get; set; }
+    }
+
     /// <summary>A <c>[Flags]</c> enum with a SIGNED underlying type, the counterpart of <see cref="WideBits" />.</summary>
     [Flags]
     public enum NarrowBits
@@ -401,6 +411,17 @@ namespace DwarfMapper.Testing.Tests
         ///         Found 2026-09-15 by probe; fixed by owner ruling.
         ///     </para>
         /// </summary>
+        /// <summary>
+        ///     A CLASS with no public constructor comes back null: the factory honours accessibility and does not
+        ///     reach a private constructor by reflection. It is the class-side counterpart of the struct fallback
+        ///     below, where a struct with no declared constructor still has its implicit one.
+        /// </summary>
+        [Fact]
+        public void A_class_with_no_public_constructor_comes_back_null()
+        {
+            Assert.Null(ObjectFactoryV2.Create(typeof(NoPublicConstructor), new Random(17), 0));
+        }
+
         [Fact]
         public void A_struct_with_no_declared_constructor_is_populated_rather_than_left_default()
         {
