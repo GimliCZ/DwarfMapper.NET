@@ -500,6 +500,7 @@ namespace DwarfMapper.Testing
 
             // ── Class / struct / record ──────────────────────────────────────────
             var ctor = type.GetConstructor(Type.EmptyTypes);
+            object? instance;
             if (ctor is null)
             {
                 // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection
@@ -509,22 +510,35 @@ namespace DwarfMapper.Testing
                 var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
                 if (ctors.Length == 0)
                 {
-                    return type.IsValueType ? Activator.CreateInstance(type) : null;
+                    if (!type.IsValueType)
+                    {
+                        return null;
+                    }
+
+                    // A struct with no declared constructor has no PUBLIC constructor at all (its parameterless one
+                    // is implicit), so it is default-constructed here and then populated below like any other type.
+                    // Returning the default instead left every such struct all zeros in every fuzz fixture, so struct
+                    // mapping was only ever fuzzed with default values (found 2026-09-15, fixed by owner ruling).
+                    instance = Activator.CreateInstance(type);
                 }
-
-                var pc = ctors
-                    .OrderBy(c => c.GetParameters().Length)
-                    .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
-                        StringComparer.Ordinal)
-                    .First();
-                var parms = pc.GetParameters();
-                var pvals = new object?[parms.Length];
-                for (var i = 0; i < parms.Length; i++)
-                    pvals[i] = Create(parms[i].ParameterType, rng, depth + 1);
-                return pc.Invoke(pvals);
+                else
+                {
+                    var pc = ctors
+                        .OrderBy(c => c.GetParameters().Length)
+                        .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
+                            StringComparer.Ordinal)
+                        .First();
+                    var parms = pc.GetParameters();
+                    var pvals = new object?[parms.Length];
+                    for (var i = 0; i < parms.Length; i++)
+                        pvals[i] = Create(parms[i].ParameterType, rng, depth + 1);
+                    return pc.Invoke(pvals);
+                }
             }
-
-            var instance = ctor.Invoke(null);
+            else
+            {
+                instance = ctor.Invoke(null);
+            }
             foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                 if (p.CanWrite && p.GetSetMethod() is not null && p.GetIndexParameters().Length == 0)
                 {

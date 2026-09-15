@@ -391,6 +391,26 @@ namespace DwarfMapper.Testing.Tests
             Assert.Equal(default(Point), Assert.IsType<Point>(ObjectFactoryV2.Create(typeof(Point), rng, 6)));
         }
 
+        /// <summary>
+        ///     <b>A struct with no declared constructor is POPULATED, below the cap, like any other type.</b>
+        ///     <para>
+        ///         Such a struct, the common case, has no public constructor at all: its parameterless one is
+        ///         implicit and invisible to reflection. The factory used to take "no public constructor" to mean
+        ///         "nothing to build" and returned the struct's default. So every struct DTO and struct member in
+        ///         every fuzz fixture was all zeros, and struct mapping was only ever fuzzed with default values.
+        ///         Found 2026-09-15 by probe; fixed by owner ruling.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_struct_with_no_declared_constructor_is_populated_rather_than_left_default()
+        {
+            var points = Enumerable.Range(0, 20)
+                .Select(seed => Assert.IsType<Point>(ObjectFactoryV2.Create(typeof(Point), new Random(seed), 0)))
+                .ToList();
+
+            Assert.Contains(points, p => p.X != 0);
+        }
+
         /// <summary>An enum with NO members: there is nothing to pick, so the default value is the only answer.</summary>
         [Fact]
         public void An_enum_with_no_members_yields_its_default()
