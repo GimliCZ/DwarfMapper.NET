@@ -252,20 +252,37 @@ namespace DwarfMapper.Testing.Tests
         // ── Depth, degenerate shapes, and the paths a fuzz run reaches by accident ──
 
         /// <summary>
-        ///     At the depth cap the factory stops descending: collections come back empty and a reference type
-        ///     comes back null, rather than recursing until the stack gives out. The cap is what makes a fuzz
-        ///     suite over a recursive schema finish at all.
+        ///     At the depth cap the factory stops descending, rather than recursing until the stack gives out. The
+        ///     cap is what makes a fuzz suite over a recursive schema finish at all.
         /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The cap reads differently for objects and for collections, and this test used to get the
+        ///         collection half wrong. It asserted that a <c>List&lt;int&gt;</c> at the cap is null "because the
+        ///         cap is reached before the collection branch". The opposite is true. The array and generic
+        ///         collection branches run BEFORE the object branch's cap check, and they size what they build with
+        ///         the cap instead. So a collection at the cap is EMPTY. It was null only when the reference-type
+        ///         null draw happened to fire first, which the fixed seed happened to make it do.
+        ///     </para>
+        ///     <para>
+        ///         The collections are therefore asked for with <c>allowNull: false</c>, which takes the random
+        ///         null draw out and leaves the cap as the only thing being measured.
+        ///     </para>
+        /// </remarks>
         [Fact]
         public void At_the_depth_cap_the_factory_stops_descending()
         {
             var rng = new Random(11);
 
-            // 6 is the factory's own cap. A REFERENCE type comes back null there -- including a collection,
-            // which is checked here because "empty list" is the intuitive guess and it is wrong: the cap is
-            // reached before the collection branch, so nothing is constructed at all.
+            // 6 is the factory's own cap. An OBJECT comes back null there: either the null draw fires, or the
+            // object branch reaches its cap check and constructs nothing.
             Assert.Null(ObjectFactoryV2.Create(typeof(HasCollections), rng, 6));
-            Assert.Null(ObjectFactoryV2.Create(typeof(List<int>), rng, 6));
+
+            // A COLLECTION comes back empty: its branch runs before that check and sizes itself with the cap.
+            Assert.Empty(Assert.IsType<int[]>(ObjectFactoryV2.Create(typeof(int[]), rng, 6, false)));
+            Assert.Empty(Assert.IsType<List<int>>(ObjectFactoryV2.Create(typeof(List<int>), rng, 6, false)));
+            Assert.Empty(Assert.IsType<Dictionary<string, int>>(
+                ObjectFactoryV2.Create(typeof(Dictionary<string, int>), rng, 6, false)));
 
             // A VALUE type cannot be null, so the cap yields its default rather than descending into it.
             Assert.Equal(default(Point), Assert.IsType<Point>(ObjectFactoryV2.Create(typeof(Point), rng, 6)));
