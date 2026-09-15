@@ -120,6 +120,36 @@ namespace DwarfMapper.Testing.Tests
         public T? Value { get; set; }
     }
 
+    /// <summary>
+    ///     A class whose only constructor takes arguments. <c>Name</c> is a member that constructor does not set.
+    ///     <c>Label</c> is settable AND set by the constructor; <c>LabelFromCtor</c> keeps the constructor's
+    ///     copy, so a test can see whether <c>Label</c> was drawn again afterwards. <c>Count</c> and
+    ///     <c>CountFromCtor</c> are the same pair for a public FIELD.
+    /// </summary>
+    public sealed class CtorAndSetter
+    {
+        public int Count;
+
+        public CtorAndSetter(int id, string? label, int count)
+        {
+            Id = id;
+            Label = label;
+            LabelFromCtor = label;
+            Count = count;
+            CountFromCtor = count;
+        }
+
+        public int Id { get; }
+
+        public int CountFromCtor { get; }
+
+        public string? Name { get; set; }
+
+        public string? Label { get; set; }
+
+        public string? LabelFromCtor { get; }
+    }
+
     /// <summary>A <c>[Flags]</c> enum with a SIGNED underlying type, the counterpart of <see cref="WideBits" />.</summary>
     [Flags]
     public enum NarrowBits
@@ -444,6 +474,24 @@ namespace DwarfMapper.Testing.Tests
                 .ToList();
 
             Assert.Contains(sizes, size => size > 0);
+        }
+
+        /// <summary>
+        ///     A member the constructor does not set is filled after the constructor runs. The factory used to
+        ///     return straight from a parameterized constructor, so every such member stayed at its default for
+        ///     every seed. A member the constructor DID set keeps the constructor's value: it is not drawn again.
+        /// </summary>
+        [Fact]
+        public void A_member_its_constructor_does_not_set_is_filled_after_the_constructor_runs()
+        {
+            var made = Enumerable.Range(0, 40)
+                .Select(seed => Assert.IsType<CtorAndSetter>(
+                    ObjectFactoryV2.Create(typeof(CtorAndSetter), new Random(seed), 0, false)))
+                .ToList();
+
+            Assert.Contains(made, m => m.Name is not null);
+            Assert.All(made, m => Assert.Equal(m.LabelFromCtor, m.Label));
+            Assert.All(made, m => Assert.Equal(m.CountFromCtor, m.Count));
         }
 
         /// <summary>

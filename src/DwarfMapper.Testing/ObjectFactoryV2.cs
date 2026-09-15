@@ -509,6 +509,7 @@ namespace DwarfMapper.Testing
             // ── Class / struct / record ──────────────────────────────────────────
             var ctor = type.GetConstructor(Type.EmptyTypes);
             object? instance;
+            ParameterInfo[] bound = [];
             if (ctor is null)
             {
                 // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection
@@ -540,26 +541,39 @@ namespace DwarfMapper.Testing
                     var pvals = new object?[parms.Length];
                     for (var i = 0; i < parms.Length; i++)
                         pvals[i] = Create(parms[i].ParameterType, rng, depth + 1);
-                    return pc.Invoke(pvals);
+
+                    // Falls through to the member loops below. This used to return here, so every member the
+                    // constructor does not set stayed at its default for every seed (owner ruling 2026-09-15).
+                    instance = pc.Invoke(pvals);
+                    bound = parms;
                 }
             }
             else
             {
                 instance = ctor.Invoke(null);
             }
+
+            // A member named like a constructor parameter was already set from its seeded argument, so it is not
+            // drawn again. That also keeps a positional record's rng sequence, and so its fixtures, unchanged.
             foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                if (p.CanWrite && p.GetSetMethod() is not null && p.GetIndexParameters().Length == 0)
+                if (p.CanWrite && p.GetSetMethod() is not null && p.GetIndexParameters().Length == 0 && !IsBoundByConstructor(bound, p.Name))
                 {
                     p.SetValue(instance, Create(p.PropertyType, rng, depth + 1));
                 }
 
             foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-                if (!f.IsInitOnly)
+                if (!f.IsInitOnly && !IsBoundByConstructor(bound, f.Name))
                 {
                     f.SetValue(instance, Create(f.FieldType, rng, depth + 1));
                 }
 
             return instance;
+        }
+
+        /// <summary>Whether <paramref name="memberName" /> names one of the chosen constructor's parameters.</summary>
+        private static bool IsBoundByConstructor(ParameterInfo[] parameters, string memberName)
+        {
+            return Array.Exists(parameters, x => string.Equals(x.Name, memberName, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>Concrete candidates per abstract type, resolved once per process.</summary>
