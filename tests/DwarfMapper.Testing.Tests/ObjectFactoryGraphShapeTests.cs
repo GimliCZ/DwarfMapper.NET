@@ -239,6 +239,21 @@ namespace DwarfMapper.Testing.Tests
                 ObjectFactoryV2.MakeTwoNodeCycle(null!, nameof(CycleNode.Next), new Random(8)));
         }
 
+        /// <summary>
+        ///     A self-loop over a property the node type does not have is refused by name. Silently building an
+        ///     unlooped node would hand a reference-handling test a fixture with no cycle in it, and that test
+        ///     would pass for the wrong reason.
+        /// </summary>
+        [Fact]
+        public void MakeSelfLoop_rejects_a_property_the_node_type_does_not_have()
+        {
+            var ex = Assert.Throws<ArgumentException>(() =>
+                ObjectFactoryV2.MakeSelfLoop(typeof(LoopNode), "NoSuchProperty", new Random(9)));
+
+            Assert.Equal("selfPropName", ex.ParamName);
+            Assert.Contains("'NoSuchProperty' not found on LoopNode", ex.Message, StringComparison.Ordinal);
+        }
+
         /// <summary>The seedless overload is the one a caller reaches for first, and it was never called.</summary>
         [Fact]
         public void The_seedless_overload_produces_a_populated_instance()
