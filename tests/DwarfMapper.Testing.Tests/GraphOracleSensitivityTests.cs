@@ -439,6 +439,36 @@ namespace DwarfMapper.Testing.Tests
             yield break;
         }
 
+        /// <summary>
+        ///     The cross-type oracle stops descending at its depth cap, which is what lets it finish on a graph
+        ///     deeper than any mapping test needs. Along a 20-node chain, a difference near the top is reported,
+        ///     and the same difference near the bottom, below the cap, is not looked at.
+        /// </summary>
+        [Fact]
+        public void Cross_type_compare_stops_descending_at_its_depth_cap()
+        {
+            var expected = Chain(20, null);
+
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected, Chain(20, null)));
+            Assert.Single(GraphOracleComparer.CrossTypeDiff(expected, Chain(20, 3)));
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected, Chain(20, 18)));
+        }
+
+        /// <summary>A chain linked through <c>Left</c>, where node i holds i, except node <paramref name="differentAt" /> holds -1.</summary>
+        private static OracleNode Chain(int length, int? differentAt)
+        {
+            var root = new OracleNode { V = differentAt == 0 ? -1 : 0 };
+            var current = root;
+            for (var i = 1; i < length; i++)
+            {
+                var next = new OracleNode { V = differentAt == i ? -1 : i };
+                current.Left = next;
+                current = next;
+            }
+
+            return root;
+        }
+
         // ── Scalar equality ──────────────────────────────────────────────────────────
 
         /// <summary>
