@@ -11,8 +11,39 @@ namespace DwarfMapper.Testing.Tests
         public List<int> Xs { get; set; } = new();
     }
 
+    /// <summary>
+    ///     A type with a WRITE-ONLY property: <c>Sink</c> has no getter, and records what it was given in <c>Last</c>.
+    ///     Internal because CA1044 rejects a write-only property on an externally visible type; the comparer reads
+    ///     public properties by reflection, so the type's own visibility does not change what it sees.
+    /// </summary>
+    internal sealed class WriteOnlyBox
+    {
+        public int Last { get; private set; }
+
+        public int Sink
+        {
+            set => Last = value;
+        }
+    }
+
     public class StructuralComparerTests
     {
+        /// <summary>
+        ///     A write-only property is skipped rather than read. <c>PropertyInfo.GetValue</c> on a property with
+        ///     no getter throws, so a comparer that did not filter on <c>CanRead</c> would crash on any consumer
+        ///     type carrying one. The readable property beside it is still compared, which is the control.
+        /// </summary>
+        [Fact]
+        public void A_write_only_property_is_skipped_and_the_readable_ones_are_still_compared()
+        {
+            var diffs = StructuralComparer.Diff(new WriteOnlyBox { Sink = 1 }, new WriteOnlyBox { Sink = 2 });
+
+            var last = Assert.Single(diffs);
+            Assert.Equal("root.Last", last.Path);
+            Assert.Equal("1", last.Expected);
+            Assert.Equal("2", last.Actual);
+        }
+
         [Fact]
         public void Equal_objects_have_no_diffs()
         {
