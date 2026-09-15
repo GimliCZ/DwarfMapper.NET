@@ -136,7 +136,8 @@ other test in `MapConfigRuntimeTests` runs the generated mappers.
 named exemption class from the 2026-09-10 rule that every branch is reachable-and-tested or removed. **No `!`, no
 throw, no behaviour change.** Their uncovered lines are the exemption, not a gap.
 
-**The class** (line numbers as of the commit that adds `IsTypeHandle`, which shifted `ConvertToRecordStruct` by +16):
+**The class** (line numbers as of the commit that simplifies `Short()`, after `IsTypeHandle` shifted
+`ConvertToRecordStruct` by +16 and the `Short()` remark by +2):
 
 | provider | lines | guard |
 |---|---|---|
@@ -144,10 +145,10 @@ throw, no behaviour change.** Their uncovered lines are the exemption, not a gap
 | `AddReverseMapInverseCodeFixProvider` | 38-40 | `root is null` after `GetSyntaxRootAsync` |
 | `ResolveExplicitOnlyMemberCodeFixProvider` | 47-49 | `root is null` after `GetSyntaxRootAsync` |
 | `RestateBaseConfigurationCodeFixProvider` | 51-53 | `root is null` after `GetSyntaxRootAsync` |
-| `ConvertToRecordStructCodeFixProvider` | 265-267 | `compilation is null` after `GetCompilationAsync` |
-| `ConvertToRecordStructCodeFixProvider` | 326-328 | `documentId is null` after `Solution.GetDocumentId(tree)` |
-| `ConvertToRecordStructCodeFixProvider` | 352, 356-358 | `target is null` after `GetDocument`; `documentRoot is null` after `GetSyntaxRootAsync` |
-| `ConvertToRecordStructCodeFixProvider` | 313, 389 | `GetDocumentationCommentId() ?? model.Name` |
+| `ConvertToRecordStructCodeFixProvider` | 267-269 | `compilation is null` after `GetCompilationAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 328-330 | `documentId is null` after `Solution.GetDocumentId(tree)` |
+| `ConvertToRecordStructCodeFixProvider` | 354, 358-360 | `target is null` after `GetDocument`; `documentRoot is null` after `GetSyntaxRootAsync` |
+| `ConvertToRecordStructCodeFixProvider` | 315, 391 | `GetDocumentationCommentId() ?? model.Name` |
 
 **Why they are unreachable here.** Each API's contract permits null, but not for the inputs a C# code fix is handed.
 - A code fix is registered only against a diagnostic in a C# source document. Such a document always supports

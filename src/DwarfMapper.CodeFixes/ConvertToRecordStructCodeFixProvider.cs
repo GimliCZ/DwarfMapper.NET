@@ -233,11 +233,13 @@ namespace DwarfMapper.CodeFixes
         }
 
         /// <summary>The type name inside a <c>DocumentationCommentId</c>: <c>T:Demo.OrderDto</c> gives <c>OrderDto</c>.</summary>
+        /// <remarks>
+        ///     The prefix is stripped unconditionally: the only caller is <see cref="Title" />, and an action is
+        ///     titled only after <see cref="IsTypeHandle" /> has accepted its handle.
+        /// </remarks>
         private static string Short(string declarationId)
         {
-            var name = declarationId.StartsWith("T:", StringComparison.Ordinal)
-                ? declarationId.Substring(2)
-                : declarationId;
+            var name = declarationId.Substring(2);
 
             var cut = name.LastIndexOf('.');
             return cut < 0 ? name : name.Substring(cut + 1);
