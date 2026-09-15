@@ -103,6 +103,17 @@ namespace DwarfMapper.Testing.Tests
         Delta = 8
     }
 
+    /// <summary>A <c>[Flags]</c> enum with a SIGNED underlying type, the counterpart of <see cref="WideBits" />.</summary>
+    [Flags]
+    public enum NarrowBits
+    {
+        None = 0,
+        One = 1,
+        Two = 2,
+        Four = 4,
+        Eight = 8
+    }
+
     /// <summary>
     ///     The factory's GRAPH-SHAPE builders, its wide-enum path, and its argument guards.
     /// </summary>
@@ -209,6 +220,26 @@ namespace DwarfMapper.Testing.Tests
                 var all = WideBits.Alpha | WideBits.Beta | WideBits.Gamma | WideBits.Delta;
                 Assert.Equal(WideBits.None, value & ~all);
             }
+        }
+
+        /// <summary>
+        ///     A <c>[Flags]</c> enum with a SIGNED underlying type accumulates in a signed accumulator, and still
+        ///     produces COMBINED values. A combination is the whole point of a flags enum, and a single declared
+        ///     member can never produce one. Every bit set must come from a declared member, and some draw must set
+        ///     more than one.
+        /// </summary>
+        [Fact]
+        public void A_signed_flags_enum_is_built_from_combinations_of_its_own_members()
+        {
+            var rng = new Random(16);
+            const NarrowBits all = NarrowBits.One | NarrowBits.Two | NarrowBits.Four | NarrowBits.Eight;
+
+            var values = Enumerable.Range(0, 40)
+                .Select(_ => (NarrowBits)ObjectFactoryV2.Create(typeof(NarrowBits), rng, 0)!)
+                .ToList();
+
+            Assert.All(values, v => Assert.Equal(NarrowBits.None, v & ~all));
+            Assert.Contains(values, v => System.Numerics.BitOperations.PopCount((uint)v) > 1);
         }
 
         // ── The argument guards ─────────────────────────────────────────────────
