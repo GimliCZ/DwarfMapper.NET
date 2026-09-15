@@ -489,7 +489,8 @@ namespace DwarfMapper.Testing
                     return Create(concrete, rng, depth + 1, allowNull);
                 }
 
-                return type.IsValueType ? Activator.CreateInstance(type) : null;
+                // No value-type arm: an interface or an abstract type is never a value type.
+                return null;
             }
 
             if (depth >= DefaultMaxDepth)
