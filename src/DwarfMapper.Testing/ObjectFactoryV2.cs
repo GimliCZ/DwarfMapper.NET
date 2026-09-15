@@ -594,8 +594,11 @@ namespace DwarfMapper.Testing
         private static readonly Dictionary<Type, Type[]> ConcreteCandidates = [];
 
         /// <summary>
-        ///     A concrete, parameterless-constructible type assignable to <paramref name="abstractType" />, or
-        ///     <see langword="null" /> when the loaded assemblies offer none.
+        ///     A concrete type assignable to <paramref name="abstractType" /> that the factory can construct, or
+        ///     <see langword="null" /> when the loaded assemblies offer none. Any public constructor qualifies, and
+        ///     so does any struct, which can always be built through its implicit default. This used to demand a
+        ///     parameterless constructor, so an implementation built only through arguments was never substituted
+        ///     (owner ruling 2026-09-15).
         /// </summary>
         /// <remarks>
         ///     Ordered by full name before the draw so the choice is a pure function of the seed — fixtures
@@ -610,7 +613,7 @@ namespace DwarfMapper.Testing
                 {
                     candidates = AppDomain.CurrentDomain.GetAssemblies()
                         .SelectMany(SafeTypes)
-                        .Where(c => !c.IsAbstract && !c.IsInterface && !c.IsGenericTypeDefinition && abstractType.IsAssignableFrom(c) && c.GetConstructor(Type.EmptyTypes) is not null)
+                        .Where(c => !c.IsAbstract && !c.IsInterface && !c.IsGenericTypeDefinition && abstractType.IsAssignableFrom(c) && (c.IsValueType || c.GetConstructors(BindingFlags.Public | BindingFlags.Instance).Length > 0))
                         .OrderBy(c => c.FullName, StringComparer.Ordinal)
                         .ToArray();
                     ConcreteCandidates[abstractType] = candidates;

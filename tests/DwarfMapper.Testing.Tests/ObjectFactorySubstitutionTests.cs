@@ -70,6 +70,48 @@ namespace DwarfMapper.Testing.Tests
         int Value { get; set; }
     }
 
+    /// <summary>An abstract type whose only concrete implementation has no parameterless constructor.</summary>
+    public abstract class PositionalBase
+    {
+        public abstract int Id { get; }
+    }
+
+    /// <summary>The only implementation of <see cref="PositionalBase" />: it can only be built with an argument.</summary>
+    public sealed class PositionalOnly : PositionalBase
+    {
+        public PositionalOnly(int id)
+        {
+            Id = id;
+        }
+
+        public override int Id { get; }
+    }
+
+    /// <summary>An interface implemented only by a struct.</summary>
+    public interface IStructOnly
+    {
+        int Size { get; }
+    }
+
+    /// <summary>The only implementation of <see cref="IStructOnly" />: a positional record struct.</summary>
+    public readonly record struct SizedStruct(int Size) : IStructOnly;
+
+    /// <summary>An interface whose only implementation has no public constructor.</summary>
+    public interface IHiddenOnly
+    {
+        int X { get; }
+    }
+
+    /// <summary>The only implementation of <see cref="IHiddenOnly" />: its constructor is private.</summary>
+    public sealed class HiddenImplementation : IHiddenOnly
+    {
+        private HiddenImplementation()
+        {
+        }
+
+        public int X { get; }
+    }
+
     public class HoldsAbstract
     {
         public ShapeBase Shape { get; set; } = new Square();
@@ -181,6 +223,38 @@ namespace DwarfMapper.Testing.Tests
                 .ToList();
 
             Assert.Equal(new[] { typeof(TwoWayLeft), typeof(TwoWayRight) }, drawn);
+        }
+
+        /// <summary>
+        ///     A concrete implementation that can only be built with arguments is still a candidate. Substitution used
+        ///     to demand a parameterless constructor, so an abstract type implemented only by a positional record or a
+        ///     constructor-only class always came back null, and that polymorphic shape was never fuzzed.
+        /// </summary>
+        [Fact]
+        public void An_abstract_type_implemented_only_through_a_parameterized_constructor_is_substituted()
+        {
+            Assert.IsType<PositionalOnly>(ObjectFactoryV2.Create(typeof(PositionalBase), new Random(27), 0, false));
+        }
+
+        /// <summary>
+        ///     A struct is a candidate whatever constructors it declares, because it can always be built through its
+        ///     implicit default. A positional record struct has no parameterless constructor for reflection to
+        ///     find, and used to be skipped.
+        /// </summary>
+        [Fact]
+        public void An_interface_implemented_only_by_a_struct_is_substituted_with_that_struct()
+        {
+            Assert.IsType<SizedStruct>(ObjectFactoryV2.Create(typeof(IStructOnly), new Random(28), 0, false));
+        }
+
+        /// <summary>
+        ///     A class with no public constructor is not a candidate: the factory has no public way to build it, so
+        ///     an interface implemented only by such a class still comes back null.
+        /// </summary>
+        [Fact]
+        public void An_implementation_with_no_public_constructor_is_not_a_candidate()
+        {
+            Assert.Null(ObjectFactoryV2.Create(typeof(IHiddenOnly), new Random(29), 0, false));
         }
 
         /// <summary>
