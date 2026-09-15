@@ -124,9 +124,9 @@ namespace DwarfMapper.Testing
             var diffs = new List<string>();
             CrossTypeCompare(rootPath,
                 expected,
-                expectedType ?? expected?.GetType(),
+                expectedType,
                 actual,
-                actualType ?? actual?.GetType(),
+                actualType,
                 diffs,
                 0,
                 new Dictionary<(RuntimeId, RuntimeId), bool>(RuntimeIdPairComparer.Instance));
@@ -647,6 +647,7 @@ namespace DwarfMapper.Testing
                 return;
             }
 
+            // A root call without declared types gets them from its values here; every recursive call passes them.
             expectedType ??= expected.GetType();
             actualType ??= actual.GetType();
 
