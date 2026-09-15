@@ -113,6 +113,12 @@ namespace DwarfMapper.Testing.Tests
         public int X { get; set; }
     }
 
+    /// <summary>A user generic CLASS: not a collection, not a dictionary, not an interface.</summary>
+    public class GenericBox<T>
+    {
+        public T? Value { get; set; }
+    }
+
     /// <summary>A <c>[Flags]</c> enum with a SIGNED underlying type, the counterpart of <see cref="WideBits" />.</summary>
     [Flags]
     public enum NarrowBits
@@ -420,6 +426,22 @@ namespace DwarfMapper.Testing.Tests
         public void A_class_with_no_public_constructor_comes_back_null()
         {
             Assert.Null(ObjectFactoryV2.Create(typeof(NoPublicConstructor), new Random(17), 0));
+        }
+
+        /// <summary>
+        ///     A user-defined generic CLASS is not mistaken for any of the generic shapes the factory special-cases
+        ///     (lists, sets, dictionaries, immutable collections, two-argument interfaces). It falls through every
+        ///     one of them and is built as an ordinary class, with its members populated.
+        /// </summary>
+        [Fact]
+        public void A_user_generic_class_is_built_as_an_ordinary_class()
+        {
+            var boxes = Enumerable.Range(0, 20)
+                .Select(seed =>
+                    Assert.IsType<GenericBox<int>>(ObjectFactoryV2.Create(typeof(GenericBox<int>), new Random(seed), 0)))
+                .ToList();
+
+            Assert.Contains(boxes, b => b.Value != 0);
         }
 
         [Fact]
