@@ -152,6 +152,31 @@ namespace DwarfMapper.Testing.Tests
             Assert.StartsWith("root.V", diff, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     The flatten-graph oracle skips an indexer and a write-only property in BOTH of its property walks:
+        ///     the breadth-first search over the source nodes, and the navigation-null check over the result DTOs.
+        ///     The count check still runs, which is the control: one node flattened to one DTO passes, and to two
+        ///     DTOs reports the mismatch.
+        /// </summary>
+        [Fact]
+        public void Flatten_graph_skips_indexers_and_write_only_properties_in_both_walks()
+        {
+            var src = new OddMembersNode { V = 1 };
+
+            Assert.Empty(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new OddMembersNode { V = 1 } },
+                typeof(OddMembersNode),
+                typeof(OddMembersNode)));
+
+            var violation = Assert.Single(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new OddMembersNode { V = 1 }, new OddMembersNode { V = 1 } },
+                typeof(OddMembersNode),
+                typeof(OddMembersNode)));
+            Assert.StartsWith("FlattenGraph count mismatch", violation, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Topology_reports_a_cycle_the_target_did_not_close()
         {
