@@ -686,13 +686,6 @@ namespace DwarfMapper.Testing
                             diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
                         }
                     }
-                    catch (InvalidCastException)
-                    {
-                        if (!ScalarEquals(expected, actual))
-                        {
-                            diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
-                        }
-                    }
                     catch (OverflowException)
                     {
                         if (!ScalarEquals(expected, actual))
