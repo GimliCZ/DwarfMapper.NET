@@ -307,6 +307,25 @@ namespace DwarfMapper.Testing.Tests
         }
 
         /// <summary>
+        ///     The topology walk pairs source and target members by name, and a target that cannot supply one
+        ///     leaves it unpaired rather than failing. That covers a property the target lacks, a property it has
+        ///     only a setter for, and a field it lacks. Each such source member is walked against null, and a
+        ///     value against null carries no topology, so no violation is reported and nothing throws.
+        /// </summary>
+        [Fact]
+        public void Topology_leaves_members_the_target_lacks_or_cannot_read_unpaired()
+        {
+            var src = new WideExpected { V = 1, Missing = 5, Hidden = 6, MissingField = 7, SharedField = 3 };
+            var tgt = new NarrowActual { V = 1, SharedField = 3 };
+
+            Assert.Empty(GraphOracleComparer.TopologyDiff(src, tgt));
+            Assert.True(GraphOracleComparer.TopologyPreserved(src, tgt));
+
+            // The mirror image: a missing SOURCE against a present target is a value difference, not a topology one.
+            Assert.Empty(GraphOracleComparer.TopologyDiff(null, tgt));
+        }
+
+        /// <summary>
         ///     The cross-type oracle's property walk skips an indexer and a write-only property on the EXPECTED
         ///     type, and still compares the ordinary members by name. Equal instances produce no diffs; a changed
         ///     value is reported at its path.
