@@ -199,6 +199,21 @@ namespace DwarfMapper.Testing.Tests
             Assert.StartsWith("root.Next: shared source node", violation, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     The cross-type oracle's property walk skips an indexer and a write-only property on the EXPECTED
+        ///     type, and still compares the ordinary members by name. Equal instances produce no diffs; a changed
+        ///     value is reported at its path.
+        /// </summary>
+        [Fact]
+        public void Cross_type_compare_skips_indexers_and_write_only_properties_and_still_reports_a_real_difference()
+        {
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 1 }));
+
+            var diff = Assert.Single(
+                GraphOracleComparer.CrossTypeDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 2 }));
+            Assert.StartsWith("root.V", diff, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Topology_reports_a_cycle_the_target_did_not_close()
         {
