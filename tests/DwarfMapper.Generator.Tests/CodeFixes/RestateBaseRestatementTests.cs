@@ -270,6 +270,44 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     A three-type-argument look-alike whose FIRST type argument is the base pair's target. Were it taken for
+        ///     pair-scoped, the one-argument reading (<c>[MapIgnore&lt;T&gt;]</c> names the target alone) would match it
+        ///     to the base pair, and it would be restated onto the derived pair as a one-argument
+        ///     <c>[MapIgnore&lt;AliasCommandDto&gt;]</c> the author never wrote. It is not pair-scoped, so it is left alone.
+        /// </summary>
+        [Fact]
+        public async Task A_three_type_argument_look_alike_naming_the_base_target_first_is_not_restated()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Command { public string Raw { get; set; } = ""; public string Note { get; set; } = ""; }
+                               public class AliasCommand : Command { public string Alias { get; set; } = ""; }
+                               public class CommandDto { public string Text { get; set; } = ""; public string Memo { get; set; } = ""; public string Skip { get; set; } = ""; }
+                               public class AliasCommandDto : CommandDto { public string Alias { get; set; } = ""; }
+
+                               [DwarfMapper]
+                               [GenerateMap<Command, CommandDto>]
+                               [MapProperty<Command, CommandDto>("Note", "Memo")]
+                               [MapIgnore<CommandDto, Command, Command>("Skip")]
+                               [GenerateMap<AliasCommand, AliasCommandDto>]
+                               [RestatesBase<AliasCommand, AliasCommandDto>]
+                               [MapProperty<AliasCommand, AliasCommandDto>("Raw", "Text")]
+                               public partial class M
+                               {
+                               }
+                               """;
+
+            var fixedText = await RestateAsync(src,
+                "MapProperty<AliasCommand, AliasCommandDto>(\"Raw\", \"Text\")").ConfigureAwait(true);
+
+            Assert.Contains("MapProperty<AliasCommand, AliasCommandDto>(\"Note\", \"Memo\")", fixedText,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("MapIgnore<AliasCommandDto>", fixedText, StringComparison.Ordinal);
+            Assert.Equal(1, fixedText.Split("MapIgnore<CommandDto, Command, Command>(\"Skip\")").Length - 1);
+        }
+
+        /// <summary>
         ///     A base attribute whose target member is written in a form the fix cannot read — a constant identifier, a
         ///     <c>nameof</c> with more than one argument, or a call that is not <c>nameof</c> at all — names no member it
         ///     can compare. It cannot be matched against the derived pair's configuration, so it is restated as a new
