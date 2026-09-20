@@ -310,7 +310,22 @@ jobs:
       # reference, no CopyLocal), so no *.stryker-unchanged marker is written and restore never touches
       # them. The next incremental build keeps the mutant. Runs the SAME function housekeeping's three
       # legs call, dot-sourced rather than re-implemented, so the two cannot drift.
+      # REMOVE first, then assert - the order housekeeping's Invoke-DecontaminatedMutationLeg uses, and
+      # for the same reason. Asserting alone made every generator and pipeline leg red (2026-09-20): the
+      # expected residue of an analyzer-only reference is exactly what Stryker cannot restore, so the
+      # assertion fired on it every time and reported a known condition as a failure. Removing first keeps
+      # the assertion meaningful - it still fails on anything the delete could not clear, which is the
+      # unexpected contamination it exists to catch - while the well-understood residue no longer stops the
+      # leg. `always()` so a leg that failed its own threshold is decontaminated too; the runner is thrown
+      # away, but the artifacts and the next step are not.
+      - name: Remove the planted mutants an analyzer-only reference leaves behind
+        if: always()
+        shell: pwsh
+        run: |
+          . ./scripts/gate-checks.ps1
+          Remove-PlantedMutants -Leg '${{ matrix.leg }}' -Root (Get-Location).Path
       - name: Assert no mutated product binary survived the leg
+        if: always()
         shell: pwsh
         run: |
           . ./scripts/gate-checks.ps1

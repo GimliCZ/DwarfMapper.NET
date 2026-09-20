@@ -517,7 +517,23 @@ try {
             $dll = Join-Path $root $target.Dll
             if (-not (Test-Path $dll)) { throw "ilverify: $($target.Dll) not built - build the solution Release first" }
             $refArgs = @('-r', $refPackGlob)
-            foreach ($extra in $target.ExtraRefs) { $refArgs += @('-r', (Join-Path $root $extra)) }
+            # Each extra glob is EXPANDED and the target itself dropped from it. The Gallery's dependency
+            # root is its own bin directory, so `-r <bin>/*.dll` handed ilverify the very assembly being
+            # verified: newer builds of the tool refuse that with "Multiple input files matching same simple
+            # name" and exit 134 (nightly, 2026-09-20), while 10.0.11 silently tolerated it. Passing the
+            # expanded set minus the target is identical in what it resolves and no longer depends on which
+            # build of ilverify the host installed.
+            # ...and no two references may share a SIMPLE NAME either, which is the other half of the same
+            # tool error. The ref pack is added first and wins, so a framework assembly keeps its reference
+            # build; an extra directory only contributes names the ref pack does not already carry.
+            $refNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($extra in $target.ExtraRefs) {
+                Get-ChildItem -Path (Join-Path $root $extra) -File -ErrorAction SilentlyContinue |
+                    Where-Object { -not [string]::Equals($_.FullName, $dll, [System.StringComparison]::OrdinalIgnoreCase) } |
+                    ForEach-Object {
+                        if ($refNames.Add($_.Name)) { $refArgs += @('-r', $_.FullName) }
+                    }
+            }
             $out = @(& ilverify $dll @refArgs | ForEach-Object { $_.ToString() })
             $exit = $LASTEXITCODE
             $out | ForEach-Object { Write-Host "   $_" -ForegroundColor DarkGray }
