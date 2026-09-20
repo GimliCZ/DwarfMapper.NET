@@ -29,6 +29,33 @@ namespace DwarfMapper.Testing.Tests
         public FieldNode? Next;
     }
 
+    /// <summary>
+    ///     A non-scalar STRUCT: not a primitive, enum, string, decimal, Guid or date, so the walkers reach it as a
+    ///     composite rather than as a scalar. Value types are compared without being recorded in the cycle guard,
+    ///     because a value cannot form a reference cycle.
+    /// </summary>
+    public record struct Extent
+    {
+        public int W { get; set; }
+
+        public int H { get; set; }
+    }
+
+    public class HasExtent
+    {
+        public int Id { get; set; }
+
+        public Extent Size { get; set; }
+    }
+
+    /// <summary>The DTO half of <see cref="HasExtent" />, so the same shape can be driven across a type pair.</summary>
+    public class HasExtentDto
+    {
+        public int Id { get; set; }
+
+        public Extent Size { get; set; }
+    }
+
     public enum OracleColour
     {
         Red,
@@ -467,6 +494,40 @@ namespace DwarfMapper.Testing.Tests
             }
 
             return root;
+        }
+
+        /// <summary>
+        ///     A struct member is compared member-by-member, and is NOT recorded in the cycle guard: a value has
+        ///     no reference identity, so two equal structs are not the same node and recording them would make the
+        ///     second occurrence look like a cycle and stop the walk.
+        /// </summary>
+        [Fact]
+        public void A_struct_member_is_compared_by_value_and_never_treated_as_a_cycle()
+        {
+            var expected = new HasExtent { Id = 1, Size = new Extent { W = 3, H = 4 } };
+
+            Assert.Empty(GraphOracleComparer.ValueDiff(expected,
+                new HasExtent { Id = 1, Size = new Extent { W = 3, H = 4 } }));
+
+            var diff = Assert.Single(GraphOracleComparer.ValueDiff(expected,
+                new HasExtent { Id = 1, Size = new Extent { W = 3, H = 5 } }));
+
+            Assert.Equal("root.Size.H: expected 4, actual 5", diff);
+        }
+
+        /// <summary>The same across a type pair, which is the other walker and its own cycle guard.</summary>
+        [Fact]
+        public void A_struct_member_is_compared_by_value_across_a_type_pair()
+        {
+            var expected = new HasExtent { Id = 1, Size = new Extent { W = 3, H = 4 } };
+
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected,
+                new HasExtentDto { Id = 1, Size = new Extent { W = 3, H = 4 } }));
+
+            var diff = Assert.Single(GraphOracleComparer.CrossTypeDiff(expected,
+                new HasExtentDto { Id = 1, Size = new Extent { W = 4, H = 4 } }));
+
+            Assert.Equal("root.Size.W: expected 3, actual 4", diff);
         }
 
         // ── Scalar equality ──────────────────────────────────────────────────────────
