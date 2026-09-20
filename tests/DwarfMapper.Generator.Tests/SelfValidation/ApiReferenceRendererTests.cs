@@ -73,6 +73,88 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         /// <summary>
+        ///     Everything the reader SKIPS or REWRITES, none of which the fixture above reaches: a member
+        ///     element with no name, the three shapes a see-tag can take, and the pipe escape that keeps a
+        ///     summary from breaking the markdown table it is rendered into.
+        /// </summary>
+        private const string SeeTagFixture = """
+                                             <?xml version="1.0"?>
+                                             <doc>
+                                                 <assembly><name>Fixture</name></assembly>
+                                                 <members>
+                                                     <member>
+                                                         <summary>No name attribute at all.</summary>
+                                                     </member>
+                                                     <member name="T:Fixture.Crefs">
+                                                         <summary>Qualified <see cref="T:DwarfMapper.MapConfig" />, bare <see cref="T:Bare" />, plain <see cref="Plain" />.</summary>
+                                                     </member>
+                                                     <member name="T:Fixture.Langword">
+                                                         <summary>Pass <see langword="null" /> or <see langword="false" />.</summary>
+                                                     </member>
+                                                     <member name="T:Fixture.Pipe">
+                                                         <summary>one | two
+                                                             three</summary>
+                                                     </member>
+                                                 </members>
+                                             </doc>
+                                             """;
+
+        /// <summary>A member the compiler never writes, but a hand-edited or merged doc file can carry.</summary>
+        [Fact]
+        public void A_member_without_a_name_contributes_no_entry()
+        {
+            InTempFile(SeeTagFixture,
+                path =>
+                {
+                    var summaries = ApiReferenceRenderer.ParseSummaries(path);
+
+                    Assert.Equal(["T:Fixture.Crefs", "T:Fixture.Langword", "T:Fixture.Pipe"],
+                        summaries.Keys.OrderBy(k => k, StringComparer.Ordinal));
+                });
+        }
+
+        /// <summary>
+        ///     A cref is a doc-comment ID, and the page wants the readable tail of it: the last segment when it
+        ///     has a namespace, the part after the two-character prefix when it does not, and the value itself
+        ///     when it carries no prefix either.
+        /// </summary>
+        [Fact]
+        public void A_cref_renders_as_its_readable_tail()
+        {
+            InTempFile(SeeTagFixture,
+                path =>
+                    Assert.Equal("Qualified MapConfig, bare Bare, plain Plain.",
+                        ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Crefs"]));
+        }
+
+        /// <summary>
+        ///     REGRESSION. A langword is a C# keyword, not an ID, and used to go through the cref path, which
+        ///     strips two characters: "null" rendered as "ll" and "false" as "lse". No published page showed it
+        ///     only because every langword in the reflected assembly sits in a param element, which this
+        ///     renderer does not read - so the defect was waiting for the first one written into a summary.
+        /// </summary>
+        [Fact]
+        public void A_langword_renders_as_the_keyword_itself()
+        {
+            InTempFile(SeeTagFixture,
+                path =>
+                    Assert.Equal("Pass null or false.",
+                        ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Langword"]));
+        }
+
+        /// <summary>
+        ///     A pipe would open a new cell in the markdown table the summary is rendered into, silently
+        ///     shifting every column after it; the line break and indent would break the row outright.
+        /// </summary>
+        [Fact]
+        public void A_pipe_is_escaped_and_whitespace_collapses()
+        {
+            InTempFile(SeeTagFixture,
+                path =>
+                    Assert.Equal(@"one \| two three", ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Pipe"]));
+        }
+
+        /// <summary>
         ///     ARCH-06: temp directory only, never the repository. Registered in
         ///     <see cref="RepoWriteGuardTests.Every_raw_write_api_use_in_the_test_tree_is_a_registered_pattern" />.
         /// </summary>

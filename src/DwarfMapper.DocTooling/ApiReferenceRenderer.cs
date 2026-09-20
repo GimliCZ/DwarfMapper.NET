@@ -268,9 +268,24 @@ namespace DwarfMapper.DocTooling
                         break;
 
                     case XElement { Name.LocalName: "see" or "seealso" } e:
-                        var cref = e.Attribute("cref")?.Value ?? e.Attribute("langword")?.Value ?? "";
+                        // A langword is a C# keyword and is rendered as written. It used to go through the
+                        // cref path below, which strips a doc-comment ID's two-character prefix, so
+                        // `<see langword="null"/>` rendered as "ll" and `"false"` as "lse" (found 2026-09-20 by
+                        // the first test to cover this arm). No page shows it today only because every langword
+                        // in the reflected assembly sits in a <param>, which this renderer does not read.
+                        var langword = e.Attribute("langword")?.Value;
+                        if (langword is not null)
+                        {
+                            sb.Append(langword);
+                            break;
+                        }
+
+                        // A cref is a doc-comment ID: "T:Namespace.Type", "M:Namespace.Type.Method". The page
+                        // wants the last segment, and for an ID with no namespace the part after the prefix.
+                        var cref = e.Attribute("cref")?.Value ?? "";
                         var idx = cref.LastIndexOf('.');
-                        sb.Append(idx >= 0 ? cref[(idx + 1)..] : cref.Length > 2 ? cref[2..] : cref);
+                        sb.Append(idx >= 0 ? cref[(idx + 1)..] :
+                            cref.Length > 2 && cref[1] == ':' ? cref[2..] : cref);
                         break;
                 }
 
