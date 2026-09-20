@@ -10,6 +10,10 @@
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
     </ItemGroup>
     <ItemGroup>
+        <!-- Compiles the two throwaway assemblies DanglingDependencyTests loads, one of them missing its
+             dependency: that is the only way to raise a REAL ReflectionTypeLoadException, which a dynamic
+             (Reflection.Emit) assembly never throws. Version pinned centrally, as Generator.Tests pins it. -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="JunitXml.TestLogger"/>
         <PackageReference Include="xunit"/>
