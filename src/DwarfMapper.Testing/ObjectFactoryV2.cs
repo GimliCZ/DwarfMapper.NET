@@ -357,23 +357,14 @@ namespace DwarfMapper.Testing
                     return Activator.CreateInstance(type, MakeList(args[0], rng, depth));
                 }
 
-                // ── ImmutableArray<T>
+                // ── ImmutableArray<T>: the list is generated with its real element type, then CONVERTED.
+                // Owner ruling 2026-09-15 (T-Q1): build the collection, then convert it. The conversion used to be
+                // a scan of the factory class's static methods for a CreateRange overload, so it depended on the
+                // order reflection returned them in, and it returned an ImmutableArray<int> - the WRONG element
+                // type, silently - when the scan came up empty.
                 if (gtd == typeof(ImmutableArray<>))
                 {
-                    var elemType = args[0];
-                    var list = (IList)MakeList(elemType, rng, depth);
-                    // ImmutableArray.CreateRange<T>(IEnumerable<T>) — pick the correct single-arg overload
-                    var createRange = FindImmutableCreateRange(typeof(ImmutableArray), elemType);
-                    if (createRange is null)
-                    {
-                        return ImmutableArray<int>.Empty; // fallback (shouldn't happen)
-                    }
-
-                    return createRange.Invoke(null,
-                        new object[]
-                        {
-                            list
-                        });
+                    return ConvertWith(ToImmutableArrayDefinition, args, MakeList(args[0], rng, depth));
                 }
 
                 // ── ImmutableList<T>, IImmutableList<T>
@@ -382,19 +373,7 @@ namespace DwarfMapper.Testing
                      args.Length == 1 &&
                      typeof(IImmutableList<>).MakeGenericType(args[0]).IsAssignableFrom(type)))
                 {
-                    var elemType = args[0];
-                    var list = (IList)MakeList(elemType, rng, depth);
-                    var createRange = FindImmutableCreateRange(typeof(ImmutableList), elemType);
-                    if (createRange is null)
-                    {
-                        return ImmutableList<int>.Empty;
-                    }
-
-                    return createRange.Invoke(null,
-                        new object[]
-                        {
-                            list
-                        });
+                    return ConvertWith(ToImmutableListDefinition, args, MakeList(args[0], rng, depth));
                 }
 
                 // ── ImmutableHashSet<T>, IImmutableSet<T>
@@ -403,19 +382,7 @@ namespace DwarfMapper.Testing
                      args.Length == 1 &&
                      typeof(IImmutableSet<>).MakeGenericType(args[0]).IsAssignableFrom(type)))
                 {
-                    var elemType = args[0];
-                    var list = (IList)MakeList(elemType, rng, depth);
-                    var createRange = FindImmutableCreateRange(typeof(ImmutableHashSet), elemType);
-                    if (createRange is null)
-                    {
-                        return ImmutableHashSet<int>.Empty;
-                    }
-
-                    return createRange.Invoke(null,
-                        new object[]
-                        {
-                            list
-                        });
+                    return ConvertWith(ToImmutableHashSetDefinition, args, MakeList(args[0], rng, depth));
                 }
 
                 // ── Dictionary<K,V>
@@ -438,45 +405,9 @@ namespace DwarfMapper.Testing
                     var iimmutDictType = typeof(IImmutableDictionary<,>).MakeGenericType(args[0], args[1]);
                     if (iimmutDictType.IsAssignableFrom(type) || gtd == typeof(ImmutableDictionary<,>))
                     {
-                        var plainDict = (IDictionary)MakeDictionary(args[0], args[1], rng, depth);
-                        var builderMethod =
-                            typeof(ImmutableDictionary).GetMethods(BindingFlags.Public | BindingFlags.Static);
-                        // Use ImmutableDictionary.CreateRange(IEnumerable<KVP>)
-                        var kvpType = typeof(KeyValuePair<,>).MakeGenericType(args[0], args[1]);
-                        foreach (var m in builderMethod)
-                            if (m.Name == "CreateRange" &&
-                                m.IsGenericMethodDefinition &&
-                                m.GetGenericArguments().Length == 2)
-                            {
-                                try
-                                {
-                                    var concrete = m.MakeGenericMethod(args[0], args[1]);
-                                    // Build a list of KVPs
-                                    var kvpList = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(kvpType))!;
-                                    foreach (DictionaryEntry entry in plainDict)
-                                        kvpList.Add(Activator.CreateInstance(kvpType, entry.Key, entry.Value)!);
-                                    return concrete.Invoke(null,
-                                        new object[]
-                                        {
-                                            kvpList
-                                        });
-                                }
-                                catch (TargetInvocationException)
-                                {
-                                    /* try next overload */
-                                }
-                                catch (ArgumentException)
-                                {
-                                    /* try next overload */
-                                }
-                                catch (InvalidOperationException)
-                                {
-                                    /* try next overload */
-                                }
-                            }
-
-                        // Fallback: return the plain Dictionary
-                        return plainDict;
+                        return ConvertWith(ToImmutableDictionaryDefinition,
+                            args,
+                            MakeDictionary(args[0], args[1], rng, depth));
                     }
                 }
             }
@@ -788,48 +719,65 @@ namespace DwarfMapper.Testing
             return dict;
         }
 
-        /// <summary>
-        ///     Locate the single-arg <c>CreateRange&lt;T&gt;(IEnumerable&lt;T&gt;)</c> overload on
-        ///     the given immutable factory class (ImmutableArray / ImmutableList / ImmutableHashSet).
-        ///     Returns null if not found.
-        /// </summary>
-        private static MethodInfo? FindImmutableCreateRange(Type factoryType, Type elemType)
+        // ── Immutable conversions ────────────────────────────
+        //
+        // Each converter below is an ordinary generic method, so the C# COMPILER picks the CreateRange overload.
+        // What is left for reflection is only the runtime type arguments, which a factory cannot know statically.
+        // The four definitions come from a METHOD GROUP rather than a lookup by name: the cast is compile-checked
+        // and refactor-safe, the field counts as a use (IDE0051 is an error here), and no lookup can return null
+        // and need a null-forgiving operator.
+        //
+        // This replaced a scan of each factory class's static methods (owner ruling 2026-09-15, T-Q1). That scan
+        // took whichever CreateRange reflection returned first, so its filters, its three swallowing catches and
+        // its fallbacks were unreachable only because of that order - which this file itself says is not a
+        // contract. The fallbacks were also WRONG-TYPED: an ImmutableArray, ImmutableList or ImmutableHashSet of
+        // int whatever the element type was, and a plain Dictionary for an immutable one, so the caller's
+        // SetValue would have thrown far from the cause.
+
+        private static readonly MethodInfo ToImmutableArrayDefinition =
+            ((Func<List<int>, ImmutableArray<int>>)ToImmutableArrayOf).Method.GetGenericMethodDefinition();
+
+        private static readonly MethodInfo ToImmutableListDefinition =
+            ((Func<List<int>, ImmutableList<int>>)ToImmutableListOf).Method.GetGenericMethodDefinition();
+
+        private static readonly MethodInfo ToImmutableHashSetDefinition =
+            ((Func<List<int>, ImmutableHashSet<int>>)ToImmutableHashSetOf).Method.GetGenericMethodDefinition();
+
+        private static readonly MethodInfo ToImmutableDictionaryDefinition =
+            ((Func<Dictionary<int, int>, ImmutableDictionary<int, int>>)ToImmutableDictionaryOf).Method
+            .GetGenericMethodDefinition();
+
+        /// <summary>Closes one converter over the runtime type arguments and runs it on the generated collection.</summary>
+        private static object? ConvertWith(MethodInfo definition, Type[] typeArguments, object source)
         {
-            foreach (var m in factoryType.GetMethods(BindingFlags.Public | BindingFlags.Static))
-            {
-                if (m.Name != "CreateRange" || !m.IsGenericMethodDefinition)
-                {
-                    continue;
-                }
+            return definition.MakeGenericMethod(typeArguments)
+                .Invoke(null,
+                    new[]
+                    {
+                        source
+                    });
+        }
 
-                var gargs = m.GetGenericArguments();
-                if (gargs.Length != 1)
-                {
-                    continue;
-                }
+        private static ImmutableArray<T> ToImmutableArrayOf<T>(List<T> items)
+        {
+            return ImmutableArray.CreateRange(items);
+        }
 
-                var parms = m.GetParameters();
-                if (parms.Length != 1)
-                {
-                    continue;
-                }
+        private static ImmutableList<T> ToImmutableListOf<T>(List<T> items)
+        {
+            return ImmutableList.CreateRange(items);
+        }
 
-                // Verify the single parameter is IEnumerable<T>
-                var paramType = parms[0].ParameterType;
-                if (!paramType.IsGenericType)
-                {
-                    continue;
-                }
+        private static ImmutableHashSet<T> ToImmutableHashSetOf<T>(List<T> items)
+        {
+            return ImmutableHashSet.CreateRange(items);
+        }
 
-                if (paramType.GetGenericTypeDefinition() != typeof(IEnumerable<>))
-                {
-                    continue;
-                }
-
-                return m.MakeGenericMethod(elemType);
-            }
-
-            return null;
+        private static ImmutableDictionary<TKey, TValue> ToImmutableDictionaryOf<TKey, TValue>(
+            Dictionary<TKey, TValue> entries)
+            where TKey : notnull
+        {
+            return ImmutableDictionary.CreateRange(entries);
         }
     }
 }
