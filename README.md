@@ -1149,9 +1149,9 @@ Generated from the gates' own files, never hand-typed — see `QualityBadgeRende
 [![mutation runtime](https://img.shields.io/badge/mutation%20runtime-97.62%25-brightgreen)](stryker-config.runtime.json)
 [![mutation codefixes](https://img.shields.io/badge/mutation%20codefixes-87.64%25-brightgreen)](stryker-config.codefixes.json)
 [![mutation pipeline](https://img.shields.io/badge/mutation%20pipeline-94.01%25-brightgreen)](stryker-config.pipeline.json)
-[![mutation testing](https://img.shields.io/badge/mutation%20testing-82.73%25-brightgreen)](stryker-config.testing.json)
+[![mutation testing](https://img.shields.io/badge/mutation%20testing-90.00%25-brightgreen)](stryker-config.testing.json)
 
-<sub>Coverage figures are the enforced per-assembly line-coverage floors from [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1); mutation figures are the RAW measured scores from [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md), gated at break 91 (generator), break 95 (doctooling), break 97 (runtime), break 87 (codefixes), break 94 (pipeline), break 82 (testing). Every number here is read from those files and byte-compared by the doc suite, so a stale badge is a failing build rather than a quiet lie. Each score describes only the files its own leg names, which is a minority of `src/`; [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there.</sub>
+<sub>Coverage figures are the enforced per-assembly line-coverage floors from [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1); mutation figures are the RAW measured scores from [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md), gated at break 91 (generator), break 95 (doctooling), break 97 (runtime), break 87 (codefixes), break 94 (pipeline), break 90 (testing). Every number here is read from those files and byte-compared by the doc suite, so a stale badge is a failing build rather than a quiet lie. Each score describes only the files its own leg names, which is a minority of `src/`; [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there.</sub>
 <!-- endtable -->
 
 ## Name
