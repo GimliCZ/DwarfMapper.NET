@@ -156,12 +156,39 @@ if ($Nightly) {
 # tests/DwarfMapper.Testing.Tests/GraphOracleSensitivityTests.cs is the set of failures it now has to
 # produce. Generator (94.6 vs 94.5), DwarfMapper and DocTooling stay inside the band and are left alone.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# Re-measured 2026-09-20 (round-30 sweep, fast tier, Release, exact covered/coverable from
+# TestResults/coverage-report/Summary.json, truncated as the rule requires):
+#   DwarfMapper 96.4/100.0 · Generator 100.0/99.9 · DocTooling 96.3/92.1 · CodeFixes 98.5/96.6 · Testing 100.0/100.0
+# Exact covered/coverable: DwarfMapper 324/336 = 96.4286 · Generator 13642/13642 · DocTooling 421/437 =
+# 96.3387 · CodeFixes 465/472 = 98.5169 · Testing 813/813.
+#
+# Four floors move, all upward, all mandatory under the band rule (the gate threw on every one of them):
+#
+#   DwarfMapper  91.2 -> 96.4   the round-30 runtime work; what remains uncovered is MapConfig, which the
+#                               2026-09-14 ruling keeps at zero runtime coverage by design
+#   Generator    95.5 -> 100    the round-30 file-by-file sweep, closed assembly by assembly
+#   CodeFixes    96.2 -> 98.5   the code-fix surface tests; the remainder is the named Roslyn null-guard
+#                               exemption (2026-09-15 ruling)
+#   Testing      96.4 -> 100    the object-factory construction rulings, the dangling-dependency test for
+#                               SafeTypes, and the oracle cycle-guard restructure
+#
+# TWO FLOORS ARE NOW 100, WHICH IS A HARDER PROMISE THAN IT LOOKS: any line that stops being covered fails
+# the gate, including a line ADDED without a test. That is the ratchet working as intended, and it is the
+# same rule the other floors follow - the floor equals the measurement, truncated. It is not a claim that
+# either assembly can never gain an untested line; it is the requirement that gaining one is a build
+# failure rather than a quiet slide.
+#
+# DocTooling (96.3 vs 96.0) stays inside the 1.0 pp band and is left alone - and it is the one assembly
+# with real gaps left: 16 uncovered lines and 19 open branch outcomes, most of them in
+# ApiReferenceRenderer.
+# ───────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
-    'DwarfMapper'            = 91.2
-    'DwarfMapper.Generator'  = 95.5
+    'DwarfMapper'            = 96.4
+    'DwarfMapper.Generator'  = 100.0
     'DwarfMapper.DocTooling' = 96.0
-    'DwarfMapper.CodeFixes'  = 96.2
-    'DwarfMapper.Testing'    = 96.4
+    'DwarfMapper.CodeFixes'  = 98.5
+    'DwarfMapper.Testing'    = 100.0
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
