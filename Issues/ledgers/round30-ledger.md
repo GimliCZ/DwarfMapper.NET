@@ -249,3 +249,40 @@ CompilerTests and Generator.Tests, then reverted):
   together.
 - **Before (1)**, a type with a parameterized constructor had none of its remaining members filled, and only the
   constructor with the fewest parameters was ever called.
+
+### DocSnippetInjector's progress guard is a named exemption (2026-09-21)
+
+**Ruling:** the guard stays, uncovered, and is recorded here rather than tested or deleted.
+
+```csharp
+// Stryker disable all : progress guard, not logic. ...
+if (i <= previous)
+{
+    throw new InvalidOperationException(
+        $"DocSnippetInjector stopped advancing at {docPath}:{i + 1} - injector bug, not a document error. ...");
+}
+```
+
+**Why no test can reach it.** The guard fires only when the injection loop stops advancing, which is a defect in
+the loop rather than a shape of any input. Every non-throwing branch advances `i`; reaching the guard means one
+of them stopped doing so. The file already says this, and the Stryker disable beside it says the same of its
+mutants.
+
+**Why it is not deleted.** What it converts is an infinite loop that appends to a StringBuilder until memory runs
+out, into one named failure that says which file and line. That is a good trade even though - especially
+because - it is unreachable today.
+
+**Options put to the owner:**
+- **(1)** a named exemption;
+- **(2)** extract the loop body so a test can drive one deliberately non-advancing branch through an internal
+  seam;
+- **(3)** delete the guard.
+
+**(1) was chosen.** Scope: these four lines in DocSnippetInjector only. Its coverage cost is counted in the
+assembly's floor (99.1, re-pinned 2026-09-21), not waived.
+
+**Related rulings the same day, both the other way, so the shape of the decision is visible:**
+- `TryCreateDefaults`' MissingMethodException catch was DELETED with its proof (`0c25cbe`): every shape that
+  could raise it returns at an earlier guard, so it was unreachable rather than defensive.
+- `RenderEnum`'s memberless-enum arm was PINNED by widening the method to internal: unreachable through the
+  public entry point, but a real behaviour once the method can be called directly.
