@@ -178,7 +178,11 @@ namespace DwarfMapper.DocTooling
             }
         }
 
-        private static object? SafeGet(object instance, PropertyInfo p)
+        /// <summary>
+        ///     Reads one property for the defaults column. A getter that throws costs that one cell, not the
+        ///     page. Internal for the same reason as its neighbours: Render reflects one fixed assembly.
+        /// </summary>
+        internal static object? SafeGet(object instance, PropertyInfo p)
         {
             try
             {
@@ -190,7 +194,8 @@ namespace DwarfMapper.DocTooling
             }
         }
 
-        private static string FormatValue(object? value)
+        /// <summary>Renders one default value as a markdown code span. Internal so each arm can be stated directly.</summary>
+        internal static string FormatValue(object? value)
         {
             return value switch
             {
@@ -202,7 +207,8 @@ namespace DwarfMapper.DocTooling
             };
         }
 
-        private static string Kind(Type type)
+        /// <summary>The word the page uses for a type. Internal so every arm can be pinned, including the ones the reflected assembly has no example of.</summary>
+        internal static string Kind(Type type)
         {
             return type.IsEnum ? "enum"
                 : type.IsInterface ? "interface"

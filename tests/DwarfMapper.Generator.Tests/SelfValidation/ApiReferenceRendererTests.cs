@@ -149,6 +149,33 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             public int Value { get; set; } = 7;
         }
+
+        /// <summary>A property whose getter throws - one cell of the table, not the page.</summary>
+        public sealed class ThrowingGetterProbe
+        {
+            private readonly int _refusals = 1;
+
+            public int Boom =>
+                throw new InvalidOperationException($"this property refuses to be read ({_refusals})");
+
+            public string Empty { get; set; } = "";
+        }
+
+        /// <summary>The value-type arm of Kind: the reflected assembly exports no struct of its own.</summary>
+        public readonly record struct ShapeStructProbe
+        {
+            public int Value { get; init; }
+        }
+
+        public enum ShapeEnumProbe
+        {
+            One
+        }
+
+        [AttributeUsage(AttributeTargets.Class)]
+        public sealed class ShapeProbeAttribute : Attribute
+        {
+        }
 #pragma warning restore CA1034, CA1812
 
         /// <summary>
@@ -179,6 +206,59 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var instance = ApiReferenceRenderer.TryCreateDefaults(typeof(DefaultsProbe));
 
             Assert.Equal(7, Assert.IsType<DefaultsProbe>(instance).Value);
+        }
+
+        /// <summary>
+        ///     A getter that throws is reported as "no value" for that member. Without the catch, one property
+        ///     with a guard clause in it would fail the whole documentation build.
+        /// </summary>
+        [Fact]
+        public void A_property_whose_getter_throws_reads_as_no_value()
+        {
+            var probe = new ThrowingGetterProbe();
+            var boom = typeof(ThrowingGetterProbe).GetProperty(nameof(ThrowingGetterProbe.Boom))!;
+
+            Assert.Null(ApiReferenceRenderer.SafeGet(probe, boom));
+        }
+
+        /// <summary>The positive control for the catch above.</summary>
+        [Fact]
+        public void A_property_that_reads_cleanly_gives_its_value()
+        {
+            var probe = new DefaultsProbe();
+            var value = typeof(DefaultsProbe).GetProperty(nameof(DefaultsProbe.Value))!;
+
+            Assert.Equal(7, ApiReferenceRenderer.SafeGet(probe, value));
+        }
+
+        /// <summary>
+        ///     Every shape a default can take, including the empty string - which has to render as a visible
+        ///     `""` rather than as nothing at all, or the column would read as "no default".
+        /// </summary>
+        [Fact]
+        public void Each_default_value_renders_as_its_own_code_span()
+        {
+            Assert.Equal("`null`", ApiReferenceRenderer.FormatValue(null));
+            Assert.Equal("`true`", ApiReferenceRenderer.FormatValue(true));
+            Assert.Equal("`false`", ApiReferenceRenderer.FormatValue(false));
+            Assert.Equal("`\"\"`", ApiReferenceRenderer.FormatValue(""));
+            Assert.Equal("`\"text\"`", ApiReferenceRenderer.FormatValue("text"));
+            Assert.Equal("`One`", ApiReferenceRenderer.FormatValue(ShapeEnumProbe.One));
+            Assert.Equal("`42`", ApiReferenceRenderer.FormatValue(42));
+        }
+
+        /// <summary>
+        ///     The word the page prints for each shape. The struct arm has no example in the reflected assembly,
+        ///     so it was never taken; an attribute is a class and must not read as one.
+        /// </summary>
+        [Fact]
+        public void Each_type_shape_gets_its_own_word()
+        {
+            Assert.Equal("enum", ApiReferenceRenderer.Kind(typeof(ShapeEnumProbe)));
+            Assert.Equal("interface", ApiReferenceRenderer.Kind(typeof(IShapeProbe)));
+            Assert.Equal("attribute", ApiReferenceRenderer.Kind(typeof(ShapeProbeAttribute)));
+            Assert.Equal("struct", ApiReferenceRenderer.Kind(typeof(ShapeStructProbe)));
+            Assert.Equal("class", ApiReferenceRenderer.Kind(typeof(DefaultsProbe)));
         }
 
         /// <summary>
