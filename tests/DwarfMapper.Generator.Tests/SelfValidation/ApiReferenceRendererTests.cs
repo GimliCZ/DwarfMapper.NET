@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Runtime.Loader;
+using DwarfMapper;
 using DwarfMapper.DocTooling;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation
 {
@@ -343,6 +347,52 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             InTempFile(SeeTagFixture,
                 path =>
                     Assert.Equal(@"one \| two three", ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Pipe"]));
+        }
+
+        /// <summary>
+        ///     An assembly with no doc XML beside it is a HARD failure, not an empty page: rendering a
+        ///     reference with no summaries would present documented code as undocumented, and the page is
+        ///     committed, so nobody would notice it had gone blank on purpose.
+        ///     <para>
+        ///         Driven with an assembly compiled in memory, which by construction has no file beside it.
+        ///         Loading a copy of a product assembly from a temp directory would be worse than useless here:
+        ///         this project's harness builds its metadata reference set from the assemblies loaded in the
+        ///         process, so a second copy would change what every generator fixture compiles against.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void An_assembly_with_no_doc_xml_beside_it_fails_by_name()
+        {
+            var compilation = CSharpCompilation.Create(
+                "NoDocsProbe",
+                [CSharpSyntaxTree.ParseText("namespace NoDocs { public sealed class Thing { } }")],
+                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            using var image = new MemoryStream();
+            var emit = compilation.Emit(image);
+            Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+
+            image.Position = 0;
+            var assembly = new AssemblyLoadContext("no-docs-probe", isCollectible: false).LoadFromStream(image);
+
+            var ex = Assert.Throws<DocToolingException>(() => ApiReferenceRenderer.LoadSummaries(assembly));
+
+            Assert.Contains("NoDocsProbe", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("GenerateDocumentationFile", ex.Message, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The positive control: the real assembly the page is rendered from DOES have its XML, and the
+        ///     summaries come back non-empty. Without it the failure above would pass against a method that
+        ///     always threw.
+        /// </summary>
+        [Fact]
+        public void The_reflected_assembly_has_its_doc_xml()
+        {
+            var summaries = ApiReferenceRenderer.LoadSummaries(typeof(DwarfMapperAttribute).Assembly);
+
+            Assert.NotEmpty(summaries);
         }
 
         /// <summary>

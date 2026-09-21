@@ -239,7 +239,11 @@ namespace DwarfMapper.DocTooling
         ///     failure rather than an empty page — silently rendering a reference with no summaries would look
         ///     like the code is undocumented.
         /// </summary>
-        private static Dictionary<string, string> LoadSummaries(Assembly assembly)
+        /// <remarks>
+        ///     Internal for the reason its neighbours are: Render reflects one fixed assembly, whose XML the
+        ///     build always produces, so the failure below cannot be reached through any public entry point.
+        /// </remarks>
+        internal static Dictionary<string, string> LoadSummaries(Assembly assembly)
         {
             var xmlPath = Path.ChangeExtension(assembly.Location, ".xml");
             if (!File.Exists(xmlPath))
