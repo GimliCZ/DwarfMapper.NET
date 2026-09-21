@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Runtime.Loader;
+using System.Text;
 using DwarfMapper;
 using DwarfMapper.DocTooling;
 using Microsoft.CodeAnalysis;
@@ -190,6 +191,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             One
         }
 
+        // CA1008 asks for a zero-valued member. HAVING NO MEMBERS IS THE POINT: this fixture exists so the
+        // renderer's memberless-enum arm can be stated, and adding a member would move it to the other arm.
+#pragma warning disable CA1008
+        public enum MemberlessProbe
+        {
+        }
+#pragma warning restore CA1008
+
         [AttributeUsage(AttributeTargets.Class)]
         public sealed class ShapeProbeAttribute : Attribute
         {
@@ -240,6 +249,37 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var instance = ApiReferenceRenderer.TryCreateDefaults(typeof(DefaultsProbe));
 
             Assert.Equal(7, Assert.IsType<DefaultsProbe>(instance).Value);
+        }
+
+        /// <summary>
+        ///     An enum with no members renders its header and stops. The page must still carry the table - a
+        ///     missing header would read as "this type has no value table" rather than "this enum has no
+        ///     values" - and the loop must not be asked for a row it cannot produce.
+        /// </summary>
+        [Fact]
+        public void A_memberless_enum_renders_a_header_and_no_rows()
+        {
+            var sb = new StringBuilder();
+
+            ApiReferenceRenderer.RenderEnum(sb, typeof(MemberlessProbe), new Dictionary<string, string>(StringComparer.Ordinal));
+
+            Assert.Equal("| Value | Numeric | Summary |\n|---|---|---|\n\n", sb.ToString());
+        }
+
+        /// <summary>The control beside it: a populated enum renders one row per member, with its summary.</summary>
+        [Fact]
+        public void A_populated_enum_renders_one_row_per_member()
+        {
+            var sb = new StringBuilder();
+            var summaries = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [$"F:{typeof(ShapeEnumProbe).FullName}.One"] = "the only one"
+            };
+
+            ApiReferenceRenderer.RenderEnum(sb, typeof(ShapeEnumProbe), summaries);
+
+            Assert.Equal("| Value | Numeric | Summary |\n|---|---|---|\n| `One` | 0 | the only one |\n\n",
+                sb.ToString());
         }
 
         /// <summary>

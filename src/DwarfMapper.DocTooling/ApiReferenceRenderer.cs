@@ -95,7 +95,11 @@ namespace DwarfMapper.DocTooling
             return !type.IsNested || type.IsNestedPublic;
         }
 
-        private static void RenderEnum(StringBuilder sb, Type type, Dictionary<string, string> summaries)
+        /// <summary>
+        ///     Renders one enum's value table. Internal so the memberless case can be stated: an enum with no
+        ///     members is legal C#, and the reflected assembly has none, so nothing else can put one here.
+        /// </summary>
+        internal static void RenderEnum(StringBuilder sb, Type type, Dictionary<string, string> summaries)
         {
             sb.Append("| Value | Numeric | Summary |\n|---|---|---|\n");
             foreach (var name in Enum.GetNames(type).OrderBy(n => n, StringComparer.Ordinal))
