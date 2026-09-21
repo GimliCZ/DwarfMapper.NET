@@ -34,6 +34,74 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     The reasons that QUOTE THE VALUES they compared, asserted in full.
+        ///     <para>
+        ///         The phrase table above pins that each branch reports, and it has to stay short because a
+        ///         companion scan matches those phrases against the source literals - which carry
+        ///         <c>{placeholders}</c>, not values. What it cannot pin is the part a reader actually needs:
+        ///         WHICH size, WHICH inline-array length, WHICH field names. Those come from helpers
+        ///         (<c>SizeWord</c>, <c>InlineArrayWord</c>) and from interpolation, so a mutant that empties
+        ///         one leaves "'SrcV' occupies  and 'DstV' " - still containing the phrase, still reporting,
+        ///         and useless. Each sentence is stated here exactly once, whole.
+        ///     </para>
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(EveryQuotedReason))]
+        public void Each_reason_that_quotes_a_value_spells_it_out(string expected, string source)
+        {
+            Assert.Contains(expected, NearMissReason(source), StringComparison.Ordinal);
+        }
+
+        public static TheoryData<string, string> EveryQuotedReason()
+        {
+            return new TheoryData<string, string>
+            {
+                {
+                    // Both arms of SizeWord in one sentence: the natural-size arm for the source, the explicit
+                    // arm - carrying the number - for the destination.
+                    "'SrcV' occupies its natural size and 'DstV' an explicit Size of 32", """
+                                                                                          using System.Runtime.InteropServices;
+                                                                                          using DwarfMapper;
+                                                                                          namespace Demo;
+                                                                                          public struct SrcV { public int X; }
+                                                                                          [StructLayout(LayoutKind.Sequential, Size = 32)]
+                                                                                          public struct DstV { public int X; }
+                                                                                          public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                                                          public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                                                          [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                                                          """
+                },
+                {
+                    // Both arms of InlineArrayWord, likewise, with the repeat count in the sentence.
+                    "'SrcV' is not an inline array and 'DstV' is an [InlineArray(4)]", """
+                                                                                       using System.Runtime.CompilerServices;
+                                                                                       using DwarfMapper;
+                                                                                       namespace Demo;
+                                                                                       public struct SrcV { public int E; }
+                                                                                       [InlineArray(4)]
+                                                                                       public struct DstV { public int E; }
+                                                                                       public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                                                       public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                                                       [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                                                       """
+                },
+                {
+                    // The field-name mismatch names BOTH fields and says why it matters; a mutant that keeps
+                    // "is named" and empties the rest passes the phrase table and tells the reader nothing.
+                    "field 1 is named 'Y' on 'SrcV' but 'Z' on 'DstV', and a positional reinterpret would only agree with DwarfMapper's by-name mapping if the names line up", """
+                                                                                                                                                                              using DwarfMapper;
+                                                                                                                                                                              namespace Demo;
+                                                                                                                                                                              public struct SrcV { public int X; public int Y; }
+                                                                                                                                                                              public struct DstV { public int X; public int Z; }
+                                                                                                                                                                              public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                                                                                                                                              public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                                                                                                                                              [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                                                                                                                                              """
+                }
+            };
+        }
+
+        /// <summary>
         ///     One fixture per reason the classifier can give, each paired with the phrase that identifies it.
         ///     Consumed twice: once to prove each branch reports what it claims, and once — against the
         ///     generator's own source — to prove no branch exists that nothing here reaches.
@@ -58,6 +126,22 @@ namespace DwarfMapper.Generator.Tests
                                 public class D { public System.Guid[] V { get; set; } = System.Array.Empty<System.Guid>(); }
                                 [DwarfMapper] public partial class M { public partial D Map(C c); }
                                 """
+                },
+                {
+                    // The SOURCE side of the same blocker. Until this row, only the destination arm had a
+                    // fixture, so a mutant that blanked the source arm's sentence - or stopped it reporting at
+                    // all - survived the leg. Same omission the metadata reason had, one round earlier.
+                    "not Sequential", """
+                                      using System.Runtime.InteropServices;
+                                      using DwarfMapper;
+                                      namespace Demo;
+                                      [StructLayout(LayoutKind.Auto)]
+                                      public struct SrcV { public int X; public int Y; }
+                                      public struct DstV { public int X; public int Y; }
+                                      public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                      public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                      [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                      """
                 },
                 {
                     "not Sequential", """
