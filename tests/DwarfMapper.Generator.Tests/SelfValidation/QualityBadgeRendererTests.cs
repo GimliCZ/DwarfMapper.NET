@@ -108,6 +108,39 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.Equal(81, QualityBadgeRenderer.ReadBreak("fixture.json", config));
         }
 
+        /// <summary>
+        ///     REGRESSION. A break of 100 says "any survivor fails this leg", which is what a leg pins when its
+        ///     measured score IS 100 - the testing leg reached that on 2026-09-21. The bound refused it as "not a
+        ///     percentage threshold", so the badge renderer threw on a perfectly graded leg and no badge could be
+        ///     written at all. Only a number outside 1..100 is not a percentage.
+        /// </summary>
+        [Theory]
+        [InlineData(100)]
+        [InlineData(1)]
+        [InlineData(87)]
+        public void A_break_anywhere_in_the_percentage_range_is_accepted(int value)
+        {
+            var config = string.Create(CultureInfo.InvariantCulture,
+                $$"""{ "stryker-config": { "thresholds": { "high": 100, "low": {{value}}, "break": {{value}} } } }""");
+
+            Assert.Equal(value, QualityBadgeRenderer.ReadBreak("fixture.json", config));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        [InlineData(101)]
+        public void A_break_outside_the_percentage_range_is_refused(int value)
+        {
+            var config = string.Create(CultureInfo.InvariantCulture,
+                $$"""{ "stryker-config": { "thresholds": { "high": 100, "low": 1, "break": {{value}} } } }""");
+
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => QualityBadgeRenderer.ReadBreak("fixture.json", config));
+
+            Assert.Contains("not a percentage threshold", ex.Message, StringComparison.Ordinal);
+        }
+
         [Theory]
         [InlineData("""{ "stryker-config": { "thresholds": { "high": 90 } } }""")]
         [InlineData("""{ "stryker-config": { } }""")]

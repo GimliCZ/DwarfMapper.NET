@@ -297,7 +297,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     $"{configFile}: no integer 'stryker-config.thresholds.break'. The badge grades the ledger's raw " + "score against that number; without it there is nothing to grade against.");
             }
 
-            if (result is <= 0 or >= 100)
+            // 100 IS A LEGAL THRESHOLD and this used to refuse it: a leg whose measured score is 100 % pins
+            // break there, which says "any survivor fails the leg". The testing leg reached that on
+            // 2026-09-21 and the badge renderer threw rather than grading it. Only a number outside 1..100 is
+            // not a percentage.
+            if (result is <= 0 or > 100)
             {
                 throw new InvalidOperationException(
                     $"{configFile}: break parsed as {result}, which is not a percentage threshold.");
