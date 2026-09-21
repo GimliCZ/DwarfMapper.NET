@@ -59,6 +59,23 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         /// <summary>
+        ///     The three directories the pipeline reads and writes, each stated once. Docs was reached by
+        ///     nothing at all: the doc tests build their paths from Root themselves, so the property that names
+        ///     the documentation directory had no test and could have pointed anywhere.
+        /// </summary>
+        [Fact]
+        public void The_named_directories_sit_under_the_repository_root()
+        {
+            Assert.Equal(Path.Combine(RepoLayout.Root, "docs"), RepoLayout.Docs);
+            Assert.Equal(Path.Combine(RepoLayout.Root, "samples"), RepoLayout.Samples);
+            Assert.Equal(Path.Combine(RepoLayout.Samples, "DwarfMapper.Gallery"), RepoLayout.GalleryRoot);
+
+            // ...and they are real, which is what makes the equality above worth asserting.
+            Assert.True(Directory.Exists(RepoLayout.Docs));
+            Assert.True(Directory.Exists(RepoLayout.GalleryRoot));
+        }
+
+        /// <summary>
         ///     ARCH-06: temp directory only, never the repository. Registered in
         ///     <see cref="RepoWriteGuardTests.Every_raw_write_api_use_in_the_test_tree_is_a_registered_pattern" />.
         /// </summary>

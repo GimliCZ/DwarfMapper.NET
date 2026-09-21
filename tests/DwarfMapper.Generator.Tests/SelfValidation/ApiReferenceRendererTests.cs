@@ -90,7 +90,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                                                          <summary>No name attribute at all.</summary>
                                                      </member>
                                                      <member name="T:Fixture.Crefs">
-                                                         <summary>Qualified <see cref="T:DwarfMapper.MapConfig" />, bare <see cref="T:Bare" />, plain <see cref="Plain" />.</summary>
+                                                         <summary>Qualified <see cref="T:DwarfMapper.MapConfig" />, bare <see cref="T:Bare" />, plain <see cref="Plain" />, short <see cref="X" />.</summary>
                                                      </member>
                                                      <member name="T:Fixture.Langword">
                                                          <summary>Pass <see langword="null" /> or <see langword="false" />.</summary>
@@ -311,14 +311,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// <summary>
         ///     A cref is a doc-comment ID, and the page wants the readable tail of it: the last segment when it
         ///     has a namespace, the part after the two-character prefix when it does not, and the value itself
-        ///     when it carries no prefix either.
+        ///     when it carries no prefix either - including one too short to carry a prefix at all, which must
+        ///     not be sliced into nothing.
         /// </summary>
         [Fact]
         public void A_cref_renders_as_its_readable_tail()
         {
             InTempFile(SeeTagFixture,
                 path =>
-                    Assert.Equal("Qualified MapConfig, bare Bare, plain Plain.",
+                    Assert.Equal("Qualified MapConfig, bare Bare, plain Plain, short X.",
                         ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Crefs"]));
         }
 
