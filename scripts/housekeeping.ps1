@@ -755,11 +755,21 @@ try {
         #
         # ONE AREA again: the five verifier files, not the package. ObjectFactoryV2 (326 lines) and
         # GraphOracleComparer (394 lines) are fixture machinery and stay the named follow-on.
+        #
+        # THE FUSE IS 45, NOT 30, SINCE 2026-09-21, AND THE REASON IS THE POINT: killing this leg's survivors
+        # made it SLOWER. Three of them were mutants that made StructuralComparer's depth count backwards, and a
+        # test that walks a cycle or a chain past the cap turns such a mutant from a cheap Survived into a
+        # non-terminating run that costs the full `additional-timeout` cushion (2 min) before Stryker calls it a
+        # Timeout. Measured: 24:52 and 21:18 with three survivors, then a 30-min kill at 108 of 110 mutants once
+        # they were killed. A Timeout here is a DETECTION, so this is the leg working, not hanging - the fuse was
+        # simply cut for the cheaper population. Raise it again the same way if a future kill converts more
+        # survivors into non-terminating mutants; do NOT lower `additional-timeout` to fit, which would start
+        # calling slow machines' mutants detected.
         if ($legs -contains 'testing') {
             Write-Host '== 4/4f Mutation testing (testing-toolkit verifiers) ==' -ForegroundColor Cyan
             Invoke-DecontaminatedMutationLeg -Leg 'testing' -Root $root -Body {
                 $legStart = Get-Date
-                $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 30
+                $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 45
                 if ($legExit) { throw 'mutation score below break threshold (testing)' }
                 Assert-MutantsWereTested -Leg 'testing' -Since $legStart
                 Assert-LegScoreWithinBand -Leg 'testing' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
