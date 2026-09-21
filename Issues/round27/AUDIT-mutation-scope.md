@@ -30,11 +30,16 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 |---|---:|---:|---:|---:|---:|---:|
 | `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
 | `DwarfMapper` (runtime) | 44 | 6 | 3,666 | 996 | **27.2 %** | 73.9 %† |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,147 | 657 | **57.3 %** | 97.0 % |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,182 | 657 | **55.6 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **145** | **27** | **43,253** | **5,239** | **12.1 %** | |
+| **all** | **145** | **27** | **43,288** | **5,239** | **12.1 %** | |
+
+Re-measured 2026-09-21 (round-30 sweep, continued): `DwarfMapper.DocTooling` moves 57.3 % -> 55.6 % for the same
+reason again - 35 more lines outside the leg's globs, this time RepoLayout's root walk split into FindRoot and
+ResolveRoot so both its outcomes could be stated. The mutated line count does not move, because the leg's globs
+name neither file.
 
 Re-measured 2026-09-20 (round-30 sweep): `DwarfMapper.DocTooling` moves 59.1 % -> 57.3 %, and the total lines
 with it, WITHOUT any change to the configs. The assembly gained 36 lines outside the leg's globs - the extracted

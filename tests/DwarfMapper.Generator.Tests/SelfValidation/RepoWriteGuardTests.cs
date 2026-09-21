@@ -127,6 +127,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     (1, "the ILVerify expectation battery script, temp directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/GeneratedDocsAreCurrentTests.cs"] =
                     (1, "HasGitMarker probe writing a fake .git file into a temp directory"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/RepoLayoutTests.cs"] =
+                    (1, "InTempTree helper: a fake repository root in a temp directory, for the root walk"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoWriteGuardTests.cs"] =
                     (2, "this file's temp-directory fixtures (backup marker, pre-existing target)")
             };
