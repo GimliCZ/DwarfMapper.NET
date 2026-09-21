@@ -1111,6 +1111,117 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.Equal(string.Empty, reason);
         }
 
+        [Fact]
+        public void TryExplainNearMiss_two_fieldless_structs_stay_silent_even_when_their_layouts_differ()
+        {
+            // The shape check ("no instance fields at all") refuses BEFORE the blockers are consulted, and the
+            // ORDER is what this pins. E2 declares an explicit Size, so a blocker below would have plenty to say
+            // about this pair - "'E1' occupies its natural size and 'E2' an explicit Size of 8" - and saying it
+            // would be wrong: there is no fast path to be close to when neither struct has a single byte to copy.
+            // The sibling test above pins the refusal for a pair with nothing to distinguish it at all, which
+            // cannot tell the two orders apart.
+            var (_, types) = Compile("""
+                                     using System.Runtime.InteropServices;
+                                     namespace T
+                                     {
+                                         public struct E1 { }
+                                         [StructLayout(LayoutKind.Sequential, Size = 8)]
+                                         public struct E2 { }
+                                     }
+                                     """);
+
+            Assert.False(BlittableProof.TryExplainNearMiss(types["E1"], types["E2"], out var reason));
+            Assert.Equal(string.Empty, reason);
+        }
+
+        [Fact]
+        public void TryExplainNearMiss_a_one_sided_nullable_member_whose_T_differs_stays_silent()
+        {
+            // `long?` against `int` is a CONVERSION, not one '?' away from a blit: unwrap the optional and long
+            // still is not int. The one-sided-Nullable arm fires only when the UNWRAPPED types agree, so this
+            // pair falls through to the ordinary "field types differ" refusal and says nothing - the case the
+            // code comment promises stays silent. It is the unwrapping that has to be right for that promise to
+            // hold: an Unwrap answering null for both sides would compare null against null, find them equal,
+            // and announce every one-sided optional as a near-miss.
+            var (_, types) = Compile("namespace T { public struct LongOpt { public long? V; } public struct IntPlain { public int V; } }");
+
+            Assert.False(BlittableProof.TryExplainNearMiss(types["LongOpt"], types["IntPlain"], out var reason));
+            Assert.Equal(string.Empty, reason);
+        }
+
+        [Fact]
+        public void TryExplainNearMiss_a_top_level_nullable_is_refused_even_when_its_fields_line_up()
+        {
+            // Nullable<int> IS {bool hasValue; int value} in metadata, so against a struct declaring exactly
+            // those two field types the shape check passes, the positional type walk passes, and a blocker
+            // downstream would happily explain the pair. It is refused FIRST and categorically, because
+            // MemoryMarshal.Cast's `struct` constraint rejects Nullable<T> as its type argument (CS0453): there
+            // is no fast path here for a hint to point at, however well the bytes line up. A fixture whose
+            // fields did NOT line up would be refused for an unrelated reason and prove nothing about this one.
+            var (compilation, types) = Compile("namespace T { public struct Opt { public bool HasValue; public int Value; } }");
+            var nullableInt = compilation.GetSpecialType(SpecialType.System_Nullable_T)
+                .Construct(compilation.GetSpecialType(SpecialType.System_Int32));
+
+            Assert.Equal(
+                new[]
+                {
+                    "hasValue", "value"
+                },
+                BlittableProof.InstanceFields(nullableInt).Select(f => f.Name));
+            Assert.False(BlittableProof.TryExplainNearMiss(nullableInt, types["Opt"], out var reason));
+            Assert.Equal(string.Empty, reason);
+        }
+
+        [Fact]
+        public void FieldsSpanPartialDeclarations_a_struct_declared_once_is_exempt_even_with_an_unplaceable_field()
+        {
+            // A primary constructor's captured parameter becomes an instance field with no syntax reference of
+            // its own and no member to be placed through - the one field DeclaringPart cannot locate. Elsewhere
+            // "cannot tell" is a refusal, but a struct with a SINGLE declaration is exempt before the walk
+            // begins: within one declaration, source order is member order is layout, and there is nothing left
+            // to be uncertain about. Drop the exemption and the capture field alone would refuse every
+            // primary-constructor struct its blit.
+            var (_, types) = Compile("namespace T { public struct Cap(int x) { public int Get() => x; } }");
+            var cap = types["Cap"];
+            var fields = BlittableProof.InstanceFields(cap);
+
+            Assert.Single(cap.DeclaringSyntaxReferences);
+            Assert.Single(fields);
+            Assert.Empty(fields[0].DeclaringSyntaxReferences);
+            Assert.Null(fields[0].AssociatedSymbol);
+            Assert.False(BlittableProof.FieldsSpanPartialDeclarations(cap, fields));
+        }
+
+        [Theory]
+        [InlineData(SpecialType.System_Boolean, SpecialType.System_Byte)]
+        [InlineData(SpecialType.System_Byte, SpecialType.System_SByte)]
+        [InlineData(SpecialType.System_Int16, SpecialType.System_UInt16)]
+        public void SameBytesIgnoringNames_accepts_two_different_primitives_of_the_same_width(SpecialType left, SpecialType right)
+        {
+            // [Reinterpret] asserts the CORRESPONDENCE and the proof owes it the WIDTH; bool/byte, byte/sbyte
+            // and short/ushort are pairwise different types of identical width, which is exactly the assertion
+            // the opt-in exists to carry. Stated as accepted pairs rather than as membership of the primitive
+            // list, because a list is only ever read through this answer.
+            var (compilation, _) = Compile("namespace T { }");
+
+            Assert.True(BlittableProof.SameBytesIgnoringNames(compilation.GetSpecialType(left), compilation.GetSpecialType(right)));
+        }
+
+        [Fact]
+        public void SameBytesIgnoringNames_refuses_nint_against_nuint_because_their_width_is_the_platforms()
+        {
+            // IntPtr and UIntPtr are primitives whose width this proof reports as 0 - deliberately, because it
+            // is the RUNTIME's width and not the build machine's. So the size test is `wa > 0 && wa == ...`,
+            // never `wa >= 0`: a pair that agrees at "no known width" agrees about nothing, and blessing it
+            // would make the proof depend on the wrong machine. Every other same-width pair IS accepted (the
+            // theory above), which is what makes this refusal a rule rather than an accident.
+            var (compilation, _) = Compile("namespace T { }");
+
+            Assert.False(BlittableProof.SameBytesIgnoringNames(
+                compilation.GetSpecialType(SpecialType.System_IntPtr),
+                compilation.GetSpecialType(SpecialType.System_UIntPtr)));
+        }
+
         [Theory]
         [InlineData("int?", "int")]
         [InlineData("int?", "long?")]

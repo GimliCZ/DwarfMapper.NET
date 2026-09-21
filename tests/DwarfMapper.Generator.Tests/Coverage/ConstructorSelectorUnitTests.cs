@@ -24,7 +24,13 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var reason = ConstructorSelector.UnusableReason(ctor, target, compilation, false);
 
-            Assert.Contains("no specific reason could be determined", reason, StringComparison.Ordinal);
+            // The WHOLE sentence, not its first clause. The second half is a separate literal, and it carries
+            // the only part a reader can act on - that this is a gap between the candidate filter and this
+            // message, and that it should be reported. Blank that literal and the first clause still matches.
+            Assert.Equal(
+                "the selector does not accept it (no specific reason could be determined — this is a gap " +
+                "between the candidate filter and this message, please report it).",
+                reason);
         }
 
         [Fact]
