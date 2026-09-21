@@ -30,7 +30,7 @@ namespace DwarfMapper.DocTooling
             var summaries = LoadSummaries(assembly);
 
             var types = assembly.GetExportedTypes()
-                .Where(t => !t.IsNested || t.IsPublic)
+                .Where(IsRenderableType)
                 .OrderBy(t => t.Namespace, StringComparer.Ordinal)
                 .ThenBy(t => t.Name, StringComparer.Ordinal)
                 .ToList();
@@ -72,6 +72,27 @@ namespace DwarfMapper.DocTooling
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        ///     Whether a type that <see cref="Assembly.GetExportedTypes" /> returned belongs on the page.
+        ///     <para>
+        ///         The test is about NESTING, not visibility: GetExportedTypes already returns only publicly
+        ///         visible types, so the only thing left to decide is whether a nested one is public in its own
+        ///         right. <see cref="Type.IsPublic" /> answers that question WRONG for a nested type - it is
+        ///         false for every nested type however visible, because the nested flavour is
+        ///         <see cref="Type.IsNestedPublic" />. Reading IsPublic therefore dropped every public nested
+        ///         type from the reference page (found 2026-09-20; latent, because the runtime assembly's only
+        ///         nested types are private today).
+        ///     </para>
+        ///     <para>
+        ///         Internal rather than private so the two arms can be pinned directly: Render reflects one
+        ///         fixed assembly, so no test input can put a public nested type in front of the filter.
+        ///     </para>
+        /// </summary>
+        internal static bool IsRenderableType(Type type)
+        {
+            return !type.IsNested || type.IsNestedPublic;
         }
 
         private static void RenderEnum(StringBuilder sb, Type type, Dictionary<string, string> summaries)

@@ -99,6 +99,56 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                                              </doc>
                                              """;
 
+        /// <summary>
+        ///     A public type nested in a public type. GetExportedTypes returns it, so the page has to decide
+        ///     whether to render it, and that decision was reading the wrong flag.
+        /// </summary>
+        // CA1034 asks for these not to be nested, and CA1812 for the internal one to be removed as
+        // uninstantiated. A PUBLIC NESTED TYPE IS THE SHAPE UNDER TEST: the filter reads the wrong flag for
+        // exactly this declaration, and the internal sibling is the arm that must stay excluded. Both exist as
+        // Type arguments only, never as instances.
+#pragma warning disable CA1034, CA1812
+        public sealed class OuterProbe
+        {
+            public sealed class NestedPublicProbe
+            {
+            }
+
+            internal sealed class NestedInternalProbe
+            {
+            }
+        }
+#pragma warning restore CA1034, CA1812
+
+        /// <summary>
+        ///     REGRESSION. The type filter asked Type.IsPublic, which is FALSE for every nested type however
+        ///     visible - the nested flavour is IsNestedPublic - so a public nested type was dropped from the API
+        ///     reference without a word. Latent today: the runtime assembly's only nested types are private, so
+        ///     no row is missing from the committed page. It would have bitten the first public nested type.
+        /// </summary>
+        [Fact]
+        public void A_public_nested_type_belongs_on_the_page()
+        {
+            Assert.True(ApiReferenceRenderer.IsRenderableType(typeof(OuterProbe.NestedPublicProbe)));
+        }
+
+        /// <summary>The ordinary case, and the arm every rendered page is built from.</summary>
+        [Fact]
+        public void A_top_level_type_belongs_on_the_page()
+        {
+            Assert.True(ApiReferenceRenderer.IsRenderableType(typeof(ApiReferenceRenderer)));
+        }
+
+        /// <summary>
+        ///     The arm the filter exists for. GetExportedTypes never hands this one over, so the predicate is
+        ///     the only place the rule can be stated and the only place it can be checked.
+        /// </summary>
+        [Fact]
+        public void A_nested_type_that_is_not_public_does_not()
+        {
+            Assert.False(ApiReferenceRenderer.IsRenderableType(typeof(OuterProbe.NestedInternalProbe)));
+        }
+
         /// <summary>A member the compiler never writes, but a hand-edited or merged doc file can carry.</summary>
         [Fact]
         public void A_member_without_a_name_contributes_no_entry()

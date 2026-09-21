@@ -30,11 +30,18 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 |---|---:|---:|---:|---:|---:|---:|
 | `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
 | `DwarfMapper` (runtime) | 44 | 6 | 3,666 | 996 | **27.2 %** | 73.9 %† |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,147 | 657 | **57.3 %** | 97.0 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **145** | **27** | **43,217** | **5,239** | **12.1 %** | |
+| **all** | **145** | **27** | **43,253** | **5,239** | **12.1 %** | |
+
+Re-measured 2026-09-20 (round-30 sweep): `DwarfMapper.DocTooling` moves 59.1 % -> 57.3 %, and the total lines
+with it, WITHOUT any change to the configs. The assembly gained 36 lines outside the leg's globs - the extracted
+`ApiReferenceRenderer.IsRenderableType` predicate and its documentation - so the mutated share of it fell. That is
+the number behaving correctly: the share is of the assembly, so code added outside a leg dilutes it, and the audit
+exists to keep that visible rather than letting a leg's score stand in for the whole. The line-coverage column moves
+96.3 % -> 97.0 % in the same commit, from the DocTooling tests added beside that extraction.
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
