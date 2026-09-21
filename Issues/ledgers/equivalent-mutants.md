@@ -166,7 +166,7 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 415 | 91.08 % (2026-09-14, round-30 generator sweep checkpoint) | 16 | 0 | 0 | 96.14 % |
+| generator | `stryker-config.json` | 415 | 94.46 % (2026-09-21, round-30 near-miss and hash kill programme) | 16 | 0 | 0 | 96.14 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
@@ -390,13 +390,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "generator": {
       "config": "stryker-config.json",
       "scoreable": 415,
-      "measuredRawScore": 91.08,
-      "measuredOn": "2026-09-14",
+      "measuredRawScore": 94.46,
+      "measuredOn": "2026-09-21",
       "provenEquivalent": 16,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 96.14,
-      "rawCeilingFormula": "(415 - 16) / 415 — denominator refreshed from the round-30 generator-sweep checkpoint run (StrykerOutput/2026-09-14.12-57-57, 378 killed of 415 scoreable, 0 timeouts, clean tree), which is also the run that moved break 88 -> 91. The 16 proven rows are UNCHANGED: this re-measure moved the denominator, not the adjudication, and no row was added, retired or re-proved here — re-adjudication needs its own case analysis (invariant R3)."
+      "rawCeilingFormula": "(415 - 16) / 415 — unchanged, and that is the point of recording it here: the 2026-09-21 re-measure (StrykerOutput/2026-09-21.20-16-37, 392 killed of 415 scoreable, clean tree at 3fb967f) moved the MEASUREMENT from 91.08 % to 94.46 % with the denominator and all 16 proven rows untouched, so the gap it closed was fifteen mutants killed by tests, not a population effect. The leg now sits 1.68 pp under its ceiling, and the 23 survivors between here and it are enumerated in the config comment: several are shortcut guards whose pairs the positional layout check refuses anyway, so they are candidates for equivalence proofs rather than tests - each needing its own case analysis (invariant R3), not a blanket ruling."
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
