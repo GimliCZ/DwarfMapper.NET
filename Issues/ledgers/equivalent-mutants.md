@@ -171,7 +171,7 @@ recomputes the ceilings in the same commit.
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
-| testing | `stryker-config.testing.json` | 110 | 90.00 % (2026-09-15, round-30 StructuralComparer tests) | 0 | 0 | 0 | 100.00 % |
+| testing | `stryker-config.testing.json` | 110 | 100.00 % (2026-09-21, round-30 survivor kill programme) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
 84.32 % → 87.04 %, and `break`/`low` moved 84 → 87 in `stryker-config.json` in the same commit, which is
@@ -434,13 +434,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "testing": {
       "config": "stryker-config.testing.json",
       "scoreable": 110,
-      "measuredRawScore": 90.0,
-      "measuredOn": "2026-09-15",
+      "measuredRawScore": 100.0,
+      "measuredOn": "2026-09-21",
       "provenEquivalent": 0,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 100.0,
-      "rawCeilingFormula": "(110 - 0) / 110 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence. Re-measured on a clean tree at 46bcbb1 (StrykerOutput/2026-09-15.23-35-31, 99 detected of the same 110 scoreable = 90.00 %: 94 killed, 5 timeouts, 11 survived, 0 uncovered). The +7.27 pp against 2026-09-09 comes entirely from the round-30 StructuralComparer tests: six mutants moved from undetected to killed on lines 37-38 and 86 (the two `?? \"<null>\"` coalesces, four empty-string renders and the `p.CanRead &&` conjunction), and NoCoverage fell from 2 to 0. No mutated file changed in between."
+      "rawCeilingFormula": "(110 - 0) / 110 — nothing is adjudicated equivalent in this leg, and nothing needs to be: the measurement now EQUALS the ceiling. Re-measured on a clean tree at 220fabe (StrykerOutput/2026-09-21.19-22-14): 110 detected of 110 scoreable = 100.00 %, 106 killed and 4 timeouts, 0 survived, 0 uncovered. The eleven survivors of 2026-09-15 fell to tests that state contracts nobody had stated: the field walk, the depth cap through all three recursions, the scalar return that stops a string being walked as characters, both epsilon comparisons as EXCLUSIVE, and the iteration bounds of both verifiers. The four timeouts remove TERMINATION (three `i++` -> `i--`, one `depth + 1` -> `depth - 1`), which is why they count as detections here and why the leg fuse moved 30 -> 45 minutes in 220fabe: killing a cheap survivor can make a leg slower."
     },
     "pipeline": {
       "config": "stryker-config.pipeline.json",
