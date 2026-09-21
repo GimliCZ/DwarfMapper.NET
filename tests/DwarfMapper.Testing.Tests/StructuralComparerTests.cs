@@ -26,6 +26,25 @@ namespace DwarfMapper.Testing.Tests
         }
     }
 
+    /// <summary>
+    ///     A node whose members are public FIELDS. The comparer walks fields in a loop of its own, separate from
+    ///     the property loop, and nothing had ever compared two objects that carry one.
+    /// </summary>
+    public sealed class FieldBox
+    {
+        public int Value;
+
+        public FieldBox? Next;
+    }
+
+    /// <summary>Floating members, so the comparer's two epsilon comparisons can be driven at their boundary.</summary>
+    public sealed class NumericBox
+    {
+        public double D { get; set; }
+
+        public float F { get; set; }
+    }
+
     public class StructuralComparerTests
     {
         /// <summary>
@@ -235,6 +254,76 @@ namespace DwarfMapper.Testing.Tests
             var diffs = StructuralComparer.Diff(a, b);
             Assert.Contains(diffs, d => string.Equals(d.Path, "root.Id", StringComparison.Ordinal));
             Assert.All(diffs, d => Assert.EndsWith(".Id", d.Path, StringComparison.Ordinal));
+        }
+
+        /// <summary>
+        ///     A difference in a public FIELD is reported, with the same path shape a property difference gets.
+        ///     The comparer walks fields in a loop of its own and no test had ever given it one to walk, so the
+        ///     whole loop - its member filter, its recursion and the path it builds - was unmeasured.
+        /// </summary>
+        [Fact]
+        public void A_public_field_difference_is_reported_with_its_path()
+        {
+            var diff = Assert.Single(StructuralComparer.Diff(new FieldBox { Value = 1 }, new FieldBox { Value = 2 }));
+
+            Assert.Equal("root.Value", diff.Path);
+            Assert.Equal("1", diff.Expected);
+            Assert.Equal("2", diff.Actual);
+        }
+
+        /// <summary>
+        ///     WHERE the depth cap falls, from both sides. A difference at the deepest level the comparer still
+        ///     reaches is reported; the next level down is not looked at.
+        ///     <para>
+        ///         The existing cycle test proves the walk TERMINATES, which a cap one level out in either
+        ///         direction would also do. This states the boundary itself: the root is compared at depth 0 and
+        ///         each nesting level adds one, so a node's own members at chain position 11 are compared at
+        ///         depth 12 - the last value the guard admits - and position 12 is the first the guard refuses.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void The_depth_cap_falls_between_the_last_compared_level_and_the_first_skipped_one()
+        {
+            var lastCompared = Assert.Single(StructuralComparer.Diff(Chain(14, -1), Chain(14, 11)));
+            Assert.Equal("1", lastCompared.Expected);
+            Assert.Equal("99", lastCompared.Actual);
+
+            Assert.Empty(StructuralComparer.Diff(Chain(14, -1), Chain(14, 12)));
+        }
+
+        /// <summary>
+        ///     The double tolerance is EXCLUSIVE: two values exactly one epsilon apart are a difference, and
+        ///     anything closer is not. A tolerance that admitted its own boundary would be a different contract,
+        ///     and nothing said which one this is.
+        /// </summary>
+        [Fact]
+        public void Two_doubles_exactly_one_epsilon_apart_are_a_difference()
+        {
+            Assert.Single(StructuralComparer.Diff(new NumericBox { D = 0 }, new NumericBox { D = 1e-9 }));
+            Assert.Empty(StructuralComparer.Diff(new NumericBox { D = 0 }, new NumericBox { D = 9e-10 }));
+        }
+
+        /// <summary>The same contract for float, whose tolerance is its own constant.</summary>
+        [Fact]
+        public void Two_floats_exactly_one_epsilon_apart_are_a_difference()
+        {
+            Assert.Single(StructuralComparer.Diff(new NumericBox { F = 0f }, new NumericBox { F = 1e-6f }));
+            Assert.Empty(StructuralComparer.Diff(new NumericBox { F = 0f }, new NumericBox { F = 9e-7f }));
+        }
+
+        /// <summary>A chain of <paramref name="length" /> nodes; the one at <paramref name="differentAt" /> holds 99.</summary>
+        private static CycleNode Chain(int length, int differentAt)
+        {
+            var root = new CycleNode { Id = differentAt == 0 ? 99 : 1 };
+            var current = root;
+            for (var i = 1; i < length; i++)
+            {
+                var next = new CycleNode { Id = differentAt == i ? 99 : 1 };
+                current.Next = next;
+                current = next;
+            }
+
+            return root;
         }
 
         [Fact]
