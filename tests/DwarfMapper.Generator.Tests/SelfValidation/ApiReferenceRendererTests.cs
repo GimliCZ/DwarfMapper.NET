@@ -154,6 +154,20 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             public int Value { get; set; } = 7;
         }
 
+        /// <summary>
+        ///     A type whose only constructor is private. Reflection reports no public parameterless constructor
+        ///     for it, so the defaults probe refuses it at the guard - the reason no catch for a missing method
+        ///     is needed after that point.
+        /// </summary>
+        public sealed class PrivateConstructorProbe
+        {
+            private PrivateConstructorProbe()
+            {
+            }
+
+            public int Value { get; set; }
+        }
+
         /// <summary>A property whose getter throws - one cell of the table, not the page.</summary>
         public sealed class ThrowingGetterProbe
         {
@@ -201,6 +215,22 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public void A_constructor_that_throws_leaves_the_defaults_unread()
         {
             Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(ThrowingConstructorProbe)));
+        }
+
+        /// <summary>
+        ///     REGRESSION for the catch deleted on 2026-09-21 (owner ruling). Every shape that could raise a
+        ///     MissingMethodException from Activator.CreateInstance is refused BEFORE the call: an abstract type
+        ///     and an interface at the first guard, an open generic at the second, and anything with no public
+        ///     parameterless constructor at the third - a struct with none declared, and a class whose own is
+        ///     private. What is left cannot raise it, so the catch was unreachable rather than defensive.
+        /// </summary>
+        [Fact]
+        public void Every_shape_that_cannot_be_constructed_is_refused_before_the_constructor_runs()
+        {
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(AbstractProbe)));
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(IShapeProbe)));
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(PrivateConstructorProbe)));
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(List<>)));
         }
 
         /// <summary>The positive control: without this, the three nulls above would pass on a method that always returns null.</summary>

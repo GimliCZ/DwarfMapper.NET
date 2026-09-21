@@ -159,6 +159,11 @@ namespace DwarfMapper.DocTooling
                 return null;
             }
 
+            // This guard is what makes a MissingMethodException impossible below, which is why there is no catch
+            // for one (owner ruling 2026-09-21, deleted with its proof): every shape that could raise it has
+            // already returned - an abstract type or an interface above, an open generic above that, and here
+            // anything with no PUBLIC parameterless constructor, including a struct with none declared and a
+            // class whose own is private.
             if (type.GetConstructor(Type.EmptyTypes) is null)
             {
                 return null;
@@ -167,10 +172,6 @@ namespace DwarfMapper.DocTooling
             try
             {
                 return Activator.CreateInstance(type);
-            }
-            catch (MissingMethodException)
-            {
-                return null;
             }
             catch (TargetInvocationException)
             {
