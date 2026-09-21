@@ -32,8 +32,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 56;
-        private const int PinnedTotalOccurrences = 67;
+        // Round 30 (2026-09-21): 56 -> 62 rows and 67 -> 65 mutants, in one correction. Six generator sites
+        // the ledger had never dispositioned were proved and added (+6 rows, +8 mutants), and the
+        // twelve-occurrence IsPrimitive row shrank to two (-10 mutants) because three of its flips join two
+        // types of the SAME width and [Reinterpret] accepts those - they were never equivalent and are now
+        // killed by tests. Rows can grow while mutants shrink; both halves are pinned so neither can move
+        // quietly. Ledger section "Rows re-adjudicated on 2026-09-21".
+        private const int PinnedEntryRows = 62;
+        private const int PinnedTotalOccurrences = 65;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -51,7 +57,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // rows are retired with it: proven 24 -> 16, probably 6 -> 0. The probably category has no
             // generator rows left, and an empty category carries no pin (the count check below requires
             // every pinned category to have rows). Ledger section "Rows retired on 2026-09-01".
-            ["generator|proven-equivalent"] = 16,
+            // Round 30 (2026-09-21) re-adjudicated this leg in both directions, 16 -> 14: the
+            // twelve-occurrence IsPrimitive row shrank to 2 (three of its flips join two types of the
+            // SAME width, which [Reinterpret] accepts, so they were never equivalent and are now killed
+            // by tests), and six sites the ledger had never dispositioned were proved and added - the
+            // two top-level Nullable<T> guards, the near-miss primitive and managed shortcuts, the two
+            // Locations.Any predicates, the single-candidate fast path and LocationInfo's in-source
+            // ternary. Ledger section "Rows re-adjudicated on 2026-09-21".
+            ["generator|proven-equivalent"] = 14,
             // Round-22 P3 grew the doctooling rows by nine, each with its case-analysis proof in the T3
             // ledger's P3 section (same commit): two unreachable-zero IndexOf/FindIndex boundaries, the
             // ambiguous-match ternary evaluated only outside its distinguishing count, a fall-through

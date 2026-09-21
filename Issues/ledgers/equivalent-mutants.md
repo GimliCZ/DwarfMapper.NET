@@ -157,6 +157,38 @@ move on the retirement itself. **Re-measured the same day** (`StrykerOutput/2026
 48213d0): 156/178 = 87.64 %. That is one scoreable mutant fewer than the 7f96555 run, and the missing one is exactly
 this survivor. The leg's 22 undetected mutants are its 22 proven rows, so the measured score equals `rawCeiling`.
 
+## Rows re-adjudicated on 2026-09-21 — three of the twelve `IsPrimitive` flips were never equivalent
+
+The generator row `IsPrimitive` / `lineAtProof: 58` carried **12 occurrences** of the same pattern flip (one `or`
+in the `SpecialType` list becomes `and`, which drops the two types it joins) with one shared proof: *"a primitive
+is always a metadata symbol, so the fall-through path rejects it at `IsSourceSequential` either way."*
+
+That proof was written before `LayoutIdentical` grew its `byBytesOnly` parameter, and `byBytesOnly` is exactly the
+path where the primitive branch's `true` return is reachable: `[Reinterpret]` asks only for the same WIDTH, so two
+DIFFERENT primitives of equal width are accepted there. Three of the flips join two such types — `Boolean`/`Byte`,
+`Byte`/`SByte`, `Int16`/`UInt16` — and dropping both members of one of those pairs turns `SameBytesIgnoringNames`
+from `true` into `false` for it. They are **not equivalent**, and the ledger said they were. They are now killed by
+tests (`SameBytesIgnoringNames_accepts_two_different_primitives_of_the_same_width`), each watched go RED with the
+mutant hand-applied.
+
+The two that remain join types of DIFFERENT width — `SByte`/`Int16` and `UInt16`/`Int32` — and for those the
+original proof's conclusion still holds, by a case analysis rather than by the old blanket claim:
+
+- `IsPrimitive` is read at exactly two sites, both as `IsPrimitive(x) || IsPrimitive(y)`. Dropping a pair changes
+  an answer only when BOTH operands are in the dropped pair; with one operand outside it the `||` still fires.
+- For the four such pairs, `(sbyte, sbyte)` and `(short, short)` — likewise `(ushort, ushort)`, `(int, int)` —
+  return at the identity check above, before `IsPrimitive` is consulted at all.
+- That leaves `(sbyte, short)` and `(ushort, int)`, in both orders. The original enters the primitive branch and
+  refuses them: their widths differ (1 against 2, 2 against 4), and their `SpecialType`s differ. The mutant skips
+  the branch and reaches the struct rules, where `IsSourceSequential` refuses both — a primitive is a metadata
+  symbol and has no source `[StructLayout]` to read. Both answers are `false`.
+
+Counts move with the correction: generator `provenEquivalent` 16 → 14 (12 → 2 here, plus the six rows added below
+for sites this file had never dispositioned). The lesson is recorded rather than smoothed over: **a shared proof
+over N occurrences ages as badly as its weakest occurrence**, and this one aged the moment a parameter widened the
+branch it called unreachable. Occurrence rows that fold together are now written with the property that makes them
+fold — here, the widths — so the next reader can see what would break them.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -166,7 +198,7 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 415 | 94.46 % (2026-09-21, round-30 near-miss and hash kill programme) | 16 | 0 | 0 | 96.14 % |
+| generator | `stryker-config.json` | 415 | 94.46 % (2026-09-21, round-30 near-miss and hash kill programme) | 14 | 0 | 0 | 96.62 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
@@ -392,11 +424,11 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "scoreable": 415,
       "measuredRawScore": 94.46,
       "measuredOn": "2026-09-21",
-      "provenEquivalent": 16,
+      "provenEquivalent": 14,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 96.14,
-      "rawCeilingFormula": "(415 - 16) / 415 — unchanged, and that is the point of recording it here: the 2026-09-21 re-measure (StrykerOutput/2026-09-21.20-16-37, 392 killed of 415 scoreable, clean tree at 3fb967f) moved the MEASUREMENT from 91.08 % to 94.46 % with the denominator and all 16 proven rows untouched, so the gap it closed was fifteen mutants killed by tests, not a population effect. The leg now sits 1.68 pp under its ceiling, and the 23 survivors between here and it are enumerated in the config comment: several are shortcut guards whose pairs the positional layout check refuses anyway, so they are candidates for equivalence proofs rather than tests - each needing its own case analysis (invariant R3), not a blanket ruling."
+      "rawCeiling": 96.62,
+      "rawCeilingFormula": "(415 - 14) / 415 — the DENOMINATOR has not moved since 2026-09-14 and the adjudication has, in both directions, which is why both halves are spelled out here. The measurement moved 91.08 % -> 94.46 % on 2026-09-21 (StrykerOutput/2026-09-21.20-16-37, 392 killed of 415 scoreable, clean tree at 3fb967f): fifteen mutants killed by tests, no population effect. The ADJUDICATION then moved 16 -> 14 in the same round: the twelve-occurrence IsPrimitive row was found to be three parts wrong (section 'Rows re-adjudicated on 2026-09-21') and shrank to 2, while six sites this file had never dispositioned were proved and added - the two top-level Nullable<T> guards, the near-miss IsPrimitive and IsUnmanagedType shortcuts, the two Locations.Any predicates, ConstructorSelector's single-candidate fast path and LocationInfo's in-source ternary. The fourteen are exactly the mutants expected to survive the next run, so that run should measure 96.62 % and sit AT this ceiling; a fifteenth survivor means something here is wrong, which is the check this number is for."
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -460,7 +492,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "LayoutIdentical",
       "lineAtProof": 28,
-      "lineCurrent": 320,
+      "lineCurrent": 396,
       "mutator": "Logical",
       "original": "!a.IsUnmanagedType || !b.IsUnmanagedType",
       "mutated": "!a.IsUnmanagedType && !b.IsUnmanagedType",
@@ -474,13 +506,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "LayoutIdentical",
       "lineAtProof": 29,
-      "lineCurrent": 325,
+      "lineCurrent": 411,
       "mutator": "Logical",
       "original": "IsPrimitive(a) || IsPrimitive(b)",
       "mutated": "IsPrimitive(a) && IsPrimitive(b)",
       "occurrences": 1,
       "category": "proven-equivalent",
-      "proof": "The primitive branch's true return requires two DISTINCT symbols sharing one non-None SpecialType, which cannot occur inside a single compilation (the identity check at L26 already returned true for the same symbol), so the branch's outcome is unreachable and mutating its guard changes nothing observable.",
+      "proof": "Re-proved 2026-09-21; the original reason (the branch's true return is unreachable) is FALSE since byBytesOnly was added - [Reinterpret] accepts two different primitives of equal width there. The conclusion survives on the guard itself: the mutant differs only when exactly one side is primitive, and for such a pair the original enters the branch and refuses it (different widths under byBytesOnly, different SpecialTypes otherwise, since a non-primitive's size is 0 and its SpecialType is None), while the mutant skips the branch and is refused by IsSourceSequential - a primitive is a metadata symbol with no source [StructLayout] to read. Both answers are false.",
       "anchor": "Issues/ledgers/T3-mutation-survivors.md § BlittableProof.LayoutIdentical / IsPrimitive"
     },
     {
@@ -488,13 +520,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "IsPrimitive",
       "lineAtProof": 58,
-      "lineCurrent": 409,
+      "lineCurrent": 515,
       "mutator": "Logical (pattern)",
-      "original": "one `or` in the SpecialType pattern (12 distinct flips)",
-      "mutated": "that `or` -> `and`",
-      "occurrences": 12,
+      "original": "one `or` in the SpecialType pattern, where the two types it joins have DIFFERENT widths (2 of the 5 flips Stryker generates)",
+      "mutated": "that `or` -> `and`, dropping both types it joined",
+      "occurrences": 2,
       "category": "proven-equivalent",
-      "proof": "Same unreachability as the L29 entry: IsPrimitive's result only feeds the branch whose true return is unreachable within one compilation, and a primitive is always a metadata symbol, so the fall-through path rejects it at IsSourceSequential either way.",
+      "proof": "RE-ADJUDICATED 2026-09-21, 12 -> 2 (see the section 'Rows re-adjudicated on 2026-09-21'): the three flips joining two types of the SAME width - Boolean/Byte, Byte/SByte, Int16/UInt16 - were NOT equivalent and are now killed by tests, because [Reinterpret] accepts two different primitives of equal width. The two that remain join SByte/Int16 and UInt16/Int32. A dropped pair changes an answer only when both operands are inside it (otherwise the `||` at each of the two call sites still fires); of those four pairs the two same-type ones return at the identity check above, leaving (sbyte, short) and (ushort, int), which the original refuses on width and SpecialType and the mutant refuses at IsSourceSequential. Both answers are false.",
       "anchor": "Issues/ledgers/T3-mutation-survivors.md § BlittableProof.LayoutIdentical / IsPrimitive"
     },
     {
@@ -524,6 +556,90 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "proven-equivalent",
       "proof": "T3 verdict: Equivalent, listed do-not-attempt (the two comparisons differ only for a path whose FIRST character is '.', i.e. an empty leading segment, which no accepted [MapProperty] source produces). Recorded as the ledger's verdict; T3 carries no longer-form case analysis for this row.",
       "anchor": "Issues/ledgers/T3-mutation-survivors.md § kill-first ranking, do-not-attempt list"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "member": "CanReinterpret / SameBytesIgnoringNames (top-level Nullable<T> guard)",
+      "lineAtProof": 37,
+      "lineCurrent": 37,
+      "mutator": "Logical",
+      "original": "IsNullableValueType(src) || IsNullableValueType(dst)",
+      "mutated": "IsNullableValueType(src) && IsNullableValueType(dst)",
+      "occurrences": 2,
+      "category": "proven-equivalent",
+      "proof": "Proved 2026-09-21 (lines 37 and 67, the same guard in both entry points). The mutant differs only when exactly ONE side is Nullable<T>, and it then falls through to LayoutIdentical, which returns false for every such pair: the both-Nullable arm needs both sides; the primitive arm gives false (a Nullable<T>'s width is 0 and its SpecialType is None, so neither the byBytesOnly width test nor SameSpecialType can hold); and the struct rules refuse at IsSourceSequential, because Nullable<T> is a metadata type with no source [StructLayout] to read. The guard is a documented EARLY refusal naming the real reason (CS0453 - MemoryMarshal.Cast's `struct` constraint rejects Nullable<T>), not a load-bearing one. The THIRD copy of this guard, at line 217 in TryExplainNearMiss, is NOT equivalent - its fall-through reaches the metadata blocker and speaks - and is killed by TryExplainNearMiss_a_top_level_nullable_is_refused_even_when_its_fields_line_up.",
+      "anchor": "tests/DwarfMapper.Generator.Tests/Coverage/BlittableProofCoverageTests.cs § CanReinterpret_nullable_*"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "member": "TryExplainNearMiss (primitive shortcut)",
+      "lineAtProof": 223,
+      "lineCurrent": 223,
+      "mutator": "Logical",
+      "original": "IsPrimitive(src) || IsPrimitive(dst)",
+      "mutated": "IsPrimitive(src) && IsPrimitive(dst)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Proved 2026-09-21, and MEASURED rather than assumed: the mutant differs only when exactly one side is primitive, and it then falls through to the shape check, where InstanceFields of a primitive is EMPTY - a probe over this test suite's own reference set confirms 0 fields for Int32, SByte and UInt16 - so `fa.Count == 0` refuses the pair. Both answers are false. Recorded with its dependency stated: this holds because the fields of a primitive are not visible here, which is a property of the reference set, so a run whose corlib exposed a primitive's private backing field would make the pair speak and this row would need re-adjudicating.",
+      "anchor": "Issues/ledgers/equivalent-mutants.md § Rows re-adjudicated on 2026-09-21"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "member": "TryExplainNearMiss (managed shortcut)",
+      "lineAtProof": 244,
+      "lineCurrent": 244,
+      "mutator": "Logical",
+      "original": "!a.IsUnmanagedType || !b.IsUnmanagedType",
+      "mutated": "!a.IsUnmanagedType && !b.IsUnmanagedType",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Proved 2026-09-21, the same shape as the LayoutIdentical row above and for the same reason one level up. The mutant differs only when exactly one side is managed; managed-ness enters at a reference-type leaf, so somewhere in the positional walk a field position holds a reference type against a value type, and LayoutIdentical refuses that position (TypeKind != Struct, or the managed guard at line 396). The near-miss loop turns that refusal into `return false` at its own line 287, so the pair stays silent either way.",
+      "anchor": "Issues/ledgers/equivalent-mutants.md § Rows re-adjudicated on 2026-09-21"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "member": "TryExplainNearMiss (metadata blockers)",
+      "lineAtProof": 294,
+      "lineCurrent": 294,
+      "mutator": "Linq method (Any -> All)",
+      "original": "!a.Locations.Any(l => l.IsInSource)",
+      "mutated": "!a.Locations.All(l => l.IsInSource)",
+      "occurrences": 2,
+      "category": "proven-equivalent",
+      "proof": "Proved 2026-09-21 (lines 294 and 300, the same predicate for each side). Any and All differ only on an EMPTY sequence or on a MIXED one. Neither reaches this line: the type has already passed `TypeKind == Struct`, so it is a real named struct, and a named struct's Locations are never empty - a probe confirms a metadata type carries exactly one MetadataLocation - nor mixed, because a symbol is either from source (every location a source location, however many partial declarations it has) or from metadata, never both. With a uniform non-empty sequence Any and All coincide, so the two predicates agree on every input that gets here.",
+      "anchor": "Issues/ledgers/equivalent-mutants.md § Rows re-adjudicated on 2026-09-21"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/ConstructorSelector.cs",
+      "member": "Select (Policy 4, single-candidate fast path)",
+      "lineAtProof": 157,
+      "lineCurrent": 157,
+      "mutator": "Block removal",
+      "original": "if (candidates.Count == 1)",
+      "mutated": "its block emptied - the `return candidates[0];` removed, so Policy 4 falls through to Policy 5",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Proved 2026-09-21 by following Policy 5 with a one-element list, which is what the mutant falls through to. The satisfiability filter either keeps that element or produces an empty list, which the `satisfiable.Count > 0` guard discards; Max over one element is its own arity; withMax is therefore that same element; `withMax.Count > 1` is false, so line 193 returns the identical symbol Policy 4 would have returned. No diagnostic is added on either path and AllParametersHaveASource is a pure predicate, so there is no side effect to distinguish them. Policy 4 is a readability fast path, not a rule.",
+      "anchor": "Issues/ledgers/equivalent-mutants.md § Rows re-adjudicated on 2026-09-21"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Diagnostics/LocationInfo.cs",
+      "member": "FromFirstInSource",
+      "lineAtProof": 49,
+      "lineCurrent": 49,
+      "mutator": "Conditional (false)",
+      "original": "declared is null ? null : From(declared)",
+      "mutated": "false ? null : From(declared)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Proved 2026-09-21 by reading From: its first statement is `if (location is null || location.SourceTree is null) return null`. So when `declared` is null - the only input on which the two differ - the original yields null by the ternary and the mutant yields null by that guard, and the `?? fallback` that consumes both turns either into `fallback`. The ternary is a null-check written twice, once at each level; it is not redundant in the source (it keeps a nullable value out of a non-nullable parameter), but it is unobservable at runtime.",
+      "anchor": "tests/DwarfMapper.Generator.Tests/Coverage/LocationInfoFromFirstInSourceUnitTests.cs § the fallback arm"
     },
     {
       "leg": "doctooling",
