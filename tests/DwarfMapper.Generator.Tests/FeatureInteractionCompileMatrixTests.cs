@@ -667,6 +667,40 @@ namespace DwarfMapper.Generator.Tests
                 }
                 """);
 
+            // ── 14b. [MapShare] — the forced share of a reference the proof cannot see through ────
+
+            yield return new FimMatrixCase("map_share_readonly_member",
+                """
+                using DwarfMapper;
+                using System.Collections.Generic;
+                namespace Fim;
+                public sealed class Badge { public Badge(string n) { Name = n; } public string Name { get; } }
+                public class Src { public IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
+                public class Dst { public IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
+                [DwarfMapper] public partial class M {
+                    [MapShare("Badges")]
+                    public partial Dst Map(Src s);
+                }
+                """);
+
+            // ── 14c. [MapDenseEnumKeys] — the enum-keyed dictionary written into an inline array ────
+
+            yield return new FimMatrixCase("map_dense_enum_keys",
+                """
+                using DwarfMapper;
+                using System.Collections.Generic;
+                using System.Runtime.CompilerServices;
+                namespace Fim;
+                public enum FimPlatform { Web = 1, Ios = 2, Android = 3 }
+                [InlineArray(3)] public struct FimCounts3 { private int _e0; }
+                public class Src { public Dictionary<FimPlatform, int> Counts { get; set; } = new(); }
+                public class Dst { public FimCounts3 Counts { get; set; } }
+                [DwarfMapper] public partial class M {
+                    [MapDenseEnumKeys("Counts", Offset = 1)]
+                    public partial Dst Map(Src s);
+                }
+                """);
+
             // ── 15. Flatten (member-level flatten, distinct from FlattenGraph) ────
 
             yield return new FimMatrixCase("flatten_member",

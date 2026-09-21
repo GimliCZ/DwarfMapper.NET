@@ -27,7 +27,11 @@ namespace DwarfMapper.Generator.Pipeline
         // Nullable-aware fully-qualified format — includes ? on nullable reference type arguments.
         // Used for PARAMETER types so the helper signature accepts nullable-annotated source types
         // (e.g. Dictionary<string, List<int>?>) without a CS8620 mismatch.
-        private static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
+        // Internal (not private): round 29 T0.2b reuses it for the span map's declared parameter/return
+        // types (ReadOnlySpan<C?> / Span<D?>) — the same CS8611 partial-signature mismatch a plain
+        // FullyQualifiedFormat produces here (it silently drops the '?' on the span's nullable-annotated
+        // reference type argument) is the same hole this format was built to close.
+        internal static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
             SymbolDisplayFormat.FullyQualifiedFormat
                 .WithMiscellaneousOptions(
                     SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
@@ -277,7 +281,9 @@ namespace DwarfMapper.Generator.Pipeline
             string? elemConverter,
             NullHandling elemNull,
             bool isPreserve = false,
-            bool elemNeedsCtx = false)
+            bool elemNeedsCtx = false,
+            bool elemConverterParamIsNonNullableRef = false,
+            bool elemConverterReturnIsNullableRef = false)
         {
             // Use nullable-aware format for element type so emitted container types and Add() calls match
             // nullable element types (e.g. List<List<int>?> not List<List<int>>).
@@ -330,7 +336,15 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var identity = SymbolEqualityComparer.Default.Equals(srcElem, tgtElem) && elemConverter is null && elemNull == NullHandling.None;
-            var item = ElementExpr("__item", elemConverter, elemNull, elemFq, elemNeedsCtx, srcElemIsNullableRef);
+            var item = ElementExpr("__item",
+                elemConverter,
+                elemNull,
+                elemFq,
+                elemNeedsCtx,
+                srcElemIsNullableRef,
+                elemConverterParamIsNonNullableRef: elemConverterParamIsNonNullableRef,
+                elemConverterReturnIsNullableRef: elemConverterReturnIsNullableRef);
+            var itemReadTwice = ElementExprReadsItemTwice(elemNull);
 
             // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
             var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -353,7 +367,8 @@ namespace DwarfMapper.Generator.Pipeline
                 identity,
                 threadCtx,
                 registerBeforeFill,
-                tgtElem.IsValueType);
+                tgtElem.IsValueType,
+                itemReadTwice);
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
@@ -377,7 +392,9 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol tgtElem,
             Shape shape,
             string ctxElementConverter,
-            NullHandling elemNull)
+            NullHandling elemNull,
+            bool elemConverterParamIsNonNullableRef = false,
+            bool elemConverterReturnIsNullableRef = false)
         {
             var elemFq = FqTypeArg(tgtElem);
             // A nullable-reference ELEMENT (`Child?[]`, `List<Child?>`) reaching a synthesized object helper: the
@@ -389,7 +406,17 @@ namespace DwarfMapper.Generator.Pipeline
             var srcFq = Fq(srcType);
             var srcParamType = FqNullableParam(srcType);
             // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
-            var item = ElementExpr("__item", ctxElementConverter, elemNull, elemFq, true, srcElemIsNullableRef);
+            var item = ElementExpr("__item",
+                ctxElementConverter,
+                elemNull,
+                elemFq,
+                true,
+                srcElemIsNullableRef,
+                elemConverterParamIsNonNullableRef: elemConverterParamIsNonNullableRef,
+                elemConverterReturnIsNullableRef: elemConverterReturnIsNullableRef);
+            // Threaded for uniformity with Synthesize, not because it can be observed here: this overload always
+            // passes threadCtx: true, and the array fast path that consumes the flag requires !threadCtx.
+            var itemReadTwice = ElementExprReadsItemTwice(elemNull);
 
             var w = new CodeWriter(1);
             EmitBody(w,
@@ -404,7 +431,8 @@ namespace DwarfMapper.Generator.Pipeline
                 false,
                 true,
                 false,
-                tgtElem.IsValueType);
+                tgtElem.IsValueType,
+                itemReadTwice);
             synth[existingName] = new SynthesizedMethod(existingName, w.ToString());
         }
 
@@ -422,7 +450,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool identity,
             bool threadCtx,
             bool registerBeforeFill,
-            bool tgtElemIsValueType)
+            bool tgtElemIsValueType,
+            bool itemReadTwice)
         {
             switch (shape.Target)
             {
@@ -436,7 +465,8 @@ namespace DwarfMapper.Generator.Pipeline
                         identity,
                         shape.NullAsNull,
                         threadCtx,
-                        registerBeforeFill);
+                        registerBeforeFill,
+                        itemReadTwice);
                     break;
 
                 case TargetKind.List:
@@ -573,7 +603,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool identity,
             bool nullAsNull,
             bool threadCtx,
-            bool registerBeforeFill)
+            bool registerBeforeFill,
+            bool itemReadTwice)
         {
             var retType = nullAsNull ? elem + "[]?" : elem + "[]";
             var paramType = srcParamType; // nullable-aware; null guard inside the body handles it
@@ -611,7 +642,18 @@ namespace DwarfMapper.Generator.Pipeline
                         // leaves the store index not-provably-in-bounds, so its bounds check survives — measurably
                         // slower in a hot 1000-element loop. Preserve (register-before-fill), ctx-threaded, and
                         // non-array (no indexer) sources keep the foreach form unchanged.
-                        w.Line("for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = " + item.Replace("__item", "src[__i]") + "; }");
+                        //
+                        // Round 29 T0.2d — the SAME rule the span map's inline element loop applies, asked through
+                        // the same ElementExprReadsItemTwice (see MapEmitter.SpanMap.cs): when the shared element
+                        // expression reads its item TWICE, substituting the indexer into both reads is CS8629 -
+                        // `src[__i].HasValue ? conv(src[__i].Value) : null`, where the null-state of the first read
+                        // does not flow to the second — inside a .g.cs, where no consumer pragma can reach it. Bind
+                        // the element once instead; the loop shape the JIT proves in-bounds is untouched, so the
+                        // elision this arm exists for survives. Single-read arms keep the substitution, byte for
+                        // byte, so no already-measured array shape moves.
+                        w.Line(itemReadTwice
+                            ? "for (int __i = 0; __i < " + countExpr + "; __i++) { var __item = src[__i]; __r[__i] = " + item + "; }"
+                            : "for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = " + item.Replace("__item", "src[__i]") + "; }");
                     }
                     else
                     {
@@ -1262,6 +1304,37 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when the expression <see cref="ElementExpr" /> builds may read <c>item</c> TWICE. On its
+        ///     CONVERTER branch (<c>conv is not null</c>) these two arms do:
+        ///     <see cref="NullHandling.NullableProject" /> emits <c>item.HasValue ? conv(item.Value) : null</c> and
+        ///     <see cref="NullHandling.NullableProjectRef" /> emits <c>item is null ? null : conv(item)</c>; every
+        ///     other arm, on either branch, reads it once.
+        ///     <para>
+        ///         DELIBERATELY over-binding, and not an invariant to build on: with <c>conv is null</c> those same
+        ///         two <see cref="NullHandling" /> values fall to <c>_ =&gt; item</c>, a single read, and this still
+        ///         answers true. Binding a local for a single-read expression is correct, merely redundant, so the
+        ///         predicate is kept a function of <see cref="NullHandling" /> alone rather than growing a second
+        ///         parameter that every caller would have to thread. The case is unreachable in the corpus anyway:
+        ///         the golden manifest moved 0 of its cases when the binding was introduced, which is what says no
+        ///         emitted shape takes the redundant arm today.
+        ///     </para>
+        ///     <para>
+        ///         This is the one rule behind the element BINDING that two emitters both need, so it lives beside
+        ///         the expression builder rather than being restated by each of them. A caller whose <c>item</c>
+        ///         text is a re-evaluated expression rather than a local — the span map's <c>src[__i]</c>, and
+        ///         <see cref="EmitArray" />'s bounds-check-elision fast path, which substitutes the same indexer
+        ///         into the shared expression — must bind that expression to a local first when this returns true:
+        ///         C#'s nullable flow analysis does not carry the null-state established by the FIRST read of an
+        ///         indexer into a SECOND, independent read of it, so the lifted <c>.Value</c> is CS8629 ("Nullable
+        ///         value type may be null") inside a generated file the consumer cannot annotate or suppress.
+        ///     </para>
+        /// </summary>
+        internal static bool ElementExprReadsItemTwice(NullHandling nh)
+        {
+            return nh is NullHandling.NullableProject or NullHandling.NullableProjectRef or NullHandling.NullableProjectRefForgiving;
+        }
+
+        /// <summary>
         ///     The per-element expression: the element's null handling COMPOSED with its converter.
         ///     <para>
         ///         The converter branch used to ignore <paramref name="nh" /> entirely and emit <c>Conv(__item)</c>,
@@ -1273,36 +1346,101 @@ namespace DwarfMapper.Generator.Pipeline
         ///         NullStrategy rule.
         ///     </para>
         /// </summary>
-        private static string ElementExpr(
+        /// <param name="ctxDepthArgs">
+        ///     The literal <c>(ctx, depth)</c> tail appended when <paramref name="needsCtx" /> is true. Defaults to
+        ///     the synthesized-helper-body spelling (<c>", ctx, depth + 1"</c> — the local parameter names
+        ///     <see cref="EmitBody" /> declares). Round 29 T0.2b: the span map's INLINE element loop shares this
+        ///     rule but lives in the caller's own method body, where the shared context local is
+        ///     <c>__dwarf_ctx</c> and there is no recursion depth to increment (a fresh depth-0 call per element,
+        ///     exactly like the async-stream loop's <c>EmitElementContext</c> — see <c>MapEmitter.SpanMap.cs</c>),
+        ///     so that caller passes <c>", __dwarf_ctx, 0"</c> instead of accepting the default.
+        /// </param>
+        /// <param name="indexExpr">
+        ///     Round 29 T0.2b review fix round 1 (and round 2, which added the destination type name): a bare
+        ///     "Collection element was null" gives a consumer nothing to locate the bad element with or to know
+        ///     what it was trying to become. When the caller's loop shape has a numeric index in scope, passing
+        ///     its expression here (e.g. <c>"__i"</c>) switches the <c>ThrowIfNull</c> message to a
+        ///     self-diagnosing one naming BOTH: <c>"Element at index " + __i + " was null, and the destination
+        ///     element type '" + elemFq + "' does not admit null."</c> — built once, here (<paramref
+        ///     name="elemFq" /> is already in scope), so every <c>ThrowIfNull</c> caller shares the SAME richer
+        ///     message rather than each emitter carrying its own text. Left at the <see langword="null" />
+        ///     default, the exact pre-existing "Collection element was null" text is kept UNCHANGED — several
+        ///     <c>CollectionConverter</c> target shapes (<c>List.Add</c>/<c>HashSet.Add</c>/immutable-collection
+        ///     builders/<c>Stack</c>/<c>Queue</c>) enumerate with <c>foreach</c> and never declare a counter, so
+        ///     there is no index expression they could pass; forking a second literal for them instead of
+        ///     falling back would be the duplication this method exists to avoid.
+        /// </param>
+        /// <param name="elemConverterParamIsNonNullableRef">
+        ///     Round 29 T2.9: the element twin of <c>MemberMap.ConverterParamIsNonNullableRef</c> — true when
+        ///     <paramref name="conv" /> is a map/converter method the USER declared whose parameter is a
+        ///     NON-nullable reference. Resolved where the element converter is chosen (the collection and
+        ///     dictionary arms of <c>TryResolveConversion</c>, and the span / async-stream endpoints), because
+        ///     that is the only place with a semantic model to ask, and passed down rather than re-derived here
+        ///     from the converter's NAME — which is exactly the <c>IsSynthesized</c> proxy this replaces.
+        /// </param>
+        /// <param name="elemConverterReturnIsNullableRef">
+        ///     Round 29 T2.9, the RETURN half: true when <paramref name="conv" /> is a user-declared converter
+        ///     DECLARED to return a nullable reference while the destination element type is not, so the CALL'S
+        ///     RESULT is forgiven as well as (or instead of) its argument. Without it a
+        ///     <c>partial ChildDto? ToDto(Child c)</c> element converter emitted CS8600 on the cast and CS8604 on
+        ///     the <c>Add</c>. Resolved and REPORTED (DWARF107) at the same site as the argument half, because
+        ///     this forgiveness actually stores a null the destination's annotation forbids.
+        /// </param>
+        internal static string ElementExpr(
             string item,
             string? conv,
             NullHandling nh,
             string elemFq,
             bool needsCtx = false,
-            bool srcElemIsNullableRef = false)
+            bool srcElemIsNullableRef = false,
+            string ctxDepthArgs = ", ctx, depth + 1",
+            string? indexExpr = null,
+            bool elemConverterParamIsNonNullableRef = false,
+            bool elemConverterReturnIsNullableRef = false)
         {
+            var nullMessageExpr = indexExpr is null
+                ? "\"Collection element was null\""
+                : "\"Element at index \" + " + indexExpr + " + \" was null, and the destination element type '" + elemFq + "' does not admit null.\"";
+
             if (conv is null)
             {
                 return nh switch
                 {
                     NullHandling.ThrowIfNull => item +
-                                                " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
+                                                " ?? throw new global::System.InvalidOperationException(" + nullMessageExpr + ")",
                     NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
                     _ => item
                 };
             }
 
-            // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
-            var extra = needsCtx ? ", ctx, depth + 1" : "";
+            // When the element converter is recursion-capable (under Preserve mode), thread the (ctx, depth) tail.
+            var extra = needsCtx ? ctxDepthArgs : "";
 
-            // Null-forgive a nullable-reference element into a synthesized helper's non-nullable parameter (the
-            // helper null-guards: null in, null out). The array fast path indexes `src[__i]` twice, and flow
-            // analysis does not track an indexer, so even the `is null ? null :` arm needs it.
-            var forgive = srcElemIsNullableRef && GeneratedNames.IsSynthesized(conv) ? "!" : "";
+            // Null-forgive a nullable-reference element into a non-nullable converter parameter. Kept on the
+            // `is null ? null :` arm too: several callers hand this method an expression rather than a local (see
+            // ElementExprReadsItemTwice), and flow analysis does not track an indexer across two reads. Round 29
+            // T0.2d gave the array fast path a local binding, which makes the `!` redundant THERE — it is left in
+            // place because removing it would move the foreach-form List/HashSet/immutable snapshots for a purely
+            // cosmetic gain.
+            //
+            // Round 29 T2.9: IsSynthesized alone was the defect. It is a PROXY for "the converter's parameter is
+            // non-nullable" and it is blind to a map method the USER declared — the very proxy 6fa7308 replaced on
+            // the member path (MapEmitter's needsBang reads ConverterParamIsNonNullableRef beside it) and never
+            // replaced here, so `List<Child?>` -> `List<ChildDto>` with a declared `ToDto` emitted `ToDto(__item)`
+            // bare: CS8604 inside the consumer's .g.cs, where no #pragma of theirs reaches. The second operand is
+            // the recovered fact, resolved from the user's own method signatures at the resolution site and
+            // handed down, because this method has no semantic model to ask. Same shape as the member path's
+            // needsBang, deliberately — one rule, two spellings would be the next drift.
+            var forgive = srcElemIsNullableRef && (GeneratedNames.IsSynthesized(conv) || elemConverterParamIsNonNullableRef) ? "!" : "";
+
+            // The result bang rides on Call so every arm below gets it — the lift's non-null arm, the
+            // ThrowIfNull unwrap and the bare call alike. `(T)Conv(x)!` parses as `(T)(Conv(x)!)`, which is what
+            // the cast on the lift arms needs.
+            var resultBang = elemConverterReturnIsNullableRef ? "!" : "";
 
             string Call(string arg)
             {
-                return conv + "(" + arg + extra + ")";
+                return conv + "(" + arg + extra + ")" + resultBang;
             }
 
             return nh switch
@@ -1311,8 +1449,12 @@ namespace DwarfMapper.Generator.Pipeline
                     "(" + item + ".HasValue ? (" + elemFq + ")" + Call(item + ".Value") + " : null)",
                 NullHandling.NullableProjectRef =>
                     "(" + item + " is null ? null : (" + elemFq + ")" + Call(item + forgive) + ")",
+                // The destination element's annotation forbids the null this arm preserves, so the null arm is
+                // null-forgiven — otherwise CS8601/CS8604 lands inside the generated file. Same lift otherwise.
+                NullHandling.NullableProjectRefForgiving =>
+                    "(" + item + " is null ? null! : (" + elemFq + ")" + Call(item + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(item +
-                                                 " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")"),
+                                                 " ?? throw new global::System.InvalidOperationException(" + nullMessageExpr + ")"),
                 NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),
                 _ => Call(item + forgive)
             };

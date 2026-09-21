@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-  # Both added for the NIGHTLY TIER — the `mutation` matrix (all five Stryker legs) and the `deep-test` job
+  # Both added for the NIGHTLY TIER — the `mutation` matrix (all six Stryker legs) and the `deep-test` job
   # (deep suite + coverage floors + ILVerify) — which is far too slow to gate a push; see each job's own
   # comment. Those are the ONLY jobs guarded to these two events; every other job keeps running exactly when
   # it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which is harmless
@@ -58,6 +58,13 @@ jobs:
                  "Update global.json AND the dotnet-version in every setup-dotnet step together."
             exit 1
           fi
+
+      # ILVerify at PUSH time, not only nightly. EmittedIlIsVerifiableTests compiles the golden feature
+      # corpus into one assembly and requires ZERO unverifiable methods — the maintainer's ruling that every
+      # method DwarfMapper emits is verifiable. A rule enforced only in a nightly job is a rule a push can
+      # break for a day, and this one is about what ships into a consumer's assembly. Same pinned version as
+      # the deep-test job, for the same reason: the tool computing a gate's verdict must not move under it.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
 
       # --locked-mode (round-22 S1): restore must resolve EXACTLY the committed packages.lock.json graphs
       # or fail NU1004 — the repeatable-restore proof. The flag here is self-documentation; the load-bearing
@@ -152,7 +159,7 @@ jobs:
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Mutation testing: ALL THREE legs, nightly ─────────────────────────────────────────────────────────
-  # One matrix, five configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
+  # One matrix, six configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
   # (stryker-config.json), the DOCUMENTATION PIPELINE (stryker-config.doctooling.json), the CODE FIXES
   # (stryker-config.codefixes.json) and the ROUND-27 EXTRACTED PIPELINE (stryker-config.pipeline.json). The runtime leg
   # ran here first (it previously ran in NO job at all — a config someone had to remember to invoke via
@@ -173,7 +180,18 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     strategy:
       # One leg failing its break threshold must NOT cancel the others mid-run: the whole point of the
       # nightly is five scored reports every night, and a cancelled leg leaves no report at all.
@@ -211,6 +229,13 @@ jobs:
           - leg: pipeline     # measured 37:00 (2026-08-27, 12 cores, 236 tested mutants)
             config: stryker-config.pipeline.json
             timeout: 350
+          # Round-29 testing-toolkit VERIFIERS. Added because DwarfMapper.Testing sat at 0 % mutation
+          # coverage while Phase 4 put 189 lines of consumer-facing verification code into it — a verifier
+          # that silently passes certifies a broken map. Scoped to the five verifier files, not the package:
+          # ObjectFactoryV2 and GraphOracleComparer are fixture machinery and are the named follow-on.
+          - leg: testing      # measured 20:18 (2026-09-09, 12 cores, 110 scoreable of 1,176 created)
+            config: stryker-config.testing.json
+            timeout: 200
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -314,7 +339,18 @@ jobs:
   deep-test:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # Sized from measurement + margin, NOT an aspirational cap: locally (12 cores) the deep suite is ~105 s,
     # coverage collection adds ~18 s, ReportGenerator ~15 s, ILVerify ~1 s, and the T8 benchmark smoke +
     # allocation exact-pin gate ~6:40 (measured twice, 6:36/6:44); restore+build ~3 min and the tool
@@ -500,6 +536,12 @@ jobs:
       # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
       # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
+      # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
+      # is absent -- 'a machine that cannot verify the IL cannot make this claim either'. Round 29 added the
+      # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
+      # stays loud; every job that can reach it gets the tool.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   codeql:
@@ -573,7 +615,18 @@ jobs:
   reproducible-build:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — this job has never run on a hosted runner (see the note at the top of
     # this file about the nightly tier being dormant until master carries it). Local Windows 12-core at
     # 81c4ace: one round of `git clean -xdf` + locked restore + pack of both packages = 22.0 s and 20.0 s
@@ -643,7 +696,18 @@ jobs:
   package-size:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — never run on a hosted runner. Local Windows 12-core at 81c4ace: locked
     # restore + pack of both packages = ~20 s with a warm NuGet cache. A ~4-core hosted runner with a cold
     # cache is dominated by restore (~2 min) and the analyzer-heavy Release build (~2 min), ~5 min with SDK
@@ -706,7 +770,18 @@ jobs:
         os: [ windows-latest, macos-latest ]
     runs-on: ${{ matrix.os }}
     # Nightly cron and manual dispatch only — never on push or pull_request.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — neither runner has ever run this. The local basis, measured 2026-08-22
     # on Windows (12 cores) at 81c4ace: whole-solution Release build 13 s warm, suite 56 s for 6,987 tests
     # with Category!=SurfaceMatrix (the matrix adds ~25 s, so ~81 s for the unfiltered run this leg does).
@@ -736,6 +811,12 @@ jobs:
                  "together."
             exit 1
           fi
+      # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
+      # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
+      # is absent -- 'a machine that cannot verify the IL cannot make this claim either'. Round 29 added the
+      # install to build-test only, so the three other jobs running the same filter went red the first time
+      # this PR reached CI. The rule stays loud; every job that can reach it gets the tool.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
       # --blame-hang: the H7-f runner-level backstop, same rationale as in build-test. It matters more
@@ -764,7 +845,18 @@ jobs:
   # its own churn into log noise on every PR while never being able to fail anything.
   preview-sdk-canary:
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     continue-on-error: true
     # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
     # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
@@ -803,6 +895,12 @@ jobs:
       # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
       # still LOADS and EMITS under the next major, and the matrix has its own job.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
+      # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
+      # is absent -- 'a machine that cannot verify the IL cannot make this claim either'. Round 29 added the
+      # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
+      # stays loud; every job that can reach it gets the tool.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
@@ -863,7 +961,18 @@ jobs:
     needs: deep-test
     # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
     # reader: this is a nightly leg, exactly like the job it consumes.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
+    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
+    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
+    # checks the nightly runs, before the merge rather than the night after it.
+    #
+    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
+    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
+    # reviewer is actually approving.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     # ESTIMATE, not a measurement — never run. An artifact download of a few hundred KB plus a node action
     # is ~1-2 min; 10 leaves room for a slow download without letting the leg idle.
     timeout-minutes: 10

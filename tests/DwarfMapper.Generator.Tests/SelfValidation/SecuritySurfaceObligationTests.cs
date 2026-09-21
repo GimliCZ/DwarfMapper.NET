@@ -73,8 +73,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // Sets the recursion bound — the guard against a cyclic graph exhausting the stack.
             if (props.Contains("MaxDepth")) { flags |= 4; }
 
-            // The one consumer-facing override of a compile-time memory-layout proof.
-            if (string.Equals(attr.Name, "ReinterpretAttribute", StringComparison.Ordinal)) { flags |= 2; }
+            // The two consumer-facing directives that turn a compile-time proof into a memory ACCESS pattern:
+            // [Reinterpret] overrides the layout proof and block-copies bytes; [MapDenseEnumKeys] replaces a
+            // hash lookup with a raw index into a fixed-size buffer, whose bound is a compile-time proof over
+            // the key enum's declared members. Both are named here rather than detected structurally — there is
+            // no property on either that says "this is a memory mechanism" — which is the limit this file's own
+            // docstring states.
+            if (string.Equals(attr.Name, "ReinterpretAttribute", StringComparison.Ordinal) ||
+                string.Equals(attr.Name, "MapDenseEnumKeysAttribute", StringComparison.Ordinal)) { flags |= 2; }
 
             return flags;
         }

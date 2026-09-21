@@ -68,6 +68,12 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///     The ceiling on cells the instrument cannot pose a question about. Measured, stated, and SHRINK-ONLY:
         ///     raising it is how a coverage hole grows back one cell at a time with nobody the wiser.
         /// </summary>
+        // Re-measured 2026-09-07, in the commit that WITHDREW the View endpoint: 47 -> 44. Phase 1 had
+        // raised it to 47 for the three bare option-bag cells the endpoint added; those cells are gone with
+        // it. The number is the measurement and not a restore of the pre-view value: the population was
+        // counted at 44 in this commit (temporarily lowering the ceiling to 11 and reading the count the
+        // ratchet printed), which is the same 44 as before because the endpoint's arrivals were the whole
+        // of the movement either way.
         private const int UnaskableCellCeiling = 44;
 
         /// <summary>
@@ -184,7 +190,13 @@ namespace DwarfMapper.Generator.Tests.Contracts
         private const int EmittedInvalidCodeCellCeiling = 0;
 
         /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
-        private const int UnhonouredButLoudCellCeiling = 14;
+        // Re-measured 2026-09-07, in the commit that WITHDREW the View endpoint: 16 -> 12, and this one
+        // does NOT return to its pre-view value of 14. 14 carried two of slack — the population under it
+        // measured 12, which task 1.x recorded as one of the round's "a number quoted against a different
+        // population" findings — and Phase 1's own note stated the rule that resolves it: set the ceiling to
+        // the measurement rather than keeping the slack. Measured at 12 in this commit by the same method as
+        // the ceiling above. It stays above AssertRatchet's ten-wide floor, so the ratchet still bites.
+        private const int UnhonouredButLoudCellCeiling = 12;
 
         /// <summary>
         ///     The ceiling on cells excused as structural for one option of a bag. Shrink-only.
@@ -211,6 +223,11 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         judgement was made here instead, in a commit that carries the measurement.
         ///     </para>
         /// </summary>
+        // Re-measured 2026-09-07, in the commit that WITHDREW the View endpoint: 19 -> 13. The six cells
+        // Phase 1 added were all [DwarfMapper]/[DwarfMapperDefaults] options describing CONSTRUCTION at an
+        // endpoint that constructed nothing; with the endpoint gone they have no cell to excuse. Measured at
+        // 13 in this commit, which is again the pre-view value because the endpoint's arrivals were the
+        // whole movement.
         private const int StructurallyExcusedCellCeiling = 13;
 
         /// <summary>
@@ -492,12 +509,25 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         change someone must look at, and a NEW cause is a slot that went missing wearing a verdict
         ///         that says nothing can be done about it.
         ///     </para>
+        ///     <para>
+        ///         Re-measured 2026-09-07 (round 29 T3.1): 68 -> 72, total 116 -> 120. [MapShare] is a method-level
+        ///         directive with a multiplicity axis, so it renders two cases at each of the two sites that
+        ///         declare no mapping method to carry it. Structural, and it moved for the same reason
+        ///         [Reinterpret]'s four cells are already in this count.
+        ///     </para>
+        ///     <para>
+        ///         Re-measured again 2026-09-07 (round 29 T3.2): 72 -> 78, total 120 -> 126. [MapDenseEnumKeys]
+        ///         is a method-level directive with a multiplicity axis AND a writable property, so it renders
+        ///         THREE cases — ctor(1), Offset=1, ×2 — at each of the two sites that declare no mapping
+        ///         method. Structural, for the third time; the only new information is that a property axis
+        ///         adds a case per value where [MapShare] had none.
+        ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
             ["registry-has-no-mapper-class"] = 48,
-            ["no-mapping-method"] = 68
+            ["no-mapping-method"] = 78
         };
 
         /// <summary>

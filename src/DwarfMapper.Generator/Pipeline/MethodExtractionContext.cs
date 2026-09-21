@@ -36,7 +36,13 @@ namespace DwarfMapper.Generator.Pipeline
             List<PairConstructor> PairConstructors,
             List<(ITypeSymbol Source, ITypeSymbol Target, bool Enabled)> PairNullSkips,
             List<(string Name, ITypeSymbol ParamType)> BeforeHookDefs,
-            List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> AfterHookDefs);
+            List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> AfterHookDefs,
+            // The [GenerateMap<S,T>] pairs the class DECLARES. Settled before this record is built
+            // (ExpandWrapperMaps is the last thing that adds to the list, and it runs earlier), which is what
+            // lets it sit here among the read-only facts. Round 29 T0.2c review fix 1 needed it: two of the
+            // pair-scoped directives are honoured only for a declared pair, so "is this pair customized?"
+            // cannot be answered without knowing which pairs are declared.
+            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> GenPairs);
 
         /// <summary>
         ///     The mapper's configuration, as read from its attributes. Every value is a class-level default; the

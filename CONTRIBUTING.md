@@ -25,6 +25,8 @@ dotnet test  DwarfMapper.NET.sln -c Release
 
 Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hooks` (heavier pre-release checks live in `scripts/housekeeping.ps1`).
 
+**Running the expensive CI tier on a pull request.** `mutation`, `deep-test`, `reproducible-build`, `package-size`, `cross-platform`, `preview-sdk-canary` and `bench-wall-time-alert` are nightly-only by default and show as *Skipped* on a PR — the mutation matrix alone budgets up to 350 minutes per leg across six legs. **Label the PR `full-ci` to run them all**, which is what a round-closing or release PR wants: the same checks the nightly runs, before the merge rather than the night after it. A label is used rather than `workflow_dispatch` because a dispatch runs against a branch, not against the merge result the reviewer is approving.
+
 ## Ground rules
 - Every source file starts with `// SPDX-License-Identifier: GPL-2.0-only`.
 - Builds are warning-clean (`TreatWarningsAsErrors`). Fix analyzer findings;

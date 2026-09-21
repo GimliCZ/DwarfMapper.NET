@@ -75,7 +75,7 @@ DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable me
 DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-payload generic
 DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
 DWARF069 | DwarfMapper | Error | MapConfigConflict
-DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-nullable target member
+DWARF070 | DwarfMapper | Warning | A nullable source is assigned to a non-nullable target member
 DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped
 DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)
 DWARF073 | DwarfMapper | Error | [MapProperty(StringFormat=)] is not applicable here
@@ -105,7 +105,13 @@ DWARF096 | DwarfMapper | Warning | Projection method was not generated
 DWARF097 | DwarfMapper | Warning | Mapping method was not generated
 DWARF098 | DwarfMapper | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use
 DWARF099 | DwarfMapper | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations
-DWARF100 | DwarfMapper | Info | Array pair narrowly missed the blittable fast path
+DWARF100 | DwarfMapper | Info | Array or span pair narrowly missed the blittable fast path
+DWARF101 | DwarfMapper | Info | Struct layout pads more than a quarter of its size
+DWARF103 | DwarfMapper | Info | Collection element could be a struct
+DWARF104 | DwarfMapper | Error | Invalid [MapShare] target
+DWARF105 | DwarfMapper | Error | Invalid [MapDenseEnumKeys] target
+DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
+DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

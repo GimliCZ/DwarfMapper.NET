@@ -31,7 +31,15 @@
     "",
     "2026-08-26 (round 27): the enum category was reworked to compare LIKE FOR LIKE, 53 -> 55 benchmarks. It previously pitted DwarfMapper's by-NAME mapping against competitors doing by-VALUE, which measures two different operations and flatters whichever one is cheaper. Now there are two categories: Enum_* is by-name (Dwarf, Mapperly configured with EnumMappingStrategy.ByName, AutoMapper) and EnumByValue_* is by-value (Dwarf opted in via [DwarfMapper(EnumStrategy = ByValue)], Mapperly and Mapster at their defaults). Net +2 rather than +3: Enum_Mapster moved into the by-value category rather than being duplicated, because Mapster has no by-name mode to configure. EnumByValue_Dwarf is pinned at 24 B/op, the same as its by-name twin - the strategy changes which comparison is fair, not what is allocated.",
     "",
-    "2026-08-23 (round 26, second addition): four NestedFill_* scenarios, 49 -> 53 benchmarks. A realistic graph mixing BOTH fill strategies in one map \u2014 reference-element Lines on the Add path, value-element Totals and per-line Quantities on the span fill. NumList isolates the fill strategy; this measures what is left of it beside the cost of allocating nested destination objects. Only the Dwarf row is pinned."
+    "2026-08-23 (round 26, second addition): four NestedFill_* scenarios, 49 -> 53 benchmarks. A realistic graph mixing BOTH fill strategies in one map \u2014 reference-element Lines on the Add path, value-element Totals and per-line Quantities on the span fill. NumList isolates the fill strategy; this measures what is left of it beside the cost of allocating nested destination objects. Only the Dwarf row is pinned.",
+    "",
+    "2026-09-03 (round 29, T0.2): two SpanBlit_* scenarios added, 55 -> 57 benchmarks. SpanBlit_Dwarf is the zero-alloc span map void Map(ReadOnlySpan<Vec3Src> src, Span<Vec3Dst> dst) taking the BlittableProof block copy (MemoryMarshal.Cast + CopyTo) into a preallocated destination array; SpanBlit_Scalar is its [StructLayout(Auto)] twin (Vec3Ren), which keeps the per-element loop \u2014 same pair-selection discipline as BlitRatio. Both pin at 0 B/op: every element is a value-type struct copied into a preallocated destination array, so neither path allocates anything, unlike the array/list blit rows above which allocate the destination array itself.",
+    "",
+    "2026-09-07 (round 29, Phase 1 WITHDRAWN): the two View_* scenarios were removed with the [GenerateView] endpoint, 59 -> 57 benchmarks, and the View_Dwarf (0 B) and View_Map_Dwarf (48,000 B) pins went with them. The endpoint was withdrawn by owner ruling for its FAILURE MODE, not for a defect - a view evaluates each member on access, so a source mutated between two reads yields a record that never existed at any instant (Issues/round29/WITHDRAWN-generated-views.md). RE-MEASURED rather than restored to the pre-view 57: the smoke was re-run in this commit and reported 57/57 benchmarks executed with all 22 remaining pins exact-matched, so this 57 is a count taken AFTER the removal, not the number that happened to be there before it.",
+    "",
+    "2026-09-07 (round 29, T3.1): four share scenarios added, 57 -> 61 benchmarks, and they are the pins that PROVE [MapShare] rather than merely describe it. Two pairs, each a share and its copying twin over ONE payload draw, so the delta is the container the share does not build and nothing else — the elements are reference-copied on both arms. MapShare_* is the FORCED mode: IReadOnlyList<ShBadge> on both sides, which the immutability proof refuses on principle (an interface is not a guarantee), so only [MapShare] can share it. 24 B/op against the twin's 8,080 — the 24 is the destination object itself and the collection now costs NOTHING, while the twin pays 32 B for a List<T> plus 8,024 for its 1000-element backing array. AutoShare_* is the AUTOMATIC mode: identical ImmutableArray<T> storage on both pairs, differing ONLY in whether the element type is provable (ShBadge is sealed and get-only; ShLoose has a setter). 24 B/op against 48. That 24-byte gap is the whole automatic saving on this shape and it is worth stating exactly, because it CORRECTS an expectation: ImmutableArray.CreateRange<T>(IEnumerable<T>) already reuses the backing array through its IImmutableArray fast path, so the copying helper never allocated the array — it allocated the BOX its IEnumerable<T> parameter forces. The automatic path removes a box and a call, not a collection; the forced path removes the collection. Both are real, they are two different sizes, and the pins are what keep the difference honest.",
+    "",
+    "2026-09-07 (round 29, T3.2): two DenseEnum_* scenarios added, 61 -> 63 benchmarks, and they are what PROVES [MapDenseEnumKeys] rather than describes it. One payload draw (RealisticPayloads.EnumMap<DenseOre>(16), every declared member present) handed to both arms; the destination is a CLASS on both, deliberately, because the plan's headline 0.09x (Issues/round29/plan3-results.md, E_counts) came from a probe that ALSO moved the destination from a class array to a struct array and therefore measures two changes at once. Here the only difference between the arms is what the MEMBER is. DenseEnum_Dwarf pins at 40 B/op: the whole destination object, 16 header + 4 Id + 16 for the [InlineArray(4)] of int, rounded to 40 - the four slots live INSIDE it and cost no allocation of their own. DenseEnum_Dict_Dwarf pins at 384 B/op, which reconciles exactly and was checked entry by entry against a standalone probe on this machine: 32 for the destination object + 80 for the Dictionary its `= new()` field initializer builds and the mapper then replaces + 80 for the mapped Dictionary + 56 for its int[7] bucket array + 136 for its Entry[7] (16 B per <enum,int> entry, prime 7 for a capacity of 4). 0.104x, and the honest reading is stated with it: 80 of the 344-byte gap is that discarded field initializer, which is idiomatic on a Dictionary-typed DTO and impossible on an inline-array one, so the directive's OWN contribution is 40 against 304 (0.13x). Both numbers are one object per operation - N=1 rows, not the plan's N=1,000 sweep - so they measure the directive's allocation delta and are not a throughput figure."
   ],
   "measuredWith": {
     "sdk": "10.0.101",
@@ -41,7 +49,7 @@
     "tree": "d7b60cd4ae425dfc735b66622c50f5e8f0babfdb plus the T8 smoke config committed together with this file",
     "job": "ShortRun via DWARF_BENCH_SMOKE=1, N=1000, seed RealisticPayloads.Seed=20260724"
   },
-  "totalBenchmarks": 55,
+  "totalBenchmarks": 63,
   "pins": {
     "Flat_Dwarf": 40,
     "Nested_Dwarf": 112,
@@ -62,7 +70,15 @@
     "BlitRatio_List_Fast": 12112,
     "BlitRatio_List_Scalar": 16112,
     "NumList_Dwarf": 8112,
-    "NestedFill_Dwarf": 8112
+    "NestedFill_Dwarf": 8112,
+    "SpanBlit_Dwarf": 0,
+    "SpanBlit_Scalar": 0,
+    "MapShare_Dwarf": 24,
+    "MapShare_Copy_Dwarf": 8080,
+    "AutoShare_Dwarf": 24,
+    "AutoShare_Copy_Dwarf": 48,
+    "DenseEnum_Dwarf": 40,
+    "DenseEnum_Dict_Dwarf": 384
   },
   "unstable": {}
 }

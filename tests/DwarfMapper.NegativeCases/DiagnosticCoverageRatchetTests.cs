@@ -33,13 +33,14 @@ namespace DwarfMapper.NegativeCases
     public class DiagnosticCoverageRatchetTests
     {
         /// <summary>
-        ///     The exact size of <see cref="PredatesThisProject" />. Measured 2026-08-23 (65 entries: the 78 ids
-        ///     of 2026-08-12 minus the thirteen retired by gained cases and deletions since — the latest being
-        ///     DWARF028, which gained Cases/DWARF096_ProjectionMethodNotGenerated.cs). Shrink-only: lower it in
-        ///     the same commit as the entry it loses, and never raise it — a raise would be the hatch this pin
-        ///     exists to close.
+        ///     The exact size of <see cref="PredatesThisProject" />. Measured 2026-09-06 (63 entries: the 78 ids
+        ///     of 2026-08-12 minus the fifteen retired by gained cases and deletions since — the latest being
+        ///     DWARF070, which gained Cases/DWARF070_NullableMappingParameter.cs when round 29 task 2.7 taught it
+        ///     to fire for a mapping PARAMETER as well as a source member). Shrink-only: lower it in the same
+        ///     commit as the entry it loses, and never raise it — a raise would be the hatch this pin exists to
+        ///     close.
         /// </summary>
-        private const int PredatesThisProjectPin = 64;
+        private const int PredatesThisProjectPin = 63;
 
         /// <summary>
         ///     The highest DWARF id that existed on 2026-08-12, compared ordinally (the ids are fixed-width, and
@@ -93,7 +94,11 @@ namespace DwarfMapper.NegativeCases
             // names actually silences it. That pairing is why the exemption could be lifted — the remedy
             // was inert until the ignore-source set was threaded into the shadow check.
             "DWARF065", "DWARF066", "DWARF067",
-            "DWARF068", "DWARF069", "DWARF070", "DWARF071",
+            // DWARF070 removed: round 29 task 2.7 fix round 1 gave it a case, because it stopped being a
+            // statement about a source MEMBER only. It now fires for a Phase 5 mapping PARAMETER too, and the
+            // case pins the wording that shape needs — the two remedies the member spelling offers cannot
+            // reach a parameter, so a message true of one is false of the other.
+            "DWARF068", "DWARF069", "DWARF071",
             "DWARF073", "DWARF074", "DWARF075", "DWARF076",
             "DWARF077"
         ];

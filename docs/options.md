@@ -97,6 +97,8 @@ Put these on the mapping method (or the class, where noted).
 | `[RoundTrip]` | Emit a fuzz-driven round-trip verifier (needs `DwarfMapper.Testing`). |
 | `[BeforeMap]` / `[AfterMap]` | Lifecycle hooks (validate the source / fill computed or ignored members). |
 | `[Reinterpret("Member")]` | Force the blittable/SIMD bulk-copy fast-path on an array member. |
+| `[MapShare("Member")]` | **Share the source reference** for that member instead of copying it — for a shape the automatic immutability proof cannot see through (an interface such as `IReadOnlyList<T>`, an unsealed class, a type from an assembly the proof cannot follow). You usually do **not** need this: a provably immutable member is shared automatically, with no attribute. Provably MUTABLE (a settable member, a writable field, an array anywhere in the reachable graph) → `DWARF104`, in this mode too: no assertion makes a settable member unsettable. Read at the create-map and update-into endpoints; written elsewhere → `DWARF090`. |
+| `[MapDenseEnumKeys("Member")]` / `[MapDenseEnumKeys("Member", Offset = n)]` | Fill an `[InlineArray]` destination member from an enum-keyed dictionary **by index** — one slot per declared enum member, so the entries live inside the destination object and the dictionary is never built. `Offset` shifts a non-zero-based enum onto slot 0. A key that would index outside the array → `DWARF105`. Read at the create-map and update-into endpoints (the two that resolve members one at a time); written elsewhere → `DWARF092`. |
 | `[AutoNest(false)]` | Disable auto-nesting for a single method even when the class enables it. |
 | `[DwarfMapperConstructor]` | Disambiguate which constructor to use on an immutable target. |
 

@@ -36,13 +36,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // A test asserts the generated output is byte-identical with and without it, which is a better guarantee
         // than a pinned snapshot would be. Its behaviour is DWARF084/085, covered by RestatesBaseTests.
         //
-        // Baselines: 35 public attribute types, 16 public enum
+        // Baselines: 37 public attribute types (35 -> 36 in round 29 T3.1, [MapShare]; 36 -> 37 in T3.2,
+        // [MapDenseEnumKeys]; the golden feature cases "MapShare" and "MapDenseEnumKeys" were added in the same
+        // commits, which is what this ratchet asks for), 16 public enum
         // values (8 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
         // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
         // it cannot force a specific new case the way true derivation would, but it forces a human to notice
         // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
         // going stale next to an attribute or enum value nobody golden-tested.
-        private const int BaselineAttributeTypeCount = 35;
+        private const int BaselineAttributeTypeCount = 37;
         private const int BaselineEnumValueCount = 16;
 
         // A real \n ESCAPE, anywhere in the line. The negative lookbehind excludes `\\n` (an escaped backslash then

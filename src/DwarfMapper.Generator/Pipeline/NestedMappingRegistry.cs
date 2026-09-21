@@ -55,6 +55,14 @@ namespace DwarfMapper.Generator.Pipeline
         // The method name currently being body-resolved (set by SetCurrentPair).
         private string? _currentPair;
 
+        // ── Is this pair CUSTOMIZED? (round 29, T0.2c) ──────────────────────────────
+        // The rule lives in MapperExtractor (it reads the mapper's pair-scoped attributes, whose types are
+        // private to it); the registry carries it because the registry is the thing that NAMES a pair's helper,
+        // and "customized" is precisely what gets baked into the body behind that name. Extract-scoped, like the
+        // closures in _ctxUpgradeCandidates, so capturing ITypeSymbols is safe. Null until wired, and then the
+        // answer is "no" — the same verdict a mapper with no pair-scoped attributes produces.
+        private Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?>? _pairIsCustomized;
+
         // Cached result; null until ComputeRecursionCapability() is called.
         private HashSet<string>? _recursionCapable;
 
@@ -110,6 +118,40 @@ namespace DwarfMapper.Generator.Pipeline
         public void ClearCurrentPair()
         {
             _currentPair = null;
+        }
+
+        /// <summary>
+        ///     Teaches the registry which (src, tgt) pairs the mapper CUSTOMIZES — a pair-scoped
+        ///     <c>[MapIgnore&lt;T&gt;]</c>/<c>[MapProperty&lt;S,T&gt;]</c>/<c>[MapValue&lt;T&gt;]</c>, or a
+        ///     <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook matching the pair. Wired once per extraction, from the
+        ///     one site where the mapper's declarations are known.
+        /// </summary>
+        public void SetPairCustomizationRule(Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?> rule)
+        {
+            _pairIsCustomized = rule;
+        }
+
+        /// <summary>
+        ///     True when the helper this registry would hand out for <paramref name="src" />→<paramref name="tgt" />
+        ///     carries customization, so no fast path may bypass it. See <see cref="SetPairCustomizationRule" />.
+        /// </summary>
+        public bool PairIsCustomized(ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return PairCustomization(src, tgt) is not null;
+        }
+
+        /// <summary>
+        ///     How to NAME the directive or hook that customizes <paramref name="src" />→<paramref name="tgt" /> —
+        ///     a complete noun phrase (<c>"the pair-scoped [MapIgnore&lt;T&gt;] declared for 'A' → 'B'"</c>,
+        ///     <c>"the [AfterMap] hook matching 'A' → 'B'"</c>) and the gerund that reads correctly for it — or
+        ///     <see langword="null" /> when nothing does. Round 29 T0.2d: DWARF106 has to name what
+        ///     <c>[Reinterpret]</c> is overriding, and the answer must be the one this registry's own gate uses —
+        ///     so the rule yields the phrase and <see cref="PairIsCustomized" /> is the boolean derived from it,
+        ///     rather than a second predicate that could drift from the first.
+        /// </summary>
+        public (string What, string Verb)? PairCustomization(ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return _pairIsCustomized?.Invoke(src, tgt);
         }
 
         /// <summary>

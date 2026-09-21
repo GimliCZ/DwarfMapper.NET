@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
+using System.Runtime.CompilerServices;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -39,7 +41,9 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (req.AutoNest && req.NestedRegistry is not null && req.TgtType is INamedTypeSymbol namedTgt)
             {
-                if (IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt, req.AllowInterfaceSrc))
+                // AutoNestWouldClaim is this same condition, asked by the blit gate one arm earlier; the two
+                // are one method so they cannot drift apart (round 29 T0.2c).
+                if (AutoNestWouldClaim(req))
                 {
                     // DWARF071: the source is a CONCRETE class that other types derive from. It maps fine, but only
                     // the declared members are mapped — a derived instance at run time loses everything declared
@@ -311,6 +315,643 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when resolving the collection's ELEMENT pair would land on a conversion the USER wrote — a
+        ///     declared method the auto-candidate arm adopts, or the user's own <c>implicit</c>/<c>explicit
+        ///     operator</c>. Asked by <see cref="HandleCollectionConversion" /> before the blit proofs, which is
+        ///     several arms before either of those arms actually runs.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Reads the ELEMENT pair through <c>req with</c>, so the two questions below are asked of exactly
+        ///         the request the recursive <c>TryResolveConversion</c> further down will build: same methods,
+        ///         same reservations, same auto-nest, same modes. <c>UseMethod</c> is cleared and
+        ///         <c>AllowInterfaceSrc</c> reset to <see langword="false" /> because that recursion passes
+        ///         neither — a <c>Use=</c> names the converter for the COLLECTION member, never for its elements.
+        ///     </para>
+        ///     <para>
+        ///         The operator question is asked about PRECEDENCE, not existence: the user-operator arm is the
+        ///         LAST in the chain, so an operator only becomes the resolver's answer when the auto-nest arm
+        ///         declines the pair (e.g. under <c>[AutoNest(false)]</c>). With auto-nest on, the element pair
+        ///         resolves to a synthesized <c>__DwarfMap_Obj_*</c> and the operator is not called on the scalar
+        ///         path either — so the blit is not bypassing anything and stays. This mirrors the span gate,
+        ///         which reaches the same conclusion from the other side by testing the verdict it already has
+        ///         for <c>GeneratedNames.IsUserConv</c>.
+        ///     </para>
+        ///     <para>
+        ///         A pair-scoped <c>[MapConstructor&lt;S,T&gt;]</c> is deliberately NOT this question's business,
+        ///         and the first draft of this gate got that wrong. It looked covered here: the factory is
+        ///         honoured only for a pair some <c>[GenerateMap&lt;S,T&gt;]</c> declares, and a declared pair
+        ///         contributes a candidate method, so the search below finds it. But under Preserve and SetNull
+        ///         <see cref="PrefersSynthesizedObjectMap" /> hands that candidate BACK — a public method cannot
+        ///         accept the shared <c>DwarfRefContext</c> — so this method correctly answers "no user
+        ///         conversion" while the synthesized helper the pair actually routes through is the very thing
+        ///         carrying the factory. It is asked with the other pair-scoped directives instead, in
+        ///         <c>ElementPairHasCustomization</c>, which is where "the helper for this pair is customized"
+        ///         belongs. Pinned for all three reference modes. A pair-scoped
+        ///         <c>[MapNullSkip&lt;S,T&gt;]</c> genuinely is byte-equivalent on a pair the blit proof accepted
+        ///         — an unmanaged struct pair has no nullable member to skip — and is consulted by neither; also
+        ///         pinned.
+        ///     </para>
+        /// </remarks>
+        private static bool ElementPairResolvesToUserConversion(
+            ConversionRequest req,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            var elemReq = req with
+            {
+                SrcType = srcElem,
+                TgtType = tgtElem,
+                UseMethod = null,
+                AllowInterfaceSrc = false
+            };
+
+            // Ambiguity counts as "the user wrote a conversion for this pair": the resolver refuses it with
+            // DWARF013, and a block copy that quietly resolved the ambiguity by ignoring both candidates would
+            // be the loudest possible bypass.
+            FindUserDeclaredConversion(elemReq, out var found, out var ambiguous);
+            if (ambiguous || (found is not null && !PrefersSynthesizedObjectMap(elemReq, found)))
+            {
+                return true;
+            }
+
+            return !AutoNestWouldClaim(elemReq) &&
+                   UserConversionConverter.Exists(req.Compilation, srcElem, tgtElem);
+        }
+
+        /// <summary>
+        ///     Reports <c>DWARF106</c> when <c>[Reinterpret]</c> on <paramref name="memberName" /> takes the block
+        ///     copy in place of something the element pair would otherwise have been given: a conversion the user
+        ///     wrote, or a pair-scoped directive / hook the element helper would have carried.
+        /// </summary>
+        /// <remarks>
+        ///     Round 29 T0.2c review fix 3. Asks the SAME questions the array/list gate asks — through the same
+        ///     <see cref="ElementPairResolvesToUserConversion" /> and the same
+        ///     <c>NestedMappingRegistry.PairCustomization</c> the gate's <c>PairIsCustomized</c> is derived from
+        ///     — so the diagnostic can never disagree with the gate about whether there was anything there to
+        ///     bypass. It reports what the gate would have honoured and <c>[Reinterpret]</c> overrides; when the
+        ///     gate finds nothing, there is no conflict and nothing is said. The element request is built with the
+        ///     same values the member-level resolution below uses, for the same reason: the question must be the
+        ///     one the resolver would have answered.
+        ///     <para>
+        ///         Round 29 T0.2d widened it. The original returned early unless a user CONVERSION resolved, so
+        ///         <c>[Reinterpret]</c> overriding a pair-scoped <c>[MapIgnore&lt;T&gt;]</c> /
+        ///         <c>[MapProperty&lt;S,T&gt;]</c> / <c>[MapValue&lt;T&gt;]</c> / <c>[MapConstructor&lt;S,T&gt;]</c>
+        ///         or a <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook was silent — the same intentional bypass, the
+        ///         same invisible consequence. One id, two message shapes; the conversion is reported first when
+        ///         both are present, because that is the arm the gate answers first.
+        ///     </para>
+        /// </remarks>
+        private static void ReportReinterpretBypass(
+            MemberRequest req,
+            MemberLookups lookups,
+            MemberAccumulators acc,
+            string memberName,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            var probe = new ConversionRequest(req.Compilation,
+                srcElem,
+                tgtElem,
+                null,
+                req.AllMethods,
+                req.AutoCandidates,
+                req.EnumPolicy,
+                req.NullStrategy,
+                req.Location,
+                memberName,
+                req.Options.AutoNest,
+                req.NestedRegistry,
+                req.Options.NullAsNull,
+                req.Options.IsPreserve,
+                false,
+                req.Options.IsSetNull,
+                req.Options.ImplicitConversions,
+                lookups.ReservedConverters);
+
+            string bypassed;
+            string verb;
+            if (ElementPairResolvesToUserConversion(probe, srcElem, tgtElem))
+            {
+                // Name the thing that is not being called. A declared method is named directly; an operator has
+                // no name a user could grep for, so it is described by the pair it converts between.
+                FindUserDeclaredConversion(probe, out var found, out _);
+                bypassed = found is not null
+                    ? $"the declared conversion method '{found}'"
+                    : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
+                verb = "calling";
+            }
+            else
+            {
+                // The directive shape. A pair-scoped directive or hook has no single symbol to name, so the
+                // phrase comes from the customization rule itself — the only place that knows which kind matched
+                // and therefore whether it was DECLARED FOR this pair (an attribute) or MATCHED TO it by
+                // implicit conversion (a hook), and which verb reads correctly for it.
+                if (req.NestedRegistry?.PairCustomization(srcElem, tgtElem) is not { } customization)
+                {
+                    return;
+                }
+
+                bypassed = customization.What;
+                verb = customization.Verb;
+            }
+
+            // "the block copy fills '<member>'" rather than "it is not called for its elements": every pronoun
+            // in the old frame bound to the bypassed thing rather than to the member, which is the one noun a
+            // reader needs to act on. The member is named three times on purpose — it is what they go and edit.
+            acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretBypassesConversion,
+                req.Location,
+                $"[Reinterpret] on '{memberName}' takes precedence over {bypassed}, so the block copy fills " +
+                $"'{memberName}' without {verb} it; remove [Reinterpret] from '{memberName}' to use it instead",
+                MemberName: memberName));
+        }
+
+        /// <summary>
+        ///     Reports <c>DWARF101</c> when <paramref name="element" /> — a struct on one side of a mapped
+        ///     collection — wastes a quarter or more of its bytes on alignment padding, naming the field order
+        ///     that packs it. Silent for anything <see cref="LayoutHygiene.Measure" /> refuses to measure, which
+        ///     includes every struct the consumer does not declare.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 29, <c>T0.3</c>. Called for BOTH element types, and once per struct TYPE rather than once
+        ///         per member. The two are connected: reporting only the destination would be the tidier rule and
+        ///         the wrong one, because a pair that blits today is layout-identical, and a consumer who reorders
+        ///         one side alone breaks that identity and loses the block copy in silence — <c>DWARF100</c> would
+        ///         not say so either, since the two field lists no longer line up positionally at all. Both sides
+        ///         are named so the remedy is applied to both. An identity pair (<c>V[] → V[]</c>) collapses to
+        ///         one report through the dedupe below rather than through a special case.
+        ///     </para>
+        ///     <para>
+        ///         The report is anchored on the TYPE's declaration, not on the member that reached it. The
+        ///         message asks the consumer to reorder that type's fields, so that is where the squiggle has to
+        ///         be for the mandate to hold — "the exact location" is the line they will edit. It also makes
+        ///         once-per-type structural rather than merely tidy: two members of one padded type now produce
+        ///         diagnostics identical in descriptor, location AND text, so dropping the second cannot be
+        ///         dropping information, and the surviving one no longer depends on which member happened to be
+        ///         declared first. The dedupe below is still what performs the drop — a scan of the sink for the
+        ///         same text — and the message stays type-only for it: the struct, its numbers and its field
+        ///         order, and nothing about the member. The sink is the mapper class's own diagnostic list, so
+        ///         "once" means once per mapper class; a probe resolving into a throwaway list (the flatten and
+        ///         hetero leaf probes) cannot see it, which is the one gap in the rule and is bounded by those
+        ///         probes' own scope.
+        ///     </para>
+        /// </remarks>
+        private static void ReportPaddedElementStruct(
+            ConversionRequest req,
+            List<DiagnosticInfo> diagnostics,
+            ITypeSymbol element)
+        {
+            if (LayoutHygiene.Measure(element) is not { } layout || !LayoutHygiene.WastesAQuarter(layout))
+            {
+                return;
+            }
+
+            // A struct ANOTHER generator emitted passes every measurement test and fails the only one that
+            // matters at a report: its field order is not the consumer's to change, and a diagnostic raised
+            // inside a .g.cs is one they cannot suppress either — the shape this project has already been bitten
+            // by (GeneratedCodeIsWarningFreeTests exists for the emission side of it). The refusal lives HERE
+            // rather than in Measure on purpose: a generated struct still HAS a size, and Task 2.1 reads that
+            // size for a threshold which asks the consumer to edit nothing. Measurability and actionability are
+            // different questions, so they are asked in different places.
+            foreach (var declaration in element.DeclaringSyntaxReferences)
+                if (GeneratedSourceExtensions.IsGeneratorAuthored(declaration.SyntaxTree))
+                {
+                    return;
+                }
+
+            // Measure has already required an in-source declaration (IsSourceSequential refuses a metadata
+            // struct), so this location exists whenever a layout came back. LocationInfo.From can still decline
+            // a span it cannot map onto a live IDE snapshot, and the member's own location is a better answer
+            // there than none at all.
+            var declared = element.Locations.FirstOrDefault(l => l.IsInSource);
+            var location = (declared is null ? null : LocationInfo.From(declared)) ?? req.Location;
+
+            var message =
+                $"'{element.ToDisplayString()}' is {layout.Size.ToString(CultureInfo.InvariantCulture)} bytes with " +
+                $"{layout.Padding.ToString(CultureInfo.InvariantCulture)} bytes of padding; declaring its fields as " +
+                $"{layout.PackedOrderText} makes it {layout.PackedSize.ToString(CultureInfo.InvariantCulture)} bytes " +
+                "— smaller arrays, and a layout-identical twin can take the blit";
+
+            foreach (var reported in diagnostics)
+                if (ReferenceEquals(reported.Descriptor, DiagnosticDescriptors.StructLayoutPadding) &&
+                    string.Equals(reported.MessageArg, message, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+            // No MemberName, unlike its neighbours: that property bag entry is what a code fix reads to find
+            // the member it must edit, and this diagnostic has no member to edit — the remedy is on the type,
+            // and whichever member reached it first is an accident of declaration order. Handing a future fix
+            // an arbitrary member would be worse than handing it nothing.
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StructLayoutPadding, location, message));
+        }
+
+        /// <summary>
+        ///     The transfer-model facts for one compilation — which types are derived from, and which are EF
+        ///     entities — gathered ONCE and handed to <see cref="TransferModelShape.Classify(INamedTypeSymbol, Compilation, TransferModelShape.CompilationFacts)" />
+        ///     so the predicate stays pure.
+        /// </summary>
+        /// <remarks>
+        ///     The brief for <c>T2.2</c> says "compute them once per compilation and pass them in", and this is
+        ///     the shape of that in a chain whose entry point (<c>TryResolveConversion</c>) is called once per
+        ///     MEMBER from a dozen sites: gathering at the entry point would sweep the assembly per member, and
+        ///     threading the facts down from every caller would put a parameter nobody else reads through all of
+        ///     them. Keyed by a <see cref="ConditionalWeakTable{TKey,TValue}" />, exactly as
+        ///     <c>BaseTypesByCompilation</c> is a few files over and for the same reason: the entry (and the
+        ///     symbols it holds) dies with the compilation, where a static dictionary in a long-lived generator
+        ///     host would pin symbols from every compilation it ever saw.
+        ///     <para>
+        ///         Called LAST in the gate below, after every cheap question has already been answered, so a
+        ///         compilation with no candidate pair in it never pays for the sweep at all.
+        ///     </para>
+        /// </remarks>
+        private static readonly ConditionalWeakTable<Compilation, TransferModelShape.CompilationFacts>
+            TransferModelFactsByCompilation = new();
+
+        private static TransferModelShape.CompilationFacts TransferModelFacts(Compilation compilation)
+        {
+            return TransferModelFactsByCompilation.GetValue(compilation,
+                static c => TransferModelShape.CompilationFacts.Gather(c));
+        }
+
+        /// <summary>
+        ///     Reports <c>DWARF103</c> when a mapped collection builds one CLASS element per item and that
+        ///     element type is transfer-model shaped — i.e. it could be a <c>readonly record struct</c>, which
+        ///     would make the whole collection one allocation instead of one per element.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>The site.</b> After the element pair has RESOLVED, and before the collection helper is
+        ///         synthesized. Resolution is what tells this apart from every neighbouring shape without
+        ///         re-deriving anything: <paramref name="elemConv" /> names what will actually build each
+        ///         element. The blit branches above cannot swallow it — every one of them requires an unmanaged
+        ///         struct pair, and this speaks only about classes — and the element recursion below has already
+        ///         reported its own refusals, so a pair that got here is a pair that maps.
+        ///     </para>
+        ///     <para>
+        ///         <b>"This generator builds the element" is the whole gate</b>, and the obvious rule — the one
+        ///         the blit gate above uses, "no user-declared conversion for the element pair" — is wrong here.
+        ///         The shape the research measured is <c>partial List&lt;OrderDto&gt; Map(List&lt;Order&gt;)</c>
+        ///         beside <c>partial OrderDto Map(Order)</c>, whose element resolves to that SIBLING PARTIAL
+        ///         METHOD; it counts as a user conversion to the blit gate (the blit would be bypassing a call)
+        ///         and it is this generator's own emitted body here. So the question asked is which of the two
+        ///         it is: a synthesized object map, or an auto-candidate whose signature IS this element pair —
+        ///         and <c>AutoCandidates</c> holds partial DEFINITIONS only (<c>CollectMapperMethods</c>) plus
+        ///         the <c>[GenerateMap&lt;S,T&gt;]</c> pairs, so everything in it is a body the generator
+        ///         writes. A hand-written converter, a conversion operator's shim and an identity copy (nothing
+        ///         is allocated per element at all) are none of those, and are silent.
+        ///     </para>
+        ///     <para>
+        ///         <b>Three refusals the classifier cannot make</b>, because they are about the REPORT rather
+        ///         than the shape. A pair-scoped directive or hook is honoured through the same
+        ///         <c>NestedMappingRegistry.PairCustomization</c> the blit gate reads: an <c>[AfterMap]</c> that
+        ///         mutates the target is a compile error or a lost write once the target is a value type, which
+        ///         is the silent semantic change this project refuses. Preserve and SetNull are refused because
+        ///         reference identity is the point of those modes and a value type has none. And a DTO another
+        ///         generator emitted is refused for <see cref="ReportPaddedElementStruct" />'s reason: the
+        ///         consumer cannot rewrite a declaration they did not write — asked of the SOURCE too, though
+        ///         there it costs only the block-copy clause, since the target is still theirs to change and
+        ///         that is where the allocation goes.
+        ///     </para>
+        ///     <para>
+        ///         <b>Once per element PAIR</b>, through the same message-text dedupe as <c>DWARF101</c> — the
+        ///         message names the pair, its size and its remedy and nothing about the member it was reached
+        ///         through, so a second member mapping the same pair produces an identical string and drops. The
+        ///         sink is the mapper class's own diagnostic list, so "once" is once per mapper class. The
+        ///         location is the MAPPING site rather than the type: the cost is paid where the collection is,
+        ///         a type-level rule would fire on every DTO in a solution, and that is the trade the research
+        ///         made explicitly. <c>MemberName</c> is left off for <see cref="ReportPaddedElementStruct" />'s
+        ///         reason too — the remedy edits the type, and whichever member reached it first is an accident
+        ///         of declaration order.
+        ///     </para>
+        /// </remarks>
+        private static void ReportTransferModelElement(
+            ConversionRequest req,
+            List<DiagnosticInfo> diagnostics,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            string? elemConv)
+        {
+            // Reference identity is the point of these two modes: Preserve rebuilds the source's topology and
+            // SetNull writes null into a back-edge. A value type has no identity to preserve and no field that
+            // can hold that null, so the suggestion would undo what the mapper was configured for.
+            if (req.IsPreserve || req.IsSetNull)
+            {
+                return;
+            }
+
+            // Class → class. The classifier refuses a value-type target on its own, so only the SOURCE side is
+            // asked here — "one allocation per element" is a claim about what the source loop produces.
+            if (srcElem.TypeKind != TypeKind.Class || tgtElem is not INamedTypeSymbol { TypeKind: TypeKind.Class } target)
+            {
+                return;
+            }
+
+            if (!ElementIsBuiltByGeneratedCode(req, srcElem, tgtElem, elemConv))
+            {
+                return;
+            }
+
+            // A directive or hook declared for this pair survives the rewrite only by accident: a [BeforeMap]/
+            // [AfterMap] taking the target by value writes into a copy once the target is a struct. Asked
+            // through the registry's own rule, so this and the blit gate cannot disagree about what customizes
+            // a pair.
+            if (req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true)
+            {
+                return;
+            }
+
+            if (IsGeneratorAuthored(target))
+            {
+                return;
+            }
+
+            var facts = TransferModelFacts(req.Compilation);
+
+            // The list is the models the target INLINES, transitively — the ones whose own struct size is
+            // already inside the number printed below. T2.3's code fix rewrites them with the root, in one
+            // solution change, which is what keeps that number true.
+            var inlined = new List<INamedTypeSymbol>();
+            var verdict = TransferModelShape.Classify(target, req.Compilation, facts, inlined);
+            if (!verdict.IsShaped)
+            {
+                return;
+            }
+
+            // A nested model in a .g.cs takes the whole report down, and only this one is worth stating twice:
+            // the target's own .g.cs check above is about a REMEDY the consumer cannot apply, and this is about
+            // a SIZE that would be wrong if they applied it anyway. An inlined model the fix cannot rewrite
+            // stays a class, so the member stays a reference, so the bytes printed here describe a type nobody
+            // can produce. Silence is the only honest answer.
+            foreach (var model in inlined)
+                if (IsGeneratorAuthored(model))
+                {
+                    return;
+                }
+
+            // The SOURCE is classified too, and only for the block-copy clause. It is asked last, after the
+            // target's own verdict has already earned the report, so a pair that says nothing never pays for
+            // it — and it is asked at all because the clause advises converting the source, which no other
+            // rule in this method has checked. An unshaped source still reports; it just hears nothing about
+            // its own type. See TransferModelElementMessage's remarks.
+            //
+            // A source in a .g.cs is refused here rather than by the classifier, and only for the CLAUSE: the
+            // consumer cannot rewrite a declaration they did not write, which is the same question
+            // ReportPaddedElementStruct asks and the same one asked of the target above. The diagnostic still
+            // fires — the target is theirs to change, and that is where the allocation goes (fix round 2).
+            // A source from a referenced assembly needs no check here: the classifier refuses a symbol with no
+            // DeclaringSyntaxReferences outright, so it is never IsShaped.
+            var source = (INamedTypeSymbol)srcElem;
+            // NULL, not a fabricated refusal: "there is no verdict for the source" is what this means, and a
+            // Verdict.No would have had to invent a reason string nothing on this path ever prints. The first
+            // attempt at that used `default`, which is a trap worth recording — Outcome.Eligible WAS the enum's
+            // zero, so `default(Verdict)` reported IsShaped TRUE and the clause came straight back. The
+            // regression test caught it; the nullable makes the state unrepresentable instead. T2.3 ruling 3
+            // then moved NotEligible into the zero slot, so the trap no longer exists — this stays a nullable
+            // anyway, because "nobody asked" and "asked, and the answer was no" are different facts and only
+            // one of them has a reason to print.
+            TransferModelShape.Verdict? sourceVerdict = IsGeneratorAuthored(source)
+                ? null
+                : TransferModelShape.Classify(source, req.Compilation, facts);
+
+            var message = TransferModelElementMessage(source, target, verdict, sourceVerdict);
+
+            foreach (var reported in diagnostics)
+                if (ReferenceEquals(reported.Descriptor, DiagnosticDescriptors.CollectionElementCouldBeAStruct) &&
+                    string.Equals(reported.MessageArg, message, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+            // The handles the code fix resolves its targets through. A DocumentationCommentId rather than the
+            // display name already in the message, because ruling 1 of T2.3 is that a fix must never recover
+            // its target by PARSING the message: that wording was revised across four fix rounds in T2.2, and
+            // a fix coupled to it breaks with no compile error and no failing test — the lightbulb just stops
+            // appearing. The id round-trips through DocumentationCommentId.GetFirstSymbolForDeclarationId, so
+            // the fix rewrites the very symbol classified here.
+            //
+            // OriginalDefinition: a closed generic's id is its definition's id, and the definition is what has
+            // a declaration to rewrite.
+            var nestedIds = new List<string>();
+            foreach (var model in inlined)
+                if (model.OriginalDefinition.GetDocumentationCommentId() is { Length: > 0 } nestedId)
+                {
+                    nestedIds.Add(nestedId);
+                }
+
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionElementCouldBeAStruct,
+                req.Location,
+                message,
+                TransferModelId: target.OriginalDefinition.GetDocumentationCommentId(),
+                NestedTransferModelIds: nestedIds.Count == 0
+                    ? null
+                    : string.Join("|", nestedIds),
+                TransferModelSize: verdict.Size.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        /// <summary>
+        ///     True when <paramref name="type" /> is declared in a file another generator emitted. Asked of BOTH
+        ///     element types, because both are named by a message that asks for a declaration to be rewritten —
+        ///     and a <c>.g.cs</c> is neither the consumer's to edit nor theirs to suppress a diagnostic in.
+        /// </summary>
+        private static bool IsGeneratorAuthored(INamedTypeSymbol type)
+        {
+            foreach (var declaration in type.DeclaringSyntaxReferences)
+                if (GeneratedSourceExtensions.IsGeneratorAuthored(declaration.SyntaxTree))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     True when the ELEMENTS of this collection are constructed by a body this generator emits — the
+        ///     one fact that makes "one allocation per element" both true and ours to remove.
+        /// </summary>
+        /// <remarks>
+        ///     <c>null</c> is an identity copy: the references are copied and no element is allocated, so the
+        ///     message's claim would be false. A synthesized object map is ours by construction. Anything else
+        ///     synthesized (a conversion operator's shim, an enum or numeric helper) is not an object map and
+        ///     does not build a transfer model. What is left is a name from the mapper, and only an
+        ///     <c>AutoCandidates</c> entry MATCHING THIS ELEMENT PAIR qualifies: that list is the partial
+        ///     definitions plus the <c>[GenerateMap&lt;S,T&gt;]</c> pairs, every one of which this generator
+        ///     writes the body of. A hand-written <c>OrderDto Convert(Order)</c> lives in <c>AllMethods</c>
+        ///     instead and owns its own construction.
+        /// </remarks>
+        private static bool ElementIsBuiltByGeneratedCode(
+            ConversionRequest req,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            string? elemConv)
+        {
+            if (elemConv is null)
+            {
+                return false;
+            }
+
+            if (GeneratedNames.IsAnySynthesized(elemConv))
+            {
+                return GeneratedNames.IsObjectMap(elemConv);
+            }
+
+            foreach (var candidate in req.AutoCandidates)
+                if (string.Equals(candidate.Name, elemConv, StringComparison.Ordinal) &&
+                    SymbolEqualityComparer.Default.Equals(candidate.ParamType, srcElem) &&
+                    SymbolEqualityComparer.Default.Equals(candidate.ReturnType, tgtElem))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     Builds <c>DWARF103</c>'s message: the pair, what the rewrite buys, the would-be struct's size,
+        ///     and — only where the verdict earns them — the <c>in</c> advice and the scope of the derived-type
+        ///     check.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>Every number here is worded to the evidence behind it.</b>
+        ///         <see cref="TransferModelShape.Verdict.SizeIsUpperBound" /> means a member was costed as an
+        ///         8-byte reference, which is its x64 width and twice its x86 one, so the size is an
+        ///         OVER-estimate and is printed as "at most". The bound only ever over-counts, so the advice
+        ///         cannot become wrong on a narrower platform — but printing an estimate as a measurement would
+        ///         be a false claim about the consumer's machine, which is the defect that flag exists to
+        ///         prevent.
+        ///     </para>
+        ///     <para>
+        ///         The nested clause is not decoration either: the classifier counts a nested transfer model
+        ///         INLINE, because the code fix rewrites it too. Convert the root alone and the member stays a
+        ///         reference and the size is smaller. "With any transfer model it holds a struct too" is what
+        ///         makes the number true of the rewrite it is advising, in the cases where the type has one and
+        ///         (vacuously) in the cases where it does not.
+        ///     </para>
+        ///     <para>
+        ///         <b>The <c>in</c> advice belongs to ONE band, and getting that wrong is easy in both
+        ///         directions.</b> Reading <c>SuggestIn</c> alone would advise it at 40 bytes and NOT at 72,
+        ///         which is backwards; reading <c>TooLarge || SuggestIn</c> — what this shipped with until fix
+        ///         round 3 — advises it at 40 bytes as well, which the measurement does not support: a 64-byte
+        ///         struct still beat its class by value (26.4 ns vs 29.9 ns). The spec tiers the bands ≤32 B
+        ///         silent, 32–64 B Info, &gt;64 B suggest <c>in</c>, the project owner ruled that tiering
+        ///         reasonable (<c>Issues/round29/RESEARCH-hardware-mode.md</c> §8, ruling (b)), and the answer
+        ///         is <c>Kind == TooLarge</c> on its own. The middle band's whole report is the size, printed
+        ///         in every band.
+        ///     </para>
+        ///     <para>
+        ///         The clause reprints the size, so it reprints the HEDGE with it (T2.2 review, important 4):
+        ///         the message used to say "at most 72 bytes" in one clause and "At 72 bytes" in the next, and
+        ///         the threshold comparison is provisional in the same way the number is — 72 bytes of
+        ///         references is 36 on a 32-bit runtime, which is under the limit. The advice survives that
+        ///         either way (passing a smaller struct by <c>in</c> costs nothing), and the clause says so
+        ///         rather than pretending the comparison was settled.
+        ///     </para>
+        ///     <para>
+        ///         The derivation clause states the SCOPE of the sweep rather than its conclusion. That is
+        ///         deliberate: the flag does not propagate out of a nested model, and it reads false for an
+        ///         <c>internal</c> type that an <c>InternalsVisibleTo</c> grant lets a friend assembly derive
+        ///         from. A message that claimed derivation had been ruled out would be wrong in both of those;
+        ///         this one never claims it at all, and says what was actually walked where the gap is widest.
+        ///     </para>
+        ///     <para>
+        ///         <b>The block-copy clause is EARNED twice over, and used to be earned not at all</b> (T2.2
+        ///         review, criticals 1 and 2). It said "with '{source}' a struct as well, the pair takes the
+        ///         block copy" unconditionally, which failed two different ways. It advised converting a SOURCE
+        ///         type nothing had classified — and in the commonest real shape, entity to DTO, that is advice
+        ///         to turn an ORM-tracked entity into a value type, exactly what the classifier exists to
+        ///         refuse. And it stated a block copy the generator can itself disprove: <c>CanReinterpret</c>
+        ///         needs BOTH element types unmanaged, so a target with a reference member — the same fact that
+        ///         sets <see cref="TransferModelShape.Verdict.SizeIsUpperBound" /> — can never blit, and the
+        ///         message hedged its byte count for that reason two clauses earlier while asserting the
+        ///         consequence as fact. So the clause now requires the source to be transfer-model shaped in its
+        ///         own right AND neither side to hold a reference, and even then says "could", naming the layout
+        ///         and field-name identity the proof still requires and this site has not checked.
+        ///     </para>
+        ///     <para>
+        ///         Note what is NOT gated: the diagnostic still FIRES for an unshaped source. Collapsing N
+        ///         object headers into one array is the measured win and does not depend on the source type at
+        ///         all; the block copy is a further tier. Narrowing the trigger would have silenced the
+        ///         entity-to-DTO shape, where the target is the consumer's own type and the win is undiminished.
+        ///     </para>
+        /// </remarks>
+        private static string TransferModelElementMessage(
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            TransferModelShape.Verdict verdict,
+            TransferModelShape.Verdict? sourceVerdict)
+        {
+            // WITHOUT the annotation. A `List<OrderDto?>` element arrives here as `OrderDto?`, and the message
+            // names a type the consumer is being asked to REDECLARE — "declare 'OrderDto?' as a readonly record
+            // struct" names no declaration that exists. It also matters to the dedupe: `List<OrderDto>` and
+            // `List<OrderDto?>` on one mapper are one type and must be one report, not two.
+            var source = srcElem.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString();
+            var target = tgtElem.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString();
+            var size = verdict.Size.ToString(CultureInfo.InvariantCulture);
+
+            var sizeText = verdict.SizeIsUpperBound
+                ? $"at most {size} bytes, a reference member counted at 8 bytes, its x64 width,"
+                : $"{size} bytes,";
+
+            var message =
+                $"'{source}' → '{target}' allocates one '{target}' per element, and '{target}' is " +
+                "transfer-model shaped: declared as a readonly record struct — with any transfer model it " +
+                $"holds a struct too — it is {sizeText} and the collection becomes one allocation instead of " +
+                "one per element.";
+
+            // The block copy needs an UNMANAGED pair, and a verdict carrying SizeIsUpperBound is one whose
+            // would-be struct holds a reference — so on either side that flag is proof the pair can never
+            // blit, whatever else is true of it. The flag propagates out of a nested model (TryMeasureMember
+            // hands nested.SizeIsUpperBound straight back), so it covers the whole inlined graph and not just
+            // the top level.
+            var namesTheSource = sourceVerdict is { IsShaped: true, SizeIsUpperBound: false } &&
+                                 !verdict.SizeIsUpperBound;
+
+            if (namesTheSource)
+            {
+                message += $" '{source}' is transfer-model shaped too, and neither type holds a reference: as " +
+                           "structs with identical layout and matching field names the pair could take the " +
+                           "block copy instead of the element loop.";
+            }
+
+            // TooLarge ALONE, not `TooLarge || SuggestIn` (fix round 3). The spec tiers the bands — ≤32 B
+            // silent, 32–64 B Info, >64 B suggest `in` — and the project owner ruled that tiering reasonable
+            // (Issues/round29/RESEARCH-hardware-mode.md §8, ruling (b); the measurement is §7). Under it is that a
+            // 64-byte struct still beat its class BY VALUE (26.4 ns vs 29.9 ns, 240 B), so `in` in the middle
+            // band would be advising an indirection the numbers do not ask for. The middle band's report is
+            // the size, which is printed above in every band.
+            if (verdict.Kind == TransferModelShape.Outcome.TooLarge)
+            {
+                var limit = TransferModelShape.SuggestInSizeLimit.ToString(CultureInfo.InvariantCulture);
+                message += verdict.SizeIsUpperBound
+                    ? $" At most {size} bytes — over the {limit}-byte limit for copying by value unless a " +
+                      "32-bit runtime narrows it below, and worth passing by 'in' either way."
+                    : $" At {size} bytes it is over the {limit}-byte limit for copying by value, so pass it " +
+                      "by 'in'.";
+            }
+
+            // ONE caveat covering whichever of the two types earned it. The source earns it on exactly the
+            // evidence the target does — the sweep walked this assembly, and a consuming project can subclass
+            // either — and only when the message named it in the first place; adding a second sentence instead
+            // would say the same thing twice about a pair that is usually public on both sides (fix round 2).
+            var caveatTarget = verdict.DerivationCheckedWithinAssemblyOnly;
+            var caveatSource = namesTheSource && sourceVerdict is { DerivationCheckedWithinAssemblyOnly: true };
+
+            if (caveatTarget || caveatSource)
+            {
+                var both = caveatTarget && caveatSource;
+                var caveated = both ? $"'{target}' or '{source}'" : caveatTarget ? $"'{target}'" : $"'{source}'";
+
+                message += $" The check that nothing derives from {caveated} covered this assembly only, since " +
+                           (both ? "both are" : $"{caveated} is") + " public and not sealed — a project " +
+                           "referencing this one can still derive from " + (both ? "them." : "it.");
+            }
+
+            return message;
+        }
+
+        /// <summary>
         ///     Collections: element-wise conversion, including the in-place and context-threading shapes.
         /// </summary>
         /// <returns>
@@ -335,8 +976,42 @@ namespace DwarfMapper.Generator.Pipeline
                     out var collShape,
                     req.NullAsNull))
             {
+                // ── Layout hygiene on the element types (round 29, T0.3) ────────────────────────────────────
+                // Reported HERE, above every branch below, because the padding is worth the same to the reader
+                // whether the pair goes on to blit or to take the element loop: a block copy copies the wasted
+                // bytes as faithfully as the loop writes them, and the array is the same size either way. The
+                // near-miss below could not carry it — that one speaks only when the blit was REFUSED, so the
+                // pairs with the most to gain (the ones already blitting) would never have heard it.
+                ReportPaddedElementStruct(req, diagnostics, srcElem);
+                ReportPaddedElementStruct(req, diagnostics, tgtElem);
+
+                // ── The blit is a fast path, never a change of meaning (round 29, T0.2c) ────────────────────
+                // This arm decides the block copy at chain position 2 — BEFORE the arms that adopt a
+                // user-declared conversion for the ELEMENT pair, and before the element recursion below runs at
+                // all. So the proof used to be the whole decision, and a `public static DstV Conv(SrcV s)`
+                // declared beside a `SrcV[] → DstV[]` member was silently never called: the bytes were copied
+                // and nothing in the build said so. Same for a pair-scoped [MapIgnore<T>]/[MapProperty<S,T>]/
+                // [MapValue<T>] or a [BeforeMap]/[AfterMap] hook matching the element pair.
+                //
+                // The fix mirrors the span map's gate (MapperExtractor.Phases.cs, TryHandleSpanMap) from the
+                // opposite side: the span endpoint resolves the element pair first and then asks whether the
+                // verdict it got back is a DEFAULT converter; this arm cannot resolve first — doing so would
+                // synthesize an unused __DwarfMap_Obj_* for every blitted pair, and under [AutoNest(false)]
+                // would turn a working blit into DWARF005 — so it asks the resolver's own questions instead,
+                // through the resolver's own predicates (FindUserDeclaredConversion / AutoNestWouldClaim /
+                // UserConversionConverter.Exists), and never through a second copy of them.
+                //
+                // What still blits: a pair whose element resolution would land on a SYNTHESIZED object map
+                // (or on nothing at all). CanReinterpret proves the by-name field correspondence that map
+                // would apply, so the two agree byte for byte — which is exactly why the proof is allowed to
+                // replace it, and only it.
+                var elemHasUserConversion = ElementPairResolvesToUserConversion(req, srcElem, tgtElem);
+                var elemPairIsCustomized = req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true;
+                var elemPairKeepsTheLoop = elemHasUserConversion || elemPairIsCustomized;
+
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
+                    !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpret(srcElem,
                         tgtElem))
                 {
@@ -351,6 +1026,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // no member, and an enum may legally hold any value of its underlying type.
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
+                    !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy))
                 {
                     converterMethod = CollectionConverter.SynthesizeBlit(synthesized, req.SrcType, srcElem, tgtElem);
@@ -379,8 +1055,9 @@ namespace DwarfMapper.Generator.Pipeline
                     var tgtIsImmutableArray = collShape.Target == CollectionConverter.TargetKind.ImmutableArray;
                     var srcIsList = CollectionConverter.IsConcreteList(req.SrcType);
                     var srcIsImmutableArray = CollectionConverter.IsImmutableArray(req.SrcType);
-                    var elementBlits = BlittableProof.CanReinterpret(srcElem, tgtElem) ||
-                                       BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy);
+                    var elementBlits = !elemPairKeepsTheLoop &&
+                                       (BlittableProof.CanReinterpret(srcElem, tgtElem) ||
+                                        BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy));
 
                     var srcStorage = collShape.SourceIsArray ? CollectionConverter.BlitStorage.Array
                         : srcIsList ? CollectionConverter.BlitStorage.List
@@ -412,8 +1089,19 @@ namespace DwarfMapper.Generator.Pipeline
                 // but the caller is one rename away from a block copy, and nothing else in the build reports that.
                 // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
                 // method is called, so DWARF022 stays the only voice on the explicit form.
+                //
+                // Gated on elemHasUserConversion — and deliberately NOT on elemPairIsCustomized (round 29 T0.2c).
+                // The two halves of the blit refusal are not the same kind of fact here. A user conversion OWNS
+                // the pair: no rename would hand that caller the block copy, so "you are one rename away" would
+                // be false. A pair-scoped rename is the opposite — it is precisely the caller who reconciled a
+                // name mismatch by hand and for whom renaming the field IS the fix, which
+                // BlittableProofNearMissTests.A_name_mismatch_reconciled_by_MapProperty_still_reports_the_near_miss
+                // has pinned since the diagnostic was introduced. A pair directive that is NOT a rename cannot
+                // produce a spurious hint either: TryExplainNearMiss answers false for a pair that already lines
+                // up by name, which is the only shape a [MapIgnore]/[MapValue]/hook refusal leaves behind.
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
+                    !elemHasUserConversion &&
                     BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
@@ -477,6 +1165,13 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // ── The element could be a struct (round 29, T2.2) ──────────────────────────────────────────
+                // Reported HERE, after the element pair resolved and before the collection helper is built:
+                // elemConv is what names the body that will construct each element, which is the one fact that
+                // makes "one allocation per element" ours to remove rather than the caller's. Above this the
+                // pair has not been resolved yet; below it the helper is already synthesized.
+                ReportTransferModelElement(req, diagnostics, srcElem, tgtElem, elemConv);
+
                 // #100: a nullable-annotated REFERENCE element whose target element is non-nullable needs the
                 // same per-element null handling as a nullable VALUE element (int?→int). SymbolEqualityComparer
                 // ignores nullable annotations, so without this the identity fast-path emits a direct collection
@@ -515,6 +1210,37 @@ namespace DwarfMapper.Generator.Pipeline
                         collEffectiveNullAsNull);
                 }
 
+                // Round 29 T2.9: the element edge asks the SAME coupled question the member path asks — does a
+                // nullable-annotated reference element flowing into a converter with a non-nullable parameter need
+                // the null-forgiving '!', and (coupled here so no site can forgive without also signalling) does
+                // it warrant DWARF070? 6fa7308 centralised the null DECISION at TryResolveConversion and reported
+                // that every edge read it; the forgiveness half never reached this one, so CollectionConverter's
+                // own IsSynthesized proxy kept answering for it and a declared `ToDto` was left un-forgiven.
+                // Asked HERE rather than inside CollectionConverter because only this side has the semantic model
+                // and the diagnostics sink; the helper is memoised by NAME, and this fact is a function of that
+                // name's key (srcElem, tgtElem and the mapper's method lists), so a reused helper cannot disagree
+                // with the one that built it — while the diagnostic is still raised once per MEMBER that reaches
+                // the pair, which is where a consumer needs it.
+                var elemForgivesArg = ForgiveNestedNullableArg(elemConv,
+                    srcElem,
+                    tgtElem,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+                // The RETURN half of the same decision, reported as DWARF107 rather than DWARF070 because the
+                // source can be entirely non-nullable here and DWARF070's opening clause would be a lie.
+                var elemForgivesResult = ForgiveConverterNullableReturn(elemConv,
+                    tgtElem,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+
                 converterMethod = CollectionConverter.Synthesize(synthesized,
                     req.SrcType,
                     srcElem,
@@ -523,7 +1249,9 @@ namespace DwarfMapper.Generator.Pipeline
                     elemConv,
                     elemNull,
                     req.IsPreserve,
-                    elemNeedsCtx);
+                    elemNeedsCtx,
+                    elemForgivesArg,
+                    elemForgivesResult);
                 // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
                 // element is recursion-capable (Preserve, or None/SetNull self-referential element).
                 converterNeedsCtx = (req.IsPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
@@ -549,6 +1277,8 @@ namespace DwarfMapper.Generator.Pipeline
                     var capTgt = tgtElem;
                     var capShape = collShape;
                     var capNull = elemNull;
+                    var capForgive = elemForgivesArg;
+                    var capForgiveResult = elemForgivesResult;
                     req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                         new[]
                         {
@@ -562,7 +1292,9 @@ namespace DwarfMapper.Generator.Pipeline
                                 capTgt,
                                 capShape,
                                 resolve(elemConv),
-                                capNull));
+                                capNull,
+                                capForgive,
+                                capForgiveResult));
                 }
 
                 resolved = true;
@@ -680,6 +1412,49 @@ namespace DwarfMapper.Generator.Pipeline
                     }
                 }
 
+                // Round 29 T2.9, the dictionary twin of the collection arm above and asked for the same reason:
+                // the VALUE edge is an element edge, and DictionaryConverter.Expr was keying its forgiveness on
+                // the same blind IsSynthesized proxy. Only the value is asked — a nullable-annotated dictionary
+                // KEY is a separate (and currently unforgiven) shape, recorded in the task report rather than
+                // fixed blind here.
+                var valForgivesArg = ForgiveNestedNullableArg(valConv,
+                    srcVal,
+                    tgtVal,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.DictionaryValue);
+                var valForgivesResult = ForgiveConverterNullableReturn(valConv,
+                    tgtVal,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.DictionaryValue);
+
+                // The KEY edge, asked exactly as the value edge is. It was silent on both halves until round
+                // 29 T2.9's audit found it: a dictionary key is an element edge like any other.
+                var keyForgivesArg = ForgiveNestedNullableArg(keyConv,
+                    srcKey,
+                    tgtKey,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+                var keyForgivesResult = ForgiveConverterNullableReturn(keyConv,
+                    tgtKey,
+                    req.AutoCandidates,
+                    req.AllMethods,
+                    req.TargetName,
+                    req.Location,
+                    diagnostics,
+                    NullSourceKind.CollectionElement);
+
                 converterMethod = DictionaryConverter.Synthesize(synthesized,
                     req.SrcType,
                     tgtKey,
@@ -693,7 +1468,11 @@ namespace DwarfMapper.Generator.Pipeline
                     dictEffectiveNullAsNull,
                     req.IsPreserve,
                     keyNeedsCtx,
-                    valNeedsCtx);
+                    valNeedsCtx,
+                    valForgivesArg,
+                    valForgivesResult,
+                    keyForgivesArg,
+                    keyForgivesResult);
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
@@ -737,6 +1516,10 @@ namespace DwarfMapper.Generator.Pipeline
                         var cValConv = valConv;
                         var cValNull = valNull;
                         var cNullAsNull = dictEffectiveNullAsNull;
+                        var cValForgive = valForgivesArg;
+                        var cValForgiveResult = valForgivesResult;
+                        var cKeyForgive = keyForgivesArg;
+                        var cKeyForgiveResult = keyForgivesResult;
                         req.NestedRegistry.RecordCtxUpgradeCandidate(hName,
                             elems.ToArray(),
                             resolve =>
@@ -778,7 +1561,11 @@ namespace DwarfMapper.Generator.Pipeline
                                     nv,
                                     cValNull,
                                     nvCtx,
-                                    cNullAsNull);
+                                    cNullAsNull,
+                                    cValForgive,
+                                    cValForgiveResult,
+                                    cKeyForgive,
+                                    cKeyForgiveResult);
                             });
                     }
                 }

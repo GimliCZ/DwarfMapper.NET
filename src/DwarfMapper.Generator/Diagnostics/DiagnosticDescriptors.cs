@@ -1029,10 +1029,61 @@ namespace DwarfMapper.Generator.Diagnostics
             true,
             helpLinkUri: HelpBase + "dwarf072");
 
+        /// <summary>
+        ///     A converter the user declared returns a nullable reference, and its result is being written where
+        ///     null is forbidden.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A SEPARATE id from <see cref="NullableRefSourceToNonNullableTarget" /> (DWARF070), and round 29
+        ///         task 2.9 minted it rather than adding a fifth noun to that message because DWARF070's FIRST
+        ///         CLAUSE cannot be made true of this shape. DWARF070 opens "{0} is a nullable reference"; here the
+        ///         source can be entirely non-nullable — <c>Child Inner</c> into <c>ChildDto Inner</c> through
+        ///         <c>partial ChildDto? ToDto(Child c)</c> emits CS8601 with nothing nullable on the source side at
+        ///         all. There is no noun phrase that would make the sentence honest.
+        ///     </para>
+        ///     <para>
+        ///         The remedies are disjoint too, which is the test the task was told to apply.
+        ///         <c>[MapProperty(NullSubstitute = …)]</c>, <c>SkipNullSourceMembers</c> and "declare the
+        ///         parameter non-nullable" are all about the value going IN; none of them touches a converter's
+        ///         RETURN. And the suppression differs in kind: a consumer who wrote
+        ///         <c>dotnet_diagnostic.DWARF070.severity = none</c> accepted nullable SOURCES knowingly, which is
+        ///         not the same decision as accepting a converter that can hand back null.
+        ///     </para>
+        ///     <para>
+        ///         It is also the more dangerous half of the family, and that is why it may not be silent. On the
+        ///         ARGUMENT side (DWARF070) the forgiven call still throws inside the callee's own
+        ///         <c>ArgumentNullException.ThrowIfNull</c> — loud, at the right place. On the RETURN side the
+        ///         forgiven result is STORED: a null lands in a member, element or constructor parameter whose type
+        ///         forbids it and nothing complains until something far away dereferences it. The <c>!</c> the
+        ///         emitter writes is what keeps CS8600/CS8601/CS8603/CS8604 out of a generated file the consumer
+        ///         cannot edit; this warning is the whole of what they get in exchange, so it says exactly what was
+        ///         traded.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ConverterNullableReturnToNonNullableTarget = new(
+            "DWARF107",
+            "A converter's nullable return is stored where null is forbidden",
+            // {0} is the converter's name, {1} the whole noun phrase for the destination it feeds - built by
+            // MapperExtractor.NullSourceLabel, the same place DWARF070's subject is built, so the two cannot
+            // drift into naming the same edge differently.
+            "'{0}' is declared to return a nullable reference, and its result is written into {1}, whose type " + "forbids null. The generated call is null-forgiven so no unsuppressible CS8600/CS8601/CS8603/CS8604 " + "reaches a file you cannot edit - which means a null returned at run time is STORED rather than " + "refused, and surfaces as a NullReferenceException somewhere else. Fix it by declaring '{0}' to return " + "a non-nullable reference if it never returns null, or by making the destination nullable if it can. " + "dotnet_diagnostic.DWARF107.severity = none accepts the stored null knowingly - note that " + "DWARF070's suppression does NOT cover this: that one is about a nullable value going IN.",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf107");
+
         public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
             "DWARF070",
-            "Nullable source member is assigned to a non-nullable target member",
-            "Source member '{0}' is a nullable reference but the destination member is non-nullable, so a null " + "would be stored in a member whose type forbids it. Fix it in one of: [MapProperty(NullSubstitute = …)] " + "for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] to keep the destination default, " + "or make the destination member nullable.",
+            "A nullable source is assigned to a non-nullable target member",
+            // {0} is the whole noun phrase ("Source member 'X'" / "Mapping parameter 'x'" / "The source element
+            // mapped into 'Items'" / "The source value mapped into 'Lookup'"), not a bare name: round 29 task
+            // 2.7 taught this diagnostic to fire for a Phase 5 mapping PARAMETER as well as a source member,
+            // and task 2.9 added the four element edges (collection, dictionary value, span, async stream). A
+            // message that calls any of them a "member" names the wrong kind of thing and offers two remedies
+            // ([MapProperty(NullSubstitute)], SkipNullSourceMembers) that cannot reach it. Built in one place -
+            // MapperExtractor.NullSourceLabel - so the four spellings cannot drift.
+            "{0} is a nullable reference but its destination is non-nullable, so a null " + "would be stored where the type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. For a collection ELEMENT or a dictionary VALUE neither attribute reaches " + "it either — the null is in the element type, not the member: make the destination element type " + "nullable (List<T?>, T?[], Dictionary<K, V?>), or declare the converter's parameter nullable. Either " + "way, dotnet_diagnostic.DWARF070.severity = none accepts the null knowingly.",
             Category,
             DiagnosticSeverity.Warning,
             true,
@@ -1713,8 +1764,8 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf099");
 
         /// <summary>
-        ///     <c>DWARF100</c> — an array pair is one identifiable step away from the blittable fast path, and
-        ///     took the element-by-element loop instead.
+        ///     <c>DWARF100</c> — an array, list, or span-map element pair is one identifiable step away from the
+        ///     blittable fast path, and took the element-by-element loop instead.
         ///     <para>
         ///         <b>Informational, and it must stay that way</b>: the mapping is correct and complete. The only
         ///         thing lost is speed, and the caller may not care. Reporting it as a warning would turn a
@@ -1724,28 +1775,248 @@ namespace DwarfMapper.Generator.Diagnostics
         ///         Scoped to a NEAR-MISS on purpose — see <c>BlittableProof.TryExplainNearMiss</c>. The broad
         ///         reading, "report whenever something looked blittable", would fire on every ordinary struct-array
         ///         mapping whose members differ, and a diagnostic that common gets suppressed wholesale, hiding
-        ///         the cases worth reading. A pair whose field counts or field TYPES differ is therefore silent.
+        ///         the cases worth reading. A pair whose field counts differ, or whose field TYPES differ, is
+        ///         therefore silent — EXCEPT a member that is <c>Nullable&lt;T&gt;</c> on one side only whose
+        ///         unwrapped types are layout-identical, which is its own near-miss (round 29, <c>T0.1</c>): unwrap
+        ///         the optional and the two sides are byte-identical, one <c>?</c> away from the fast path.
         ///     </para>
         ///     <para>
-        ///         The case this exists for is a byte-identical pair whose FIELD NAMES differ. It is one rename
-        ///         from a large win, DwarfMapper cannot take it silently because it maps by name, and nothing else
-        ///         in the build would ever say so. The remedy is a rename, or <c>[Reinterpret]</c> to declare that
-        ///         positional semantics are what the caller actually wants. Round 25, <c>T0-B</c>.
+        ///         The other case this exists for is a byte-identical pair whose FIELD NAMES differ. It is one
+        ///         rename from a large win, DwarfMapper cannot take it silently because it maps by name, and
+        ///         nothing else in the build would ever say so. The remedy is a rename, or <c>[Reinterpret]</c> to
+        ///         declare that positional semantics are what the caller actually wants. Round 25, <c>T0-B</c>.
         ///     </para>
         /// </summary>
         public static readonly DiagnosticDescriptor BlitNearMiss = new(
             "DWARF100",
-            "Array pair narrowly missed the blittable fast path",
+            "Array or span pair narrowly missed the blittable fast path",
             "{0}",
             Category,
             DiagnosticSeverity.Info,
             true,
-            "The blittable fast path reinterprets one array's memory as another in a single block copy, which is " +
-            "sound only when the two element types are provably identical in layout AND their field names line " +
+            "The blittable fast path reinterprets one array's (or span's) memory as another in a single block copy, " +
+            "which is sound only when the two element types are provably identical in layout AND their field names line " +
             "up — DwarfMapper maps by name, so a positional reinterpret is equivalent only when the names agree. " +
             "This pair satisfies every part of that proof but one. The mapping is correct either way; this is a " +
             "performance hint, which is why it is informational. Fix it by aligning the names, or apply " +
             "[Reinterpret] to state that positional semantics are intended.",
             HelpBase + "dwarf100");
+
+        /// <summary>
+        ///     <c>DWARF101</c> — a struct used as the element of a mapped collection spends a quarter or more of
+        ///     its bytes on alignment padding, and the message names the field order that packs it.
+        ///     <para>
+        ///         <b>Informational, and it must stay that way</b>: nothing is wrong with the mapping or with the
+        ///         struct. A warning here would become a build failure under <c>TreatWarningsAsErrors</c> over a
+        ///         field order the consumer may have chosen deliberately (grouping by meaning is a real reason to
+        ///         leave bytes on the floor).
+        ///     </para>
+        ///     <para>
+        ///         Two thresholds, BOTH required: at least a quarter of the size, and at least
+        ///         <see cref="Pipeline.LayoutHygiene.MinimumWastedBytes" /> bytes. The quarter alone would fire on
+        ///         <c>{byte; long}</c> — a flag beside an identifier, which is half the transfer models in
+        ///         existence — and an Info that common is suppressed wholesale by the first consumer who meets
+        ///         it, taking the cases worth reading with it. That is the lesson
+        ///         <c>BlittableProof.TryExplainNearMiss</c> records for <c>DWARF100</c>, applied here from the
+        ///         start.
+        ///     </para>
+        ///     <para>
+        ///         Scoped to COLLECTION elements, and to structs the consumer declares. An element type is
+        ///         allocated once per item, so its padding multiplies by the array length — that is the whole
+        ///         claim, and it does not hold for a scalar member, which wastes those bytes once. A struct from
+        ///         metadata is never named, nor is one another source generator emitted: their field order is not
+        ///         the consumer's to change, so the remedy would be unusable even where the number is right — and
+        ///         the second would land the hint inside a <c>.g.cs</c>, which the consumer cannot suppress
+        ///         either. Reported ON the struct's declaration rather than on the member that maps it, since
+        ///         that declaration is the line the remedy asks them to edit. Round 29, <c>T0.3</c>.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor StructLayoutPadding = new(
+            "DWARF101",
+            "Struct layout pads more than a quarter of its size",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "A Sequential struct places each field at the next offset that is a multiple of its own alignment, so " +
+            "the declared order decides how many bytes are spent on padding. For a struct used as a collection " +
+            "element that cost is paid once per item: a 40-byte element that packs into 24 makes every array of " +
+            "it 40% smaller. Reordering the fields — largest alignment first — is the whole fix, and it changes " +
+            "no behaviour. It also helps the block copy: a smaller element type still blits, and a twin that " +
+            "keeps the same order stays layout-identical. This is a performance hint, which is why it is " +
+            "informational; a field order chosen for readability is a legitimate answer to it.",
+            HelpBase + "dwarf101");
+
+        /// <summary>
+        ///     <c>DWARF103</c> — a mapped collection builds one class element per item, and that element type is
+        ///     TRANSFER-MODEL SHAPED: declared as a <c>readonly record struct</c> the whole collection would be
+        ///     one allocation instead of one per element.
+        ///     <para>
+        ///         <b>Informational, and it must stay that way.</b> The mapping is correct, the class is correct,
+        ///         and the change it suggests is a SEMANTIC one — a value type has no identity, no
+        ///         <c>null</c>, and no in-place mutation through an indexer. A warning would turn that judgement
+        ///         call into a build failure under <c>TreatWarningsAsErrors</c>, which is the trap
+        ///         <c>DWARF070</c> taught this project once already.
+        ///     </para>
+        ///     <para>
+        ///         Reported at the MAPPING SITE, never on the type. A type-level rule would fire on every DTO in
+        ///         a solution; the collection is where the cost is actually paid, because the element is
+        ///         allocated once per item. Once per element PAIR per mapper class, through the same
+        ///         message-text dedupe <c>DWARF101</c> uses: the message names the pair and nothing about the
+        ///         member it was reached through, so a second member mapping the same pair adds no information.
+        ///     </para>
+        ///     <para>
+        ///         <b>The shape is <see cref="Pipeline.TransferModelShape" />'s to decide, and it refuses far
+        ///         more than it accepts</b> — a type that is derived from, disposed, subscribed to, tracked by
+        ///         an ORM, or built by a constructor that validates is never named. The site adds three refusals
+        ///         the classifier cannot make, because they are about the REPORT rather than the shape: the
+        ///         elements must be built by code this generator emits (a hand-written converter owns its own
+        ///         construction), the pair must carry no directive or hook a struct target would silently drop,
+        ///         and the mapper must not be in Preserve or SetNull mode, where reference identity is the point
+        ///         of the mapping. A DTO another generator emitted is refused for
+        ///         <see cref="StructLayoutPadding" />'s reason: the consumer cannot rewrite a declaration they
+        ///         did not write. Round 29, <c>T2.2</c>.
+        ///     </para>
+        ///     <para>
+        ///         The size in the message is the WOULD-BE struct's, and it is worded as a bound whenever a
+        ///         reference member was costed at its x64 width. Over 32 bytes the message adds the <c>in</c>
+        ///         advice; for a public unsealed type it says that the derived-type sweep covered this assembly
+        ///         only, because a consuming project can still subclass it and nothing here can see that.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor CollectionElementCouldBeAStruct = new(
+            "DWARF103",
+            "Collection element could be a struct",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "A collection of class elements allocates one object per item, and the destination element type " +
+            "here carries nothing but data: declared as a readonly record struct it would live inside the " +
+            "array, making the whole collection one allocation instead of N, and a struct on both sides of the " +
+            "pair takes the block copy. The change is a real change of meaning, which is why this is a hint " +
+            "rather than a warning — a struct has no reference identity, cannot be null, and cannot be mutated " +
+            "through an indexer, so every usage that relied on those becomes a compile error rather than a " +
+            "silent behaviour change. Ignoring it is a legitimate answer. The size printed is the would-be " +
+            "struct's, stated as a bound when a reference member was counted at its widest.",
+            HelpBase + "dwarf103");
+
+        /// <summary>
+        ///     <c>DWARF104</c> — <c>[MapShare]</c> names a member that cannot be shared.
+        ///     <para>
+        ///         Sharing assigns the source's own reference to the destination instead of copying it, which is
+        ///         only a mapping — rather than a coupling — when nothing reachable through that reference can be
+        ///         written. The dangerous case is not the obvious one: <c>IReadOnlyList&lt;T&gt;</c> is an
+        ///         interface and promises nothing, so a <c>List&lt;T&gt;</c> behind it stays a
+        ///         <c>List&lt;T&gt;</c> the source can mutate after the map, silently coupling two object graphs
+        ///         the consumer believes are independent. Nothing detects that afterwards.
+        ///     </para>
+        ///     <para>
+        ///         So the generator refuses what it can DISPROVE and accepts the caller's assertion about what it
+        ///         merely cannot prove. A settable property, a writable field, an event or an array anywhere in
+        ///         the reachable graph is a disproof, and <c>[MapShare]</c> cannot assert it away — that is this
+        ///         id. An interface or an unsealed class is a gap, not a disproof, and <c>[MapShare]</c> passes
+        ///         through it on the caller's word, the way <c>[Reinterpret]</c> forces a layout the blit proof
+        ///         declines to confirm.
+        ///     </para>
+        ///     <para>
+        ///         An ERROR rather than a warning, for the same reason <c>DWARF022</c> is: the caller wrote a
+        ///         directive that cannot be honoured, and honouring it half-way — copying while saying nothing —
+        ///         is the "accepted it, changed nothing, said nothing" silence this round exists to remove.
+        ///         Deleting the attribute is always a valid fix and costs exactly one copy.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor ShareInvalid = new(
+            "DWARF104",
+            "Invalid [MapShare] target",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            "[MapShare] assigns the source member's reference to the destination instead of copying it, so the " +
+            "two objects thereafter share one instance. That is safe only when nothing reachable through the " +
+            "reference can be written; a settable property, a writable field, an event or an array anywhere in " +
+            "the graph makes it unsafe, and no attribute can assert otherwise. The generator shares provably " +
+            "immutable members automatically, so [MapShare] is only needed for a shape the proof cannot see " +
+            "through — an interface, or a type from another assembly. Removing the attribute restores the copy.",
+            HelpBase + "dwarf104");
+
+        /// <summary>
+        ///     <c>DWARF105</c> — <c>[MapDenseEnumKeys]</c> names a member whose dense index cannot be proven.
+        ///     <para>
+        ///         The directive replaces a hash lookup with a raw index: <c>dst[(int)kv.Key - Offset]</c>. That
+        ///         is a mapping only while every index it can produce is inside the destination's inline array,
+        ///         so the generator proves the range over every value the key enum DECLARES — both bounds, in a
+        ///         width that cannot wrap — before emitting anything. This id is what a failed proof says.
+        ///     </para>
+        ///     <para>
+        ///         An ERROR, and deliberately not a fallback to the ordinary dictionary copy. A member that
+        ///         cannot be proven is a member whose fast path would be wrong, and quietly mapping it the slow
+        ///         way would leave the consumer believing a directive is in force that is not — the "accepted it,
+        ///         changed nothing, said nothing" silence this round exists to remove. Deleting the attribute is
+        ///         always a valid fix and costs exactly one dictionary.
+        ///     </para>
+        ///     <para>
+        ///         The refusals are the hazards this shape has, each disposed of rather than assumed: a member
+        ///         outside <c>[Offset, Offset + n)</c> at EITHER end (a negative member indexes before the
+        ///         array); an underlying type whose values do not fit the proof's arithmetic; a <c>[Flags]</c>
+        ///         enum, whose key space is the power set of its members and therefore contains legitimate keys
+        ///         no member declares; a destination that is not an <c>[InlineArray(n)]</c> struct, and so
+        ///         declares no bound to prove anything against; a source that is not a dictionary, or is keyed by
+        ///         something other than an enum; a value type that does not match the slot type; and a name
+        ///         matching no writable destination member, or one already claimed by another directive.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor DenseEnumInvalid = new(
+            "DWARF105",
+            "Invalid [MapDenseEnumKeys] target",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            "[MapDenseEnumKeys] writes an enum-keyed dictionary into a fixed-size inline array by indexing it " +
+            "with the key's numeric value, which is only correct while every declared enum member lands inside " +
+            "the array. The generator proves that at compile time and refuses when it cannot: an out-of-range " +
+            "member, a [Flags] enum whose key space is the power set of its members, a destination that is not " +
+            "an [InlineArray(n)] struct, a source that is not an enum-keyed dictionary, or a value type that " +
+            "does not match the slot type. There is no bounds-checked fallback on purpose — a proof that does " +
+            "not hold is refused rather than hidden behind a runtime test. Remove the attribute to map the " +
+            "member as an ordinary dictionary, widen the inline array, or set Offset.",
+            HelpBase + "dwarf105");
+
+        /// <summary>
+        ///     <c>[Reinterpret]</c> on a member took the block copy, and by doing so did NOT call a conversion
+        ///     the element pair would otherwise have resolved to — a user-declared method on the mapper, or a
+        ///     user-defined conversion operator between the element types.
+        ///     <para>
+        ///         Round 29, <c>T0.2c</c> review fix 3. Everywhere else in the generator a user conversion now
+        ///         beats the blit: the proof enables a fast path, it never changes semantics. <c>[Reinterpret]</c>
+        ///         is the deliberate exception, because it names ONE member explicitly while an auto-adopted
+        ///         converter is ambient — the same helper may well have been written for a different member
+        ///         entirely. Honouring the explicit instruction is right; doing it silently is not, because the
+        ///         two facts sit in different files and nothing else in the build relates them.
+        ///     </para>
+        ///     <para>
+        ///         INFORMATIONAL, and deliberately not a refusal. Erroring would break a mapper that legitimately
+        ///         uses the helper for a scalar member elsewhere, which is a false positive on correct code; and
+        ///         a warning becomes a build failure under <c>TreatWarningsAsErrors</c> — the trap
+        ///         <c>DWARF070</c> taught this project once already. An intentional bypass is exactly what an
+        ///         Info is for: silence and a refusal are the two wrong ends.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor ReinterpretBypassesConversion = new(
+            "DWARF106",
+            "[Reinterpret] takes the block copy instead of a declared conversion or directive",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "[Reinterpret] forces the blittable block copy for the member it names, which copies bytes and calls " +
+            "nothing. Without it, this element pair would have resolved to the conversion named in the message, or " +
+            "been given the synthesized helper that carries the pair-scoped directive or hook named there — so " +
+            "the two are in conflict, and the explicit [Reinterpret] wins. That is intentional and the mapping is " +
+            "correct; this is informational so the bypass is visible rather than silent. Remove [Reinterpret] from " +
+            "the member to use the conversion or directive instead, or keep it and the block copy stands.",
+            HelpBase + "dwarf106");
     }
 }

@@ -22,6 +22,74 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Every <c>[MapShare("Member")]</c> on a mapping method, as the caller wrote it.
+        /// </summary>
+        /// <remarks>
+        ///     The names come back RAW — never escaped. They are COMPARED against destination member names
+        ///     (<c>TryPlanShare</c>'s <c>ShareMembers.Contains</c>) and printed into <c>DWARF104</c>; escaping is
+        ///     positional, and an <c>@</c> that leaks into a comparison is how a diagnostic came to refuse a
+        ///     member that was plainly mapped. Emission is the only place the <c>@</c> belongs, and the share
+        ///     emits the DESTINATION member's own escaped name via <c>MemberMap.EmitTargetName</c>, never this
+        ///     string.
+        /// </remarks>
+        private static List<string> ReadShareMembers(ISymbol method)
+        {
+            var members = new List<string>();
+            foreach (var attr in method.GetAttributes())
+                if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapShareFqn &&
+                    attr.ConstructorArguments.Length == 1 &&
+                    attr.ConstructorArguments[0].Value is string m)
+                {
+                    members.Add(m);
+                }
+
+            return members;
+        }
+
+        /// <summary>
+        ///     Every <c>[MapDenseEnumKeys("Member", Offset = n)]</c> on a mapping method, as the caller wrote it.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Applications are returned IN ORDER and un-deduplicated, so the caller can see that two of them
+        ///         named the same member. That is a real mistake with two different offsets behind it — picking
+        ///         one silently would emit arithmetic the consumer never asked for — and it is reported as
+        ///         <c>DWARF105</c> rather than resolved here.
+        ///     </para>
+        ///     <para>
+        ///         The names come back RAW, never escaped, for the reason <c>ReadShareMembers</c> states: they are
+        ///         COMPARED against destination member names and PRINTED into a diagnostic, and escaping is
+        ///         positional. The emitted assignment uses the destination member's own escaped name via
+        ///         <c>MemberMap.EmitTargetName</c>, and the emitted loop names no consumer identifier at all —
+        ///         it reads <c>__kv.Key</c> and <c>__kv.Value</c> off a KeyValuePair.
+        ///     </para>
+        /// </remarks>
+        private static List<(string Member, int Offset)> ReadDenseEnumKeys(ISymbol method)
+        {
+            var members = new List<(string, int)>();
+            foreach (var attr in method.GetAttributes())
+            {
+                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapDenseEnumKeysFqn ||
+                    attr.ConstructorArguments.Length != 1 ||
+                    !(attr.ConstructorArguments[0].Value is string m))
+                {
+                    continue;
+                }
+
+                var offset = 0;
+                foreach (var named in attr.NamedArguments)
+                    if (named.Key == "Offset" && named.Value.Value is int o)
+                    {
+                        offset = o;
+                    }
+
+                members.Add((m, offset));
+            }
+
+            return members;
+        }
+
+        /// <summary>
         ///     Every well-formed <c>[MapCollectionKey("Collection", "Key")]</c> on a mapping method, as written.
         /// </summary>
         /// <remarks>

@@ -42,7 +42,31 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "DWARF004",
             "DWARF006",
             "DWARF019", // retired; superseded by DWARF028 (ProjectionNotTranslatable)
-            "DWARF029"
+            "DWARF029",
+            // DWARF102/104/105: held by the round-29 plan for tasks still to land, so DWARF106 was allocated
+            // out of order rather than renumbering work already specified against those ids. Each entry leaves
+            // when its task claims it; this block must only SHRINK. DWARF101 left it in round 29 T0.3
+            // (LayoutHygiene / struct padding) and DWARF103 in T2.2 (the transfer-model hint at the mapping
+            // site), which is what the block is for.
+            //
+            // DWARF102 is the ONE entry that came back, and it is stated rather than quietly re-added:
+            // round 29 Phase 1 claimed it for [GenerateView] ("member cannot be viewed without allocating"),
+            // and the owner withdrew that endpoint on 2026-09-07 (Issues/round29/WITHDRAWN-generated-views.md).
+            // Nothing shipped: the id was never in AnalyzerReleases.Shipped.md, so no consumer can be
+            // suppressing it. It is reserved again and must NOT be reused for unrelated work — a future
+            // reader searching the log for DWARF102 will find a view diagnostic, and an id that means two
+            // things in two places is exactly the confusion this block exists to prevent. (DWARF108, which
+            // the same phase allocated, was likewise unshipped and is simply unallocated again.)
+            //
+            // DWARF104 left in round 29 T3.1, claimed by [MapShare] ("Invalid [MapShare] target"). The plan had
+            // pencilled it in for the dense-enum-key misuse; that task has not landed and the share needed a
+            // refusal id, so it took the reservation the block exists to hand out. The plan text is stale on
+            // this point rather than contradicted: the dense-enum task will allocate a fresh id when it lands.
+            // DWARF105 left in round 29 T3.2, claimed by [MapDenseEnumKeys] ("Invalid [MapDenseEnumKeys]
+            // target") — the dense-enum task the note above said would allocate a fresh id when it landed, and
+            // this reservation is the one the plan had left for it. DWARF102 is now the block's only entry, and
+            // it is the one that must NOT be handed out: see the paragraph above.
+            "DWARF102"
         };
     }
 

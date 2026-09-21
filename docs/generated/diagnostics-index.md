@@ -73,7 +73,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF067` | Error | [GenerateWrapperMap] wrapper is not a single-payload generic |
 | `DWARF068` | Error | Unsupported MapConfig expression |
 | `DWARF069` | Error | Conflicting member configuration |
-| `DWARF070` | Warning | Nullable source member is assigned to a non-nullable target member |
+| `DWARF070` | Warning | A nullable source is assigned to a non-nullable target member |
 | `DWARF071` | Info | Source type has derived types whose members would be dropped |
 | `DWARF072` | Error | Member has a source match but auto-matching is disabled |
 | `DWARF073` | Error | [MapProperty(StringFormat=)] is not applicable here |
@@ -103,6 +103,12 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF097` | Warning | Mapping method was not generated |
 | `DWARF098` | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use |
 | `DWARF099` | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations |
-| `DWARF100` | Info | Array pair narrowly missed the blittable fast path |
+| `DWARF100` | Info | Array or span pair narrowly missed the blittable fast path |
+| `DWARF101` | Info | Struct layout pads more than a quarter of its size |
+| `DWARF103` | Info | Collection element could be a struct |
+| `DWARF104` | Error | Invalid [MapShare] target |
+| `DWARF105` | Error | Invalid [MapDenseEnumKeys] target |
+| `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive |
+| `DWARF107` | Warning | A converter's nullable return is stored where null is forbidden |
 
-96 diagnostics.
+102 diagnostics.

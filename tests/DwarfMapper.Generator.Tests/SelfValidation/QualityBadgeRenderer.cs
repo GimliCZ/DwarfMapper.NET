@@ -58,11 +58,16 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         /// <summary>How many legs the mutation ledger's per-leg summary must carry.</summary>
         /// <remarks>
-        ///     Four since round 27 added the code-fix leg. This is a VACUITY floor, not a list: it exists so a
-        ///     reader that silently parsed fewer rows than are gated cannot render a short table that the
-        ///     committed document then matches.
+        ///     SIX since round 29 added the testing-toolkit verifier leg. This is a VACUITY floor, not a list:
+        ///     it exists so a reader that silently parsed fewer rows than are gated cannot render a short table
+        ///     that the committed document then matches.
+        ///     <para>
+        ///         The sentence used to read "Four since round 27" while the value was 5 — the round-27
+        ///         pipeline leg moved the number and not the prose. Corrected while moving it to 6, because a
+        ///         pin whose comment disagrees with its value is a pin nobody can review.
+        ///     </para>
         /// </remarks>
-        private const int ExpectedMutationLegs = 5;
+        private const int ExpectedMutationLegs = 6;
 
         /// <summary>
         ///     Colour, derived from the gate's own verdict on the rendered number — never hand-assigned per

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 
 namespace DwarfMapper.Generator.Model
 {
@@ -97,6 +98,22 @@ namespace DwarfMapper.Generator.Model
     ///     direct/implicit element assignment).
     /// </param>
     /// <param name="SpanTargetParameterName">The destination span parameter name for an <see cref="IsSpanMap"/> method.</param>
+    /// <param name="SpanMapBlits">
+    ///     When <c>true</c>, the <see cref="IsSpanMap"/> element pair is proven layout-identical
+    ///     (<see cref="BlittableProof.CanReinterpret"/> / <see cref="BlittableProof.CanReinterpretEnums"/>), so the
+    ///     body is a single <c>MemoryMarshal.Cast&lt;S, D&gt;(src).CopyTo(dst)</c> block copy after the length guard,
+    ///     rather than the per-element loop. The element converter resolved into <see cref="Members"/>[0] is left
+    ///     unused on this path (still synthesized, for the completeness/diagnostics passes that ask what the pair
+    ///     resolves to) — round 29, T0.2.
+    /// </param>
+    /// <param name="SpanSourceElementFullName">
+    ///     The source span's element type, fully qualified — the first type argument to
+    ///     <c>MemoryMarshal.Cast&lt;S, D&gt;</c> on a <see cref="SpanMapBlits"/> body.
+    /// </param>
+    /// <param name="SpanTargetElementFullName">
+    ///     The destination span's element type, fully qualified — the second type argument to
+    ///     <c>MemoryMarshal.Cast&lt;S, D&gt;</c> on a <see cref="SpanMapBlits"/> body.
+    /// </param>
     /// <param name="EmitAsNonPartial">
     ///     When <c>true</c>, this is an attribute-declared mapper (<c>[GenerateMap&lt;S,T&gt;]</c>) emitted as a
     ///     FULL <c>public</c> method rather than a <c>partial</c> implementation — the user did not declare a
@@ -149,6 +166,68 @@ namespace DwarfMapper.Generator.Model
     ///     DECLARES, and a declaration is not un-made by failing to compile. Only the six emission and
     ///     aggregation sites skip it, so the single thing that changes is what reaches the consumer's file.
     /// </param>
+    /// <param name="ParameterTypeSignature">
+    ///     <see cref="ParameterTypeFullName" /> WITH its nullable reference annotations, for the one place the
+    ///     annotation is part of the contract: the source parameter of a signature that must match a partial
+    ///     method the USER declared. Null on every model whose signature the generator both writes and calls,
+    ///     which then falls back to <see cref="ParameterTypeFullName" />.
+    ///     <para>
+    ///         It is a SEPARATE field rather than an annotation on <see cref="ParameterTypeFullName" /> because
+    ///         that string is not only a signature: it is the operand of <c>typeof(…)</c> in the ambient
+    ///         registration, the target of <c>new …()</c> and of a cast, the key the pair is deduplicated and
+    ///         resolved by (<c>ResolveByFqn</c>), and text inside diagnostic messages. Annotating it in place was
+    ///         measured, not assumed: it turns <c>CS8611</c> into <c>CS8639</c> ("the typeof operator cannot be
+    ///         used on a nullable reference type") in the same generated file, and on the return side into
+    ///         <c>CS8628</c> ("cannot use a nullable reference type in object creation"). Round 29 task 2.7.
+    ///     </para>
+    /// </param>
+    /// <param name="ReturnTypeSignature">
+    ///     The RETURN half of <see cref="ParameterTypeSignature" />, and a separate field for exactly the same
+    ///     measured reason: <see cref="ReturnTypeFullName" /> is the pair's canonical identity — the target of the
+    ///     <c>new …()</c> the emitter writes, a cast target, the <c>typeof(…)</c> operand and registry key, a dedup
+    ///     key and diagnostic message text — so annotating it in place trades <c>CS8611</c> for <c>CS8628</c>
+    ///     ("cannot use a nullable reference type in object creation"). Task 2.7 applied that patch, probed it and
+    ///     reverted it; this field is what shipped instead. Null on every model whose signature the generator both
+    ///     writes and calls, which then falls back to <see cref="ReturnTypeFullName" />.
+    ///     <para>
+    ///         Read at the three branches that write a RETURN slot which must match a user's own declaration (the
+    ///         create-map partial, the async-stream iterator, the returning form of update-into) and by the
+    ///         extension facade, whose forwarding method has to declare the same nullability the map it calls
+    ///         does — otherwise <c>CS8603</c> lands in <c>DwarfMapper.Extensions.g.cs</c>. The generic case is
+    ///         where the compiler is loudest: <c>partial List&lt;Dst?&gt; Many(…)</c> implemented as
+    ///         <c>List&lt;Dst&gt;</c> is <c>CS8819</c> plus a <c>CS8619</c> on the returned helper value. A SCALAR
+    ///         nullable return is silent at the partial — a stricter return is safe — which is why the one-line
+    ///         "annotate the FullName" fix could never have worked for it: its diagnostics were never on the
+    ///         signature at all. Round 29 task 2.8.
+    ///     </para>
+    /// </param>
+    /// <param name="UpdateTargetTypeSignature">
+    ///     The same annotation-preserving spelling for the DESTINATION PARAMETER of an update-into
+    ///     (<c>void Update(S src, T dest)</c>), whose type <see cref="ReturnTypeFullName" /> also holds. It is a
+    ///     THIRD field rather than a reuse of <see cref="ReturnTypeSignature" /> because the returning form
+    ///     declares two independently-annotated positions from two different symbols: in
+    ///     <c>partial Dst Update(Src s, Dst? d)</c> the parameter is annotated and the return is not, and writing
+    ///     one string into both slots turns a <c>CS8611</c> on the parameter into a <c>CS8819</c> on the return.
+    ///     Null when the model is not an update-into. Round 29 task 2.8.
+    /// </param>
+    /// <param name="ReturnIsNullableRef">
+    ///     Whether the user DECLARED this map to return a nullable reference type. Read only by the ambient
+    ///     registration, whose delegate type is the shipped <c>Func&lt;object, object&gt;</c>: a map that may
+    ///     return null cannot satisfy that contract, so the emitted lambda coalesces to a loud
+    ///     <c>InvalidOperationException</c> naming the pair rather than smuggling a null into a non-nullable
+    ///     delegate (<c>CS8603</c>/<c>CS8604</c> in the consumer's <c>.g.cs</c> today). Modelled as a fact rather
+    ///     than sniffed out of <see cref="ReturnTypeSignature" />, because the question is about the TOP-LEVEL
+    ///     annotation only — <c>List&lt;Dst?&gt;</c> is a non-null list and registers unchanged. Round 29 task 2.8.
+    /// </param>
+    /// <param name="AsyncStreamTargetElementFullName">
+    ///     The destination ELEMENT type of an <see cref="IsAsyncStreamMap" /> method, annotations included — the
+    ///     cast the shared <c>CollectionConverter.ElementExpr</c> writes onto the non-null arm of a lifted
+    ///     element, so the conditional's type never depends on target-typing. The span map's own
+    ///     <see cref="SpanTargetElementFullName" /> is the same thing one endpoint over; this is a separate field
+    ///     rather than a reuse of <see cref="ElementTargetTypeFullName" /> because THAT string is a <c>new …</c>
+    ///     target in the projection body, where a nullable annotation is <c>CS8628</c>. Empty for every other
+    ///     method shape. Round 29 task 2.8.
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -177,6 +256,9 @@ namespace DwarfMapper.Generator.Model
         bool UpdateReturnsVoid = false,
         bool IsSpanMap = false,
         string SpanTargetParameterName = "",
+        bool SpanMapBlits = false,
+        string SpanSourceElementFullName = "",
+        string SpanTargetElementFullName = "",
         bool EmitAsNonPartial = false,
         bool IsAsyncStreamMap = false,
         string? AsyncCancellationParam = null,
@@ -184,5 +266,62 @@ namespace DwarfMapper.Generator.Model
         bool ParameterIsPublicType = false,
         bool ReturnIsPublicType = false,
         string? FactoryMethod = null,
-        bool Withheld = false) : IEquatable<MapMethodModel>;
+        bool Withheld = false,
+        string? ParameterTypeSignature = null,
+        string? ReturnTypeSignature = null,
+        string? UpdateTargetTypeSignature = null,
+        bool ReturnIsNullableRef = false,
+        string AsyncStreamTargetElementFullName = "") : IEquatable<MapMethodModel>
+    {
+        /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
+        /// <remarks>
+        ///     <para>
+        ///         The raw field stays, and stays raw, because it is this method's IDENTITY as much as its
+        ///         spelling: <see cref="MemberMap.ConverterMethod" /> is matched against it by ordinal equality
+        ///         to build the call graph, the DWARF060 same-source collision pass keys on it, the depth
+        ///         companion is <c>GeneratedNames.Depth + MethodName</c>, and
+        ///         <c>GeneratedNames.IsObjectMap(MethodName)</c> asks whether the generator synthesized it.
+        ///         Escaping at construction would make every one of those comparisons miss for exactly the
+        ///         consumer whose method is called <c>@class</c>.
+        ///     </para>
+        ///     <para>
+        ///         <see cref="Identifiers.Escape" /> and not <c>EscapeTypeName</c>: a method may be called
+        ///         <c>record</c> or <c>partial</c> with no escape at all, and widening would churn every golden.
+        ///     </para>
+        /// </remarks>
+        public string EmitMethodName => Identifiers.Escape(MethodName);
+
+        /// <summary><see cref="ParameterName" /> as it must be written into emitted C#.</summary>
+        /// <remarks>
+        ///     The raw field is read by the extra-parameter matcher and by DWARF047's unused-parameter check,
+        ///     which compare against <c>IParameterSymbol.Name</c> and must keep seeing the unescaped spelling.
+        /// </remarks>
+        public string EmitParameterName => Identifiers.Escape(ParameterName);
+
+        /// <summary><see cref="UpdateTargetParameterName" /> as it must be written into emitted C#.</summary>
+        public string EmitUpdateTargetParameterName => Identifiers.Escape(UpdateTargetParameterName);
+
+        /// <summary><see cref="SpanTargetParameterName" /> as it must be written into emitted C#.</summary>
+        public string EmitSpanTargetParameterName => Identifiers.Escape(SpanTargetParameterName);
+
+        /// <summary>
+        ///     <see cref="AsyncCancellationParam" /> as it must be written into emitted C#, or <c>null</c> when
+        ///     the user declared no token parameter.
+        /// </summary>
+        public string? EmitAsyncCancellationParam =>
+            AsyncCancellationParam is null ? null : Identifiers.Escape(AsyncCancellationParam);
+
+        /// <summary>
+        ///     <see cref="FactoryMethod" /> as it must be written into emitted C#, or <c>null</c> when the pair
+        ///     constructs its destination itself.
+        /// </summary>
+        public string? EmitFactoryMethod =>
+            FactoryMethod is null ? null : Identifiers.Escape(FactoryMethod);
+
+        /// <summary>
+        ///     <see cref="BeforeHooks" /> as they must be written into emitted C# — a <c>[BeforeMap]</c> method
+        ///     the consumer named <c>@class</c> is called by name from the generated body.
+        /// </summary>
+        public IEnumerable<string> EmitBeforeHooks => BeforeHooks.Select(Identifiers.Escape);
+    }
 }

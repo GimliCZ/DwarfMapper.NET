@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 
 namespace DwarfMapper.Generator.Model
@@ -78,15 +79,63 @@ namespace DwarfMapper.Generator.Model
         ///     <c>Namespace + "." + ClassName</c>, which silently dropped the containing type and emitted references
         ///     to a <c>Demo.M</c> that does not exist (CS0234) whenever the mapper was nested.
         /// </summary>
+        /// <remarks>
+        ///     Escaped, unlike <see cref="HintName" />, and the difference is the whole reason they are two
+        ///     properties that look alike: this one is C# and that one is a FILENAME. <see cref="Namespace" />
+        ///     arrives from <c>ToDisplayString</c> and is already escaped by the compiler's own format; the class
+        ///     name and the containing chain arrive from <c>ISymbol.Name</c> and are not.
+        /// </remarks>
         public string FullyQualifiedName
         {
             get
             {
-                var nested = string.Join(".", ContainingTypes.Select(TypeNameOf));
-                var local = string.IsNullOrEmpty(nested) ? ClassName : nested + "." + ClassName;
+                var nested = string.Join(".", ContainingTypes.Select(c => Identifiers.EscapeTypeName(TypeNameOf(c))));
+                var local = string.IsNullOrEmpty(nested) ? EmitClassName : nested + "." + EmitClassName;
                 return "global::" + (string.IsNullOrEmpty(Namespace) ? local : Namespace + "." + local);
             }
         }
+
+        /// <summary>
+        ///     <see cref="ClassName" /> as it must be written into emitted C# — the mapper's own declaration
+        ///     header, its generated static constructor, and every reference to it.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Identifiers.EscapeTypeName" /> rather than <see cref="Identifiers.Escape" />, because
+        ///     this is a type-DECLARATION position: a consumer may write <c>public partial class @record</c>, and
+        ///     <c>ISymbol.Name</c> hands back <c>record</c>, which declares fine and then breaks wherever the name
+        ///     is READ. This is that helper's first production call site.
+        /// </remarks>
+        public string EmitClassName => Identifiers.EscapeTypeName(ClassName);
+
+        /// <summary>
+        ///     <see cref="ContainingTypes" /> as they must be written into emitted C# — each declaration header
+        ///     with its TYPE NAME escaped and its modifiers left alone.
+        /// </summary>
+        /// <remarks>
+        ///     The escape belongs here rather than in the header the extractor stores, because that same stored
+        ///     string feeds <see cref="TypeNameOf" /> into <see cref="HintName" />, which is a filename: escaping
+        ///     at construction would rename every generated file of a nested mapper to <c>@class.M.g.cs</c>.
+        /// </remarks>
+        public IEnumerable<string> EmitContainingTypes
+        {
+            get
+            {
+                foreach (var declaration in ContainingTypes)
+                {
+                    var cut = declaration.LastIndexOf(' ');
+                    yield return cut < 0
+                        ? Identifiers.EscapeTypeName(declaration)
+                        : declaration.Substring(0, cut + 1) + Identifiers.EscapeTypeName(declaration.Substring(cut + 1));
+                }
+            }
+        }
+
+        /// <summary>
+        ///     <see cref="ConventionMethodNames" /> as they must be written into the generated static
+        ///     constructor's <c>nameof</c> discards. <c>nameof(@class)</c> is legal and evaluates to
+        ///     <c>"class"</c>, so escaping changes nothing but whether the file parses.
+        /// </summary>
+        public IEnumerable<string> EmitConventionMethodNames => ConventionMethodNames.Select(Identifiers.Escape);
 
         /// <summary>
         ///     Whether an error on this class suppresses the WHOLE class's emission.

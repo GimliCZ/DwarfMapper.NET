@@ -81,7 +81,8 @@ rule, without giving up the guarantees you *do* want:
    map even if you silence its id.
 2. **One-click resolutions.** The common completeness diagnostics carry code fixes: `DWARF001` → *Add
    [MapIgnore]*, `DWARF072` → *Map it* / *Ignore it*, `DWARF052` → *scaffold the inverse*. Adopt member by
-   member from the IDE lightbulb rather than hand-editing attributes.
+   member from the IDE lightbulb rather than hand-editing attributes. `DWARF103` carries one too — it
+   rewrites a transfer model, and every model it holds, into `readonly record struct`s in one step.
 3. **Tighten as you go.** Escalate a suggestion to a build error once a module is clean
    (`dotnet_diagnostic.DWARF038.severity = error` for strict, Mapperly-style conversions;
    `[DwarfMapper(RequiredMapping = Both)]` to also flag unused source members), or reach for the
@@ -591,18 +592,29 @@ The same destination member is configured more than once — by both an attribut
 ---
 
 ## dwarf070
-**Nullable source member is assigned to a non-nullable target member** · Warning
+**A nullable source is assigned to a non-nullable target member** · Warning
 
-The source member is a nullable reference (`string?`) but the destination member is not (`string`), so a null
-would be stored in a member whose type says it cannot be null. `NullStrategy` does **not** cover this: it
-governs nullable *value* types (`int?`) only, and a nullable *reference* source raw-assigns by design.
+Something that may be null is being written into a destination slot whose type says it cannot hold one. That
+something is one of four things, and the message says which:
+
+* **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`).
+* **`Mapping parameter 'x'`** — an extra parameter on the map method
+  (`partial Dst Map(Src s, Child? inner)`), matched to the destination member by name.
+* **`The source element mapped into 'Items'`** — a nullable reference *element* of a mapped collection, array,
+  span or async stream (`List<Child?>` into `List<ChildDto>`). The name is the destination member, or the
+  method for a span / async-stream endpoint, because that is what locates the edge.
+* **`The source value mapped into 'Lookup'`** — the same thing for a dictionary *value*
+  (`Dictionary<string, Child?>` into `Dictionary<string, ChildDto>`).
+
+`NullStrategy` does **not** cover either: it governs nullable *value* types (`int?`) only, and a nullable
+*reference* source raw-assigns by design.
 
 Left alone, that raw assignment also made the **compiler** emit `CS8601` ("possible null reference assignment")
 from inside the *generated* file — a warning you cannot fix, in code you cannot edit, and a hard build break
 under `TreatWarningsAsErrors`. DwarfMapper now suppresses that `CS8601` and reports this instead, against your
-own DTO, where you can act on it.
+own source, where you can act on it.
 
-**Fix** — pick the one that matches your intent:
+**Fix, for a source MEMBER** — pick the one that matches your intent:
 
 | You want | Use |
 |---|---|
@@ -610,6 +622,37 @@ own DTO, where you can act on it.
 | the destination to keep its own default | `[DwarfMapper(SkipNullSourceMembers = true)]` |
 | null to be a legal value here | make the destination member nullable (`string?`) |
 | to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+**Fix, for a mapping PARAMETER.** The first two rows above do not apply — both are source-member
+instruments, and an extra parameter is not a member of the source type. Two remedies remain:
+
+| You want | Use |
+|---|---|
+| null to be a legal value here | make the destination member nullable (`ChildDto?`) |
+| the parameter never to be null | declare it non-nullable (`Child inner`) |
+| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+**Fix, for a collection ELEMENT or a dictionary VALUE.** The two source-member instruments do not reach these
+either — the null is in the *element* type, not in the member — and the destination member being non-nullable
+is not what this is about:
+
+| You want | Use |
+|---|---|
+| null to be a legal element here | make the destination *element* type nullable (`List<ChildDto?>`, `ChildDto?[]`, `Dictionary<string, ChildDto?>`) |
+| the converter to handle the null itself | declare its parameter nullable (`ChildDto ToDto(Child? c)`) — it then keeps receiving the null, un-forgiven |
+| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+Round 29 (task 2.9) is when the element edges started reporting this. Before it they were the *silent* half of
+the same defect: a nullable element reaching a map method you declared was emitted bare, so the compiler
+raised `CS8604` inside the generated file (unsuppressible), and a nullable element reaching a `[FlattenGraph]`
+leaf was null-forgiven with nothing said at all. Both now forgive **and** report, on one shared decision, so
+the `!` and this warning cannot diverge between one edge and the next.
+
+Whichever it is, the generated code is warning-free either way: the mapper emits the null-forgiving `!` so no
+`CS8601`/`CS8604` reaches a file you cannot edit, and reports this against your own source instead. Before
+round 29 a nullable mapping parameter got neither — it produced `CS8611`, `CS8604`, `CS8601` or `CS0266`
+inside the generated file, none of them suppressible. This warning replaces those: it is the *suppressible*
+form of the same signal.
 
 Only fires for a genuinely annotated source (`string?`) flowing into an annotated non-nullable target. Code in
 a `#nullable disable` context is *oblivious*, the compiler raises no `CS8601` there, and neither does this — a
@@ -1456,9 +1499,10 @@ Some directives are read at **one** mapping endpoint and at no other. Written on
 were read by nobody and reported by nobody — the identical text on the identical mapper class meaning one
 thing on one overload and nothing on the next four.
 
-Two families share this id, pointing in opposite directions. Three directives are about the destination the
-mapper **constructs and returns**, so only the create map reads them; one is about a destination that
-**already exists**, so only the update-into reads it. First the create-map three:
+Three families share this id. Three directives are about the destination the mapper **constructs and
+returns**, so only the create map reads them; one is about a destination that **already exists**, so only the
+update-into reads it; and one is read at **both** of the endpoints that resolve destination members one at a
+time, and at neither of the three that do not. First the create-map three:
 
 <!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
 ```csharp
@@ -1538,8 +1582,34 @@ named "not an update-into method" as a case it covered — but no call site ever
 the upsert path is reached from the update-into branch alone. The check could not have lived on `DWARF074`
 in any case: that id is an **Error**, and an error here suppresses the whole class's emission.
 
+`[MapDenseEnumKeys]` is the third family, and the only one with **two** home endpoints. It fills an
+`[InlineArray]` member by looping over an enum-keyed dictionary and indexing — and the create map and the
+update-into are the two endpoints that resolve destination members one at a time and can emit a loop. A
+projection is translated into an expression tree, which has no statement for one to live in; a span map and
+an async stream map each element through a mapper for the *element* pair and read no per-member directive at
+all. Written on any of those three it was discarded, and a dictionary into an inline array is no conversion
+at all — so what the caller actually got was the ordinary refusal for a member that cannot be mapped, with
+nothing saying the directive they wrote was not in force:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapDenseEnumKeys("Counts", Offset = 1)]       // honoured — Counts is filled by index
+    public partial StatsDto Map(Stats s);
+
+    [MapDenseEnumKeys("Counts", Offset = 1)]       // DWARF092 — discarded; Counts is refused instead
+    public partial IQueryable<StatsDto> Project(IQueryable<Stats> q);
+}
+```
+
+[`DWARF105`](#dwarf105) proves this directive at its two home endpoints — every declared enum member inside
+the array, both ends, in a width that cannot wrap. Nothing proved it at the other three either, which is the
+same asymmetry `[MapCollectionKey]` carries above.
+
 **Fix:** declare the directive at its **home** endpoint over the same pair — a create map for the first three,
-an update-into for `[MapCollectionKey]`. For the create-map three, at the two **element-wise** endpoints that
+an update-into for `[MapCollectionKey]`, and either a create map or an update-into for `[MapDenseEnumKeys]`. For the create-map three, at the two **element-wise** endpoints that
 is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
 method for that pair where one exists, so the create map carrying the directive is what the emitted loop
 calls, and the directive reaches the element-wise endpoint through it. Measured, not asserted:
@@ -1551,6 +1621,7 @@ calls, and the directive reaches the element-wise endpoint through it. Measured,
 | `[MapDerivedType<Dog, DogDto>]` on `void MapSpan(ReadOnlySpan<Animal>, Span<AnimalDto>)` | the same on a `partial AnimalDto Map(Animal a)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` and that create map is the runtime-type switch, so the dispatch runs per element |
 | `[ReverseMap]` on **any** of the four | the same on a `partial Dst Map(Src s)`, with the inverse declared as a `partial Src Back(Dst d)` | the inverse emits `A = d.B`; without `[ReverseMap]` the same two methods are `DWARF001`. **No transfer**, at any of the four — `[ReverseMap]` does not change what the create map emits, so the element-wise adoption above does not carry it, and the message deliberately does not claim it does |
 | `[MapCollectionKey("Items", "Id")]` on **any** of the other four | the same on a `partial void Update(Order o, OrderDto d)` beside it | the update-into emits the key index and the replace-or-append merge, and the method you wrote it on is unchanged. **No transfer**, at any of the four, including element-wise — what a span or stream loop adopts is a declared **create** map for the element pair, and an update-into is not one |
+| `[MapDenseEnumKeys("Counts")]` on a projection, a span map or an async stream | the same on a `partial StatsDto Map(Stats s)` or a `partial void Update(Stats s, StatsDto d)` beside it | either home endpoint emits the indexed fill and proves it. **No transfer**, including element-wise — this directive configures a member of the pair the method itself names, so an adopted sibling brings its own applications and not this one |
 
 The directive is quoted back in the **form you wrote it** — `[MapDerivedType<Dog, DogDto>]` stays generic and
 `[MapDerivedType(typeof(Dog), typeof(DogDto))]` stays open — rather than normalized into whichever one the
@@ -1831,10 +1902,11 @@ that is one policy per pair, which is what the attribute is for.
 ---
 
 ## dwarf100
-**Array pair narrowly missed the blittable fast path** · Info
+**Array or span pair narrowly missed the blittable fast path** · Info
 
-Your mapping is **correct and complete**. This is a performance hint, and nothing else: an array pair came
-within one identifiable step of the blittable fast path — a single block copy of the whole array — and took
+Your mapping is **correct and complete**. This is a performance hint, and nothing else: an array, list, or
+span-map element pair came within one identifiable step of the blittable fast path — a single block copy of
+the whole array, or (round 29, T0.2) of a `void Map(ReadOnlySpan<S>, Span<D>)` span map's buffer — and took
 the element-by-element loop instead.
 
 <!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
@@ -1865,6 +1937,10 @@ public struct PointDto { public int X; public int Y; }
   attribute repeats the single field, so the counts are part of the layout.
 - **A fixed-size buffer whose length differs** — or a fixed buffer against a pointer field. `fixed int Buf[4]`
   and `fixed int Buf[8]` have the same field type (`int*`); the length is what the runtime reserves bytes for.
+- **A member that is `Nullable<T>` on one side only, whose unwrapped `T`'s are layout-identical.** Unwrap
+  the optional and the two sides are byte-identical, so the pair is one `?` away from the fast path.
+  A one-sided `Nullable<T>` whose unwrapped types do **not** agree (e.g. `long?` against `int`) is an
+  ordinary conversion, not a near-miss, and stays silent.
 - **Field names that differ.** DwarfMapper maps **by name**, so a positional reinterpret only agrees with the
   declared mapping when the names line up. Rename to align them — or apply `[Reinterpret]` to say that
   positional semantics are what you actually meant.
@@ -1875,10 +1951,468 @@ Every reason but the last applies to `[Reinterpret]` too: the opt-in waives the 
 callers will not care about an array of four elements. A warning here would become a *build failure* under
 `TreatWarningsAsErrors`, which is a trap this project has already sprung once (see `dwarf070`).
 
-**Why it does not fire more often.** A pair whose field counts or field *types* differ is silent. Those are
-not missed fast paths, they are ordinary mappings, and a hint common enough to appear on every struct mapping
-would be suppressed wholesale — taking the cases worth reading down with it.
+**Why it does not fire more often.** A pair whose field counts differ, or whose field *types* differ, is
+silent — except a member that is `Nullable<T>` on one side only whose unwrapped types are
+layout-identical, which is the near-miss listed above. Those are not missed fast paths, they are
+ordinary mappings, and a hint common enough to appear on every struct mapping would be suppressed
+wholesale — taking the cases worth reading down with it.
 ---
+
+## dwarf101
+**Struct layout pads more than a quarter of its size** · Info
+
+Your mapping is **correct, and so is your struct**. This is a memory hint: a struct used as the element of a
+mapped collection spends a quarter or more of its bytes on alignment padding, and the message names the field
+order that would not. An element type is allocated once per item, so those wasted bytes are multiplied by the
+length of every array of it.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+public struct Sample                      // DWARF101 — 40 bytes, 20 of them padding
+{
+    public bool Ok; public long Id; public byte Kind; public double Value; public short Code;
+}
+
+// the same struct, in the order the message prints — 24 bytes, and silent
+public struct Sample
+{
+    public long Id; public double Value; public short Code; public bool Ok; public byte Kind;
+}
+```
+
+**Fix:** declare the fields in the order the message prints — largest alignment first, ties in the order you
+already had them. Nothing else changes: not the field names, not the mapping, not one line of generated code.
+The hint is reported ON the struct's declaration, not on the member that maps it, because that declaration is
+the line you edit — and it is reported once per type however many members reach it.
+
+- **What it buys.** Measured on this exact shape (`Issues/round29/RESEARCH-hardware-mode.md`, row **D. layout
+  hygiene**): the packed pair blits in **0.57×–0.62×** the time of the padded one and allocates **0.60×** the
+  memory. The saving is the same 40 % whether the pair takes the block copy or the element loop — it is the
+  array that got smaller. Three iterations on one machine, so the ratio is the finding and the absolute
+  times are not — see [`PERFORMANCE.md`](PERFORMANCE.md) for the error bars and the caveats.
+- **Reorder BOTH sides of a pair.** The block copy needs the two element types to be layout-identical, so
+  packing only the destination breaks that and drops the pair back to the element loop — and `dwarf100` will
+  not say so either, because two field lists that no longer line up positionally are an ordinary mapping
+  rather than a near-miss. Both sides are reported for this reason.
+- **A field order chosen for readability is a legitimate answer.** Grouping fields by meaning is worth bytes
+  to plenty of people. This is a hint; ignoring it is a decision, not a defect.
+
+**When it stays quiet**, which is most of the time:
+
+- **Under either threshold.** Both must hold: at least a quarter of the size wasted, **and** at least 8 bytes.
+  `{byte Kind; long Id}` wastes 7 of its 16 — well over a quarter, and one byte under the floor. That shape is
+  half the transfer models in existence, and a hint that fired on it would be suppressed wholesale, taking the
+  cases worth reading down with it — the same scoping rule `dwarf100` keeps, and for the same reason.
+- **A struct declared in metadata.** Its field order is not yours to change, so the remedy would be unusable.
+- **A struct another source generator emitted.** Same reason, plus one worse: the hint would land inside a
+  `.g.cs`, where you could not suppress it either.
+- **A layout this generator cannot compute**: `LayoutKind.Auto` or `Explicit`, an explicit `Pack` or `Size`,
+  `[InlineArray]`, a fixed-size buffer, instance fields split across `partial` declarations (CS0282), or a
+  field whose width is the platform's — `nint`, `nuint`, `IntPtr`, `UIntPtr`. A number measured on the build
+  machine would be a false claim about the machine you deploy to, so nothing is claimed.
+- **A padded struct mapped as a scalar member.** It wastes those bytes once. The claim here is about arrays.
+- **Padding that lives inside a nested struct.** It is charged to the type that declares those fields, never
+  to the one that contains it — reordering the outer fields could not recover it.
+---
+## dwarf103
+**Collection element could be a struct** · Info
+
+Your mapping is **correct, and so is your class**. This is an allocation hint: the collection being mapped
+builds one `TargetDto` object per element, and `TargetDto` carries nothing but data — declared as a
+`readonly record struct` it would live *inside* the array, so the whole collection is one allocation instead
+of one per element. Where the *source* element is transfer-model shaped too and neither type holds a
+reference, it adds that the pair could take the block copy as structs.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+public sealed class OrderDto                      // DWARF103 — 16 bytes as a struct
+{
+    public long Id { get; set; }
+    public int Quantity { get; set; }
+}
+
+// the remedy the message names — and the hint goes quiet
+public readonly record struct OrderDto(long Id, int Quantity);
+```
+
+**Fix:** declare the element type as a `readonly record struct`. The IDE lightbulb offers
+*Convert to readonly record struct (may break call sites): 'X' + N nested transfer models*, which does it for
+you — **and does it to the nested models too**, because the size in the message counts any transfer model the
+type holds as a struct as well, so converting the element alone would leave you a smaller type than the one
+you were shown. The rewrite also makes the declaration compile on its own: `set` becomes `init`, an instance
+field gains `readonly`, initialisers keep a constructor, and a member the nullable context left oblivious
+keeps its `?`.
+
+**It does not update your call sites**, which is why the title says so before it says anything else — that
+clause leads because it is the half that has to survive a truncated lightbulb entry. Leaving usages alone is
+deliberate rather than an omission: *most* of the ways a struct differs from a class show up there as a
+*compile error* rather than as a silent change, and that is what makes the suggestion worth offering at all.
+**Read the hazards first** — unlike the other performance hints, this one asks for a change of *meaning*, and
+the table says which halves the compiler catches for you and which it does not.
+
+| Hazard | What breaks | How you find out | What to do |
+|---|---|---|---|
+| **Aliasing is gone** | Two references to one object become **two independent copies**. A write through one is no longer visible through the other, and the two are no longer the same thing. | **Nothing tells you.** | This is the row to check by hand. Before taking the fix, find every place an element is stored twice, passed on and kept, or mutated after being handed somewhere — if any of them relied on sharing, do not convert the type. |
+| **`default` instead of `null`** | A struct has no null state. An absent element becomes a **zeroed struct whose constructor never ran**, not a missing one. | Compile error where `null` was written (`CS0037`); **silent** where a slot was simply left unassigned. | Make the member `Nullable<T>` (`OrderDto?` → `Nullable<OrderDto>`) if "absent" is a state you rely on. |
+| **`Nullable<T>` boxes through `object`** | A `T?` that crosses an `object`, `dynamic` or non-generic-interface boundary **allocates** — the allocation the conversion just removed, back one per crossing. | Silent; it shows up as a performance regression, not an error. | Keep the optional inside typed code; do not funnel it through `object`-typed caches, `IList`, or a reflective serializer path. |
+| **`list[i].X = v` is `CS1612`** | The indexer returns a **copy**, so mutating an element in place cannot compile. | Compile error (`CS1612`). | Read-modify-write the whole element: `list[i] = list[i] with { X = v }`. |
+| **Value equality replaces reference equality** | `==`, `Equals` and anything built on them (`Contains`, `Distinct`, a `HashSet`/`Dictionary` keyed by the element) start comparing **fields** instead of identity, so two distinct-but-equal elements become one. | Silent. | **Usually this is the behaviour you wanted** — for a transfer model, value equality is the point, which is why it is a feature rather than a hazard. It is listed so it is not a surprise in a `HashSet` that used to keep duplicates. |
+| **System.Text.Json needs `[JsonConstructor]`** | A `readonly record struct` with a parameterized constructor deserializes with **every property silently defaulted** unless the constructor is marked (`dotnet/runtime` [#82929](https://github.com/dotnet/runtime/issues/82929), [#94443](https://github.com/dotnet/runtime/issues/94443)). | **Silent, at run time** — you get a fully-populated-looking object of zeros. | Put `[JsonConstructor]` on the primary constructor of any converted type you deserialize. |
+| **EF Core: complex types yes, entities and struct collections no** | EF 8+ maps a value type as a **complex type**, but not as an entity; collections of struct complex types are not supported, and `SqlQuery<T>` requires a reference type. | Error at the EF layer, at model build or query time. | Transfer models on the wire and in memory, yes; persistence models, no. The diagnostic already refuses an entity-shaped type (see *When it stays quiet*), so this is about types you convert by hand. |
+
+So: `list[i].X = v` and a written `null` stop compiling, and that is the safety the fix is built on — but
+**aliasing, `Nullable<T>` boxing, value equality and JSON deserialization do not**. The aliasing row is the
+one that can change behaviour in complete silence, and it is the reason to read the usages rather than trust
+the build. The diagnostic is informational for the same reason: ignoring it is a legitimate answer.
+
+- **What it buys.** Measured on a four-class DTO tree decomposed into nested structs
+  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): **0.30× the time** at 1,000 elements — 3.3×
+  faster — and **0.09×** at 100,000, an 11× speed-up, with memory 184 → 64 KB and 18.4 → 6.4 MB. A single
+  flat DTO is a smaller win at 1,000 (2.2× faster, ≈0.45× the time) and comparable at 100,000 (9–12× faster,
+  ≈0.08–0.11× the time), with 43 % less memory. **Both figures are speed-ups where they say "faster" and
+  time ratios where they say "the time"** — mixing the two is how a 2.2× win reads as a 2.2× loss. Your
+  numbers depend on your types; the message states the mechanism, and these are the measurements behind it.
+  **Those runs are three iterations on one machine**, so the ratios are stable and the absolute times are
+  not — the order of magnitude is the finding, the precise percentage is not. Read
+  [`PERFORMANCE.md`](PERFORMANCE.md) before quoting any of them: it carries the error bars, what the code fix
+  delivers on its own against what needs both sides converted, and the ideas from the same study that
+  measured *slower*.
+- **The size in the message is the would-be struct's**, not the class object's, and it is stated as a bound
+  ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
+  number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
+  because that is the rewrite being suggested.
+- **The size is printed for every element the diagnostic names; only one band adds advice about it.** At or
+  under **64 bytes** you are told the size and nothing more — a struct that size still wins by value,
+  measured: 26.4 ns against the class's 29.9 ns at 64 bytes, so adding an indirection there would be advice
+  against the numbers. **Over 64 bytes** the copy is what dominates, and the message says to pass it by `in`.
+  When the size is a bound, so is the comparison — 72 bytes of references is 36 on a 32-bit runtime, under
+  the limit — so the clause says so and advises `in` either way, which costs nothing on the smaller reading.
+  (Internally there is a third line at **32 bytes**, where the by-value copy starts to cost something without
+  yet outweighing the class. It changes nothing you are shown here; it marks a band for the code fix.)
+- **The block copy is mentioned only where it is possible AND earned.** Two conditions, both required: the
+  *source* element must be transfer-model shaped in its own right (otherwise the sentence would be advising
+  that an entity, or a type with behaviour, become a struct — on no evidence, since only the target is
+  classified), and neither type may hold a reference (`CanReinterpret` needs both sides unmanaged, so a DTO
+  with a `string` can never blit however it is declared). Even then it says **could**: layout identity and
+  field-name alignment are the rest of the proof, and this diagnostic has not run it. An unshaped source is
+  still reported — the allocation win does not depend on the source — it just hears nothing about its own
+  type.
+- **"The derived-type check covered this assembly only."** When the type is `public` and not `sealed`, the
+  sweep that looked for subclasses saw *this* compilation. A project that references yours can still derive
+  from it, and a struct cannot be a base type — so that is yours to confirm, and the message says so rather
+  than implying it was settled. It covers **whichever of the two types earned it**, in one sentence: if the
+  message named your source element as well, and both are public and unsealed, both are named here.
+
+**When it stays quiet**, which is nearly always. The code fix declines the same shapes from its own side, so
+the lightbulb can never offer a rewrite the diagnostic would not have suggested — the two refusals below that
+this round tightened (a **generic** transfer model in any form, and an **entity-shaped or behaviour-bearing**
+type, which was never eligible) are enforced in both places:
+
+- **The element type is already a struct**, or is not a class at all.
+- **The element type is GENERIC**, open or fully constructed, or is nested inside a generic. `Box<int>` has a
+  knowable size, so nothing about measurement refuses it — what does is that the only declaration a rewrite
+  can change is `Box<T>`. Acting on the hint would convert *every* instantiation, including a `Box<string>`
+  elsewhere that was never examined and whose size is not the one printed, and that type would lose its
+  reference identity silently. Suggesting a rewrite we would then decline to perform is worse than saying
+  nothing.
+- **Anything `TransferModelShape` refuses**, which is most types: a class that is derived from, is abstract,
+  has a base class, is `static`, is generic, implements any interface other than `IEquatable<T>` of itself,
+  implements `IDisposable`, declares an event or a method beyond the record quartet, declares
+  `Equals(object)`, `operator ==` or `operator !=` (a record struct synthesises those and a hand-written one
+  beside them is CS0111 — `Equals(T)`, `GetHashCode()` and `ToString()` it *does* stand aside for, and those
+  stay fine), has a computed property,
+  has a constructor that does more than assign its parameters, looks like an EF entity (a `DbSet<T>` in this
+  compilation, or a `[Key]`, `[Table]` or `[Owned]` attribute on the type or on any of its members — matched
+  by name, with or without the `Attribute` suffix, so it fires without this generator referencing EF Core at
+  all; `[Column]` and `[ForeignKey]` are **not** checked, because neither says the type is *tracked*), holds
+  no instance data, contains itself, or is declared in a referenced assembly rather than in your source. Each
+  refusal is a case where the rewrite would break something you rely on.
+- **The elements are not built by this generator.** A hand-written converter, or a user-defined conversion
+  operator, owns the construction of every element — the suggestion would be asking you to change code the
+  generator does not write. A collection copied element-for-element with no conversion at all
+  (`List<Dto>` → `List<Dto>`) copies *references*: nothing is allocated per element, so there is nothing to
+  remove.
+- **The pair carries a directive or a hook.** A `[BeforeMap]`/`[AfterMap]` matching the pair, or a pair-scoped
+  `[MapProperty<S,T>]`/`[MapIgnore<T>]`/`[MapValue<T>]`, is honoured by the element helper — and a hook that
+  writes into a value-type target writes into a copy. Silence is the cheap side of that trade.
+- **`ReferenceHandling = Preserve` or `OnCycle = SetNull`.** Both are about reference identity: one rebuilds
+  the source's topology, the other writes `null` into a back-edge. A value type has neither.
+- **A transfer model mapped as a scalar member.** It is allocated once, not once per element. The claim here
+  is about collections, which is why this is reported at the mapping site and not on the type — a type-level
+  rule would fire on every DTO in your solution.
+- **A DTO another generator emitted.** You cannot reorder or rewrite a declaration inside a `.g.cs`, and you
+  cannot suppress a diagnostic raised in one either. The same question is asked of the *source* element, but
+  there it costs only the block-copy sentence — the target is still yours to change, and that is where the
+  allocation is.
+- **Once per element pair per mapper**, however many members map that pair.
+---
+## dwarf104
+**Invalid [MapShare] target** · Error
+
+`[MapShare("X")]` asks the mapper to assign the **source's own reference** to `X` instead of copying it, so
+the two objects share one instance afterwards. That is a mapping only when nothing reachable through the
+reference can be written. This error says the member you named cannot be shared.
+
+You will usually never see it, because **you rarely need the attribute at all**: where the two sides have the
+same type and that type is provably immutable — an `ImmutableArray<T>`, an `ImmutableList<T>`, a `sealed`
+type whose every instance member is get-only or `init`-only and whose member types are themselves proven —
+the generator already shares the reference, with no attribute and no option. A statically decidable
+optimization should not have to be asked for.
+
+**What the generator refuses, and what it takes your word for.** Three tiers, and the middle one is why the
+attribute exists:
+
+| The proof says | Automatic | `[MapShare]` |
+|---|---|---|
+| **Proven immutable** — sealed, every member get-only or `init`-only, member types proven | shares | shares (the attribute is redundant, and harmless) |
+| **Unprovable** — an interface, an unsealed class, a type whose members the proof cannot follow, a reference cycle | copies | **shares, on your assertion** |
+| **Provably mutable** — a settable property, a writable field, an event, or an array anywhere in the graph | copies | **DWARF104** |
+
+`IReadOnlyList<T>` is in the middle row, and that placement is the whole design. It is an **interface, not a
+guarantee**: a `List<T>` assigned to it is still a `List<T>` at run time, and if the source mutates it after
+the map, the destination sees the change. Two object graphs you believe are independent are not, and nothing
+will tell you. So the automatic path does not accept it, and this attribute is where a caller who knows the
+instance is never mutated says so — the same bargain `[Reinterpret]` offers for a memory layout the blit
+proof declines to confirm.
+
+<!-- fence-exempt: the sample shows the shape that is REFUSED, so it has no compiling counterpart to snippet from -->
+```csharp
+public sealed class Loose { public string Name { get; set; } = ""; }   // a setter — provably mutable
+
+[DwarfMapper]
+public partial class M
+{
+    [MapShare("Items")]              // DWARF104 — not immutable: sharing would alias mutable state
+    public partial Dst Map(Src s);
+}
+```
+
+**Fix:** remove the attribute. It costs exactly one copy, which is what every member did before the share
+existed. If you want the share, make the shape provable: seal the type, make its members get-only or
+`init`-only, and use `ImmutableArray<T>` or `ImmutableList<T>` rather than an interface — and then you can
+delete the attribute too, because the automatic path takes it from there.
+
+**The other five things this error says**, all with the same remedy:
+
+- **The member does not exist.** `[MapShare("Bagdes")]` naming no writable destination member is a typo, and
+  a typo that copies silently is the failure this project treats as worse than a build break.
+- **The two sides are different types.** A share performs *no conversion at all*, so `ImmutableList<T>` to
+  `ImmutableArray<T>` is not something it can do.
+- **There is no allocation-free empty value.** The share replaces a helper whose null arm returns an empty
+  collection (`NullCollectionStrategy.AsEmpty`), and it reproduces that arm with a cached singleton —
+  `ImmutableList<T>.Empty`, `Array.Empty<T>()`. A type exposing no such value would need an allocation to
+  answer a null source, and a share whose worst case is the copy it replaced is not worth having.
+- **The member is also assigned by `[MapValue]`.** That directive supplies the value outright, so there is no
+  source reference left to share. The attribute would change nothing, and a directive that quietly changes
+  nothing is the same failure as the typo above.
+- **The member also carries a `[MapProperty]` that modifies its assignment** — `Use=`, `When=`,
+  `NullSubstitute=` or `StringFormat=`. A share assigns the source reference and *nothing else*, so it cannot
+  also run your converter, guard the write, or format the value; the two directives cannot both apply.
+
+`NullCollectionStrategy.AsNull` is refused for the same family of reasons: its null-preserving contract is
+the collection converter's, and the share does not implement it.
+
+---
+## dwarf105
+**Invalid [MapDenseEnumKeys] target** · Error
+
+`[MapDenseEnumKeys("X")]` writes an enum-keyed dictionary into a fixed-size `[InlineArray(n)]` struct by
+**indexing** it: `slots[(int)key - Offset] = value`. There is no hash, no bucket array and no allocation — the
+slots are storage inside the object that declares them. This error says the mapping into them cannot be
+proven total, and the generator refuses rather than emitting it.
+
+**There is deliberately no slower fallback.** A shape that cannot be proven is not mapped as an ordinary
+dictionary instead: that would leave you believing a directive is in force that is not, and a bounds-checked
+slow path would be exactly the "hide an unprovable shape behind a runtime test" this feature must never do.
+Deleting the attribute is always a valid fix and costs you one dictionary.
+
+**What is proven, what is refused, and what no proof can reach.** Three tiers, and the third is the one worth
+reading:
+
+| | What happens |
+|---|---|
+| **Every declared enum member lands in `[Offset, Offset + n)`** — both ends, computed in a width that cannot wrap | the dense fill is emitted |
+| **Any declared member falls outside it** — including a negative member, which would index in *front* of the array | **DWARF105**, naming that member and its value |
+| **A key that is no declared member at all** — `(TEnum)999` is legal C# | not decidable at compile time by anyone; the emitted loop range-checks the index and throws `ArgumentOutOfRangeException` naming the key |
+
+That last row is why the emitted loop carries a check even though the proof passed. For an `int`-width enum
+it turns an `IndexOutOfRangeException` thrown from inside a file you cannot edit into a message that names
+the key. For an enum whose underlying type is **wider than `int`** it does more than that: a bare `(int)`
+cast of such a key *wraps* — `(int)(E)0x1_0000_0001` is `1` — so without the check the write would land in a
+slot belonging to a different key, with nothing thrown and nothing to see afterwards.
+
+<!-- fence-exempt: the sample shows the shape that is REFUSED, so it has no compiling counterpart to snippet from -->
+```csharp
+public enum Platform { Web = 0, Ios = 1, Android = 2, Desktop = 3 }   // four members
+[InlineArray(3)] public struct Counts3 { private int _e0; }           // three slots
+
+[DwarfMapper]
+public partial class M
+{
+    [MapDenseEnumKeys("Counts")]     // DWARF105 — Platform.Desktop = 3 is outside [0, 3)
+    public partial Dst Map(Src s);
+}
+```
+
+**Fix:** widen the inline array to `[InlineArray(4)]`, set `Offset` so the window covers the members you
+have, or remove the attribute and map the member as an ordinary dictionary. **Adding a member to the enum
+later re-runs the proof**, so a fifth platform fails your build rather than reaching the index — that is the
+feature's safety argument, and it is why this is an error rather than a warning.
+
+**Every other thing this error says**, all with the same remedy:
+
+- **The key enum is `[Flags]`.** A flags enum's key space is the *power set* of its members: `Read | Write`
+  is a legitimate dictionary key that no member declares, and it would land in whatever slot its numeric
+  value happens to name. Proving the declared members are in range would prove nothing about the keys the
+  dictionary can hold, so the shape is refused outright.
+- **A member has no `long` representation** — a `ulong`-backed enum with a value above `long.MaxValue`.
+  Converting it would wrap into a negative number a range test could read as in-bounds.
+- **The destination is not an `[InlineArray(n)]` struct.** The destination is what *declares* the slot count,
+  and that count is the bound every member is proven against. A `TValue[]` is not accepted: its length is not
+  declared anywhere, so there is nothing to prove against.
+- **The source is not a dictionary**, or is **not keyed by an enum.** The source must yield
+  `KeyValuePair<TEnum, TValue>`; an `int`-keyed dictionary declares no finite value set, so the directive
+  would be an assertion rather than a proof.
+- **The value type does not match the slot type.** The dense path assigns each value straight into its slot
+  and performs no conversion — not even a widening one.
+- **A nullable reference value is written into a non-nullable slot.** That is CS8601 inside generated code
+  you cannot edit. Make the inline array's element type nullable, or the dictionary's value type
+  non-nullable.
+- **The member does not exist.** `[MapDenseEnumKeys("Cuonts")]` naming no writable destination member is a
+  typo, and a typo that maps the dictionary silently is the failure this project treats as worse than a build
+  break.
+- **The member is also assigned by `[MapValue]`.** That directive supplies the value outright, so there is no
+  source dictionary left to index.
+- **The member also carries a `[MapProperty]` that modifies its assignment** — `Use=`, `When=`,
+  `NullSubstitute=` or `StringFormat=`. The dense fill writes each value straight into its slot and calls
+  nothing, so the two directives cannot both apply.
+- **The same member is named twice.** Two applications are two different index computations; which one you
+  got would depend on the order the attributes were read in.
+- **The member was never reached by member resolution.** It exists and it is writable, but something else
+  claimed it first — a constructor parameter, an earlier directive, a flattened path — so the directive is
+  not in force and the dictionary you believe is being indexed densely is not.
+
+**One thing to know that is not an error.** An inline array reached through a **property** is a struct
+*copy*, so `dst.Counts[0] = x` does not compile for a caller; through a **field** it does. The mapper does
+not care — it assigns the whole array either way — but it decides what you can do with the destination
+afterwards.
+
+---
+## dwarf106
+**[Reinterpret] takes the block copy instead of a declared conversion or directive** · Info
+
+Your mapping is **correct and does exactly what you asked**. This hint reports a *conflict* you can only see by
+reading two places at once: the member carries `[Reinterpret]`, and its element pair also has something you
+wrote that the block copy will not run. Two shapes, one id:
+
+- **a conversion** — a declared method on the mapper, or a user-defined conversion operator between the
+  element types. The message names it:
+
+  ```text
+  [Reinterpret] on 'Data' takes precedence over the declared conversion method 'Scale', so the block copy fills 'Data' without calling it; remove [Reinterpret] from 'Data' to use it instead
+  ```
+
+  An operator has no name to grep for, so it is described by the pair it converts between:
+
+  ```text
+  [Reinterpret] on 'V' takes precedence over the user-defined conversion operator from 'SrcV' to 'DstV', so the block copy fills 'V' without calling it; remove [Reinterpret] from 'V' to use it instead
+  ```
+- **a pair-scoped directive** — `[MapIgnore<T>]`, `[MapProperty<S,T>]`, `[MapValue<T>]` or
+  `[MapConstructor<S,T>]`. It has no single symbol to point at, so the message names its spelling and the
+  element pair it was **declared for**:
+
+  ```text
+  [Reinterpret] on 'Data' takes precedence over the pair-scoped [MapIgnore<T>] declared for 'DirectiveSrc' → 'DirectiveDst', so the block copy fills 'Data' without applying it; remove [Reinterpret] from 'Data' to use it instead
+  ```
+- **a `[BeforeMap]`/`[AfterMap]` hook** — worded differently on purpose. A hook is not declared for a pair;
+  it is **matched to** one, because its parameter types accept the pair by implicit conversion. Saying it was
+  "declared for" the pair would send you looking for a declaration that does not exist. A hook is also *run*
+  rather than *applied*:
+
+  ```text
+  [Reinterpret] on 'V' takes precedence over the [AfterMap] hook matching 'SrcV' → 'DstV', so the block copy fills 'V' without running it; remove [Reinterpret] from 'V' to use it instead
+  ```
+
+When both a conversion and a directive apply, the conversion is named — it is the more specific fact, and
+the one you can grep for.
+
+Every sentence names the member three times over, which is deliberate: the member is the one thing you go and
+edit, and an earlier wording ("so it is not called for its elements") bound both pronouns to the conversion
+instead, leaving the reader to work out whose elements "its" meant.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    public static Dst Scale(Src s) => new Dst { X = s.X * 2 };   // never called for Data's elements
+
+    [Reinterpret("Data")]                                        // DWARF106 — the block copy wins
+    public partial Target Map(Source s);
+}
+```
+
+Everywhere else DwarfMapper resolves this the other way: a conversion you wrote — or a pair-scoped directive
+matching the element pair — keeps the element loop and the block copy stands down, because **a proof enables a
+fast path, it never changes semantics**. `[Reinterpret]` is the one deliberate exception. It names **one
+member, explicitly**, while an auto-adopted converter is *ambient* — matched by type, and quite possibly
+written for a different member entirely. The explicit instruction wins.
+
+The directive shape matters for the same reason and is easier to miss: a pair-scoped directive is applied by
+the ONE synthesized helper the element pair gets, and a block copy never calls that helper. Your `[MapIgnore]`
+still works for every other member that maps the pair — just not behind `[Reinterpret]`, where nothing in the
+output would ever tell you.
+
+**Fix:** nothing, if the block copy is what you meant — that is the normal case and the reason this is not a
+warning. To get the conversion or the directive instead, remove `[Reinterpret]` from the member the message
+names; the pair then takes the element loop, and your method, operator, directive or hook applies per element.
+
+**Why informational, and why not louder.** An error here would be a false positive on correct code: the same
+mapper may use that helper legitimately for another member, and refusing the build over an intentional
+combination helps no one. A warning becomes a *build failure* under `TreatWarningsAsErrors` — the trap
+`dwarf070` sprang on this project once already. An intentional bypass is exactly what an informational
+diagnostic is for.
+
+**Why it does not fire more often.** A `[Reinterpret]` member with neither a conversion nor a directive in
+sight says nothing at all. This reports the conflict, not the attribute.
+
+---
+
+## dwarf107
+**A converter's nullable return is stored where null is forbidden** · Warning
+
+A map or converter method you declared is typed to hand back a nullable reference — `partial ChildDto? ToDto(Child c)`
+— and DwarfMapper is writing its result somewhere that cannot hold null: a member, a collection element, a
+dictionary value, a constructor parameter, a span element or an async-stream element.
+
+The generated call is **null-forgiven** (`ToDto(s.Inner)!`), because the alternative is `CS8600`/`CS8601`/
+`CS8603`/`CS8604` inside a `.g.cs` you cannot edit and cannot suppress. That trade is the whole reason this
+warning exists: with the suppression in place, a null actually returned at run time is *stored* in a slot whose
+type says it cannot be, and surfaces as a `NullReferenceException` somewhere else entirely. You are told, here,
+at the mapping site.
+
+| You want | Use |
+|---|---|
+| the converter never to return null | declare it non-nullable (`partial ChildDto ToDto(Child c)`) |
+| null to be a legal value here | make the destination nullable (`ChildDto? Inner`, `List<ChildDto?>`, `Dictionary<string, ChildDto?>`) |
+| to accept the stored null knowingly | `dotnet_diagnostic.DWARF107.severity = none` |
+
+**Not the same as [`DWARF070`](#dwarf070), and its suppression does not cover this one.** DWARF070 is about a
+nullable value going *in* — a source member, a mapping parameter, a collection element. This is about a value
+coming back *out* of your converter, and it fires on pairs where nothing on the source side is nullable at all
+(`Child Inner` into `ChildDto Inner`). The remedies have nothing in common: `[MapProperty(NullSubstitute = …)]`,
+`[DwarfMapper(SkipNullSourceMembers = true)]` and "declare the parameter non-nullable" are all inbound
+instruments, and none of them touches a return type. Suppressing DWARF070 was a decision to accept nullable
+sources; it is not a decision to accept a converter that can hand back null, which is why the two are
+separately suppressible.
+
+It is also the louder-failing half in the wrong direction. When DWARF070 forgives an *argument*, the call still
+reaches the callee's own `ArgumentNullException.ThrowIfNull` and a real null throws at the right place. When
+this forgives a *result*, nothing throws — the null is stored. Same mechanism, opposite consequence, which is
+why it gets its own id rather than a fifth noun on DWARF070's message.
+
+Only fires for a genuinely annotated destination. A destination written in a `#nullable disable` context is
+*oblivious*, the compiler raises nothing there, and neither does this.
 
 ---
 

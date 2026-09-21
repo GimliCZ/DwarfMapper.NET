@@ -213,91 +213,26 @@ namespace DwarfMapper.Generator.Pipeline
 
             // User-provided auto-candidate methods (no Use= annotation, auto-matched by type).
             // Checked BEFORE built-in synthesized converters (NumericConverter, ParsableConverter)
-            // so that a user method can intentionally shadow the built-in behavior.
-            // Two sources of user candidates:
-            //   1. autoCandidates  — partial mapper methods (S → D object-level mappers)
-            //   2. allMethods      — non-partial scalar converter helpers (e.g. int Shrink(long v))
-            //      These are already in allMethods; excluding partials avoids double-counting mappers.
-            // A method named by some [MapProperty(Use = …)] is RESERVED: the author dedicated it to that one
-            // member, which is a statement of intent, not an offer of a general-purpose converter. Without
-            // this guard it is also auto-adopted for every other member whose types happen to line up —
-            // silently, with no diagnostic and a green build.
-            //
-            // Found migrating a real codebase: a `string BuildDocumentId(Guid)` written for Document.Id (it
-            // prefixes a date) was also applied to Document.DispatchId, a plain auto-matched Guid→string
-            // member, so every record would have stored the decorated id in the plain field. An explicit
-            // Use= for THIS member still resolves above and is unaffected — only auto-adoption is blocked.
-            static bool IsReserved(IReadOnlyCollection<string>? reserved, string name)
+            // so that a user method can intentionally shadow the built-in behavior. The search itself is
+            // FindUserDeclaredConversion — shared verbatim with the array/list blit gate, which has to ask
+            // the same question one arm earlier (round 29 T0.2c); see that method's remarks.
+            FindUserDeclaredConversion(req, out var found, out var ambiguous);
+            if (ambiguous)
             {
-                return reserved is not null && reserved.Contains(name, StringComparer.Ordinal);
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
+                    location,
+                    targetName));
+                return false;
             }
 
-            string? found = null;
-            foreach (var c in autoCandidates)
-                if (!IsReserved(reservedConverters, c.Name) && HasImplicitConversion(compilation, srcType, c.ParamType) && HasImplicitConversion(compilation, c.ReturnType, tgtType))
-                {
-                    if (found is not null)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
-                            location,
-                            targetName));
-                        return false;
-                    }
-
-                    found = c.Name;
-                }
-
-            // Also search all non-partial user methods (scalar converters not declared as partial mappers).
-            foreach (var m in allMethods)
+            if (found is not null && !PrefersSynthesizedObjectMap(req, found))
             {
-                if (IsReserved(reservedConverters, m.Name))
-                {
-                    continue;
-                }
-
-                // Skip methods that are already in autoCandidates (partial mapper methods).
-                if (autoCandidates.Any(ac => string.Equals(ac.Name, m.Name, StringComparison.Ordinal) && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType) && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
-                {
-                    continue;
-                }
-
-                if (HasImplicitConversion(compilation, srcType, m.ParamType) && HasImplicitConversion(compilation, m.ReturnType, tgtType))
-                {
-                    if (found is not null)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
-                            location,
-                            targetName));
-                        return false;
-                    }
-
-                    found = m.Name;
-                }
+                converterMethod = found;
+                nullHandling = UserConverterNullGuard(req, found);
+                return true;
             }
-
-            if (found is not null)
-            {
-                // Plan 19 C2b: Under Preserve OR SetNull mode, if the found auto-candidate is a PUBLIC
-                // partial mapper method (from autoCandidates) and autoNest is enabled, prefer the
-                // synthesized private __DwarfMap_Obj_* form instead. Public methods don't accept the
-                // shared DwarfRefContext — calling them from a collection/dict helper would create a fresh
-                // context, losing identity/depth/on-stack state and causing infinite loops on cycles.
-                // We fall through to the auto-nest path below only when these conditions hold;
-                // user-provided converter helpers (allMethods, not autoCandidates) are always respected.
-                var foundIsAutoCandidate = (isPreserve || isSetNull) &&
-                                           autoNest &&
-                                           nestedRegistry is not null &&
-                                           autoCandidates.Any(ac =>
-                                               string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
-                                           tgtType is INamedTypeSymbol &&
-                                           IsMappableObjectPair(compilation, srcType, (INamedTypeSymbol)tgtType);
-                if (!foundIsAutoCandidate)
-                {
-                    converterMethod = found;
-                    return true;
-                }
-                // Fall through to synthesize a private __DwarfMap_Obj_* form.
-            }
+            // A found name that PrefersSynthesizedObjectMap claims falls through to the auto-nest arm, which
+            // synthesizes the private __DwarfMap_Obj_* form instead.
 
             // Integral↔integral narrowing / sign-change: emit CreateChecked (throws on overflow).
             // Must come after the implicit-conversion check (widening uses direct assign, not this)
@@ -388,6 +323,118 @@ namespace DwarfMapper.Generator.Pipeline
 
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
             return false;
+        }
+
+        // ── What the resolver WOULD answer, asked without answering it ──────────────────────────────────
+        // The three queries below are the chain's own predicates, lifted out of the arms that used to state
+        // them inline. They exist because HandleCollectionConversion decides the array/list blit near the TOP
+        // of this chain and has to know what the auto-candidate, auto-nest and user-operator arms — all far
+        // below it — would say about the ELEMENT pair, before any of them has run and without their side
+        // effects (a reserved nested pair, a synthesized helper, a diagnostic).
+        // Lifted rather than restated: a second copy of "would a user method be adopted here?" is exactly the
+        // drift that let the blit bypass a user converter in the first place. Round 29 T0.2c.
+
+        /// <summary>
+        ///     Searches the mapper's declared methods for the conversion the auto-candidate arm would adopt for
+        ///     <c>req.SrcType → req.TgtType</c>.
+        /// </summary>
+        /// <param name="found">the single matching method's name, or <see langword="null" /> when none matched.</param>
+        /// <param name="ambiguous">
+        ///     <see langword="true" /> when more than one matched — the arm's DWARF013 refusal, reported by the
+        ///     caller that owns the decision rather than by this query.
+        /// </param>
+        /// <remarks>
+        ///     Two sources of user candidates: <c>AutoCandidates</c> (partial mapper methods, S → D object-level
+        ///     mappers) and <c>AllMethods</c> (non-partial scalar converter helpers, e.g. <c>int Shrink(long v)</c>);
+        ///     the second skips what the first already offered, so a partial mapper is not counted twice.
+        ///     <para>
+        ///         A method named by some <c>[MapProperty(Use = …)]</c> is RESERVED: the author dedicated it to
+        ///         that one member, which is a statement of intent, not an offer of a general-purpose converter.
+        ///         Without this guard it is also auto-adopted for every other member whose types happen to line up
+        ///         — silently, with no diagnostic and a green build. Found migrating a real codebase: a
+        ///         <c>string BuildDocumentId(Guid)</c> written for <c>Document.Id</c> (it prefixes a date) was also
+        ///         applied to <c>Document.DispatchId</c>, a plain auto-matched Guid→string member, so every record
+        ///         would have stored the decorated id in the plain field. An explicit <c>Use=</c> for THIS member
+        ///         resolves at the top of the chain and is unaffected — only auto-adoption is blocked.
+        ///     </para>
+        /// </remarks>
+        private static void FindUserDeclaredConversion(ConversionRequest req, out string? found, out bool ambiguous)
+        {
+            static bool IsReserved(IReadOnlyCollection<string>? reserved, string name)
+            {
+                return reserved is not null && reserved.Contains(name, StringComparer.Ordinal);
+            }
+
+            found = null;
+            ambiguous = false;
+
+            foreach (var c in req.AutoCandidates)
+                if (!IsReserved(req.ReservedConverters, c.Name) && HasImplicitConversion(req.Compilation, req.SrcType, c.ParamType) && HasImplicitConversion(req.Compilation, c.ReturnType, req.TgtType))
+                {
+                    ambiguous |= found is not null;
+                    found ??= c.Name;
+                }
+
+            // Also search all non-partial user methods (scalar converters not declared as partial mappers).
+            foreach (var m in req.AllMethods)
+            {
+                if (IsReserved(req.ReservedConverters, m.Name))
+                {
+                    continue;
+                }
+
+                // Skip methods that are already in AutoCandidates (partial mapper methods).
+                if (req.AutoCandidates.Any(ac => string.Equals(ac.Name, m.Name, StringComparison.Ordinal) && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType) && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
+                {
+                    continue;
+                }
+
+                if (HasImplicitConversion(req.Compilation, req.SrcType, m.ParamType) && HasImplicitConversion(req.Compilation, m.ReturnType, req.TgtType))
+                {
+                    ambiguous |= found is not null;
+                    found ??= m.Name;
+                }
+            }
+        }
+
+        /// <summary>
+        ///     True when the auto-candidate arm, having found <paramref name="found" />, hands the pair on to the
+        ///     auto-nest arm instead of adopting it.
+        /// </summary>
+        /// <remarks>
+        ///     Plan 19 C2b: under Preserve OR SetNull mode, a found auto-candidate that is a PUBLIC partial mapper
+        ///     method (from <c>AutoCandidates</c>) with auto-nest enabled yields to the synthesized private
+        ///     <c>__DwarfMap_Obj_*</c> form. Public methods don't accept the shared <c>DwarfRefContext</c> —
+        ///     calling one from a collection/dict helper would create a fresh context, losing identity/depth/
+        ///     on-stack state and looping forever on cycles. User-provided converter HELPERS (<c>AllMethods</c>,
+        ///     not <c>AutoCandidates</c>) are always respected.
+        ///     <para>
+        ///         The blit gate reads this too, and must: when the answer is yes the resolver's verdict is the
+        ///         synthesized object map, which for a layout-identical pair is what the blit copies — so a pair
+        ///         in this state is still blittable, and treating the found name as a user converter would have
+        ///         cost every Preserve-mode collection of a declared struct pair its fast path for nothing.
+        ///     </para>
+        /// </remarks>
+        private static bool PrefersSynthesizedObjectMap(ConversionRequest req, string found)
+        {
+            return (req.IsPreserve || req.IsSetNull) &&
+                   req.AutoNest &&
+                   req.NestedRegistry is not null &&
+                   req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
+                   req.TgtType is INamedTypeSymbol namedTgt &&
+                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt);
+        }
+
+        /// <summary>
+        ///     True when <see cref="HandleAutoNestedObjectMap" /> would CLAIM this pair — the condition that arm
+        ///     opens with, shared so the blit gate can ask it without running it (and so the two cannot drift).
+        /// </summary>
+        private static bool AutoNestWouldClaim(ConversionRequest req)
+        {
+            return req.AutoNest &&
+                   req.NestedRegistry is not null &&
+                   req.TgtType is INamedTypeSymbol namedTgt &&
+                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt, req.AllowInterfaceSrc);
         }
 
         /// <summary>
@@ -1186,6 +1233,76 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     The null handling a <b>user-declared</b> converter's call site needs, asked once where that converter
+        ///     is chosen so that every edge which routes through <c>TryResolveConversion</c> — a member, a collection
+        ///     element, a dictionary value, a flatten leaf — gets the same answer.
+        ///     <para>
+        ///         WHY THIS EXISTS. A synthesized nested mapper opens with <c>if (s is null) return null!;</c>: null in,
+        ///         null out. A USER-declared map method that the auto-candidate arm adopts for the same edge opens with
+        ///         <c>ArgumentNullException.ThrowIfNull(source)</c> — it is also a public entry point, and that guard is
+        ///         its own contract. Whether a nested edge preserved a null or threw therefore depended on which of the
+        ///         two the resolver happened to pick, which is not a fact any user can predict from the types. Worse,
+        ///         the call site got the null-forgiving <c>!</c> only through <see cref="ForgiveNestedNullableArg" />,
+        ///         which requires <see cref="NullRefIntoNonNullableRef" /> — a NON-nullable destination — while the
+        ///         null-preserving lift (<see cref="NullHandling.NullableProjectRef" />) was only ever reached for a
+        ///         <c>Nullable&lt;U&gt;</c> VALUE destination. A nullable reference into a nullable reference fell
+        ///         between the two and was emitted bare: <c>CS8604</c> inside the consumer's <c>.g.cs</c>, where no
+        ///         <c>#pragma</c>, <c>NoWarn</c> or <c>.editorconfig</c> reaches it.
+        ///     </para>
+        ///     <para>
+        ///         Three arms, and the third is deliberately NOT one:
+        ///         <list type="bullet">
+        ///             <item>
+        ///                 <description>
+        ///                     Destination can hold null (nullable-annotated reference) →
+        ///                     <see cref="NullHandling.NullableProjectRef" />: <c>x is null ? null : Conv(x)</c>.
+        ///                 </description>
+        ///             </item>
+        ///             <item>
+        ///                 <description>
+        ///                     Destination cannot, and the SOURCE is not nullable-annotated either →
+        ///                     <see cref="NullHandling.NullableProjectRefForgiving" />. Both annotations claim the value
+        ///                     cannot be null; a <c>Result&lt;T&gt;</c> whose <c>Fail</c> stores <c>default!</c> makes one
+        ///                     of them false at run time, and mapping a failed result must not throw. Same lift, with the
+        ///                     <c>!</c> that keeps CS8601 out of the generated file.
+        ///                 </description>
+        ///             </item>
+        ///             <item>
+        ///                 <description>
+        ///                     Destination cannot, and the source IS nullable-annotated → <see cref="NullHandling.None" />,
+        ///                     UNCHANGED. That is the shape <c>DWARF070</c> already names against the user's own DTO, and
+        ///                     <see cref="ForgiveNestedNullableArg" /> already forgives the argument. Silently lifting it
+        ///                     here would swallow the one case the mapper is supposed to be loud about.
+        ///                 </description>
+        ///             </item>
+        ///         </list>
+        ///     </para>
+        ///     <para>
+        ///         Gated on the converter's parameter being a NON-nullable reference: a user converter declared to accept
+        ///         null was written to handle it, and keeps receiving the null it asked for. Value-type sources and
+        ///         destinations are excluded — a value source is never null, and a non-nullable value destination cannot
+        ///         express the lifted null at all (those pairs are already answered by the <c>Nullable&lt;&gt;</c> arms
+        ///         further up the chain).
+        ///     </para>
+        /// </summary>
+        private static NullHandling UserConverterNullGuard(ConversionRequest req, string converter)
+        {
+            if (!req.SrcType.IsReferenceType || !req.TgtType.IsReferenceType || !ConverterParamIsNonNullableRef(converter, req.AutoCandidates, req.AllMethods))
+            {
+                return NullHandling.None;
+            }
+
+            if (req.TgtType.NullableAnnotation == NullableAnnotation.Annotated)
+            {
+                return NullHandling.NullableProjectRef;
+            }
+
+            return req.SrcType.NullableAnnotation == NullableAnnotation.Annotated
+                ? NullHandling.None
+                : NullHandling.NullableProjectRefForgiving;
+        }
+
+        /// <summary>
         ///     The single decision for EVERY <see cref="MemberMap" /> construction site (auto-match member, explicit
         ///     [MapProperty], flatten, and both constructor-argument paths): does a nullable-reference source flowing
         ///     into a user-declared converter with a non-nullable parameter need null-forgiving, AND — coupled here so
@@ -1196,6 +1313,165 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>MemberMap.ConverterParamIsNonNullableRef</c>.
         ///     See docs/superpowers/specs/2026-07-25-nested-nullable-parameter.md.
         /// </summary>
+        /// <summary>
+        ///     What kind of thing carries the null that <c>DWARF070</c> is about. The diagnostic's remedies are
+        ///     not the same for all of them, which is the whole reason this is an enum rather than a name:
+        ///     <c>[MapProperty(NullSubstitute = …)]</c> and <c>SkipNullSourceMembers</c> reach a source MEMBER
+        ///     and nothing else, so naming a mapping parameter or a collection element a "member" points the
+        ///     reader at two levers that cannot touch their shape.
+        /// </summary>
+        private enum NullSourceKind
+        {
+            /// <summary>A member of the source type — the original and still the common case.</summary>
+            SourceMember = 0,
+
+            /// <summary>A Phase 5 mapping PARAMETER (round 29 task 2.7).</summary>
+            MappingParameter = 1,
+
+            /// <summary>
+            ///     One ELEMENT of a mapped collection, span or async stream (round 29 task 2.9). The null is in
+            ///     the source element type (<c>List&lt;Child?&gt;</c>); the destination that cannot hold it is the
+            ///     destination ELEMENT type, not the member.
+            /// </summary>
+            CollectionElement = 2,
+
+            /// <summary>
+            ///     One VALUE of a mapped dictionary (round 29 task 2.9). Same shape as
+            ///     <see cref="CollectionElement" />, named separately because a reader hunting
+            ///     <c>Dictionary&lt;string, Child?&gt;</c> is not looking for the word "element".
+            /// </summary>
+            DictionaryValue = 3
+        }
+
+        /// <summary>
+        ///     How <c>DWARF070</c> names the thing that carries the null. The diagnostic's <c>{0}</c> is this
+        ///     whole phrase rather than a bare name, because the same descriptor now covers four kinds of thing:
+        ///     a member of the source type, a Phase 5 mapping PARAMETER, a collection/span/stream ELEMENT and a
+        ///     dictionary VALUE. Calling any of the last three a "member" is not a wording nit — it points the
+        ///     reader at <c>[MapProperty(NullSubstitute = …)]</c> and <c>SkipNullSourceMembers</c>, none of which
+        ///     can reach them.
+        ///     <para>
+        ///         The element and value spellings name the DESTINATION member the edge feeds rather than a source
+        ///         member: at a collection or dictionary arm the only name in scope is
+        ///         <c>ConversionRequest.TargetName</c>, and for a span/async-stream endpoint the destination is a
+        ///         parameter or the return type, not a member at all — so the method's name is what locates it.
+        ///     </para>
+        /// </summary>
+        private static string NullSourceLabel(string name, NullSourceKind kind = NullSourceKind.SourceMember)
+        {
+            return kind switch
+            {
+                NullSourceKind.MappingParameter => "Mapping parameter '" + name + "'",
+                NullSourceKind.CollectionElement => "The source element mapped into '" + name + "'",
+                NullSourceKind.DictionaryValue => "The source value mapped into '" + name + "'",
+                _ => "Source member '" + name + "'"
+            };
+        }
+
+        /// <summary>
+        ///     How <c>DWARF107</c> names the destination the converter's nullable return is written into — the
+        ///     mirror of <see cref="NullSourceLabel" />, and here rather than at the call sites for the same
+        ///     reason: the two diagnostics describe the same edges from opposite ends and must not end up naming
+        ///     the same edge differently.
+        /// </summary>
+        private static string NullTargetLabel(string name, NullSourceKind kind = NullSourceKind.SourceMember)
+        {
+            return kind switch
+            {
+                NullSourceKind.CollectionElement => "the element type of '" + name + "'",
+                NullSourceKind.DictionaryValue => "the value type of '" + name + "'",
+                _ => "destination member '" + name + "'"
+            };
+        }
+
+        /// <summary>
+        ///     True when <paramref name="converterMethod" /> resolves to a USER-declared map/converter method whose
+        ///     RETURN is a nullable-annotated reference type. The mirror of
+        ///     <see cref="ConverterParamIsNonNullableRef" />, reading the third element of the same tuples, and the
+        ///     fact <c>MemberMap</c> was missing entirely: it carried the argument side and nothing at all for the
+        ///     result side, so <c>partial ChildDto? ToDto(Child c)</c> feeding a non-nullable <c>ChildDto Inner</c>
+        ///     emitted <c>Inner = s.Inner is null ? null! : ToDto(s.Inner)</c> — the null ARM forgiven and the
+        ///     CALL not, which is CS8601 in the consumer's .g.cs (round 29 task 2.8 concern 1).
+        /// </summary>
+        private static bool ConverterReturnIsNullableRef(
+            string? converterMethod,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+        {
+            if (converterMethod is null)
+            {
+                return false;
+            }
+
+            static bool IsNullableRefReturn(ITypeSymbol r)
+            {
+                return r.IsReferenceType && r.NullableAnnotation == NullableAnnotation.Annotated;
+            }
+
+            foreach (var m in autoCandidates)
+                if (string.Equals(m.Name, converterMethod, StringComparison.Ordinal) && IsNullableRefReturn(m.ReturnType))
+                {
+                    return true;
+                }
+
+            foreach (var m in allMethods)
+                if (string.Equals(m.Name, converterMethod, StringComparison.Ordinal) && IsNullableRefReturn(m.ReturnType))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     The RETURN-side twin of <see cref="ForgiveNestedNullableArg" />, and coupled the same way: does the
+        ///     converter's result need the null-forgiving <c>!</c>, AND — decided here so no site can forgive
+        ///     without signalling — does it warrant <c>DWARF107</c>?
+        ///     <para>
+        ///         Gated on the DESTINATION being a non-nullable-annotated reference, exactly as
+        ///         <see cref="NullRefIntoNonNullableRef" /> gates its own half. A nullable destination holds the
+        ///         returned null legitimately and needs neither the <c>!</c> nor the warning; a <c>!</c> where none
+        ///         is owed is noise in a file the reader cannot edit. The SOURCE is deliberately not consulted —
+        ///         that is the whole distinction from DWARF070, and the shape that proves it is a wholly
+        ///         non-nullable pair (<c>Child Inner</c> -> <c>ChildDto Inner</c>) whose converter returns
+        ///         <c>ChildDto?</c>: nothing on the source side is nullable and CS8601 is emitted anyway.
+        ///     </para>
+        ///     <para>
+        ///         Annotation-strict on the destination for the reason recorded on
+        ///         <see cref="NullRefIntoNonNullableRef" />: an oblivious destination is code that opted out of
+        ///         nullable analysis, the compiler says nothing there, and neither does this.
+        ///     </para>
+        /// </summary>
+        private static bool ForgiveConverterNullableReturn(
+            string? converterMethod,
+            ITypeSymbol tgtType,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            string targetName,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics,
+            NullSourceKind kind = NullSourceKind.SourceMember)
+        {
+            if (converterMethod is null)
+            {
+                return false;
+            }
+
+            var forgive = tgtType.IsReferenceType &&
+                          tgtType.NullableAnnotation == NullableAnnotation.NotAnnotated &&
+                          ConverterReturnIsNullableRef(converterMethod, autoCandidates, allMethods);
+            if (forgive)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ConverterNullableReturnToNonNullableTarget,
+                    location,
+                    converterMethod,
+                    MessageArg2: NullTargetLabel(targetName, kind)));
+            }
+
+            return forgive;
+        }
+
         private static bool ForgiveNestedNullableArg(
             string? converterMethod,
             ITypeSymbol srcType,
@@ -1204,15 +1480,21 @@ namespace DwarfMapper.Generator.Pipeline
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             string sourceName,
             LocationInfo? location,
-            List<DiagnosticInfo> diagnostics)
+            List<DiagnosticInfo> diagnostics,
+            NullSourceKind kind = NullSourceKind.SourceMember)
         {
             var forgive = NullRefIntoNonNullableRef(srcType, tgtType) && ConverterParamIsNonNullableRef(converterMethod, autoCandidates, allMethods);
             if (forgive)
             {
+                // kind defaults to SourceMember and the member/flatten/constructor-argument callers take that
+                // default, which is CORRECT rather than convenient: every one of them resolves a member, a
+                // flatten leaf or a constructor argument of the SOURCE TYPE. The extra-parameter phase and the
+                // four element edges (collection, dictionary value, span, async stream) each pass their own kind
+                // explicitly, because their remedy is not the source-member one.
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    sourceName));
+                    NullSourceLabel(sourceName, kind)));
             }
 
             return forgive;

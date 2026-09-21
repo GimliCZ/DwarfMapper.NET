@@ -72,6 +72,26 @@ namespace DwarfMapper.Benchmarks
         }
 
         /// <summary>
+        ///     An enum-keyed dictionary holding every member <typeparamref name="TEnum" /> declares, with
+        ///     factory-drawn values.
+        ///     <para>
+        ///         Keys are the enum's own members rather than drawn, for the reason <see cref="Map" /> gives
+        ///         about string keys and one more besides: the population this models is a counter PER declared
+        ///         member, so a draw that happened to repeat or omit one would change the measured workload
+        ///         size without failing. Every member present is also what makes the dense arm take every slot.
+        ///     </para>
+        /// </summary>
+        public static Dictionary<TEnum, int> EnumMap<TEnum>(int salt = 0)
+            where TEnum : struct, Enum
+        {
+            var members = Enum.GetValues<TEnum>();
+            var d = new Dictionary<TEnum, int>(members.Length);
+            for (var i = 0; i < members.Length; i++)
+                d[members[i]] = ObjectFactoryV2.Create<int>(Seed + salt + i);
+            return d;
+        }
+
+        /// <summary>
         ///     Fails the run when the generated payload is degenerate — i.e. when it contains no nulls and no
         ///     boundary values and is therefore the uniform data this change exists to replace.
         ///     <para>

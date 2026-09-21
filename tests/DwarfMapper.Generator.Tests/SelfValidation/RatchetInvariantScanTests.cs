@@ -188,13 +188,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(housekeeping.Contains("Test-CoverageWithinBand", StringComparison.Ordinal),
                 "scripts/housekeeping.ps1 no longer calls Test-CoverageWithinBand — the coverage gate lost " + "its R2 raise direction and floors can silently lag measurements again.");
 
-            // FIVE since round 27 added the code-fix leg and then the extracted-pipeline leg. Pinned as a
-            // literal rather than derived from the
-            // leg list on purpose: deriving it would make this assertion agree with whatever housekeeping.ps1
+            // SIX since round 29 added the testing-toolkit verifier leg (five before it: generator, doc
+            // tooling, runtime, code fixes, pipeline). Pinned as a literal rather than derived from the leg
+            // list on purpose: deriving it would make this assertion agree with whatever housekeeping.ps1
             // happens to do, which is the one thing it must not do.
             var legCalls = Regex.Matches(housekeeping, @"Assert-LegScoreWithinBand ").Count;
-            Assert.True(legCalls == 5,
-                $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 5 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
+            Assert.True(legCalls == 6,
+                $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 6 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
         }
 
         [Fact]

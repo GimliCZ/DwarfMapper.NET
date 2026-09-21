@@ -119,11 +119,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             var housekeeping = File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
             var legCalls = Regex.Matches(housekeeping, @"Assert-NoMutatedProductBinaries ").Count;
-            // FOUR since round 27 added the code-fix leg. A literal, not a count derived from the leg list:
-            // deriving it would make this assertion agree with whatever housekeeping.ps1 happens to do, which
-            // is the one thing a sweep check must not do.
-            Assert.True(legCalls == 5,
-                $"scripts/housekeeping.ps1 calls Assert-NoMutatedProductBinaries {legCalls} time(s), expected " + "exactly 4 (one per mutation leg) — a leg that is not swept can leave a mutated product " + "assembly in a test bin, and the next incremental build keeps it (I4).");
+            // SIX since round 29 added the testing-toolkit verifier leg. A literal, not a count derived from
+            // the leg list: deriving it would make this assertion agree with whatever housekeeping.ps1
+            // happens to do, which is the one thing a sweep check must not do.
+            //
+            // (The comment here read "FOUR" and the assertion read 5 — the round-27 pipeline leg moved the
+            // number and not the sentence. Corrected while moving it to 6, because a pin whose comment
+            // disagrees with its value is a pin nobody can review.)
+            Assert.True(legCalls == 6,
+                $"scripts/housekeeping.ps1 calls Assert-NoMutatedProductBinaries {legCalls} time(s), expected " + "exactly 6 (one per mutation leg) — a leg that is not swept can leave a mutated product " + "assembly in a test bin, and the next incremental build keeps it (I4).");
 
             // CI runs the SAME function rather than a re-implementation, so the ci.yml step must dot-source
             // the gate file. A bash re-write of the scan would be a second thing to keep in step, which is

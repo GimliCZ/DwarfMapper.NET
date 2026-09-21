@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Core;
@@ -1333,13 +1333,26 @@ namespace DwarfMapper.Generator.Pipeline
             // Phase 5: parameters after the source are extra named value sources, matched to destination
             // members by name (precedence: explicit > extra parameter > by-name). Pre-format their
             // signature fragments ("global::Type name") for emission.
+            //
+            // NullableFullyQualifiedFormat, not FullyQualifiedFormat: the fragment is re-emitted VERBATIM as
+            // the implementing half of the user's partial declaration, so dropping the '?' off a nullable
+            // reference parameter makes the two halves disagree — CS8611, inside the consumer's .g.cs, where
+            // no pragma or NoWarn of theirs can reach it. Same hole the collection helper's declared
+            // parameter/return types had, hence the same format rather than a third copy of it. Under
+            // `#nullable disable` the annotation is Oblivious and the format adds nothing, so this is a no-op
+            // for every oblivious consumer.
             var extraParams = new List<(string Name, ITypeSymbol Type)>();
             var extraParamSig = new List<string>();
             for (var pi = 1; pi < method.Parameters.Length; pi++)
             {
                 var ep = method.Parameters[pi];
                 extraParams.Add((ep.Name, ep.Type));
-                extraParamSig.Add(ep.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + " " + ep.Name);
+                // Identifiers.Escape, not the raw ISymbol.Name: Roslyn hands over `class` for a parameter the
+                // user wrote as `@class`, and the fragment is written straight into the emitted signature —
+                // `int class`, which is not C#. The consumer's .g.cs then fails to PARSE (a 27-diagnostic
+                // CS1001/CS1026/CS1519 cascade, ending in CS0111 and CS0756 against the partial), which is the
+                // same unfixable-file failure class as the CS8611 above, only louder.
+                extraParamSig.Add(ep.Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat) + " " + Identifiers.Escape(ep.Name));
             }
 
             // Read methodAutoNest early — needed by both Plan 21 (derived dispatch) and the normal path.
@@ -1532,7 +1545,10 @@ namespace DwarfMapper.Generator.Pipeline
                     true,
                     targetType.IsReferenceType,
                     DerivedTypeArms: EquatableArray.From(armModels),
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 // A dispatch method's arm resolution is not an unscoped-ignore consumer this walk can see,
                 // so the class-site DWARF095 verdict stands down for this class (see the flag's declaration).
                 classIgnoreLivenessBlinded = true;
@@ -1640,7 +1656,10 @@ namespace DwarfMapper.Generator.Pipeline
                     IsTopLevelCollectionConversion: true,
                     ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                     ReturnIsPublicType: IsEffectivelyPublic(targetType),
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 // A top-level collection map's element pair is acc.Synthesized (pair-scoped config only), so
                 // this method consumes no unscoped ignore this walk can see — class-site DWARF095 stands
                 // down for the class rather than guess (see the flag's declaration).
@@ -1755,6 +1774,8 @@ namespace DwarfMapper.Generator.Pipeline
 
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
+            var shareMembers = ReadShareMembers(method);
+            var denseEnumMembers = ReadDenseEnumKeys(method);
 
             // ── Plan 20 / 22: [FlattenGraph] ─────────────────────────────────
             // Read and resolve [FlattenGraph] directives BEFORE ResolveMembers so that
@@ -1883,7 +1904,9 @@ namespace DwarfMapper.Generator.Pipeline
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
                 // would. Gating here produced a false DWARF079 on that shape.
                 CtorSetsRequiredMembers(ctor),
-                ignoredSourceMembers: IgnoredSourcesFor(decls, method));
+                ignoredSourceMembers: IgnoredSourcesFor(decls, method),
+                shareMembers: shareMembers,
+                denseEnumMembers: denseEnumMembers);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1987,12 +2010,41 @@ namespace DwarfMapper.Generator.Pipeline
                         (asSrcElem, asDstElem, methodLocation, ReadIgnoreSources(method).ToList()));
                 }
 
+                // Round 29 T2.8, mirroring the span map's own computation (T0.2b) one endpoint over: a
+                // nullable-annotated REFERENCE element (IAsyncEnumerable<C?>) reaching a synthesized object
+                // helper needs the null-forgiving '!' that helper's null-guard makes safe (null in, null out).
+                // Read by MapEmitter's async-stream loop through the shared CollectionConverter.ElementExpr.
+                var asSrcElemIsNullableRef = asSrcElem.IsReferenceType &&
+                                             asSrcElem.NullableAnnotation == NullableAnnotation.Annotated;
+
                 var asElemMember = new MemberMap(
                     "",
                     "",
                     asConv,
                     asNull,
-                    asNeedsCtx);
+                    asNeedsCtx,
+                    SourceIsNullableRef: asSrcElemIsNullableRef,
+                    // Round 29 T2.9: the '!' above is only reached for a SYNTHESIZED element helper. A map
+                    // method the USER declared has an equally non-nullable parameter and was left un-forgiven —
+                    // CS8604 per element in the consumer's .g.cs. Same coupled call the member and collection
+                    // paths make, so the forgiveness and DWARF070 cannot diverge between the two.
+                    ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(asConv,
+                        asSrcElem,
+                        asDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement),
+                    ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(asConv,
+                        asDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement));
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
@@ -2024,7 +2076,11 @@ namespace DwarfMapper.Generator.Pipeline
                     ParameterIsPublicType: IsEffectivelyPublic(method.Parameters[0].Type),
                     ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType),
                     MaxDepth: policy.MaxDepth,
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method),
+                    AsyncStreamTargetElementFullName: asDstElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat)));
                 return true;
             }
 
@@ -2232,7 +2288,10 @@ namespace DwarfMapper.Generator.Pipeline
                     EquatableArray.From(Array.Empty<HookCall>()),
                     true,
                     projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    ProjectionMembers: EquatableArray.From(projMembers.ToArray())));
+                    ProjectionMembers: EquatableArray.From(projMembers.ToArray()),
+                    ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 return true;
             }
 
@@ -2289,6 +2348,8 @@ namespace DwarfMapper.Generator.Pipeline
                 var updMapPropExtras = ReadMapPropertyExtras(method);
                 var updFlatten = ReadFlattenRoots(method);
                 var updReinterpret = ReadReinterpretMembers(method);
+                var updShare = ReadShareMembers(method);
+                var updDense = ReadDenseEnumKeys(method);
                 var updAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
 
                 var updMembers = ResolveMembers(
@@ -2339,7 +2400,9 @@ namespace DwarfMapper.Generator.Pipeline
                     // Without this, ignoring a required member on an update-into method reported a false
                     // DWARF079 — caught by NonTrivialShapeRuntimeTests, which does exactly that legitimately.
                     requiredMembersAlreadySatisfied: true,
-                    ignoredSourceMembers: IgnoredSourcesFor(decls, method));
+                    ignoredSourceMembers: IgnoredSourcesFor(decls, method),
+                    shareMembers: updShare,
+                    denseEnumMembers: updDense);
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing
@@ -2483,12 +2546,150 @@ namespace DwarfMapper.Generator.Pipeline
                     // registration gate rejected every merge method for types that are plainly public.
                     ParameterIsPublicType: IsEffectivelyPublic(updSrc),
                     ReturnIsPublicType: IsEffectivelyPublic(updTgt),
-                    Withheld: withheld));
+                    Withheld: withheld,
+                    ParameterTypeSignature: updSrc.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    // Two independently-annotated slots from two different symbols: the returning form
+                    // `partial Dst Update(Src s, Dst? d)` annotates the parameter and not the return, so one
+                    // string written into both would trade the parameter's CS8611 for a CS8819 on the return.
+                    ReturnTypeSignature: DeclaredReturnSignature(method),
+                    UpdateTargetTypeSignature: updTgt.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
                 return true;
             }
 
 
             return false;
+        }
+
+        /// <summary>
+        ///     True when a pair-scoped directive or hook targets EXACTLY the given (src, tgt) element
+        ///     pair (round 29, T0.2 fix-round-1, Important #1). <see cref="NestedMappingRegistry.GetOrReserve" />
+        ///     is keyed purely by the type pair, so the ONE synthesized <c>__DwarfMap_Obj_*</c> helper it hands
+        ///     back for this pair is shared by every route that reaches it — a class-level
+        ///     <c>[MapIgnore&lt;T&gt;]</c>, <c>[MapProperty&lt;S,T&gt;]</c>, or <c>[MapValue&lt;T&gt;]</c>, or a
+        ///     <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook whose parameter types match this pair, is baked into
+        ///     THAT NAME's body (see <c>DrainNestedMappingQueue</c>'s nested-pair hook wiring, which applies the
+        ///     identical <c>[BeforeMap]</c>/<c>[AfterMap]</c> match rule used below). A block copy bypasses the
+        ///     helper entirely, so it would silently skip whatever any of these customizes.
+        /// </summary>
+        /// <remarks>
+        ///     Round 29 T0.2 fix-round-2 (Important #2): a QUERY, not a decision — <see cref="AnyPairIgnore" />/
+        ///     <see cref="AnyPairProp" />/<see cref="AnyPairValue" /> are the non-mutating siblings of
+        ///     <see cref="MatchPairIgnores" />/<see cref="MatchPairProps" />/<see cref="MatchPairValues" />
+        ///     (same match rule, factored into <see cref="IsPairTargetMatch" />/<see cref="IsPairPropMatch" /> so
+        ///     there is exactly one definition of "matches" for both the mutating builder and this query). Calling
+        ///     the MUTATING form here marked a pair-scoped attribute <c>Consumed</c> merely because THIS gate
+        ///     asked about it — even on a pair where nothing else ever applies it (e.g. a plain
+        ///     <c>int → long</c> span map beside a stray <c>[MapIgnore&lt;long&gt;("X")]</c>, or a customized
+        ///     pair whose blit this gate refuses because a user converter already owns construction and never
+        ///     reads the ignore at all) — which silenced the DWARF056 "matched no pair" sweep for a directive
+        ///     that, in truth, matched nothing. Asking must not have that side effect.
+        ///     <para>
+        ///         Round 29 T0.2c: TWO callers now, which is why the name lost its <c>Span</c>. The span endpoint
+        ///         calls it directly, just below; the array/list arm reaches it through
+        ///         <see cref="NestedMappingRegistry.PairIsCustomized" />, which <c>ExtractCore</c> wires to this
+        ///         method — the arm sits inside <c>TryResolveConversion</c>, which never sees
+        ///         <see cref="MapperDeclarations" />. One rule, asked from two places, so neither can drift.
+        ///     </para>
+        /// </remarks>
+        private static bool ElementPairHasCustomization(
+            MapperDeclarations decls,
+            Compilation compilation,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            return DescribeElementPairCustomization(decls, compilation, srcElem, tgtElem) is not null;
+        }
+
+        /// <summary>
+        ///     The rule itself: how the pair-scoped directive or hook that customizes this element pair should be
+        ///     NAMED to a user, or <see langword="null" /> when nothing customizes it.
+        ///     <see cref="ElementPairHasCustomization" /> is the boolean derived from it, so the gates that only
+        ///     need yes/no and the diagnostic that has to name the thing cannot disagree about what counts as
+        ///     customization.
+        ///     <para>
+        ///         <c>What</c> is a complete noun phrase, built here because this is the only place that knows
+        ///         WHICH kind matched and therefore how it relates to the pair — a pair-scoped attribute is
+        ///         <em>declared for</em> the pair, whereas a <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook is merely
+        ///         <em>matched to</em> it by implicit conversion of its parameter types (see the loops below, and
+        ///         <c>DrainNestedMappingQueue</c>'s identical rule). Saying a hook was "declared for" the pair
+        ///         would overstate the scoping to a reader trying to find it. <c>Verb</c> is the gerund that
+        ///         reads correctly for that kind: an attribute is APPLIED, a hook is RUN.
+        ///     </para>
+        ///     <para>
+        ///         Round 29 T0.2d: DWARF106 was reported only when the element pair resolved to a user
+        ///         CONVERSION, so <c>[Reinterpret]</c> overriding a pair-scoped directive or a hook — the same
+        ///         intentional bypass, the same invisible consequence — was silent. Widening it needed the
+        ///         directive named in the message, which is the only reason this returns a phrase rather than a
+        ///         bool. Whichever check matches FIRST names the message; the order below is the gate's own, and
+        ///         a pair carrying two directives is customized either way.
+        ///     </para>
+        /// </summary>
+        private static (string What, string Verb)? DescribeElementPairCustomization(
+            MapperDeclarations decls,
+            Compilation compilation,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            // The element pair, spelled the way the user wrote it. Built once: every phrase below names it.
+            var pair = "'" + srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) + "' → '" +
+                       tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) + "'";
+
+            if (AnyPairIgnore(decls.PairIgnores, tgtElem))
+            {
+                return ("the pair-scoped [MapIgnore<T>] declared for " + pair, "applying");
+            }
+
+            if (AnyPairProp(decls.PairProps, srcElem, tgtElem))
+            {
+                return ("the pair-scoped [MapProperty<S,T>] declared for " + pair, "applying");
+            }
+
+            if (AnyPairValue(decls.PairValues, tgtElem))
+            {
+                return ("the pair-scoped [MapValue<T>] declared for " + pair, "applying");
+            }
+
+            // Round 29 T0.2c review fix 1. A pair-scoped [MapConstructor<S,T>] delegates CONSTRUCTION of the
+            // element to a user factory, which a block copy plainly does not call. It is asked here, with the
+            // other pair-scoped directives, rather than through the "would the resolver adopt a user
+            // conversion?" question, because under Preserve/SetNull that question correctly answers NO: the
+            // declared pair method cannot accept the shared DwarfRefContext, so PrefersSynthesizedObjectMap
+            // routes the element through the synthesized __DwarfMap_Obj_* helper — and it is THAT helper which
+            // DrainNestedMappingQueue wires the factory into. The blit therefore skipped the factory in exactly
+            // the two modes where the declared-method rule looked like it had the case covered.
+            //
+            // Scoped to DECLARED pairs, the identical scoping the factory wiring itself applies: a
+            // [MapConstructor] naming a pair no [GenerateMap<S,T>] declares is honoured by nobody and reported
+            // by DWARF056, and refusing a fast path for a directive that changes nothing would make that
+            // diagnostic untrue.
+            if (decls.GenPairs.Exists(gp => SymbolEqualityComparer.Default.Equals(gp.Src, srcElem) && SymbolEqualityComparer.Default.Equals(gp.Tgt, tgtElem)) &&
+                AnyPairConstructor(decls.PairConstructors, srcElem, tgtElem))
+            {
+                return ("the pair-scoped [MapConstructor<S,T>] declared for " + pair, "applying");
+            }
+
+            // Same match rule as DrainNestedMappingQueue's nested-pair hook wiring: a [BeforeMap] whose parameter
+            // the source implicitly converts to, or a [AfterMap] whose parameter(s) the source/target implicitly
+            // convert to, applies to this pair and must run — which a block copy would silently skip.
+            foreach (var h in decls.BeforeHookDefs)
+                if (HasImplicitConversion(compilation, srcElem, h.ParamType))
+                {
+                    return ("the [BeforeMap] hook matching " + pair, "running");
+                }
+
+            foreach (var h in decls.AfterHookDefs)
+            {
+                var applies = h.P1 is null
+                    ? HasImplicitConversion(compilation, tgtElem, h.P0)
+                    : HasImplicitConversion(compilation, srcElem, h.P0) && HasImplicitConversion(compilation, tgtElem, h.P1);
+                if (applies)
+                {
+                    return ("the [AfterMap] hook matching " + pair, "running");
+                }
+            }
+
+            return null;
         }
 
         // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──
@@ -2585,12 +2786,101 @@ namespace DwarfMapper.Generator.Pipeline
                         (spanSrcElem, spanDstElem, methodLocation, ReadIgnoreSources(method).ToList()));
                 }
 
+                // Zero-alloc span map, blit fast path (round 29, T0.2): the proof is the decision, independent
+                // of what the resolver above picked for spanConv (typically a synthesized __DwarfMap_Obj_*
+                // element mapper) — mirrors the array/list arm at MapperExtractor.Conversions.Arms.cs:382-383.
+                // The synthesized element converter stays in the accumulator either way: resolution still ran
+                // for its completeness (DWARF001), directive-gap and coverage side effects, it is simply unused
+                // by the emitted body when the blit fires.
+                //
+                // Round 29 T0.2 fix-round-1 (Important #1): the proof alone is NOT the whole decision. The
+                // registry that names spanConv is keyed purely by (srcElem, tgtElem) — GetOrReserve returns the
+                // SAME __DwarfMap_Obj_* name no matter which route reached the pair — so a user-declared
+                // converter, or a pair-scoped [MapIgnore<T>]/[MapProperty<S,T>]/[MapValue<T>], or a
+                // [BeforeMap]/[AfterMap] hook that matches this element pair, is baked into what THAT NAME
+                // does, not into a different name the blit could safely bypass. Blitting past any of those
+                // is a silent behaviour change, not a speed-up.
+                //
+                // Round 29 T0.2 fix-round-2 (Important #1, continued): IsSynthesized alone was too wide — it
+                // also admits __DwarfMap_UserConv_*, the shim UserConversionConverter wraps a user's OWN
+                // implicit/explicit operator in (reachable here whenever auto-nest is off, e.g. [AutoNest(false)],
+                // so the auto-nest arm never claims the pair and the user-operator arm does instead). That is
+                // exactly as customizable as a hand-written element converter and must not be blitted past.
+                // Excluded explicitly via GeneratedNames.IsUserConv rather than narrowed to IsObjectMap alone:
+                // CanReinterpretEnums resolves through EnumConverter's OWN synthesized helpers (__DwarfMap_EnumVal_*
+                // / EnumNum_* / NumEnum_*, verified empirically — an enum-by-value span map blits today), which
+                // are byte-identical CreateChecked identity conversions with NO customization surface (no
+                // MapIgnore/MapProperty/MapValue/hook mechanism reaches an enum arm at all); narrowing to
+                // IsObjectMap-only would have silently made the CanReinterpretEnums half of the OR below
+                // permanently unreachable for span maps — the same class of dead-condition defect this whole
+                // gate exists to avoid. `spanConv is null` is kept for parity with the array arm's unconditional
+                // check and is believed UNREACHABLE in combination with a true CanReinterpret/CanReinterpretEnums
+                // verdict: identity is refused up front (BlittableProof.CanReinterpret's own early-out), two
+                // DISTINCT types are never implicitly convertible in C# without a user-defined operator, and
+                // HasImplicitConversion (the earlier resolver arm that would produce a null spanConv) explicitly
+                // excludes user-defined conversions (`!conversion.IsUserDefined`) — so a user operator always
+                // resolves via the UserConv arm above, never via a null spanConv. Kept anyway, defensively, on
+                // the same "prove it, don't assume it" footing as every other gate in this file.
+                var spanIsDefaultConverter = spanConv is null ||
+                                             (GeneratedNames.IsSynthesized(spanConv) && !GeneratedNames.IsUserConv(spanConv));
+                var spanPairIsCustomized = ElementPairHasCustomization(decls, spanComp, spanSrcElem, spanDstElem);
+                var spanBlits = spanIsDefaultConverter && !spanPairIsCustomized &&
+                                (BlittableProof.CanReinterpret(spanSrcElem, spanDstElem) ||
+                                 BlittableProof.CanReinterpretEnums(spanSrcElem, spanDstElem, policy.EnumPolicy.Strategy));
+                // Round 29 T0.2c: the near-miss follows the PROOF, and is silenced only by a user conversion
+                // owning the pair — not by spanPairIsCustomized. A pair-scoped [MapProperty<S,T>] rename is
+                // exactly the caller this diagnostic is for: they reconciled the names by hand, and renaming the
+                // field really is what would hand them the block copy. Suppressing it there deleted a hint the
+                // array arm has emitted (and pinned) since DWARF100 was introduced; the two arms now say the
+                // same thing. A non-rename directive cannot produce a false hint: TryExplainNearMiss answers
+                // false for a pair that already lines up by name.
+                if (!spanBlits &&
+                    spanIsDefaultConverter &&
+                    BlittableProof.TryExplainNearMiss(spanSrcElem, spanDstElem, out var spanNearMissReason))
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
+                        methodLocation,
+                        $"'{method.Name}' maps a span whose element types are nearly layout-identical, so it " +
+                        $"takes the element-by-element copy: {spanNearMissReason}",
+                        MemberName: method.Name));
+                }
+
+                // Round 29 T0.2b: mirrors CollectionConverter.Synthesize's own srcElemIsNullableRef computation
+                // — a nullable-annotated REFERENCE element (ReadOnlySpan<C?>) reaching a synthesized object
+                // helper needs the same null-forgiving '!' the collection converter's element loop applies
+                // (the helper null-guards internally: null in, null out). Read by MapEmitter.SpanMap's call
+                // into the shared CollectionConverter.ElementExpr.
+                var spanSrcElemIsNullableRef = spanSrcElem.IsReferenceType &&
+                                                spanSrcElem.NullableAnnotation == NullableAnnotation.Annotated;
+
                 var spanElemMember = new MemberMap(
                     "",
                     "",
                     spanConv,
                     spanNull,
-                    spanNeedsCtx);
+                    spanNeedsCtx,
+                    SourceIsNullableRef: spanSrcElemIsNullableRef,
+                    // Round 29 T2.9, exactly as the async-stream endpoint one screen up: IsSynthesized is blind
+                    // to a user-declared element map, so ReadOnlySpan<Child?> -> Span<ChildDto> through a
+                    // declared ToDto emitted a bare, un-forgiven call. Forgiven and reported through the one
+                    // coupled decision every other edge uses.
+                    ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(spanConv,
+                        spanSrcElem,
+                        spanDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement),
+                    ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(spanConv,
+                        spanDstElem,
+                        decls.MapperMethods,
+                        decls.AllMethods,
+                        method.Name,
+                        methodLocation,
+                        acc.Diagnostics,
+                        NullSourceKind.CollectionElement));
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
@@ -2605,8 +2895,14 @@ namespace DwarfMapper.Generator.Pipeline
                 acc.Methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
-                    method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    // Nullable-aware format (round 29 T0.2b): a plain FullyQualifiedFormat silently drops the
+                    // '?' on a nullable-annotated REFERENCE type argument (Span<D?> → "global::T.D"), so the
+                    // generated partial's declared parameter type stopped matching the user's own partial
+                    // declaration — CS8611 in the consumer's build, on the signature itself, before element
+                    // resolution is even reached. Same format CollectionConverter uses for its own helper
+                    // parameter types, for the same reason.
+                    method.Parameters[1].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     method.Parameters[0].Name,
                     false,
                     EquatableArray.From(new[]
@@ -2619,6 +2915,9 @@ namespace DwarfMapper.Generator.Pipeline
                     "",
                     IsSpanMap: true,
                     SpanTargetParameterName: method.Parameters[1].Name,
+                    SpanMapBlits: spanBlits,
+                    SpanSourceElementFullName: spanSrcElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    SpanTargetElementFullName: spanDstElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     // The create and update models carry MaxDepth and these did not, which was an omission
                     // relative to its siblings. Since B33 it is READ: when the element converter carries the
                     // (ctx, depth) tail, EmitElementContext sizes the shared DwarfRefContext from this value,
@@ -2749,7 +3048,10 @@ namespace DwarfMapper.Generator.Pipeline
                 ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
                 ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                 ReturnIsPublicType: IsEffectivelyPublic(targetType),
-                Withheld: withheld));
+                Withheld: withheld,
+                ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                ReturnTypeSignature: DeclaredReturnSignature(method),
+                ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
             acc.PublicMethodLocs[acc.Methods.Count - 1] = methodLocation;
         }
 
@@ -2921,7 +3223,7 @@ namespace DwarfMapper.Generator.Pipeline
                 string? genFactory = null;
                 foreach (var pc in decls.PairConstructors)
                 {
-                    if (!SymbolEqualityComparer.Default.Equals(pc.Source, genSrc) || !SymbolEqualityComparer.Default.Equals(pc.Target, genTgt))
+                    if (!IsPairCtorMatch(pc, genSrc, genTgt))
                     {
                         continue;
                     }
@@ -3195,7 +3497,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     foreach (var pc in decls.PairConstructors)
                     {
-                        if (!SymbolEqualityComparer.Default.Equals(pc.Source, nestedSrc) || !SymbolEqualityComparer.Default.Equals(pc.Target, nestedTgt))
+                        if (!IsPairCtorMatch(pc, nestedSrc, nestedTgt))
                         {
                             continue;
                         }

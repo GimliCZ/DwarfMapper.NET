@@ -182,29 +182,38 @@ namespace DwarfMapper.Generator.Pipeline
                     sbBfs.AppendLine("                {");
                     // Enqueue each edge member of this arm
                     foreach (var edge in arm.EdgeMembers)
+                    {
+                        // Two locals for the two directions — see the identical loop in
+                        // MapperExtractor.Flatten.Directive.cs, which this arm mirrors statement for statement.
+                        // The homogeneous case was fixed first; this one is the "N identical construction sites"
+                        // half of the same defect, and it has its own probe (P38) for exactly that reason.
+                        var edgeAccess = Identifiers.Escape(edge.Name);
+                        var edgeLocal = Identifiers.Unescaped(edge.Name);
+
                         if (edge.IsDictValue)
                             // SF-F3: Dictionary<K,V> where V is a node — traverse values.
                         {
-                            sbBfs.Append("                    if (__t.").Append(edge.Name)
-                                .Append(" is { } __d_").Append(edge.Name)
-                                .Append(") foreach (var __kv in __d_").Append(edge.Name)
+                            sbBfs.Append("                    if (__t.").Append(edgeAccess)
+                                .Append(" is { } __d_").Append(edgeLocal)
+                                .Append(") foreach (var __kv in __d_").Append(edgeLocal)
                                 .AppendLine(
                                     ") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
                         }
                         else if (!edge.IsCollection)
                         {
-                            sbBfs.Append("                    if (__t.").Append(edge.Name)
-                                .Append(" is { } __e_").Append(edge.Name)
-                                .Append(" && __visited.Add(__e_").Append(edge.Name)
-                                .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                            sbBfs.Append("                    if (__t.").Append(edgeAccess)
+                                .Append(" is { } __e_").Append(edgeLocal)
+                                .Append(" && __visited.Add(__e_").Append(edgeLocal)
+                                .Append(")) __queue.Enqueue(__e_").Append(edgeLocal).AppendLine(");");
                         }
                         else
                         {
-                            sbBfs.Append("                    if (__t.").Append(edge.Name)
-                                .Append(" is { } __c_").Append(edge.Name)
-                                .Append(") foreach (var __x in __c_").Append(edge.Name)
+                            sbBfs.Append("                    if (__t.").Append(edgeAccess)
+                                .Append(" is { } __c_").Append(edgeLocal)
+                                .Append(") foreach (var __x in __c_").Append(edgeLocal)
                                 .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
                         }
+                    }
 
                     sbBfs.AppendLine("                    break;");
                     sbBfs.AppendLine("                }");

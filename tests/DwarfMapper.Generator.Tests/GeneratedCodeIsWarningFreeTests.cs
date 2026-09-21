@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using DwarfMapper.Generator.Tests.Fuzzing;
@@ -217,6 +217,335 @@ namespace DwarfMapper.Generator.Tests
                                           public partial IQueryable<Dst> Project(IQueryable<Src> q);
                                       }
                                       """
+            ];
+
+            // [GenerateWrapperMap] — the payload edge, in both dominant Result<T> spellings. Round 29 task 2.6:
+            // the nullable one put an unsuppressible CS8604 in the consumer's .g.cs, the non-nullable one threw at
+            // run time, and neither the schemas nor this list had ever declared a wrapper at all.
+            yield return
+            [
+                "WrapperMapPayload", """
+                                     using DwarfMapper;
+                                     namespace Demo;
+                                     public sealed class Child { public int V { get; set; } }
+                                     public sealed class ChildDto { public int V { get; set; } }
+                                     public sealed class Result<T> where T : class
+                                     {
+                                         public Result(T? value, string? error) { Value = value; Error = error; }
+                                         public T? Value { get; }
+                                         public string? Error { get; }
+                                     }
+                                     public sealed class Outcome<T> where T : class
+                                     {
+                                         public Outcome(T value, string? error) { Value = value; Error = error; }
+                                         public T Value { get; }
+                                         public string? Error { get; }
+                                     }
+                                     [DwarfMapper]
+                                     [GenerateWrapperMap(typeof(Result<>))]
+                                     [GenerateWrapperMap(typeof(Outcome<>))]
+                                     [GenerateMap<Child, ChildDto>]
+                                     public partial class M { public partial ChildDto ToDto(Child c); }
+                                     """
+            ];
+
+            // The same null-guard decision without a wrapper anywhere: a nested member, a nested collection
+            // element and a dictionary value, each routed through a map method the USER declared rather than
+            // through a synthesized helper. That is the actual defect surface — the wrapper only makes it common.
+            yield return
+            [
+                "NestedViaDeclaredMap", """
+                                        using System.Collections.Generic;
+                                        using DwarfMapper;
+                                        namespace Demo;
+                                        public sealed class Child { public int V { get; set; } }
+                                        public sealed class ChildDto { public int V { get; set; } }
+                                        public sealed class Src
+                                        {
+                                            public Child? Inner { get; set; }
+                                            public Child Plain { get; set; } = new();
+                                            public List<Child?> Items { get; set; } = new();
+                                            public Dictionary<string, Child?> Map { get; set; } = new();
+                                        }
+                                        public sealed class Dst
+                                        {
+                                            public ChildDto? Inner { get; set; }
+                                            public ChildDto Plain { get; set; } = new();
+                                            public List<ChildDto?> Items { get; set; } = new();
+                                            public Dictionary<string, ChildDto?> Map { get; set; } = new();
+                                        }
+                                        [DwarfMapper]
+                                        public partial class M
+                                        {
+                                            public partial Dst Convert(Src s);
+                                            public partial ChildDto ToDto(Child c);
+                                        }
+                                        """
+            ];
+
+            // Phase 5 extra parameters, every nullability arm at once. Round 29 task 2.7: the signature fragment
+            // dropped the '?' off a nullable reference parameter (CS8611) and the phase discarded the
+            // null-handling decision, so once the '?' came back the body was CS8604 (converter argument), CS8601
+            // (raw assign) and CS0266 (nullable value into a non-nullable value member — a compile ERROR that had
+            // been there since Phase 5 was written). No schema declares an extra parameter at all.
+            //
+            // Widget/WidgetDto carry the arm the other six do not: a converter the generator SYNTHESIZED rather
+            // than one the user declared. It is the shape a consumer meets first (no ToDto on the class, the
+            // pair auto-nested), it goes through a different clause of the emitter's `needsBang` — IsSynthesized
+            // instead of ConverterParamIsNonNullableRef — and the helper it calls is null-tolerant, so it is
+            // forgiven WITHOUT DWARF070 where the declared converter is forgiven WITH it.
+            yield return
+            [
+                "NullableExtraParameter", """
+                                          using DwarfMapper;
+                                          namespace Demo;
+                                          public sealed class Child { public int V { get; set; } }
+                                          public sealed class ChildDto { public int V { get; set; } }
+                                          public sealed class Widget { public int V { get; set; } }
+                                          public sealed class WidgetDto { public int V { get; set; } }
+                                          public sealed class Src { public int Id { get; set; } }
+                                          public sealed class Dst
+                                          {
+                                              public int Id { get; set; }
+                                              public ChildDto? Lifted { get; set; }
+                                              public ChildDto Forgiven { get; set; } = new();
+                                              public Child Raw { get; set; } = new();
+                                              public Child? Plain { get; set; }
+                                              public int Count { get; set; }
+                                              public long? Widened { get; set; }
+                                              public WidgetDto? Auto { get; set; }
+                                              public WidgetDto AutoStrict { get; set; } = new();
+                                          }
+                                          [DwarfMapper]
+                                          public partial class M
+                                          {
+                                              public partial Dst Map(Src s, Child? lifted, Child? forgiven, Child? raw, Child? plain, int? count, int? widened, Widget? auto, Widget? autoStrict);
+                                              public partial ChildDto ToDto(Child c);
+                                          }
+                                          """
+            ];
+
+            // The SOURCE parameter of a user-declared partial, on the two branches that write their own
+            // signature: the ordinary create-map and update-into. Round 29 task 2.7 fix round 1 — the same
+            // dropped '?' as the extra parameter, one field over, and CS8611 in the consumer's .g.cs.
+            yield return
+            [
+                "NullableSourceParameter", """
+                                           using DwarfMapper;
+                                           namespace Demo;
+                                           public sealed class Src { public int Id { get; set; } }
+                                           public sealed class Dst { public int Id { get; set; } }
+                                           [DwarfMapper]
+                                           public partial class M
+                                           {
+                                               public partial Dst Map(Src? s);
+                                               public partial void Update(Src? s, Dst d);
+                                           }
+                                           """
+            ];
+
+            // The RETURN half, round 29 task 2.8. Three shapes on one mapper because they fail in three
+            // different files: the scalar `Dst?` is silent on the partial and lands CS8603/CS8604 in
+            // DwarfMapper.Extensions.g.cs and DwarfMapper.AmbientRegistration.g.cs, the generic `List<Dst?>` is
+            // CS8819 + CS8619 on the partial itself, and the update-into destination parameter — spelled from
+            // the same ReturnTypeFullName — is CS8611. No schema in this file had ever declared a nullable
+            // return, which is why the oracle ran clean over all of it.
+            yield return
+            [
+                "NullableReturnType", """
+                                      using System.Collections.Generic;
+                                      using DwarfMapper;
+                                      namespace Demo;
+                                      public sealed class Src { public int Id { get; set; } }
+                                      public sealed class Dst { public int Id { get; set; } }
+                                      [DwarfMapper]
+                                      public partial class M
+                                      {
+                                          public partial Dst? Map(Src s);
+                                          public partial List<Dst?> Many(List<Src> s);
+                                          public partial void Update(Src s, Dst? d);
+                                      }
+                                      """
+            ];
+
+            // The async-stream element edge, round 29 task 2.8. The one element path that never went through
+            // AppendValueExpression or CollectionConverter.ElementExpr: it built `yield return Conv(__item)` by
+            // hand and read no null handling, so a nullable element was CS8604 in the consumer's .g.cs. Two
+            // pairs, because they take different arms of the shared element expression — a non-nullable
+            // destination element forgives into the SYNTHESIZED helper's own null guard, while a nullable one
+            // reached through a USER-DECLARED converter lifts the null instead (null in, null out).
+            //
+            // The third combination — a user-declared converter into a NON-nullable destination element — was
+            // deliberately absent when this case was written, because it was CS8604 on every element edge, the
+            // collection path included: ElementExpr's forgiveness was keyed on IsSynthesized and blind to a
+            // user-declared converter's non-nullable parameter the way the MEMBER path was before task 2.7
+            // taught it ConverterParamIsNonNullableRef. Task 2.9 closed that on all six element edges at once;
+            // it has its own case (ElementViaDeclaredMap) below rather than being folded in here, so this one
+            // keeps pinning the two arms it was written for.
+            yield return
+            [
+                "AsyncStreamNullableElement", """
+                                             using System.Collections.Generic;
+                                             using DwarfMapper;
+                                             namespace Demo;
+                                             public sealed class Src { public int Id { get; set; } }
+                                             public sealed class Dst { public int Id { get; set; } }
+                                             public sealed class Child { public int V { get; set; } }
+                                             public sealed class ChildDto { public int V { get; set; } }
+                                             [DwarfMapper]
+                                             public partial class M
+                                             {
+                                                 public partial IAsyncEnumerable<Dst> Strict(IAsyncEnumerable<Src?> s);
+                                                 public partial IAsyncEnumerable<ChildDto?> Lifted(IAsyncEnumerable<Child?> c);
+                                                 public partial ChildDto ToDto(Child c);
+                                             }
+                                             """
+            ];
+
+            // Round 29 T2.9 — the shape the case above deliberately left out, on every edge that reaches the
+            // shared element expression at once. A nullable-annotated REFERENCE element flowing through a map
+            // method the USER declared, into a destination element the annotation says cannot hold null:
+            // `ToDto(__item)` bare, CS8604 in the consumer's .g.cs, on the list, the array, the dictionary
+            // value, the span, the async stream and the constructor-bound collection. The mapper also carries
+            // the two shapes that must NOT move — a nullable destination element (lifted, not forgiven) and a
+            // null-TOLERANT converter (left alone) — so "forgive everything" cannot pass this case either.
+            yield return
+            [
+                "ElementViaDeclaredMap", """
+                                         using System;
+                                         using System.Collections.Generic;
+                                         using DwarfMapper;
+                                         namespace Demo;
+                                         public sealed class Child { public int V { get; set; } }
+                                         public sealed class ChildDto { public int V { get; set; } }
+                                         public sealed class Loose { public int V { get; set; } }
+                                         public sealed class LooseDto { public int V { get; set; } }
+                                         public sealed class Src
+                                         {
+                                             public List<Child?> Items { get; set; } = new();
+                                             public Child?[] Slots { get; set; } = new Child?[2];
+                                             public Dictionary<string, Child?> Lookup { get; set; } = new();
+                                             public List<Child?> Lifted { get; set; } = new();
+                                             public List<Loose?> Tolerant { get; set; } = new();
+                                         }
+                                         public sealed class Dst
+                                         {
+                                             public List<ChildDto> Items { get; set; } = new();
+                                             public ChildDto[] Slots { get; set; } = new ChildDto[2];
+                                             public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                             public List<ChildDto?> Lifted { get; set; } = new();
+                                             public List<LooseDto> Tolerant { get; set; } = new();
+                                         }
+                                         public sealed class Boxed
+                                         {
+                                             public Boxed(List<ChildDto> items) { Items = items; }
+                                             public List<ChildDto> Items { get; }
+                                         }
+                                         [DwarfMapper]
+                                         public partial class M
+                                         {
+                                             public partial Dst Map(Src s);
+                                             public partial Boxed Box(Src s);
+                                             public partial void Copy(ReadOnlySpan<Child?> src, Span<ChildDto> dst);
+                                             public partial IAsyncEnumerable<ChildDto> Stream(IAsyncEnumerable<Child?> c);
+                                             public partial ChildDto ToDto(Child c);
+                                             public LooseDto ToLoose(Loose? l) => new LooseDto { V = l?.V ?? 0 };
+                                         }
+                                         """
+            ];
+
+            // Round 29 T2.9, the RETURN half of the same family. A converter DECLARED to hand back a nullable
+            // reference, into destinations that forbid null: a member, a collection element, a dictionary value,
+            // a constructor parameter, a span element and an async-stream element. MemberMap carried the
+            // ARGUMENT side only, so the member arm emitted `Inner = s.Inner is null ? null! : ToDto(s.Inner)` —
+            // the null arm forgiven and the call not — and each edge produced its own CS8600/CS8601/CS8603/CS8604
+            // inside the consumer's .g.cs. `Free` is the guard on the other side: a NULLABLE destination holds
+            // the returned null legitimately and must gain no suppression at all.
+            yield return
+            [
+                "NullableReturnConverter", """
+                                           using System;
+                                           using System.Collections.Generic;
+                                           using DwarfMapper;
+                                           namespace Demo;
+                                           public sealed class Child { public int V { get; set; } }
+                                           public sealed class ChildDto { public int V { get; set; } }
+                                           public sealed class Src
+                                           {
+                                               public Child Inner { get; set; } = new();
+                                               public Child Free { get; set; } = new();
+                                               public List<Child> Items { get; set; } = new();
+                                               public Dictionary<string, Child> Lookup { get; set; } = new();
+                                               public Dictionary<Child, int> Counts { get; set; } = new();
+                                           }
+                                           public sealed class Dst
+                                           {
+                                               public ChildDto Inner { get; set; } = new();
+                                               public ChildDto? Free { get; set; }
+                                               public List<ChildDto> Items { get; set; } = new();
+                                               public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                               public Dictionary<ChildDto, int> Counts { get; set; } = new();
+                                           }
+                                           public sealed class Boxed
+                                           {
+                                               public Boxed(ChildDto inner) { Inner = inner; }
+                                               public ChildDto Inner { get; }
+                                           }
+                                           [DwarfMapper]
+                                           public partial class M
+                                           {
+                                               public partial Dst Map(Src s);
+                                               public partial Boxed Box(Src s);
+                                               public partial void Copy(ReadOnlySpan<Child> src, Span<ChildDto> dst);
+                                               public partial IAsyncEnumerable<ChildDto> Stream(IAsyncEnumerable<Child> c);
+                                               public partial ChildDto? ToDto(Child c);
+                                           }
+                                           """
+            ];
+
+            // [MapDenseEnumKeys] — round 29 T3.2. The golden manifest pins these bytes and the runtime suite
+            // executes them, but NEITHER of those oracles reads warnings, and this list is hand-maintained
+            // rather than derived from GoldenCorpus, so a new directive is outside the warning-free bar until
+            // it is written here. The synthesized helper takes a NULLABLE parameter and answers null itself,
+            // so the call site emits no `!` — which is precisely the shape that produces CS8604 when it is
+            // got wrong. Both endpoints, both source shapes (Dictionary and IReadOnlyDictionary), and a
+            // nullable-annotated source member, because that member is the one whose forgiveness is decided
+            // rather than fixed.
+            yield return
+            [
+                "MapDenseEnumKeys", """
+                                    using System.Collections.Generic;
+                                    using System.Runtime.CompilerServices;
+                                    using DwarfMapper;
+                                    namespace Demo;
+                                    public enum Platform { Web = 1, Ios = 2, Android = 3 }
+                                    [InlineArray(3)] public struct Counts3 { private int _e0; }
+                                    public sealed class Src
+                                    {
+                                        public Dictionary<Platform, int> Counts { get; set; } = new();
+                                        public IReadOnlyDictionary<Platform, int> Reads { get; set; } = new Dictionary<Platform, int>();
+                                        public Dictionary<Platform, int>? Maybe { get; set; }
+                                    }
+                                    public sealed class Dst
+                                    {
+                                        public Counts3 Counts { get; set; }
+                                        public Counts3 Reads { get; set; }
+                                        public Counts3 Maybe;
+                                    }
+                                    [DwarfMapper]
+                                    public partial class M
+                                    {
+                                        [MapDenseEnumKeys(nameof(Dst.Counts), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Reads), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Maybe), Offset = 1)]
+                                        public partial Dst Map(Src s);
+
+                                        [MapDenseEnumKeys(nameof(Dst.Counts), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Reads), Offset = 1)]
+                                        [MapDenseEnumKeys(nameof(Dst.Maybe), Offset = 1)]
+                                        public partial void Into(Src s, Dst d);
+                                    }
+                                    """
             ];
         }
 

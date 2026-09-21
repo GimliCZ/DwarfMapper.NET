@@ -16,17 +16,19 @@ namespace DwarfMapper.Generator.Tests.Contracts
     ///     </para>
     ///     <para>
     ///         <b>The trap, which is why this took a task to write and not a line:</b> a naive "every baseline
-    ///         must compile" gate fires on four legitimate fixtures. <c>CaseInsensitive</c>,
+    ///         must compile" gate fires on five legitimate fixtures. <c>CaseInsensitive</c>,
     ///         <c>NameConvention</c> and <c>AllowNonPublicMembers</c> exist precisely to REMOVE a
-    ///         <c>DWARF001</c>, and <c>[Flatten]</c> exists to supply a destination member that has no direct
-    ///         source — so for those four the broken baseline is the question, the element under test is
+    ///         <c>DWARF001</c>, <c>[Flatten]</c> exists to supply a destination member that has no direct
+    ///         source, and <c>[MapDenseEnumKeys]</c> is the only thing that maps a dictionary into an inline
+    ///         array — so for those five the broken baseline is the question, the element under test is
     ///         expected to clear it, and the cell reads <c>Honoured</c> for a real reason. They are excepted BY
-    ///         NAME below, never by count.
+    ///         NAME below, never by count, and each states the diagnostic id it must still fail with.
     ///     </para>
     ///     <para>
     ///         <b>The exception list is an obligation, not an allowlist.</b> It is asserted in both directions:
     ///         a named fixture whose baseline started compiling fails just as loudly as an unnamed one whose
-    ///         baseline stopped. Otherwise the four names would be a place to put a fixture so that nothing is
+    ///         baseline stopped, and a named fixture that rotted into a DIFFERENT error fails too. Otherwise the
+    ///         names would be a place to put a fixture so that nothing is
     ///         asked of it — which is the shape this repository spent round 20 deleting.
     ///     </para>
     /// </summary>
@@ -58,21 +60,36 @@ namespace DwarfMapper.Generator.Tests.Contracts
         private const Endpoint ReferenceEndpoint = Endpoint.CreateMap;
 
         /// <summary>
-        ///     The fixtures whose baseline is <c>DWARF001</c> BY DESIGN, with the element that is expected to
-        ///     clear it. Keyed by <c>[SurfaceProbe]</c> key, so a renamed fixture fails
-        ///     <see cref="Every_named_exception_is_a_real_fixture" /> rather than silently losing its exception.
+        ///     The fixtures whose baseline is BROKEN BY DESIGN, each with the diagnostic id it must still be
+        ///     broken WITH and the element that is expected to clear it. Keyed by <c>[SurfaceProbe]</c> key, so
+        ///     a renamed fixture fails <see cref="Every_named_exception_is_a_real_fixture" /> rather than
+        ///     silently losing its exception.
+        ///     <para>
+        ///         The id is STORED rather than assumed (round 29 T3.2). Four of these five are
+        ///         <c>DWARF001</c> — a destination member with no source at all — and the check hard-coded that.
+        ///         <c>[MapDenseEnumKeys]</c>'s fixture is broken for a different reason: its member has a source
+        ///         and no CONVERSION, which is <c>DWARF005</c>, and a dictionary can never convert to an inline
+        ///         array without the directive. Widening the check to "any error" would have turned the list
+        ///         into the allowlist its own docstring refuses; carrying the id keeps the rule exactly as
+        ///         strong — still broken, and still broken for the stated reason — while letting it describe
+        ///         more than one reason.
+        ///     </para>
         /// </summary>
-        private static readonly Dictionary<string, string> BaselineIsDwarf001ByDesign =
+        private static readonly Dictionary<string, (string Id, string Why)> BaselineIsBrokenByDesign =
             new(StringComparer.Ordinal)
             {
-                ["case-mismatched-member"] =
-                    "Src.name vs Dst.Name — [DwarfMapper(CaseInsensitive = true)] is what matches them",
-                ["snake-case-member"] =
-                    "Src.user_name vs Dst.UserName — [DwarfMapper(NameConvention = ...)] is what matches them",
-                ["internal-member"] =
-                    "Src.Name is internal — [DwarfMapper(AllowNonPublicMembers = true)] is what reaches it",
-                ["flattenable-nested-member"] =
-                    "Dst.X has no direct source — [Flatten] on Src.Child is what supplies it"
+                ["case-mismatched-member"] = ("DWARF001",
+                    "Src.name vs Dst.Name — [DwarfMapper(CaseInsensitive = true)] is what matches them"),
+                ["snake-case-member"] = ("DWARF001",
+                    "Src.user_name vs Dst.UserName — [DwarfMapper(NameConvention = ...)] is what matches them"),
+                ["internal-member"] = ("DWARF001",
+                    "Src.Name is internal — [DwarfMapper(AllowNonPublicMembers = true)] is what reaches it"),
+                ["flattenable-nested-member"] = ("DWARF001",
+                    "Dst.X has no direct source — [Flatten] on Src.Child is what supplies it"),
+                ["dense-enum-keyed-member"] = ("DWARF005",
+                    "Src.Counts is a Dictionary<DenseKey,int> and Dst.Counts is an [InlineArray] struct — " +
+                    "there is no conversion between them and there is not meant to be; [MapDenseEnumKeys] is " +
+                    "the only thing that maps one into the other")
             };
 
         /// <summary>
@@ -84,7 +101,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
         public void Every_fixture_baseline_compiles_unless_it_is_a_named_by_design_exception()
         {
             var shouldCompileButDoesNot = new List<string>();
-            var namedButNotDwarf001 = new List<string>();
+            var namedButNotItsStatedId = new List<string>();
 
             foreach (var (key, _) in SurfaceFixtures.All.OrderBy(x => x.Key, StringComparer.Ordinal))
             {
@@ -97,20 +114,20 @@ namespace DwarfMapper.Generator.Tests.Contracts
                         $"{e.Key}×{e.Value}")))
                     .ToList();
 
-                if (!BaselineIsDwarf001ByDesign.TryGetValue(key, out var why))
+                if (!BaselineIsBrokenByDesign.TryGetValue(key, out var declared))
                 {
                     if (errors.Count > 0)
                     {
                         shouldCompileButDoesNot.Add($"{key}: {string.Join(", ", errors)}");
                     }
                 }
-                else if (!dwarfKeys.Contains("DWARF001:Error", StringComparer.Ordinal))
+                else if (!dwarfKeys.Contains(declared.Id + ":Error", StringComparer.Ordinal))
                 {
                     // Not "is it still broken" but "is it still broken FOR THE STATED REASON". A fixture that
                     // healed and one that rotted into some other error are both declarations that stopped
                     // describing their fixture, and both would coast forever under a bare is-it-broken check.
-                    namedButNotDwarf001.Add(
-                        $"{key} — declared \"{why}\", but the baseline reports " + (errors.Count == 0 ? "no error at all" : string.Join(", ", errors)));
+                    namedButNotItsStatedId.Add(
+                        $"{key} — declared {declared.Id}, \"{declared.Why}\", but the baseline reports " + (errors.Count == 0 ? "no error at all" : string.Join(", ", errors)));
                 }
             }
 
@@ -122,12 +139,12 @@ namespace DwarfMapper.Generator.Tests.Contracts
                 "byte for byte, and the cell reads UnhonouredButLoud — which passes the claimed branch and the " +
                 "unclaimed one alike. Give the fixture whatever member the baseline needs (the [FlattenGraph] " +
                 "fixture's Src.Flat exists for exactly this and says so), or, if the broken baseline IS the " +
-                "question the element answers, name the fixture in BaselineIsDwarf001ByDesign with the element " +
-                "that clears it.");
+                "question the element answers, name the fixture in BaselineIsBrokenByDesign with the id it " +
+                "fails with and the element that clears it.");
 
-            Assert.True(namedButNotDwarf001.Count == 0,
-                "Fixture(s) named as DWARF001-by-design whose baseline no longer reports DWARF001:\n    " +
-                string.Join("\n    ", namedButNotDwarf001) +
+            Assert.True(namedButNotItsStatedId.Count == 0,
+                "Fixture(s) named as broken-by-design whose baseline no longer reports the id they declare:\n    " +
+                string.Join("\n    ", namedButNotItsStatedId) +
                 "\n\nThe exception has gone stale. Its cells no longer read Honoured for the reason the " +
                 "declaration gives — they read whatever the element does against a working baseline, which " +
                 "may be nothing. Remove the entry so the ordinary rule covers the fixture again, and re-read " +
@@ -139,15 +156,17 @@ namespace DwarfMapper.Generator.Tests.Contracts
         {
             // A renamed or deleted fixture would otherwise leave its exception behind as a permission slip with
             // nothing under it, and the next fixture to take that [SurfaceProbe] key would inherit it silently.
-            var unknown = BaselineIsDwarf001ByDesign.Keys
+            var unknown = BaselineIsBrokenByDesign.Keys
                 .Where(k => !SurfaceFixtures.All.ContainsKey(k))
                 .ToList();
 
             Assert.True(unknown.Count == 0,
                 "Baseline exception(s) naming no fixture: " + string.Join(", ", unknown) + ". Delete the entry or fix the [SurfaceProbe] key it was written against.");
 
-            Assert.False(BaselineIsDwarf001ByDesign.Values.Any(string.IsNullOrWhiteSpace),
-                "Every baseline exception must say WHICH element is expected to clear the DWARF001.");
+            Assert.False(
+                BaselineIsBrokenByDesign.Values.Any(v => string.IsNullOrWhiteSpace(v.Id) ||
+                                                         string.IsNullOrWhiteSpace(v.Why)),
+                "Every baseline exception must name the id it is broken with AND which element clears it.");
         }
     }
 }

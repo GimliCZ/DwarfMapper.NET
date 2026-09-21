@@ -170,6 +170,8 @@ namespace DwarfMapper.Generator.Tests.Contracts
                 ["Flatten"] = (CellStatus.NotApplicable, CollectionOrGraphOnly),
                 ["FlattenGraph"] = (CellStatus.NotApplicable, CollectionOrGraphOnly),
                 ["Reinterpret"] = (CellStatus.NotApplicable, CollectionOrGraphOnly),
+                ["MapShare"] = (CellStatus.NotApplicable, CollectionOrGraphOnly),
+                ["MapDenseEnumKeys"] = (CellStatus.NotApplicable, CollectionOrGraphOnly),
                 ["MapCollectionKey"] = (CellStatus.NotApplicable,
                     "update-into-only key correlation; refused elsewhere by DWARF074"),
                 ["ProvidesMap"] = (CellStatus.NotApplicable,

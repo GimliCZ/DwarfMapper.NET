@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
+
 namespace DwarfMapper.Generator.Model
 {
     /// <summary>
@@ -20,5 +22,9 @@ namespace DwarfMapper.Generator.Model
         string MethodName,
         string SourceTypeFullName,
         string TargetTypeFullName,
-        bool IsStatic) : IEquatable<HandWrittenProvide>;
+        bool IsStatic) : IEquatable<HandWrittenProvide>
+    {
+        /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
+        public string EmitMethodName => Identifiers.Escape(MethodName);
+    }
 }

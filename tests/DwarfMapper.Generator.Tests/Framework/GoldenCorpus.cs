@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using DwarfMapper.Generator.Tests.Fuzzing;
@@ -64,6 +64,53 @@ namespace DwarfMapper.Generator.Tests.Framework
                                      [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
                                      """, "DwarfGenerator");
 
+            // Round 29 T0.2 fix-round-1 (controller ruling, corpus-hole rule): the widening SpanMap case above
+            // never exercises the blit fast path (int -> long differs in size, so it keeps the element loop).
+            // A layout-identical struct-element pair is the shape that actually reaches MemoryMarshal.Cast.
+            yield return ("SpanMapBlit", """
+                                         using DwarfMapper;
+                                         using System;
+                                         namespace Demo;
+                                         public struct Vec3 { public float X; public float Y; public float Z; }
+                                         public struct Vec3Dst { public float X; public float Y; public float Z; }
+                                         [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<Vec3> src, Span<Vec3Dst> dst); }
+                                         """, "DwarfGenerator");
+
+            // Round 29 T3.1: the share, in both of its modes, because the two take DIFFERENT decisions in the
+            // same method and only a case carrying both pins that they are different. `Proven` is an
+            // ImmutableList of a sealed get-only element, which the proof accepts and shares with no attribute;
+            // `Asserted` is an IReadOnlyList of the same element, which the proof refuses on principle (an
+            // interface is not a guarantee) and which only [MapShare] can share; `Copied` is the same interface
+            // WITHOUT the attribute, and it must keep the helper — the manifest is what will notice if the
+            // automatic path ever starts accepting an interface.
+            yield return ("MapShare", """
+                                      using DwarfMapper;
+                                      using System.Collections.Generic;
+                                      using System.Collections.Immutable;
+                                      namespace Demo;
+                                      public sealed class Badge { public Badge(string n) { Name = n; } public string Name { get; } }
+                                      public class A { public ImmutableList<Badge> Proven { get; set; } = ImmutableList<Badge>.Empty; public IReadOnlyList<Badge> Asserted { get; set; } = System.Array.Empty<Badge>(); public IReadOnlyList<Badge> Copied { get; set; } = System.Array.Empty<Badge>(); }
+                                      public class B { public ImmutableList<Badge> Proven { get; set; } = ImmutableList<Badge>.Empty; public IReadOnlyList<Badge> Asserted { get; set; } = System.Array.Empty<Badge>(); public IReadOnlyList<Badge> Copied { get; set; } = System.Array.Empty<Badge>(); }
+                                      [DwarfMapper] public partial class M { [MapShare("Asserted")] public partial B Map(A a); }
+                                      """, "DwarfGenerator");
+
+            // Round 29 T3.2: the dense fill, with an Offset that is not zero, because the offset is part of the
+            // emitted ARITHMETIC and a case at Offset = 0 would pin a subtraction the compiler could fold away.
+            // `Counts` is the dense member and `Legacy` is the same dictionary mapped ORDINARILY beside it, so
+            // the manifest notices if the directive ever starts reaching a member that did not ask for it — or
+            // stops reaching the one that did.
+            yield return ("MapDenseEnumKeys", """
+                                              using DwarfMapper;
+                                              using System.Collections.Generic;
+                                              using System.Runtime.CompilerServices;
+                                              namespace Demo;
+                                              public enum Platform { Web = 1, Ios = 2, Android = 3 }
+                                              [InlineArray(3)] public struct Counts3 { private int _e0; }
+                                              public class A { public Dictionary<Platform, int> Counts { get; set; } = new(); public Dictionary<Platform, int> Legacy { get; set; } = new(); }
+                                              public class B { public Counts3 Counts { get; set; } public Dictionary<Platform, int> Legacy { get; set; } = new(); }
+                                              [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts", Offset = 1)] public partial B Map(A a); }
+                                              """, "DwarfGenerator");
+
             yield return ("AsyncStream", """
                                          using DwarfMapper;
                                          using System.Collections.Generic;
@@ -128,6 +175,216 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                 public class B { public B(int x) { X = x; } public int X { get; } }
                                                 [DwarfMapper] public partial class M { public partial B Map(A a); }
                                                 """, "DwarfGenerator");
+
+            // Round 29 task 2.6. The manifest moved ZERO rows for the payload-edge null-guard fix, and that was
+            // the hole rather than the reassurance: no case in it routed a nested REFERENCE member through a map
+            // method the USER declared — every nested edge here resolves to a synthesized __DwarfMap_Obj_ helper,
+            // which has null-guarded internally since it was written. The three arms of that decision are what
+            // these two cases pin. NestedViaDeclaredMap carries all three at once: Inner (nullable -> nullable,
+            // lifted), Strict (nullable -> non-nullable, the DWARF070 arm, left forgiven and NOT lifted) and Plain
+            // (non-nullable both ways, lifted with the forgiving null arm).
+            yield return ("NestedViaDeclaredMap", """
+                                                  #nullable enable
+                                                  using DwarfMapper;
+                                                  namespace Demo;
+                                                  public class Child { public int V { get; set; } }
+                                                  public class ChildDto { public int V { get; set; } }
+                                                  public class A { public Child? Inner { get; set; } public Child? Strict { get; set; } public Child Plain { get; set; } = new(); }
+                                                  public class B { public ChildDto? Inner { get; set; } public ChildDto Strict { get; set; } = new(); public ChildDto Plain { get; set; } = new(); }
+                                                  [DwarfMapper] public partial class M { public partial B Map(A a); public partial ChildDto ToDto(Child c); }
+                                                  """, "DwarfGenerator");
+
+            // [GenerateWrapperMap] itself was unpinned too, in both payload spellings — the nullable one that used
+            // to emit CS8604 into the consumer's file and the non-nullable one that used to throw at run time.
+            yield return ("WrapperMapPayloadEdge", """
+                                                   #nullable enable
+                                                   using DwarfMapper;
+                                                   namespace Demo;
+                                                   public class Child { public int V { get; set; } }
+                                                   public class ChildDto { public int V { get; set; } }
+                                                   public sealed class Result<T> where T : class
+                                                   {
+                                                       public Result(T? value, string? error) { Value = value; Error = error; }
+                                                       public T? Value { get; }
+                                                       public string? Error { get; }
+                                                   }
+                                                   public sealed class Outcome<T> where T : class
+                                                   {
+                                                       public Outcome(T value, string? error) { Value = value; Error = error; }
+                                                       public T Value { get; }
+                                                       public string? Error { get; }
+                                                   }
+                                                   [DwarfMapper]
+                                                   [GenerateWrapperMap(typeof(Result<>))]
+                                                   [GenerateWrapperMap(typeof(Outcome<>))]
+                                                   [GenerateMap<Child, ChildDto>]
+                                                   public partial class M { public partial ChildDto ToDto(Child c); }
+                                                   """, "DwarfGenerator");
+
+            // Round 29 task 2.7 — the same blind spot one path over. Phase 5 extra parameters had no golden case
+            // at all, and the two defects they carried both need the nullable context to show: the emitted
+            // partial dropped the '?' off `Child? lifted` (CS8611 against the user's own declaration) and the
+            // phase discarded the null-handling decision, so the body was emitted bare. `#nullable enable` opens
+            // the case source because GeneratorRunner defaults to NullableContextOptions.Disable, under which
+            // every annotation here is Oblivious and none of these arms is reachable.
+            yield return ("NullableExtraParameter", """
+                                                    #nullable enable
+                                                    using DwarfMapper;
+                                                    namespace Demo;
+                                                    public class Child { public int V { get; set; } }
+                                                    public class ChildDto { public int V { get; set; } }
+                                                    public class A { public int Id { get; set; } }
+                                                    public class B
+                                                    {
+                                                        public int Id { get; set; }
+                                                        public ChildDto? Lifted { get; set; }
+                                                        public ChildDto Forgiven { get; set; } = new();
+                                                        public Child Raw { get; set; } = new();
+                                                        public int Count { get; set; }
+                                                    }
+                                                    [DwarfMapper]
+                                                    public partial class M
+                                                    {
+                                                        public partial B Map(A a, Child? lifted, Child? forgiven, Child? raw, int? count);
+                                                        public partial ChildDto ToDto(Child c);
+                                                    }
+                                                    """, "DwarfGenerator");
+
+            // Round 29 task 2.7 fix round 1. The extra parameter's sibling: the SOURCE parameter of the user's
+            // own partial. `#nullable enable` for the same reason — GeneratorRunner defaults to Disable, where
+            // the annotation is Oblivious and the arm is unreachable.
+            yield return ("NullableSourceParameter", """
+                                                     #nullable enable
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public class A { public int Id { get; set; } }
+                                                     public class B { public int Id { get; set; } }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         public partial B Map(A? a);
+                                                         public partial void Update(A? a, B b);
+                                                     }
+                                                     """, "DwarfGenerator");
+
+            // Round 29 task 2.8 — the RETURN half. `#nullable enable` for the same reason again, and here it is
+            // load-bearing twice over: under Disable the emitted signature, the extension facade's return type
+            // and the registry's null guard are all identical to the unannotated case, so the manifest could
+            // never have caught this class of change. The scalar arm's diagnostics were not in the mapper file
+            // at all — they were in the two aggregates, which this case's hash does not cover; the marker in
+            // GoldenFeatureCoverageTests pins the mapper-file half, and the two standing oracles the rest.
+            yield return ("NullableReturnType", """
+                                                #nullable enable
+                                                using System.Collections.Generic;
+                                                using DwarfMapper;
+                                                namespace Demo;
+                                                public class A { public int Id { get; set; } }
+                                                public class B { public int Id { get; set; } }
+                                                [DwarfMapper]
+                                                public partial class M
+                                                {
+                                                    public partial B? Map(A a);
+                                                    public partial List<B?> Many(List<A> a);
+                                                    public partial void Update(A a, B? b);
+                                                }
+                                                """, "DwarfGenerator");
+
+            // Round 29 task 2.8, defect B — the async-stream element edge. `#nullable enable` again: under
+            // Disable the element annotation is Oblivious, the null decision is None, and the emitted loop is
+            // byte-identical to the hand-written one this replaced, so the manifest could not see the change.
+            // Both destination shapes, because they take different arms of the shared element expression.
+            yield return ("AsyncStreamNullableElement", """
+                                                       #nullable enable
+                                                       using System.Collections.Generic;
+                                                       using DwarfMapper;
+                                                       namespace Demo;
+                                                       public class A { public int Id { get; set; } }
+                                                       public class B { public int Id { get; set; } }
+                                                       public class Child { public int V { get; set; } }
+                                                       public class ChildDto { public int V { get; set; } }
+                                                       [DwarfMapper]
+                                                       public partial class M
+                                                       {
+                                                           public partial IAsyncEnumerable<B> Strict(IAsyncEnumerable<A?> a);
+                                                           public partial IAsyncEnumerable<ChildDto?> Lifted(IAsyncEnumerable<Child?> c);
+                                                           public partial ChildDto ToDto(Child c);
+                                                       }
+                                                       """, "DwarfGenerator");
+
+            // Round 29 task 2.9 — the element edge reached through a map method the USER declared. The three
+            // cases above pin the MEMBER path's three arms and the async stream's two; none of them routes a
+            // nullable ELEMENT through a declared converter, which is exactly the arm CollectionConverter's own
+            // IsSynthesized proxy answered for and got wrong. `#nullable enable` again, and for the same reason:
+            // under Disable the element annotation is Oblivious, the forgiveness is unreachable and this case
+            // would be byte-identical to a pre-fix run. Strict is the forgiven arm, Lifted the arm that must NOT
+            // move, and Tolerant the null-accepting converter that must keep its null.
+            yield return ("ElementViaDeclaredMap", """
+                                                   #nullable enable
+                                                   using System.Collections.Generic;
+                                                   using DwarfMapper;
+                                                   namespace Demo;
+                                                   public class Child { public int V { get; set; } }
+                                                   public class ChildDto { public int V { get; set; } }
+                                                   public class Loose { public int V { get; set; } }
+                                                   public class LooseDto { public int V { get; set; } }
+                                                   public class A
+                                                   {
+                                                       public List<Child?> Strict { get; set; } = new();
+                                                       public Dictionary<string, Child?> Lookup { get; set; } = new();
+                                                       public List<Child?> Lifted { get; set; } = new();
+                                                       public List<Loose?> Tolerant { get; set; } = new();
+                                                   }
+                                                   public class B
+                                                   {
+                                                       public List<ChildDto> Strict { get; set; } = new();
+                                                       public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                                       public List<ChildDto?> Lifted { get; set; } = new();
+                                                       public List<LooseDto> Tolerant { get; set; } = new();
+                                                   }
+                                                   [DwarfMapper]
+                                                   public partial class M
+                                                   {
+                                                       public partial B Map(A a);
+                                                       public partial ChildDto ToDto(Child c);
+                                                       public LooseDto ToLoose(Loose? l) => new LooseDto { V = l?.V ?? 0 };
+                                                   }
+                                                   """, "DwarfGenerator");
+
+            // Round 29 task 2.9, the RETURN half. Nothing in the corpus had ever declared a converter that
+            // returns a nullable reference — which is why the manifest moved zero EMISSION rows for the fix, and
+            // why that silence is the hole rather than the reassurance. Strict is the forgiven member arm, Free
+            // the nullable destination that must gain nothing, and the collection and dictionary members prove
+            // the two element builders answer it the same way the member emitter does.
+            yield return ("NullableReturnConverter", """
+                                                     #nullable enable
+                                                     using System.Collections.Generic;
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public class Child { public int V { get; set; } }
+                                                     public class ChildDto { public int V { get; set; } }
+                                                     public class A
+                                                     {
+                                                         public Child Strict { get; set; } = new();
+                                                         public Child Free { get; set; } = new();
+                                                         public List<Child> Items { get; set; } = new();
+                                                         public Dictionary<string, Child> Lookup { get; set; } = new();
+                                                         public Dictionary<Child, int> Counts { get; set; } = new();
+                                                     }
+                                                     public class B
+                                                     {
+                                                         public ChildDto Strict { get; set; } = new();
+                                                         public ChildDto? Free { get; set; }
+                                                         public List<ChildDto> Items { get; set; } = new();
+                                                         public Dictionary<string, ChildDto> Lookup { get; set; } = new();
+                                                         public Dictionary<ChildDto, int> Counts { get; set; } = new();
+                                                     }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         public partial B Map(A a);
+                                                         public partial ChildDto? ToDto(Child c);
+                                                     }
+                                                     """, "DwarfGenerator");
 
             yield return ("EnumByName", """
                                         using DwarfMapper;

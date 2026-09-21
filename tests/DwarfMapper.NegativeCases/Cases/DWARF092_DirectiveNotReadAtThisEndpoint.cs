@@ -17,7 +17,7 @@
 //       instance was mapped as its base and every member the derived DTO declares beyond the base one was
 //       dropped, silently (finding D8). The two applications below are written in the two different syntaxes
 //       on purpose — the message quotes back the form the caller typed, not a normalized one.
-// EXPECT: DWARF092
+// EXPECT: DWARF092, DWARF103
 // EXPECT-MESSAGE DWARF092: [FlattenGraph("Root", "Flat")] on 'UpdateTree' is not read at the update-into endpoint
 // EXPECT-MESSAGE DWARF092: [FlattenGraph("Root", "Flat")] on 'MapTrees' is not read at the span-map endpoint
 // EXPECT-MESSAGE DWARF092: filled by ordinary direct mapping instead
@@ -47,6 +47,13 @@
 // EXPECT-MESSAGE DWARF092: [MapCollectionKey("Items", "Id")] on 'MapOrder' is not read at the create-map endpoint
 // EXPECT-MESSAGE DWARF092: Declare it on an update-into over the same pair
 // EXPECT-MESSAGE DWARF092: A key-based upsert MERGES the source elements
+//
+//       DWARF103 rides along, and is declared rather than suppressed. 'GraphNodeDto' is a sealed class
+//       holding one int, mapped as the element of TreeRootDto.Flat — exactly the shape the transfer-model
+//       hint exists for, so it fires here for the right reason and this file is where that becomes visible.
+//       It is the EXACT-set rule doing its job: an id that starts appearing must be declared by whoever made
+//       it appear (round 29, T2.2).
+// EXPECT-MESSAGE DWARF103: 'Demo.GraphNode' → 'Demo.GraphNodeDto' allocates one 'Demo.GraphNodeDto' per element
 
 using System;
 using System.Collections.Generic;
