@@ -183,10 +183,26 @@ if ($Nightly) {
 # with real gaps left: 16 uncovered lines and 19 open branch outcomes, most of them in
 # ApiReferenceRenderer.
 # ───────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# Re-measured 2026-09-21 (round-30 sweep, DocTooling closed), fast tier, Release, exact covered/coverable from
+# TestResults/coverage-report/Summary.json, truncated as the rule requires:
+#   DwarfMapper 96.4/100.0 · Generator 100.0/100.0 · DocTooling 99.1/99.2 · CodeFixes 98.5/96.7 · Testing 100.0/100.0
+# Exact covered/coverable: DocTooling 441/445 = 99.1011.
+#
+#   DocTooling  96.0 -> 99.1   the doc-pipeline sweep: the exception type's constructors, the doc-XML reader's
+#                              skip and see-tag arms, the type filter, the defaults probe's refusals, the value
+#                              reader and shape words, the repository-root walk and the missing-doc-XML failure
+#
+# What is left uncovered in DocTooling is four lines and two conditions, all three of them owner questions
+# rather than gaps: TryCreateDefaults' MissingMethodException catch, RenderEnum's zero-member loop arm, and
+# DocSnippetInjector's progress guard (which its own Stryker-disable comment calls untestable by construction).
+#
+# The other four floors are unchanged and still equal their measurements from 2026-09-20.
+# ───────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
     'DwarfMapper'            = 96.4
     'DwarfMapper.Generator'  = 100.0
-    'DwarfMapper.DocTooling' = 96.0
+    'DwarfMapper.DocTooling' = 99.1
     'DwarfMapper.CodeFixes'  = 98.5
     'DwarfMapper.Testing'    = 100.0
 }
