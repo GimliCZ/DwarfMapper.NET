@@ -140,7 +140,12 @@ namespace DwarfMapper.DocTooling
         ///     constructor simply report "—": inventing constructor arguments would produce a "default" that no
         ///     caller ever sees, which is worse than admitting the page cannot say.
         /// </summary>
-        private static object? TryCreateDefaults(Type type)
+        /// <remarks>
+        ///     Internal rather than private for the reason IsRenderableType is: Render reflects one fixed
+        ///     assembly, so no test input can put an abstract type, an interface or a throwing constructor in
+        ///     front of this method.
+        /// </remarks>
+        internal static object? TryCreateDefaults(Type type)
         {
             if (type.IsAbstract || type.IsInterface)
             {

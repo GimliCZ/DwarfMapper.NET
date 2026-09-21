@@ -120,6 +120,67 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 #pragma warning restore CA1034, CA1812
 
+        // CA1034/CA1812 again, and for the same reason as OuterProbe above: these exist as Type arguments,
+        // never as instances, and their SHAPE is what the method under test branches on.
+#pragma warning disable CA1034, CA1812
+        public abstract class AbstractProbe
+        {
+            public int Value { get; set; }
+        }
+
+        public interface IShapeProbe
+        {
+            int Value { get; }
+        }
+
+        /// <summary>A type whose construction fails - the reason the renderer catches at all.</summary>
+        public sealed class ThrowingConstructorProbe
+        {
+            public ThrowingConstructorProbe()
+            {
+                throw new InvalidOperationException("this type refuses to be constructed");
+            }
+
+            public int Value { get; set; }
+        }
+
+        /// <summary>The ordinary case: a type whose property defaults CAN be read.</summary>
+        public sealed class DefaultsProbe
+        {
+            public int Value { get; set; } = 7;
+        }
+#pragma warning restore CA1034, CA1812
+
+        /// <summary>
+        ///     An abstract type and an interface have no instance to read defaults from, so the page reports
+        ///     "—" for their members rather than crashing the whole reference.
+        /// </summary>
+        [Fact]
+        public void An_abstract_type_and_an_interface_have_no_defaults_instance()
+        {
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(AbstractProbe)));
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(IShapeProbe)));
+        }
+
+        /// <summary>
+        ///     A constructor that throws must not take the page down with it. The catch is what turns one
+        ///     uncooperative type into one "—" cell instead of a failed documentation build.
+        /// </summary>
+        [Fact]
+        public void A_constructor_that_throws_leaves_the_defaults_unread()
+        {
+            Assert.Null(ApiReferenceRenderer.TryCreateDefaults(typeof(ThrowingConstructorProbe)));
+        }
+
+        /// <summary>The positive control: without this, the three nulls above would pass on a method that always returns null.</summary>
+        [Fact]
+        public void An_ordinary_type_yields_an_instance_to_read_defaults_from()
+        {
+            var instance = ApiReferenceRenderer.TryCreateDefaults(typeof(DefaultsProbe));
+
+            Assert.Equal(7, Assert.IsType<DefaultsProbe>(instance).Value);
+        }
+
         /// <summary>
         ///     REGRESSION. The type filter asked Type.IsPublic, which is FALSE for every nested type however
         ///     visible - the nested flavour is IsNestedPublic - so a public nested type was dropped from the API
