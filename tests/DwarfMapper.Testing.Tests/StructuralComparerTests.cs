@@ -37,6 +37,14 @@ namespace DwarfMapper.Testing.Tests
         public FieldBox? Next;
     }
 
+    /// <summary>A node whose only edge is a COLLECTION, so the walk descends through the enumerable arm.</summary>
+    public sealed class ListNode
+    {
+        public int Id { get; set; }
+
+        public List<ListNode> Kids { get; set; } = new();
+    }
+
     /// <summary>Floating members, so the comparer's two epsilon comparisons can be driven at their boundary.</summary>
     public sealed class NumericBox
     {
@@ -309,6 +317,87 @@ namespace DwarfMapper.Testing.Tests
         {
             Assert.Single(StructuralComparer.Diff(new NumericBox { F = 0f }, new NumericBox { F = 1e-6f }));
             Assert.Empty(StructuralComparer.Diff(new NumericBox { F = 0f }, new NumericBox { F = 9e-7f }));
+        }
+
+        /// <summary>
+        ///     A differing STRING is one difference, not one per character. A string is a scalar here AND an
+        ///     IEnumerable, so the scalar arm has to stop the walk: without that, the comparer would report the
+        ///     string, then walk it as a character sequence and report every character that differs - and, for
+        ///     strings of different lengths, a .Count difference as well.
+        /// </summary>
+        [Fact]
+        public void A_differing_string_is_one_difference_and_not_one_per_character()
+        {
+            var one = Assert.Single(StructuralComparer.Diff(new Box { S = "abc" }, new Box { S = "abd" }));
+
+            Assert.Equal("root.S", one.Path);
+            Assert.Equal("abc", one.Expected);
+            Assert.Equal("abd", one.Actual);
+
+            // Different lengths too, where the character walk would also report a count.
+            var other = Assert.Single(StructuralComparer.Diff(new Box { S = "ab" }, new Box { S = "abcd" }));
+
+            Assert.Equal("root.S", other.Path);
+        }
+
+        /// <summary>
+        ///     The depth cap holds through COLLECTION edges too, and each collection costs two levels: one for
+        ///     the property that holds it, one for the element inside. So the node at position 5 is still
+        ///     compared and the one at position 6 is past the cap - a walk whose depth ran backwards would report
+        ///     both.
+        /// </summary>
+        [Fact]
+        public void The_depth_cap_holds_through_a_chain_of_collections()
+        {
+            var lastCompared = Assert.Single(StructuralComparer.Diff(ListChain(9, -1), ListChain(9, 5)));
+            Assert.Equal("1", lastCompared.Expected);
+            Assert.Equal("99", lastCompared.Actual);
+
+            Assert.Empty(StructuralComparer.Diff(ListChain(9, -1), ListChain(9, 6)));
+        }
+
+        /// <summary>
+        ///     ...and through FIELD edges, which the comparer walks in a loop of its own. One level per node
+        ///     here, so the boundary sits where the property chain's does.
+        /// </summary>
+        [Fact]
+        public void The_depth_cap_holds_through_a_chain_of_fields()
+        {
+            var lastCompared = Assert.Single(StructuralComparer.Diff(FieldChain(14, -1), FieldChain(14, 11)));
+            Assert.Equal("1", lastCompared.Expected);
+            Assert.Equal("99", lastCompared.Actual);
+
+            Assert.Empty(StructuralComparer.Diff(FieldChain(14, -1), FieldChain(14, 12)));
+        }
+
+        /// <summary>A chain linked through a one-element collection; the node at <paramref name="differentAt" /> holds 99.</summary>
+        private static ListNode ListChain(int length, int differentAt)
+        {
+            var root = new ListNode { Id = differentAt == 0 ? 99 : 1 };
+            var current = root;
+            for (var i = 1; i < length; i++)
+            {
+                var next = new ListNode { Id = differentAt == i ? 99 : 1 };
+                current.Kids.Add(next);
+                current = next;
+            }
+
+            return root;
+        }
+
+        /// <summary>A chain linked through a public FIELD; the node at <paramref name="differentAt" /> holds 99.</summary>
+        private static FieldBox FieldChain(int length, int differentAt)
+        {
+            var root = new FieldBox { Value = differentAt == 0 ? 99 : 1 };
+            var current = root;
+            for (var i = 1; i < length; i++)
+            {
+                var next = new FieldBox { Value = differentAt == i ? 99 : 1 };
+                current.Next = next;
+                current = next;
+            }
+
+            return root;
         }
 
         /// <summary>A chain of <paramref name="length" /> nodes; the one at <paramref name="differentAt" /> holds 99.</summary>
