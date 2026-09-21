@@ -592,5 +592,33 @@ namespace DwarfMapper.Generator.Tests
                              """;
             Assert.False(ReportsNearMiss(s));
         }
+        /// <summary>
+        ///     A pair where exactly ONE element type is <c>Nullable&lt;T&gt;</c> reports nothing, and the silence
+        ///     is the contract rather than an accident.
+        ///     <para>
+        ///         MemoryMarshal.Cast&lt;TFrom, TTo&gt; is constrained `where : struct`, and C# refuses a
+        ///         Nullable&lt;T&gt; as that argument (CS0453) even though it satisfies `unmanaged`. So such a pair
+        ///         can never be blitted, and a hint saying it ALMOST could would send a reader to rearrange fields
+        ///         for a cast that cannot compile whatever they do. Both the prover and the explainer refuse the
+        ///         pair up front for that reason; what makes the refusal visible from outside is this silence,
+        ///         because Nullable&lt;T&gt; exposes no public instance fields and would otherwise be explained as an
+        ///         ordinary field-count mismatch.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_nullable_element_on_one_side_reports_nothing_at_all()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public struct SrcV { public int X; public int Y; }
+                                  public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                  public class D { public SrcV?[] V { get; set; } = System.Array.Empty<SrcV?>(); }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+
+            Assert.False(ReportsNearMiss(source));
+        }
+
     }
 }
