@@ -374,7 +374,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // The floors must still exist, because they are the half of the gate that is absolute. Codecov's
             // `auto` only forbids getting worse; without these, coverage could ratchet down one
             // non-regressing commit at a time and nothing would ever be measured against a fixed line.
-            var floors = QualityBadgeRenderer.ParseCoverageFloors(
+            var floors = CoverageFloorReader.ParseCoverageFloors(
                 File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1")));
             Assert.True(floors.Count > 0,
                 "scripts/housekeeping.ps1 no longer declares coverage floors. Codecov's `auto` targets only " +

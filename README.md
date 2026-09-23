@@ -1135,24 +1135,12 @@ welcome.
 
 ### Quality gates
 
-Generated from the gates' own files, never hand-typed — see `QualityBadgeRenderer`.
+Published by CI and read live, not committed numbers.
 
-<!-- table: quality-badges -->
-[![coverage DwarfMapper](https://img.shields.io/badge/coverage%20DwarfMapper-96.4%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.Generator](https://img.shields.io/badge/coverage%20DwarfMapper.Generator-100.0%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.DocTooling](https://img.shields.io/badge/coverage%20DwarfMapper.DocTooling-99.1%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.CodeFixes](https://img.shields.io/badge/coverage%20DwarfMapper.CodeFixes-98.5%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.Testing](https://img.shields.io/badge/coverage%20DwarfMapper.Testing-100.0%25-brightgreen)](scripts/housekeeping.ps1)
+[![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2FGimliCZ%2FDwarfMapper.NET%2Fmaster)](https://dashboard.stryker-mutator.io/reports/github.com/GimliCZ/DwarfMapper.NET/master)
+[![codecov](https://codecov.io/gh/GimliCZ/DwarfMapper.NET/branch/master/graph/badge.svg)](https://codecov.io/gh/GimliCZ/DwarfMapper.NET)
 
-[![mutation generator](https://img.shields.io/badge/mutation%20generator-96.62%25-brightgreen)](stryker-config.json)
-[![mutation doctooling](https://img.shields.io/badge/mutation%20doctooling-95.85%25-brightgreen)](stryker-config.doctooling.json)
-[![mutation runtime](https://img.shields.io/badge/mutation%20runtime-97.62%25-brightgreen)](stryker-config.runtime.json)
-[![mutation codefixes](https://img.shields.io/badge/mutation%20codefixes-87.64%25-brightgreen)](stryker-config.codefixes.json)
-[![mutation pipeline](https://img.shields.io/badge/mutation%20pipeline-94.01%25-brightgreen)](stryker-config.pipeline.json)
-[![mutation testing](https://img.shields.io/badge/mutation%20testing-100.00%25-brightgreen)](stryker-config.testing.json)
-
-<sub>Coverage figures are the enforced per-assembly line-coverage floors from [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1); mutation figures are the RAW measured scores from [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md), gated at break 96 (generator), break 95 (doctooling), break 97 (runtime), break 87 (codefixes), break 94 (pipeline), break 100 (testing). Every number here is read from those files and byte-compared by the doc suite, so a stale badge is a failing build rather than a quiet lie. Each score describes only the files its own leg names, which is a minority of `src/`; [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there.</sub>
-<!-- endtable -->
+<sub>The mutation badge is the Stryker dashboard's AGGREGATE over all six legs of `master` — generator, doctooling, runtime, code fixes, pipeline and testing — each uploaded as its own module by the nightly `mutation` matrix, and only after that leg's report has passed the vacuity, tree-cleanliness and decontamination checks. Read it as one number over six differently-scoped populations: each leg names only a minority of `src/`, and [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there. It is also the RAW score — the dashboard has no notion of a proven-equivalent mutant, so where a leg carries adjudicated rows its raw figure sits above the score the project holds itself to. The per-leg breaks, the measurement each came from and every equivalence proof are in [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md) and the [`stryker-config*.json`](stryker-config.json) files, which are what actually fail a build. Coverage is Codecov's live figure for `master`; the enforced per-assembly floors live in [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1).</sub>
 
 ## Name
 
