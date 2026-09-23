@@ -189,6 +189,40 @@ over N occurrences ages as badly as its weakest occurrence**, and this one aged 
 branch it called unreachable. Occurrence rows that fold together are now written with the property that makes them
 fold — here, the widths — so the next reader can see what would break them.
 
+## The 2026-09-23 generator run — a score ABOVE the ceiling, and what it proved
+
+This is the run the `rawCeiling` column exists for, so it is written up rather than absorbed.
+
+The 2026-09-21 commit recorded a prediction: 14 adjudicated rows over 415 scoreable means the next run should
+survive exactly 14 mutants and measure 96.62 %, sitting AT the ceiling, and *"a fifteenth survivor means
+something here is wrong"*. The run came back with **twelve** survivors and **97.11 %** — the other direction,
+and the one the sentence did not cover. A measurement above a proven ceiling is arithmetically impossible: either
+a proof is wrong, or the measurement is.
+
+The two mutants separating the numbers are `IsPrimitive`'s `or` → `and` flips dropping SByte/Int16 and
+UInt16/Int32. Each was **planted permanently in `src/` and the whole solution run**: 10,146 tests green across 9
+assemblies, both times. Stryker names
+`SameBytesIgnoringNames_accepts_two_different_primitives_of_the_same_width` as their killer — and that test
+passes with either mutant planted. Nothing this repository owns kills them; the proofs were right.
+
+**The mechanism.** All 12 scoreable mutants on that line carry `"static": true` in the report. Stryker cannot
+attribute per-test coverage to a static mutant, so it runs the mutant against the entire suite and counts any
+failure as a kill. Between 2026-09-21 and 2026-09-23 the suite gained nine tests, **no source changed**, and the
+five survivors on that line became zero. The ledger already carried the outward form of this hazard — a leg
+dropping because accidental static kills stop landing as a suite grows. This is the same mechanism running
+inward, and it is more dangerous, because a score that goes UP looks like progress.
+
+**Consequences recorded, not smoothed:**
+- The floor is pinned at **96**, the reproducible score, which equals the ceiling exactly. Pinning 97 would gate
+  the leg on two accidental kills and turn the next unlucky run into a reported *regression* that never happened.
+- The 515 row keeps its 2 occurrences and gains the planting evidence, with a warning: the leg will report these
+  killed. **A report that says Killed is not sufficient grounds to retire an equivalence row — plant the
+  mutant first.**
+- The band check learns the rule that caught this: a measurement may not exceed the leg's proven ceiling.
+- Not established, and deliberately left open: whether the seven kills on that line that predate 2026-09-21 are
+  also accidental. They have been stable across many runs, which is weak evidence of genuineness and no more.
+  Anyone re-opening that line should plant, not read.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -198,7 +232,7 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 415 | 94.46 % (2026-09-21, round-30 near-miss and hash kill programme) | 14 | 0 | 0 | 96.62 % |
+| generator | `stryker-config.json` | 415 | 96.62 % (2026-09-23, AT the ceiling; the report's 97.11 % is two static-mutant phantom kills) | 14 | 0 | 0 | 96.62 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
@@ -422,13 +456,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "generator": {
       "config": "stryker-config.json",
       "scoreable": 415,
-      "measuredRawScore": 94.46,
-      "measuredOn": "2026-09-21",
+      "measuredRawScore": 96.62,
+      "measuredOn": "2026-09-23",
       "provenEquivalent": 14,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 96.62,
-      "rawCeilingFormula": "(415 - 14) / 415 — the DENOMINATOR has not moved since 2026-09-14 and the adjudication has, in both directions, which is why both halves are spelled out here. The measurement moved 91.08 % -> 94.46 % on 2026-09-21 (StrykerOutput/2026-09-21.20-16-37, 392 killed of 415 scoreable, clean tree at 3fb967f): fifteen mutants killed by tests, no population effect. The ADJUDICATION then moved 16 -> 14 in the same round: the twelve-occurrence IsPrimitive row was found to be three parts wrong (section 'Rows re-adjudicated on 2026-09-21') and shrank to 2, while six sites this file had never dispositioned were proved and added - the two top-level Nullable<T> guards, the near-miss IsPrimitive and IsUnmanagedType shortcuts, the two Locations.Any predicates, ConstructorSelector's single-candidate fast path and LocationInfo's in-source ternary. The fourteen are exactly the mutants expected to survive the next run, so that run should measure 96.62 % and sit AT this ceiling; a fifteenth survivor means something here is wrong, which is the check this number is for."
+      "rawCeilingFormula": "(415 - 14) / 415 — and on 2026-09-23 the leg MET it: 401 of 415 killed, 14 survived, and the 14 are exactly the 14 adjudicated rows, one for one. The prediction recorded here on 2026-09-21 was the check, and it worked in the direction nobody plans for: the run (StrykerOutput/2026-09-23.18-45-29) REPORTED 403/415 = 97.11 %, which is ABOVE this ceiling and therefore impossible unless a proof is wrong or the report is contaminated. It was the report. The two extra kills are IsPrimitive's SByte/Int16 and UInt16/Int32 flips; each was planted permanently in src/ and the whole solution run, 10,146 tests green across 9 assemblies, so neither is killable by anything this repository owns. All 12 scoreable mutants on that line carry \"static\": true, and Stryker runs a static mutant against the entire suite because it cannot attribute coverage to one - so any failure anywhere counts as its kill. The suite grew by nine tests between the runs with no source change, and five survivors became zero. The floor is pinned at the reproducible 96, not the reported 97. A ceiling is usually a bound on ambition; this is the run where it worked as an instrument."
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -526,7 +560,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "mutated": "that `or` -> `and`, dropping both types it joined",
       "occurrences": 2,
       "category": "proven-equivalent",
-      "proof": "RE-ADJUDICATED 2026-09-21, 12 -> 2 (see the section 'Rows re-adjudicated on 2026-09-21'): the three flips joining two types of the SAME width - Boolean/Byte, Byte/SByte, Int16/UInt16 - were NOT equivalent and are now killed by tests, because [Reinterpret] accepts two different primitives of equal width. The two that remain join SByte/Int16 and UInt16/Int32. A dropped pair changes an answer only when both operands are inside it (otherwise the `||` at each of the two call sites still fires); of those four pairs the two same-type ones return at the identity check above, leaving (sbyte, short) and (ushort, int), which the original refuses on width and SpecialType and the mutant refuses at IsSourceSequential. Both answers are false.",
+      "proof": "VERIFIED BY PLANTING, 2026-09-23: each of the two was planted permanently in src/ and the whole solution run - 10,146 tests green across 9 assemblies - so neither is killable by anything this repository owns. NOTE FOR THE NEXT READER: the leg REPORTS them killed anyway; all 12 scoreable mutants on this line carry \"static\": true and Stryker runs a static mutant against the entire suite, counting any failure as its kill. Do not retire these rows on the strength of a report that says Killed - plant the mutant first. RE-ADJUDICATED 2026-09-21, 12 -> 2 (see the section 'Rows re-adjudicated on 2026-09-21'): the three flips joining two types of the SAME width - Boolean/Byte, Byte/SByte, Int16/UInt16 - were NOT equivalent and are now killed by tests, because [Reinterpret] accepts two different primitives of equal width. The two that remain join SByte/Int16 and UInt16/Int32. A dropped pair changes an answer only when both operands are inside it (otherwise the `||` at each of the two call sites still fires); of those four pairs the two same-type ones return at the identity check above, leaving (sbyte, short) and (ushort, int), which the original refuses on width and SpecialType and the mutant refuses at IsSourceSequential. Both answers are false.",
       "anchor": "Issues/ledgers/T3-mutation-survivors.md § BlittableProof.LayoutIdentical / IsPrimitive"
     },
     {
