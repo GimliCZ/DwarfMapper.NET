@@ -237,7 +237,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Unflatten: a dotted TARGET path (e.g. "Address.City") assigns the leaf through a acc.Synthesized
                 // intermediate (single level). The intermediate must be a writable class with a public
                 // parameterless constructor; it is instantiated post-construction by the emitter.
-                if (tgtName.IndexOf('.') >= 0)
+                if (tgtName.IndexOf('.') > 0)
                 {
                     // When / NullSubstitute are not supported on an unflatten (dotted) target — the unflatten
                     // path does not read these extras, so catch the unsupported combination loudly rather than
@@ -302,7 +302,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 ITypeSymbol? srcMatch;
-                if (srcName.IndexOf('.') >= 0)
+                if (srcName.IndexOf('.') > 0)
                 {
                     // Deep source path, e.g. "Customer.Name" → resolve hop-by-hop (member names never contain
                     // dots, so this is unambiguous). The leaf type drives the conversion; the dotted SourceName
