@@ -223,6 +223,15 @@ inward, and it is more dangerous, because a score that goes UP looks like progre
   also accidental. They have been stable across many runs, which is weak evidence of genuineness and no more.
   Anyone re-opening that line should plant, not read.
 
+**`reportedPhantomKills` (generator, 2)** — the field exists because a leg can report a kill that no test
+performs. Stryker cannot attribute per-test coverage to a mutant flagged `"static": true`, so it runs that
+mutant against the WHOLE suite and counts any failure as its kill. Two of `IsPrimitive`'s twelve static
+mutants are reported Killed while being unkillable: each was planted permanently in `src/` and the whole
+solution run, 10,146 tests green across 9 assemblies. The number is PINNED rather than tolerated as a range,
+so `Assert-MutationScoreWithinBand` can demand that survivors equal `provenEquivalent - reportedPhantomKills`
+exactly. If the accidental kills stop landing, the survivor count stops matching and the gate fails until this
+row is corrected — which is the point: the anomaly is recorded, not absorbed.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -461,6 +470,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "provenEquivalent": 14,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
+      "reportedPhantomKills": 2,
       "rawCeiling": 96.62,
       "rawCeilingFormula": "(415 - 14) / 415 — and on 2026-09-23 the leg MET it: 401 of 415 killed, 14 survived, and the 14 are exactly the 14 adjudicated rows, one for one. The prediction recorded here on 2026-09-21 was the check, and it worked in the direction nobody plans for: the run (StrykerOutput/2026-09-23.18-45-29) REPORTED 403/415 = 97.11 %, which is ABOVE this ceiling and therefore impossible unless a proof is wrong or the report is contaminated. It was the report. The two extra kills are IsPrimitive's SByte/Int16 and UInt16/Int32 flips; each was planted permanently in src/ and the whole solution run, 10,146 tests green across 9 assemblies, so neither is killable by anything this repository owns. All 12 scoreable mutants on that line carry \"static\": true, and Stryker runs a static mutant against the entire suite because it cannot attribute coverage to one - so any failure anywhere counts as its kill. The suite grew by nine tests between the runs with no source change, and five survivors became zero. The floor is pinned at the reproducible 96, not the reported 97. A ceiling is usually a bound on ambition; this is the run where it worked as an instrument."
     },

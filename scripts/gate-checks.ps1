@@ -63,6 +63,41 @@ function Test-CoverageWithinBand {
 # against a fake report, and catches a leg whose exit code lied) and throws on floor(score) >= break + 1
 # with the R2 raise message. Passes inside the band.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The per-leg adjudication out of Issues/ledgers/equivalent-mutants.md: how many mutants are PROVEN
+# equivalent, the ceiling that follows from them, and how many kills the leg is known to report without
+# any test performing them. Returns $null for a leg the ledger does not carry, so a new leg gates on the
+# band alone until someone adjudicates it.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Get-LegAdjudication {
+    param([Parameter(Mandatory)][string]$Leg)
+
+    $path = Join-Path $PSScriptRoot '..' 'Issues' 'ledgers' 'equivalent-mutants.md'
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+
+    $text = Get-Content -Raw -LiteralPath $path
+    # The ledger is prose around ONE fenced json block; take the first fence rather than the whole file.
+    $fence = [regex]::Match($text, '(?s)```json\s*(\{.*?\})\s*```')
+    if (-not $fence.Success) { return $null }
+
+    try { $doc = $fence.Groups[1].Value | ConvertFrom-Json } catch { return $null }
+    # The leg key is the config's own name for it; 'doc tooling' and 'code fixes' carry a space in the
+    # housekeeping switch but not in the ledger, which keys them as one word.
+    $key = $Leg -replace ' ', ''
+    $legs = $doc.legs
+    if ($null -eq $legs -or -not ($legs.PSObject.Properties.Name -contains $key)) { return $null }
+    $row = $legs.$key
+
+    $phantom = 0
+    if ($row.PSObject.Properties.Name -contains 'reportedPhantomKills') { $phantom = [int]$row.reportedPhantomKills }
+
+    return [pscustomobject]@{
+        ProvenEquivalent     = [int]$row.provenEquivalent
+        RawCeiling           = [double]$row.rawCeiling
+        ReportedPhantomKills = $phantom
+    }
+}
+
 function Assert-MutationScoreWithinBand {
     param(
         [Parameter(Mandatory)][string]$Leg,
@@ -86,6 +121,36 @@ function Assert-MutationScoreWithinBand {
     $score = $detected / $scoreable * 100
     $scoreFloored = [int][math]::Floor([math]::Round($score, 6))
     $shown = [math]::Round($score, 2)
+
+    # ── The proven ceiling as an INSTRUMENT ──────────────────────────────────────────────────────────
+    # A measured score ABOVE the leg's proven ceiling is arithmetically impossible: the ceiling is
+    # (scoreable - provenEquivalent) / scoreable, so exceeding it means a mutant the ledger proved
+    # unkillable was reported killed. On 2026-09-23 the generator leg did exactly that - 97.11 % against a
+    # 96.62 % ceiling - and the two extra "kills" were Stryker's static-mutant attribution, not tests:
+    # both were planted permanently in src/ and the whole solution stayed green. Without this branch the
+    # band check below reads the same run as "raise the floor to 97", which would gate the leg on accidental
+    # kills and turn the next honest run into a reported REGRESSION that never happened.
+    $legData = Get-LegAdjudication -Leg $Leg
+    if ($null -ne $legData -and $score -gt ($legData.RawCeiling + 0.005)) {
+        $expectedSurvivors = $legData.ProvenEquivalent - $legData.ReportedPhantomKills
+        if ($survived -ne $expectedSurvivors) {
+            throw ("mutation ($Leg): RAW score $shown% ($detected/$scoreable) is ABOVE the proven ceiling " +
+                   "$($legData.RawCeiling)%, and $survived mutant(s) survived where the ledger expects " +
+                   "$expectedSurvivors ($($legData.ProvenEquivalent) proven-equivalent less " +
+                   "$($legData.ReportedPhantomKills) recorded phantom kill(s)). Either an equivalence proof is " +
+                   "WRONG or the phantom count is stale. Do NOT raise the floor on this run: PLANT the mutant " +
+                   "in src/ and run the whole solution first - a report that says Killed is not evidence a test " +
+                   "kills it, because Stryker runs a `"static`": true mutant against every test and counts any " +
+                   "failure as its kill.")
+        }
+
+        Write-Host ("   ${Leg}: RAW $shown% exceeds the proven ceiling $($legData.RawCeiling)% by the " +
+                    "$($legData.ReportedPhantomKills) recorded static-mutant phantom kill(s); $survived " +
+                    "survivor(s) match the ledger, so the CEILING is banded against instead of the report.") -ForegroundColor DarkYellow
+        $score = $legData.RawCeiling
+        $scoreFloored = [int][math]::Floor([math]::Round($score, 6))
+        $shown = "$($legData.RawCeiling) (capped at the proven ceiling; the report said $shown)"
+    }
 
     if ($score -lt $Break) {
         throw ("mutation ($Leg): RAW score $shown% ($detected/$scoreable) is below break $Break - " +
