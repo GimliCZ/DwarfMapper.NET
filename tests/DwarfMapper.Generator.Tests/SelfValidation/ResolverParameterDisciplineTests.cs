@@ -128,6 +128,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> ParameterAllowance = new(StringComparer.Ordinal)
         {
+            // 57 rows. Was 64 when this scan was written: CollectionConverter's seven collection emitters were
+            // paid off in the commit that added CollectionEmit, and this list shrank by exactly the seven rows
+            // the shrink-only test named. That is the ratchet doing its job - the debt is deleted, not edited.
             "MapperExtractor.Members.cs::ResolveMembers = 29",
             "MapperExtractor.Conversions.cs::TryResolveConversion = 24",
             "MapperExtractor.Flatten.cs::ResolveUnflattenTarget = 23",
@@ -141,18 +144,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "MapperExtractor.Phases.cs::ReportSourceMemberCoverage = 13",
             "MapperExtractor.Projection.cs::ResolveProjectionExpr = 13",
             "MapperExtractor.Projection.cs::ResolveProjectionNestedObjectExpr = 13",
-            "CollectionConverter.cs::EmitArray = 11",
-            "CollectionConverter.cs::EmitHashSet = 11",
-            "CollectionConverter.cs::EmitList = 11",
             "CollectionConverter.cs::Synthesize = 11",
             "CollectionConverter.cs::ElementExpr = 10",
-            "CollectionConverter.cs::EmitImmutableCollection = 10",
-            "CollectionConverter.cs::EmitLazyEnumerable = 10",
-            "CollectionConverter.cs::EmitStackQueue = 10",
             "CollectionConverter.cs::SynthesizeInPlace = 10",
             "MapperExtractor.cs::EmitSourceCoverage = 10",
             "TransferModelShape.cs::TryMeasureMember = 10",
-            "CollectionConverter.cs::EmitImmutableArray = 9",
             "MapperExtractor.Conversions.cs::ForgiveNestedNullableArg = 9",
             "MapperExtractor.Members.cs::TryValidateMapValueTarget = 9",
             "MapperExtractor.cs::EmitSourceCoverageFromConsumed = 9",
