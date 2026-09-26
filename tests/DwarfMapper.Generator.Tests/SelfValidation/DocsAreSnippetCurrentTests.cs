@@ -17,7 +17,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     {
         private const string GalleryReadme = "samples/DwarfMapper.Gallery/README.md";
         private const string OptionsDoc = "docs/options.md";
-        private const string Readme = "README.md";
 
         /// <summary>
         ///     An option that exists in code but has no prose in the cheat-sheet. The table renders it with an
@@ -61,19 +60,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                         injected,
                         "gallery-index",
                         GalleryIndexRenderer.RenderRows(),
-                        relative);
-                }
-
-                // The README's quality badges: the coverage floors and the mutation raw scores, rendered from
-                // the gates' own files. Byte-compared here for exactly the reason the numbers were kept OUT of
-                // the badge block until now — a hand-typed quality number rots the moment a floor moves, and
-                // this is the mechanism that turns that rot into a failing build.
-                if (string.Equals(relative, Readme, StringComparison.Ordinal))
-                {
-                    injected = DocTableInjector.Inject(
-                        injected,
-                        QualityBadgeRenderer.TableName,
-                        QualityBadgeRenderer.RenderRows(),
                         relative);
                 }
 

@@ -108,6 +108,94 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
+        ///     A handle missing its <c>T:</c> prefix is never offered the fix. The generator does not write that
+        ///     shape, but a hand-built or foreign diagnostic can carry it, and
+        ///     <see cref="DocumentationCommentId.GetFirstSymbolForDeclarationId" /> resolves only a prefixed id. An
+        ///     offered action would therefore change nothing: a lightbulb that promises a rewrite and does not
+        ///     deliver one. Like the generic refusal, this is read off the id STRING, so it costs no compilation
+        ///     and happens before any action is registered. Owner ruling 2026-09-15; it replaces the earlier pin
+        ///     of the no-op action.
+        /// </summary>
+        [Fact]
+        public async Task A_handle_without_its_T_prefix_is_never_offered_the_fix()
+        {
+            var actions = await OfferSyntheticAsync(
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "Demo.Money"))
+                .ConfigureAwait(true);
+
+            Assert.Empty(actions);
+        }
+
+        /// <summary>
+        ///     The same refusal for a NESTED handle. A prefix-less nested id would resolve to nothing at apply
+        ///     time and take the whole conversion down, which is the same no-op action by the other door. The
+        ///     control is <see cref="An_unresolvable_nested_handle_leaves_the_solution_untouched" />'s real handle,
+        ///     which is offered and converts.
+        /// </summary>
+        [Fact]
+        public async Task A_nested_handle_without_its_T_prefix_takes_the_whole_offer_down()
+        {
+            var actions = await OfferSyntheticAsync(ImmutableDictionary<string, string?>.Empty
+                    .Add("TransferModelId", "T:Demo.OrderDto")
+                    .Add("NestedTransferModelIds", "Demo.Money"))
+                .ConfigureAwait(true);
+
+            Assert.Empty(actions);
+        }
+
+        /// <summary>
+        ///     A model in the GLOBAL namespace has a handle with no dot to cut at — <c>T:Money</c> — so the title
+        ///     takes the whole name after the prefix, and the conversion itself is unaffected: the handle
+        ///     resolves like any other and the type is rewritten.
+        /// </summary>
+        [Fact]
+        public async Task A_global_namespace_model_is_titled_by_its_name_and_converted()
+        {
+            const string source = """
+                                  public sealed class Money { public long Units { get; set; } }
+                                  """;
+            var properties = ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Money");
+
+            var action = Assert.Single(await ConvertToRecordStructFixture
+                .OfferForAsync(_fixture.Document(source), Synthetic(properties)).ConfigureAwait(true));
+            Assert.EndsWith("'Money'", action.Title, StringComparison.Ordinal);
+
+            var text = await ApplySyntheticAsync(_fixture.Document(source), properties).ConfigureAwait(true);
+            Assert.Contains("readonly record struct Money", text, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     <b>A nested model declared as a <c>record</c> takes the whole rewrite down.</b> The conversion
+        ///     rewrites <c>class</c> declarations only; a handle that resolves to a type whose declaration is
+        ///     anything else — here a <c>record</c>, which a stale diagnostic can name after the consumer changed
+        ///     the type — cannot be converted, and converting the root without it is the half-transitive outcome
+        ///     that is worse than none. The control is the same document with no nested handle, which converts.
+        /// </summary>
+        [Fact]
+        public async Task A_nested_model_declared_as_a_record_leaves_the_solution_untouched()
+        {
+            const string source = """
+                                  namespace Demo;
+                                  public sealed record Tag { public int Value { get; set; } }
+                                  public sealed class OrderDto { public long Id { get; set; } public Tag Tag { get; set; } }
+                                  """;
+            var document = _fixture.Document(source);
+
+            var refused = await ApplySyntheticAsync(document, ImmutableDictionary<string, string?>.Empty
+                    .Add("TransferModelId", "T:Demo.OrderDto")
+                    .Add("NestedTransferModelIds", "T:Demo.Tag"))
+                .ConfigureAwait(true);
+
+            Assert.Equal(source, refused);
+
+            var control = await ApplySyntheticAsync(document,
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Demo.OrderDto"))
+                .ConfigureAwait(true);
+
+            Assert.Contains("readonly record struct OrderDto", control, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     An empty NESTED list means "no nested models", not "one model with an empty name". The
         ///     generator writes the property only when there is something in it, so this is the shape a
         ///     hand-built or older diagnostic takes — and reading it as a single blank handle would abort a
@@ -257,10 +345,11 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         ///     <para>
         ///         Found while chasing the round-29 Codecov report, which flagged the null-<c>AccessorList</c>
         ///         guard in <c>WithInitAccessor</c> as uncovered. The guard exists because an expression-bodied
-        ///         property has no accessor list to rewrite — but it is unreachable THROUGH THE DIAGNOSTIC,
-        ///         because the classifier declines the type before the fix is ever offered. Two attempts to
-        ///         cover it failed for exactly that reason; the honest conclusion is that the line is defensive
-        ///         rather than untested, and this test records the refusal that makes it so.
+        ///         property has no accessor list to rewrite — and the GENERATOR never reaches it, because the
+        ///         classifier declines the type before the fix is ever offered. A diagnostic the generator did
+        ///         not just produce still can: a stale one left in an IDE, or one from a mismatched analyzer
+        ///         version. <see cref="A_stale_handle_to_a_model_with_a_computed_property_keeps_the_property_as_written" />
+        ///         drives the guard that way; this test records why the generator path never does.
         ///     </para>
         ///     <para>
         ///         The refusal is also right on its own terms: a computed property has no backing state, so a
@@ -284,6 +373,37 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                                           public class D { public List<OrderDto> Rows { get; set; } }
                                           [DwarfMapper] public partial class M { public partial D Map(C c); }
                                           """, "DWARF103");
+        }
+
+        /// <summary>
+        ///     A STALE <c>DWARF103</c> naming a model that has since gained an expression-bodied property still
+        ///     reaches the fix, because a code fix reads a diagnostic it did not produce. The rewrite keeps the
+        ///     computed property exactly as written: it has no accessor list, so there is no <c>set</c> to turn
+        ///     into <c>init</c>, and inventing one would give the struct state the class never had. The
+        ///     auto-property beside it is still rewritten, which is the control.
+        /// </summary>
+        [Fact]
+        public async Task A_stale_handle_to_a_model_with_a_computed_property_keeps_the_property_as_written()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public sealed class OrderDto
+                                  {
+                                      public long Id { get; set; }
+                                      public long Doubled => Id * 2;
+                                  }
+                                  """;
+
+            var text = await ApplySyntheticAsync(
+                    _fixture.Document(source),
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Demo.OrderDto"))
+                .ConfigureAwait(true);
+
+            Assert.Contains("readonly record struct OrderDto", text, StringComparison.Ordinal);
+            Assert.Contains("public long Doubled => Id * 2;", text, StringComparison.Ordinal);
+            Assert.Contains("init;", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("set;", text, StringComparison.Ordinal);
         }
 
         /// <summary>

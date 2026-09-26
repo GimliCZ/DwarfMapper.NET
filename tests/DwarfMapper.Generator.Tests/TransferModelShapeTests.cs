@@ -1189,5 +1189,159 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(0, TransferModelShape.CompilationFacts.Gather(compilation).EntityCount);
         }
+
+        /// <summary>
+        ///     The DbSet sweep walks every member of every type, and a context also declares members that carry no
+        ///     type to test: an event and a nested class. They are passed over, and the DbSet beside them still marks
+        ///     its entity.
+        /// </summary>
+        [Fact]
+        public void The_DbSet_sweep_passes_over_members_that_are_not_properties_fields_or_methods()
+        {
+            var verdict = ClassifyType(
+                "namespace Microsoft.EntityFrameworkCore { public class DbSet<T> { } } " +
+                "namespace T { public sealed class Dto { public int Id { get; set; } } " +
+                "public class Ctx { public Microsoft.EntityFrameworkCore.DbSet<Dto> Rows { get; set; } public event System.Action Changed; public class Nested { } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("'Dto' is used as a 'DbSet<Dto>' in this compilation, so it is an ORM entity", verdict.Reason);
+        }
+
+        // ─── Refusals and passes the classifier reached only through these fixtures ────────
+
+        /// <summary>A static class holds no instance data, so there is nothing to lay out as a struct.</summary>
+        [Fact]
+        public void Refused_for_a_static_class()
+        {
+            var verdict = ClassifyType("namespace T { public static class Dto { public static int A; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("'Dto' is a static class and holds no instance data", verdict.Reason);
+        }
+
+        /// <summary>
+        ///     A chain of nested models deeper than the classifier's recursion cap. It is not a cycle, so only the cap
+        ///     stops the walk, and the refusal names the cap rather than a layout rule.
+        /// </summary>
+        [Fact]
+        public void Refused_for_nested_models_deeper_than_the_recursion_cap()
+        {
+            var source = new System.Text.StringBuilder("#nullable enable\nnamespace T {\n");
+            for (var i = 0; i < 18; i++)
+                source.Append("public sealed class C").Append(i).Append(" { public C").Append(i + 1).Append(" I { get; set; } }\n");
+            source.Append("public sealed class C18 { public int A { get; set; } }\n}\n");
+
+            var verdict = ClassifyType(source.ToString(), "C0");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("nests transfer models more than 16 deep", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     C# requires <c>==</c> and <c>!=</c> together, and the refusal names whichever the class declares first.
+        ///     Every other fixture declared <c>==</c> first.
+        /// </summary>
+        [Fact]
+        public void Refused_for_operator_inequality_declared_first_and_named_as_such()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int A { get; set; } " +
+                "public static bool operator !=(Dto x, Dto y) => false; public static bool operator ==(Dto x, Dto y) => true; " +
+                "public override bool Equals(object o) => false; public override int GetHashCode() => 0; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal(
+                "'Dto' declares 'operator !=', which a readonly record struct synthesises and cannot have declared beside it (CS0111)",
+                verdict.Reason);
+        }
+
+        /// <summary>
+        ///     An operator other than equality does not collide with anything a record struct synthesises, so it is a
+        ///     static member like any other and does not refuse the type.
+        /// </summary>
+        [Fact]
+        public void Eligible_with_an_operator_other_than_equality()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Dto { public int A { get; set; } public static Dto operator +(Dto x, Dto y) => x; } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(4, verdict.Size);
+        }
+
+        /// <summary>An expression-bodied constructor that only assigns its parameter carries no logic.</summary>
+        [Fact]
+        public void Eligible_with_an_expression_bodied_constructor_that_assigns_its_parameter()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public Dto(int a) => A = a; public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(4, verdict.Size);
+        }
+
+        /// <summary>An expression-bodied constructor that computes the value is logic a struct rewrite would lose.</summary>
+        [Fact]
+        public void Refused_for_an_expression_bodied_constructor_that_computes_its_value()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public Dto(int a) => A = a + 1; public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("the constructor of 'Dto' does more than assign its members", verdict.Reason);
+        }
+
+        /// <summary>
+        ///     A partial constructor's defining declaration has no body, and the implementing one carries it. The
+        ///     bodiless half is passed over and the implementing half is the one judged.
+        /// </summary>
+        [Fact]
+        public void Eligible_with_a_partial_constructor_whose_implementation_only_assigns()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed partial class Dto { public partial Dto(int a); public partial Dto(int a) { A = a; } public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(4, verdict.Size);
+        }
+
+        /// <summary>
+        ///     Assigning a parameter to some OTHER object's member is not member initialization: the target is neither
+        ///     <c>X</c> nor <c>this.X</c>.
+        /// </summary>
+        [Fact]
+        public void Refused_for_a_constructor_that_assigns_another_objects_member()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public static class Holder { public static int Value; } public sealed class Dto { public Dto(int a) { Holder.Value = a; } public int A { get; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("the constructor of 'Dto' does more than assign its members", verdict.Reason);
+        }
+
+        /// <summary>
+        ///     A jagged array's element is itself an array, not a named type, so it cannot be on the inline path. It is
+        ///     measured as a collection in turn and stays a reference field.
+        /// </summary>
+        [Fact]
+        public void Eligible_for_a_jagged_array_member_counted_as_a_reference()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public int[][] Grid { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(8, verdict.Size);
+            Assert.True(verdict.SizeIsUpperBound);
+        }
+
+        /// <summary>
+        ///     A <c>dynamic</c> member is neither a collection nor a named type, and has no size the generator can
+        ///     prove.
+        /// </summary>
+        [Fact]
+        public void Refused_for_a_dynamic_member()
+        {
+            var verdict = ClassifyType("namespace T { public sealed class Dto { public dynamic D { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Equal("member 'Dto.D' of type 'dynamic' has no size this generator can prove", verdict.Reason);
+        }
     }
 }

@@ -12,10 +12,16 @@ namespace DwarfMapper.Generator.Model
     ///     that requires <c>(ctx, depth + 1)</c> extra arguments at call sites (e.g. under
     ///     <c>ReferenceHandling = Preserve</c>).  Mirrors <see cref="MemberMap.ConverterNeedsDepthCtx"/>.
     /// </param>
+    /// <param name="ConverterParamTypeFqn">
+    ///     The parameter type of the declared overload <see cref="ConverterMethod" /> was adopted from, or
+    ///     <see langword="null" />. Never emitted; the recursion-cycle phase's edge disambiguator. Mirrors
+    ///     <see cref="MemberMap.ConverterParamTypeFqn" />.
+    /// </param>
     public sealed record DerivedTypeArm(
         string SrcFqn,
         string ConverterMethod,
-        bool ConverterNeedsDepthCtx = false)
+        bool ConverterNeedsDepthCtx = false,
+        string? ConverterParamTypeFqn = null)
         : IEquatable<DerivedTypeArm>
     {
         /// <summary><see cref="ConverterMethod" /> as it must be written into emitted C#.</summary>

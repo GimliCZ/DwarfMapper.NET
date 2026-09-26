@@ -29,6 +29,33 @@ namespace DwarfMapper.Testing.Tests
         public FieldNode? Next;
     }
 
+    /// <summary>
+    ///     A non-scalar STRUCT: not a primitive, enum, string, decimal, Guid or date, so the walkers reach it as a
+    ///     composite rather than as a scalar. Value types are compared without being recorded in the cycle guard,
+    ///     because a value cannot form a reference cycle.
+    /// </summary>
+    public record struct Extent
+    {
+        public int W { get; set; }
+
+        public int H { get; set; }
+    }
+
+    public class HasExtent
+    {
+        public int Id { get; set; }
+
+        public Extent Size { get; set; }
+    }
+
+    /// <summary>The DTO half of <see cref="HasExtent" />, so the same shape can be driven across a type pair.</summary>
+    public class HasExtentDto
+    {
+        public int Id { get; set; }
+
+        public Extent Size { get; set; }
+    }
+
     public enum OracleColour
     {
         Red,
@@ -60,6 +87,107 @@ namespace DwarfMapper.Testing.Tests
     }
 #pragma warning restore CA1819
 
+    // The two property shapes every reflection walker in the oracle has to SKIP rather than read: an indexer
+    // (GetValue without index arguments throws) and a write-only property (GetValue with no getter throws).
+    // Internal because CA1044 rejects a write-only property on an externally visible type; the oracle reflects
+    // on public properties, so the type's own visibility does not change what it walks.
+    internal sealed class OddMembersNode
+    {
+        public int V { get; set; }
+
+        public OddMembersNode? Next { get; set; }
+
+        public int this[int index] => V + index;
+
+        public int Sink
+        {
+            set => V = value;
+        }
+    }
+
+    // A cross-type pair where the ACTUAL side cannot supply some of the expected members: `Missing` and
+    // `MissingField` do not exist on it at all, and `Hidden` exists but is write-only. Internal for the same
+    // CA1044 reason as OddMembersNode.
+    internal sealed class WideExpected
+    {
+        public int V { get; set; }
+
+        public int Missing { get; set; }
+
+        public int Hidden { get; set; }
+
+        public int MissingField;
+
+        public int SharedField;
+    }
+
+    internal sealed class NarrowActual
+    {
+        public int V { get; set; }
+
+        public int Hidden
+        {
+            set => V = value;
+        }
+
+        public int SharedField;
+    }
+
+    // An enumerable that is neither a collection nor hands out a disposable enumerator. Checking whether it is
+    // empty means actually enumerating it, and afterwards there is nothing to dispose.
+    internal sealed class BareEnumerable : System.Collections.IEnumerable
+    {
+        private readonly int _count;
+
+        public BareEnumerable(int count)
+        {
+            _count = count;
+        }
+
+        public System.Collections.IEnumerator GetEnumerator()
+        {
+            return new BareEnumerator(_count);
+        }
+
+        private sealed class BareEnumerator : System.Collections.IEnumerator
+        {
+            private readonly int _count;
+            private int _position;
+
+            public BareEnumerator(int count)
+            {
+                _count = count;
+            }
+
+            public object Current => _position;
+
+            public bool MoveNext()
+            {
+                return _position++ < _count;
+            }
+
+            public void Reset()
+            {
+                _position = 0;
+            }
+        }
+    }
+
+    // A flatten-graph node whose collection edges may hold ANY object, not only nodes: the breadth-first search
+    // has to skip a null and a non-node element in a list edge and in a dictionary's values.
+    internal sealed class LooseNode
+    {
+        public int V { get; set; }
+
+        public List<object?>? Items { get; set; }
+
+        public Dictionary<string, object?>? ByName { get; set; }
+
+        public int[]? Numbers { get; set; }
+
+        public List<int>? Counts { get; set; }
+    }
+
     /// <summary>
     ///     Negative controls for <see cref="GraphOracleComparer" />: each proves that a specific violation IS
     ///     reported, not merely that a correct mapping is silent.
@@ -80,6 +208,8 @@ namespace DwarfMapper.Testing.Tests
     /// </remarks>
     public class GraphOracleSensitivityTests
     {
+        private static readonly int[] OneTwo = { 1, 2 };
+
         // ── Topology ─────────────────────────────────────────────────────────────────
 
         private static (OracleNode Src, OracleNodeDto Shared, OracleNodeDto Duplicated) Diamond()
@@ -116,6 +246,306 @@ namespace DwarfMapper.Testing.Tests
             Assert.StartsWith("root.Right: shared source node", violation, StringComparison.Ordinal);
             Assert.Contains("but got a different instance", violation, StringComparison.Ordinal);
             Assert.False(GraphOracleComparer.TopologyPreserved(src, duplicated));
+        }
+
+        // ── Property shapes the walkers must skip ────────────────────────────────────
+
+        /// <summary>
+        ///     The value oracle skips an indexer and a write-only property instead of reading them. Either read
+        ///     would throw inside the oracle, so a consumer type carrying one would fail every comparison. The
+        ///     ordinary property beside them is still compared: equal instances are silent, and a changed value
+        ///     is reported at its path.
+        /// </summary>
+        [Fact]
+        public void Value_compare_skips_indexers_and_write_only_properties_and_still_reports_a_real_difference()
+        {
+            Assert.Empty(GraphOracleComparer.ValueDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 1 }));
+
+            var diff = Assert.Single(
+                GraphOracleComparer.ValueDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 2 }));
+            Assert.StartsWith("root.V", diff, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The flatten-graph oracle skips an indexer and a write-only property in BOTH of its property walks:
+        ///     the breadth-first search over the source nodes, and the navigation-null check over the result DTOs.
+        ///     The count check still runs, which is the control: one node flattened to one DTO passes, and to two
+        ///     DTOs reports the mismatch.
+        /// </summary>
+        [Fact]
+        public void Flatten_graph_skips_indexers_and_write_only_properties_in_both_walks()
+        {
+            var src = new OddMembersNode { V = 1 };
+
+            Assert.Empty(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new OddMembersNode { V = 1 } },
+                typeof(OddMembersNode),
+                typeof(OddMembersNode)));
+
+            var violation = Assert.Single(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new OddMembersNode { V = 1 }, new OddMembersNode { V = 1 } },
+                typeof(OddMembersNode),
+                typeof(OddMembersNode)));
+            Assert.StartsWith("FlattenGraph count mismatch", violation, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The flatten-graph search follows collection and dictionary edges, and it enqueues only the elements
+        ///     that are nodes. A null element and a non-node element are skipped in a list edge, and so are a null
+        ///     value and a non-node value in a dictionary. Exactly three nodes are reachable: the entry, the list
+        ///     child and the dictionary child. So three results pass, and two report the count mismatch naming
+        ///     both numbers.
+        /// </summary>
+        [Fact]
+        public void Flatten_graph_search_skips_null_and_non_node_elements_of_list_and_dictionary_edges()
+        {
+            var src = new LooseNode
+            {
+                V = 1,
+                Items = new List<object?> { null, "not a node", new LooseNode { V = 2 } },
+                ByName = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["empty"] = null,
+                    ["text"] = "not a node",
+                    ["child"] = new LooseNode { V = 3 }
+                }
+            };
+
+            Assert.Empty(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1 }, new LooseNode { V = 2 }, new LooseNode { V = 3 } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+
+            var violation = Assert.Single(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1 }, new LooseNode { V = 2 } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+            Assert.Equal("FlattenGraph count mismatch: BFS-reachable=3, result.Count=2", violation);
+        }
+
+        /// <summary>
+        ///     A result DTO's array or generic collection of PLAIN data is not a navigation edge. An <c>int[]</c>
+        ///     and a <c>List&lt;int&gt;</c> name no DTO type, so they may be populated after flattening. A
+        ///     collection whose element type could hold a DTO is a navigation edge, and it must be null: here that
+        ///     is <c>List&lt;object?&gt;</c>, since <c>object</c> is assignable from the DTO type. That is the
+        ///     control.
+        /// </summary>
+        [Fact]
+        public void Flatten_graph_does_not_treat_arrays_or_generics_of_plain_data_as_navigation_edges()
+        {
+            var src = new LooseNode { V = 1 };
+
+            Assert.Empty(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1, Numbers = OneTwo, Counts = new List<int> { 3 } } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+
+            var violation = Assert.Single(GraphOracleComparer.FlattenGraphDiff(
+                src,
+                new[] { new LooseNode { V = 1, Items = new List<object?>() } },
+                typeof(LooseNode),
+                typeof(LooseNode)));
+            Assert.StartsWith("FlattenGraph edge not degraded: LooseNode.Items", violation, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The topology oracle's member walk skips an indexer and a write-only property, and still follows the
+        ///     reference edge beside them. A self-cycle mapped to a self-cycle is preserved. The same cycle mapped
+        ///     onto a SECOND instance is the shared-node violation, reported at the edge.
+        /// </summary>
+        [Fact]
+        public void Topology_skips_indexers_and_write_only_properties_and_still_checks_the_edges()
+        {
+            var src = new OddMembersNode { V = 1 };
+            src.Next = src;
+
+            var closed = new OddMembersNode { V = 1 };
+            closed.Next = closed;
+            Assert.Empty(GraphOracleComparer.TopologyDiff(src, closed));
+
+            var open = new OddMembersNode { V = 1, Next = new OddMembersNode { V = 1 } };
+            var violation = Assert.Single(GraphOracleComparer.TopologyDiff(src, open));
+            Assert.StartsWith("root.Next: shared source node", violation, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The topology walk pairs source and target members by name, and a target that cannot supply one
+        ///     leaves it unpaired rather than failing. That covers a property the target lacks, a property it has
+        ///     only a setter for, and a field it lacks. Each such source member is walked against null, and a
+        ///     value against null carries no topology, so no violation is reported and nothing throws.
+        /// </summary>
+        [Fact]
+        public void Topology_leaves_members_the_target_lacks_or_cannot_read_unpaired()
+        {
+            var src = new WideExpected { V = 1, Missing = 5, Hidden = 6, MissingField = 7, SharedField = 3 };
+            var tgt = new NarrowActual { V = 1, SharedField = 3 };
+
+            Assert.Empty(GraphOracleComparer.TopologyDiff(src, tgt));
+            Assert.True(GraphOracleComparer.TopologyPreserved(src, tgt));
+
+            // The mirror image: a missing SOURCE against a present target is a value difference, not a topology one.
+            Assert.Empty(GraphOracleComparer.TopologyDiff(null, tgt));
+        }
+
+        /// <summary>
+        ///     The cross-type oracle's property walk skips an indexer and a write-only property on the EXPECTED
+        ///     type, and still compares the ordinary members by name. Equal instances produce no diffs; a changed
+        ///     value is reported at its path.
+        /// </summary>
+        [Fact]
+        public void Cross_type_compare_skips_indexers_and_write_only_properties_and_still_reports_a_real_difference()
+        {
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 1 }));
+
+            var diff = Assert.Single(
+                GraphOracleComparer.CrossTypeDiff(new OddMembersNode { V = 1 }, new OddMembersNode { V = 2 }));
+            Assert.StartsWith("root.V", diff, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A member the ACTUAL type cannot supply is not compared: a property it lacks, a property it has only
+        ///     a setter for, and a field it lacks. Cross-type comparison is by name across two different types, so
+        ///     a destination that legitimately drops or hides a member must not read as a value difference, or
+        ///     crash on a getter that is not there. The shared member is still compared, which is the control.
+        /// </summary>
+        [Fact]
+        public void Cross_type_compare_skips_members_the_actual_type_lacks_or_cannot_read()
+        {
+            var expected = new WideExpected { V = 1, Missing = 5, Hidden = 6, MissingField = 7, SharedField = 3 };
+
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected, new NarrowActual { V = 1, SharedField = 3 }));
+
+            var propertyDiff = Assert.Single(
+                GraphOracleComparer.CrossTypeDiff(expected, new NarrowActual { V = 2, SharedField = 3 }));
+            Assert.StartsWith("root.V", propertyDiff, StringComparison.Ordinal);
+
+            // And a field BOTH types have is still compared by the field loop that skips the missing one.
+            var fieldDiff = Assert.Single(
+                GraphOracleComparer.CrossTypeDiff(expected, new NarrowActual { V = 1, SharedField = 4 }));
+            Assert.StartsWith("root.SharedField", fieldDiff, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     With no declared types, CrossTypeDiff takes each side's type from its value, and a null value has no
+        ///     type to take. Two nulls are equal and produce nothing. A null against a value is reported with the
+        ///     null named, rather than the missing type turning into an exception.
+        /// </summary>
+        [Fact]
+        public void Cross_type_diff_without_declared_types_handles_null_values()
+        {
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, null));
+
+            Assert.Equal("root: expected <null>, actual 5", Assert.Single(GraphOracleComparer.CrossTypeDiff(null, 5)));
+        }
+
+        /// <summary>
+        ///     A null source against an EMPTY destination collection is the documented null-to-empty mapping, not
+        ///     a difference. Whether a collection is empty has to be judged even when it is neither an
+        ///     <c>ICollection</c> with a count nor an enumerable whose enumerator can be disposed. An empty bare
+        ///     enumerable is accepted; one with an element is reported against the null.
+        /// </summary>
+        [Fact]
+        public void A_null_source_against_a_bare_enumerable_is_judged_by_enumerating_it()
+        {
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, new BareEnumerable(0)));
+
+            var diff = Assert.Single(GraphOracleComparer.CrossTypeDiff(null, new BareEnumerable(1)));
+            Assert.StartsWith("root: expected <null>, actual ", diff, StringComparison.Ordinal);
+
+            // And an empty compiler-generated iterator, whose enumerator IS disposable, is accepted the same way.
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(null, NothingYielded()));
+        }
+
+        private static IEnumerable<int> NothingYielded()
+        {
+            yield break;
+        }
+
+        /// <summary>
+        ///     The cross-type oracle stops descending at its depth cap, which is what lets it finish on a graph
+        ///     deeper than any mapping test needs. Along a 20-node chain, a difference near the top is reported,
+        ///     and the same difference near the bottom, below the cap, is not looked at.
+        /// </summary>
+        [Fact]
+        public void Cross_type_compare_stops_descending_at_its_depth_cap()
+        {
+            var expected = Chain(20, null);
+
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected, Chain(20, null)));
+            Assert.Single(GraphOracleComparer.CrossTypeDiff(expected, Chain(20, 3)));
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected, Chain(20, 18)));
+        }
+
+        /// <summary>A chain linked through <c>Left</c>, where node i holds i, except node <paramref name="differentAt" /> holds -1.</summary>
+        private static OracleNode Chain(int length, int? differentAt)
+        {
+            var root = new OracleNode { V = differentAt == 0 ? -1 : 0 };
+            var current = root;
+            for (var i = 1; i < length; i++)
+            {
+                var next = new OracleNode { V = differentAt == i ? -1 : i };
+                current.Left = next;
+                current = next;
+            }
+
+            return root;
+        }
+
+        /// <summary>
+        ///     A struct member is compared member-by-member, and is NOT recorded in the cycle guard: a value has
+        ///     no reference identity, so two equal structs are not the same node and recording them would make the
+        ///     second occurrence look like a cycle and stop the walk.
+        /// </summary>
+        [Fact]
+        public void A_struct_member_is_compared_by_value_and_never_treated_as_a_cycle()
+        {
+            var expected = new HasExtent { Id = 1, Size = new Extent { W = 3, H = 4 } };
+
+            Assert.Empty(GraphOracleComparer.ValueDiff(expected,
+                new HasExtent { Id = 1, Size = new Extent { W = 3, H = 4 } }));
+
+            var diff = Assert.Single(GraphOracleComparer.ValueDiff(expected,
+                new HasExtent { Id = 1, Size = new Extent { W = 3, H = 5 } }));
+
+            Assert.Equal("root.Size.H: expected 4, actual 5", diff);
+        }
+
+        /// <summary>The same across a type pair, which is the other walker and its own cycle guard.</summary>
+        [Fact]
+        public void A_struct_member_is_compared_by_value_across_a_type_pair()
+        {
+            var expected = new HasExtent { Id = 1, Size = new Extent { W = 3, H = 4 } };
+
+            Assert.Empty(GraphOracleComparer.CrossTypeDiff(expected,
+                new HasExtentDto { Id = 1, Size = new Extent { W = 3, H = 4 } }));
+
+            var diff = Assert.Single(GraphOracleComparer.CrossTypeDiff(expected,
+                new HasExtentDto { Id = 1, Size = new Extent { W = 4, H = 4 } }));
+
+            Assert.Equal("root.Size.W: expected 3, actual 4", diff);
+        }
+
+        // ── Scalar equality ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        ///     The value oracle's floating-point tolerance applies only when BOTH sides have the same floating
+        ///     type. A double against an int, or a float against a double, falls through to <c>Equals</c>, which is
+        ///     false across boxed types, so the pair is reported. The controls are the same type on both sides a
+        ///     hair apart, inside the tolerance, which report nothing.
+        /// </summary>
+        [Fact]
+        public void Value_compare_applies_the_float_tolerance_only_between_the_same_floating_type()
+        {
+            Assert.Empty(GraphOracleComparer.ValueDiff(1.0, 1.0 + 1e-12));
+            Assert.Empty(GraphOracleComparer.ValueDiff(1f, 1.0000005f));
+
+            Assert.StartsWith("root", Assert.Single(GraphOracleComparer.ValueDiff(1.0, 1)), StringComparison.Ordinal);
+            Assert.StartsWith("root", Assert.Single(GraphOracleComparer.ValueDiff(1f, 1.0)), StringComparison.Ordinal);
         }
 
         [Fact]

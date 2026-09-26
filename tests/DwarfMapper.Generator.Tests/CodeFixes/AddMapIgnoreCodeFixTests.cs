@@ -171,5 +171,18 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
             Assert.Empty(actions);
         }
+
+        /// <summary>
+        ///     The fix answers to <c>DWARF001</c> and to nothing else — the exact set, as the DWARF103 fix pins its own: a
+        ///     provider that quietly grew a second id would insert <c>[MapIgnore]</c> on a diagnostic that never named an
+        ///     unmapped member.
+        /// </summary>
+        [Fact]
+        public void The_fix_is_registered_for_DWARF001_alone()
+        {
+            var ids = new AddMapIgnoreCodeFixProvider().FixableDiagnosticIds;
+
+            Assert.Equal("DWARF001", Assert.Single(ids));
+        }
     }
 }

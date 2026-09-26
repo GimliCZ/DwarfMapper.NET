@@ -185,7 +185,7 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, SynthesizedMethod> synthesized,
             NullStrategy nullStrategy,
             bool autoNest,
-            NestedMappingRegistry? nestedRegistry,
+            NestedMappingRegistry nestedRegistry,
             bool nullAsNull,
             bool isPreserve,
             bool isSetNull,
@@ -256,8 +256,9 @@ namespace DwarfMapper.Generator.Pipeline
             if (rootType is not INamedTypeSymbol rootNamed ||
                 !rootType.IsReferenceType ||
                 rootType.TypeKind != TypeKind.Class ||
+                // InstanceConstructors never holds the static constructor, so no IsStatic test is needed here.
                 !rootNamed.InstanceConstructors.Any(c =>
-                    c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length == 0))
+                    c.DeclaredAccessibility == Accessibility.Public && c.Parameters.Length == 0))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid,
                     location,
@@ -292,6 +293,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var uConv,
                     out var uNullH,
                     out var uNeedsCtx,
+                    out var uConvParamType,
                     autoNest,
                     nestedRegistry,
                     nullAsNull,
@@ -307,6 +309,10 @@ namespace DwarfMapper.Generator.Pipeline
                     uNeedsCtx,
                     SourceMayBeNullRef(uSrc!),
                     UnflattenIntermediateFqn: rootFqn,
+                    // The call-graph edge's overload disambiguator, as on every other member site: without it a leaf
+                    // converted by an overloaded `Map` that IS the caller fanned out to every overload but the caller,
+                    // so the cycle through the leaf was invisible and got no depth guard.
+                    ConverterParamTypeFqn: uConvParamType,
                     // Round 29 T2.9: the unflatten leaf writes its converter's result into a member of the
                     // intermediate, and answers the RETURN question the same way every other member edge does.
                     ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(uConv,
@@ -332,7 +338,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new List<(string, bool, TypedConstant, string?, string?)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn) || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
                 {
                     continue;
                 }
@@ -449,7 +455,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool IsListOfT(ITypeSymbol? type, out ITypeSymbol? element)
         {
-            if (type is INamedTypeSymbol { Name: "List", TypeArguments.Length: 1 } nt && nt.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+            if (type is INamedTypeSymbol { Name: "List", TypeArguments.Length: 1 } nt && KnownNames.IsNamespace(nt.ContainingNamespace, "System.Collections.Generic"))
             {
                 element = nt.TypeArguments[0];
                 return true;
@@ -469,7 +475,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn) || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
                 {
                     continue;
                 }
@@ -486,7 +492,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool HasReverseMap(IMethodSymbol m)
         {
-            return m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.ReverseMapFqn);
+            return m.GetAttributes().Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.ReverseMapFqn));
         }
 
         /// <summary>
@@ -554,7 +560,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var roots = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.FlattenFqn && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string s)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string s)
                 {
                     roots.Add(s);
                 }
@@ -571,7 +577,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var result = new List<(string, string)>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.FlattenGraphFqn && attr.ConstructorArguments.Length == 2 && attr.ConstructorArguments[0].Value is string src && attr.ConstructorArguments[1].Value is string tgt)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenGraphFqn) && attr.ConstructorArguments.Length == 2 && attr.ConstructorArguments[0].Value is string src && attr.ConstructorArguments[1].Value is string tgt)
                 {
                     result.Add((src, tgt));
                 }
@@ -592,7 +598,7 @@ namespace DwarfMapper.Generator.Pipeline
             out ITypeSymbol? firstArg)
         {
             firstArg = null;
-            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && n.ContainingNamespace?.ToDisplayString() == ns)
+            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && KnownNames.IsNamespace(n.ContainingNamespace, ns))
             {
                 firstArg = n.TypeArguments[0];
                 return true;
@@ -624,11 +630,11 @@ namespace DwarfMapper.Generator.Pipeline
                 Dictionary<string, SynthesizedMethod> synthesized,
                 NullStrategy nullStrategy,
                 bool autoNest,
-                NestedMappingRegistry? nestedRegistry,
+                NestedMappingRegistry nestedRegistry,
                 bool isPreserve,
                 bool allowNonPublic,
                 HashSet<string> consumedTargets,
-                IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>? rawDerivedPairs = null)
+                IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> rawDerivedPairs)
         {
             var directives = new List<FlattenGraphDirective>();
             var injected = new List<MemberMap>();

@@ -83,5 +83,85 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
             GeneratorAssert.EmitsCompilableCode(src);
         }
+
+        [Fact]
+        public void Flags_ByName_emits_one_arm_per_value_and_skips_an_alias()
+        {
+            // AliasA shares A's value, so the flags accumulator tests that bit once, under the first name.
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               [Flags] public enum Src { None = 0, A = 1, AliasA = 1, B = 2 }
+                               [Flags] public enum Dst { None = 0, A = 1, AliasA = 1, B = 2 }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Single(generated.Split('\n'), l => l.Contains("__r |= global::Demo.Dst.A;", StringComparison.Ordinal));
+            Assert.DoesNotContain("Dst.AliasA", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Flags_ByName_missing_target_member_reports_DWARF015()
+        {
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               [Flags] public enum Src { None = 0, A = 1, B = 2, C = 4 }
+                               [Flags] public enum Dst { None = 0, A = 1, B = 2 }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARF015" &&
+                     d.GetMessage(CultureInfo.InvariantCulture).Contains("'C'", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ByName_names_a_warning_level_obsolete_member_under_a_pragma()
+        {
+            // [Obsolete("old", false)] is still a legal value, so the exhaustive switch names it, inside the scoped
+            // CS0612/CS0618 guard. Only the error form is left out.
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public enum Src { Red, [Obsolete("old", false)] Green }
+                               public enum Dst { Red, Green }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("#pragma warning disable CS0612, CS0618", generated, StringComparison.Ordinal);
+            Assert.Contains("global::Demo.Src.Green => global::Demo.Dst.Green,", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void An_enum_with_an_attribute_other_than_Flags_maps_by_a_plain_switch()
+        {
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               [Serializable] public enum Src { Red, Green }
+                               public enum Dst { Red, Green }
+                               public class X { public Src V { get; set; } }
+                               public class Y { public Dst V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial Y Map(X x); }
+                               """;
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.Contains("v switch", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__r |=", generated, StringComparison.Ordinal);
+        }
     }
 }

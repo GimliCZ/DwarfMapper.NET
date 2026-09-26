@@ -152,6 +152,30 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Warning,
             true);
 
+        // The registry writes its extension methods ON the source type: `ToDto(this Src<T> source)` declares no T, so a
+        // generic source failed as CS0246 in a generated file with nothing naming the cause. The class model refuses
+        // the same shape as DWARF054. IsGenericType is also true for a type nested in a generic type, which fails the
+        // same way (`this Outer<T>.Src source`).
+        public static readonly DiagnosticDescriptor GenericSource = new(
+            "DWARFR13",
+            "A [MapTo] source type cannot be generic",
+            "[MapTo] source {0} is generic; the registry emits extension methods on the source type and cannot declare its type parameters — put [MapTo] on a non-generic type, or map the closed pair with the [DwarfMapper] class model",
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+        // The target-side twin of DWARFR13. typeof(Dto<>) — or typeof(Outer<>.Dto), a class nested in an unbound generic
+        // type — names no type the registry can construct or name in `ToDto(this Src source)`. It was refused, but by
+        // the parameterless-constructor check (DWARFR09), which read an unbound type's constructors and said the wrong
+        // thing: Dto<T> has a constructor, and a caller who adds another changes nothing. Checked before that one.
+        public static readonly DiagnosticDescriptor OpenGenericTarget = new(
+            "DWARFR14",
+            "A [MapTo] target type cannot be an open generic",
+            "[MapTo] target {0} is an open generic type; the registry can only map to a closed type — close its type arguments in the typeof(...), or map the pair with the [DwarfMapper] class model",
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
         public static readonly DiagnosticDescriptor RecursiveNesting = new(
             "DWARFR06",
             "Recursive nested mapping is not supported by the registry",

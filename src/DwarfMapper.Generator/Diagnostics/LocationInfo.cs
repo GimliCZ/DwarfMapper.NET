@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
@@ -11,6 +13,61 @@ namespace DwarfMapper.Generator.Diagnostics
         public Location ToLocation()
         {
             return Location.Create(FilePath, TextSpan, LineSpan);
+        }
+
+        /// <summary>
+        ///     <paramref name="info" />'s <see cref="Location" />, or <see cref="Location.None" /> for a diagnostic that has
+        ///     no position — the degradation every report site relies on when <see cref="From" /> could not keep one.
+        /// </summary>
+        /// <remarks>
+        ///     One statement for the report sites that spelled it inline. Those sites only ever receive a located
+        ///     diagnostic through a compilation, so the no-position answer is reached here, where the unit test asks it.
+        /// </remarks>
+        public static Location ToLocationOrNone(LocationInfo? info)
+        {
+            return info is null ? Location.None : info.ToLocation();
+        }
+
+        /// <summary>
+        ///     <see cref="From" /> for a symbol's FIRST declaration location, or <see cref="Location.None" /> when it has
+        ///     none. Every symbol the generator anchors a diagnostic at is declared in source, so the empty case is not
+        ///     reached through a compilation — it is one helper, tested directly, instead of six inline fallbacks.
+        /// </summary>
+        public static LocationInfo? FromFirst(ImmutableArray<Location> locations)
+        {
+            return From(locations.FirstOrDefault() ?? Location.None);
+        }
+
+        /// <summary>
+        ///     <see cref="From" /> for a symbol's first IN-SOURCE location, or <paramref name="fallback" /> when it has
+        ///     none or <see cref="From" /> declines it. A caller that has already proven a source declaration never
+        ///     reaches the fallback through a compilation, so the fallback is answered here, where the unit test asks it.
+        /// </summary>
+        internal static LocationInfo? FromFirstInSource(ImmutableArray<Location> locations, LocationInfo? fallback)
+        {
+            var declared = locations.FirstOrDefault(l => l.IsInSource);
+            return (declared is null ? null : From(declared)) ?? fallback;
+        }
+
+        /// <summary>
+        ///     <see cref="From" /> for the syntax a reference points at — typically an attribute's
+        ///     <see cref="AttributeData.ApplicationSyntaxReference" /> — or <see langword="null" /> when there is none. An
+        ///     attribute read from a referenced assembly's metadata has no application syntax; one helper answers that
+        ///     for every directive reader instead of each repeating the fallback inline.
+        /// </summary>
+        public static LocationInfo? FromReference(SyntaxReference? reference)
+        {
+            return reference is null ? null : From(reference.GetSyntax().GetLocation());
+        }
+
+        /// <summary>
+        ///     <see cref="FromReference(SyntaxReference?)" />, or <paramref name="fallback" /> when that has no location —
+        ///     for a reader that anchors a directive at its enclosing declaration when the directive itself has no
+        ///     position.
+        /// </summary>
+        public static LocationInfo? FromReference(SyntaxReference? reference, LocationInfo? fallback)
+        {
+            return FromReference(reference) ?? fallback;
         }
 
         public static LocationInfo? From(Location location)

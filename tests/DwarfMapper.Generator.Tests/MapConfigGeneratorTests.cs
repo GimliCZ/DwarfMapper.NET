@@ -74,9 +74,44 @@ namespace DwarfMapper.Generator.Tests
                                    private static void Cfg(MapConfig<S, D> c) => c.MapOr(t => t.V, s => s.V, 5).Value(t => t.Tag, 99);
                                }
                                """;
-            var (diags, _) = GeneratorTestHarness.Run(src);
+            var (diags, generated) = GeneratorTestHarness.Run(src);
             Assert.Null(D068(diags));
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            // Recognized is not honoured: MapOr's fallback travels as a PRE-RENDERED literal (NullSubLiteral,
+            // the MapConfig-only branch of the NullSubstitute arm), and the mutation leg emptied that branch
+            // without a failure — the op parsed, the coalesce vanished. The emission is the proof.
+            Assert.Contains("V = src.V ?? 5", generated, StringComparison.Ordinal);
+            Assert.Contains("Tag = 99", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     TryReadMemberPath's <c>ParenthesizedLambdaExpressionSyntax</c> arm — every other MapConfig fixture
+        ///     in the suite writes the simple-lambda form (<c>t =&gt; t.A</c>), which is a DIFFERENT syntax node
+        ///     (<c>SimpleLambdaExpressionSyntax</c>). A single-parameter selector written with explicit
+        ///     parentheses (<c>(t) =&gt; t.A</c>) must resolve identically.
+        /// </summary>
+        [Fact]
+        public void Map_with_parenthesized_single_parameter_selector_resolves_the_same_as_simple_lambda()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static void Cfg(MapConfig<S, D> c) => c.Map((t) => t.A, (s) => s.A);
+                               }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            // A parenthesized-parameter selector that TryReadMemberPath failed to parse would fall through to
+            // the "not a member selector" DWARF068 refusal — its ABSENCE here is the proof the parenthesized
+            // arm resolved the path, not the simple-lambda arm every other fixture exercises.
+            Assert.Null(D068(diags));
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.False(string.IsNullOrEmpty(generated));
         }
 
         /// <summary>
@@ -124,6 +159,247 @@ namespace DwarfMapper.Generator.Tests
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
             Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>MapWhen</c>'s own unsupported-expression refusal — a separate emission site from
+        ///     <c>Map</c>'s, never independently exercised (every existing MapWhen fixture used valid selectors).
+        /// </summary>
+        [Fact]
+        public void MapWhen_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static bool Always(S s) => true;
+                                   private static void Cfg(MapConfig<S, D> c) => c.MapWhen(t => t.A, s => Identity(s.A), nameof(Always));
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Ignore</c>'s own unsupported-expression refusal, a separate emission site.
+        /// </summary>
+        [Fact]
+        public void Ignore_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int B { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Ignore(t => Identity(t.B));
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>IgnoreSource</c>'s own unsupported-expression refusal, a separate emission site.
+        /// </summary>
+        [Fact]
+        public void IgnoreSource_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } public int Unused { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.IgnoreSource(s => Identity(s.Unused));
+                                   public partial D Map(S s);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Construct</c>'s own unsupported-expression refusal — it reads a factory METHOD GROUP
+        ///     (<c>TryReadMethodGroup</c>), so an inline lambda (not a method group) must be rejected the same
+        ///     way the 3-arg <c>Map</c> converter is.
+        /// </summary>
+        [Fact]
+        public void Construct_with_inline_lambda_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static void Cfg(MapConfig<S, D> c) => c.Construct(s => new D());
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>MapOr</c>'s member-selector refusal, its own emission site.
+        /// </summary>
+        [Fact]
+        public void MapOr_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int? A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int? Identity(int? x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.MapOr(t => t.A, s => Identity(s.A), 5);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>MapOr</c>'s fallback must be a compile-time constant — its own refusal, separate
+        ///     from the selector one above.
+        /// </summary>
+        [Fact]
+        public void MapOr_with_a_non_constant_fallback_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int? A { get; set; } }
+                               public class D { public int A { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static readonly int NotConst = 5;
+                                   private static void Cfg(MapConfig<S, D> c) => c.MapOr(t => t.A, s => s.A, NotConst);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Value</c>'s target-selector refusal, its own emission site.
+        /// </summary>
+        [Fact]
+        public void Value_with_method_call_selector_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int Identity(int x) => x;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => Identity(t.Tag), 99);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     <c>Value</c>'s METHOD-GROUP form (a computed value, not a constant) — the existing MapOr/Value
+        ///     fixture only ever used the constant overload; the method-group arm had never fired.
+        /// </summary>
+        [Fact]
+        public void Value_with_a_method_group_computes_the_member_with_no_diagnostic()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int ComputeTag() => 99;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => t.Tag, ComputeTag);
+                               }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            Assert.Null(D068(diags));
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Contains("ComputeTag()", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     DWARF068: <c>Value</c>'s second argument must be a constant or a method group — its own refusal
+        ///     when it's neither (an inline lambda).
+        /// </summary>
+        [Fact]
+        public void Value_with_neither_a_constant_nor_a_method_group_reports_DWARF068()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => t.Tag, () => 99);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF068", D068(diags)?.Id);
+        }
+
+        /// <summary>
+        ///     TryReadMethodGroup's <c>MemberAccessExpressionSyntax</c> arm — every method-group fixture in the
+        ///     suite passes a BARE identifier (<c>IdentifierNameSyntax</c>); a dotted method group
+        ///     (<c>Helpers.Compute</c>, a different syntax node with the same meaning) had never been tried.
+        /// </summary>
+        [Fact]
+        public void Value_with_a_dotted_method_group_computes_the_member_with_no_diagnostic()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int A { get; set; } }
+                               public class D { public int A { get; set; } public int Tag { get; set; } }
+                               [DwarfMapper]
+                               [GenerateMap<S, D>]
+                               public partial class M
+                               {
+                                   private static int ComputeTag() => 99;
+                                   private static void Cfg(MapConfig<S, D> c) => c.Value(t => t.Tag, M.ComputeTag);
+                               }
+                               """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+            Assert.Null(D068(diags));
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Contains("ComputeTag()", generated, StringComparison.Ordinal);
         }
 
         /// <summary>

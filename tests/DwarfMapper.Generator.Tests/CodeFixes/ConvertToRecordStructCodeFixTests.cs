@@ -612,6 +612,40 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
             Assert.Equal(printed, layout!.Value.Size);
         }
 
+        /// <summary>
+        ///     A model's <c>static</c> and <c>const</c> fields are carried over exactly as written. <c>readonly</c>
+        ///     is added to INSTANCE fields only (CS8340); on a static field it would change what the consumer's
+        ///     own code may assign, and on a <c>const</c> it is a syntax error. Neither is instance state, so
+        ///     neither is a candidate for the oblivious <c>?</c> either.
+        /// </summary>
+        [Fact]
+        public async Task A_models_static_and_const_fields_are_kept_as_written()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  using System.Collections.Generic;
+                                  namespace Demo;
+                                  public sealed class Order { public long Id { get; set; } }
+                                  public sealed class OrderDto
+                                  {
+                                      public static int Seed;
+                                      public const int Version = 1;
+                                      public long Id { get; set; }
+                                  }
+                                  public class C { public List<Order> Rows { get; set; } }
+                                  public class D { public List<OrderDto> Rows { get; set; } }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+
+            var fixedText = await ApplyAsync(source).ConfigureAwait(true);
+
+            Assert.Contains("readonly record struct OrderDto", fixedText, StringComparison.Ordinal);
+            Assert.Contains("public static int Seed;", fixedText, StringComparison.Ordinal);
+            Assert.Contains("public const int Version = 1;", fixedText, StringComparison.Ordinal);
+            Assert.DoesNotContain("readonly int Seed", fixedText, StringComparison.Ordinal);
+            Assert.DoesNotContain("readonly int Version", fixedText, StringComparison.Ordinal);
+        }
+
         // ─── Harness ─────────────────────────────────────────────────────────────
 
         private static int CountOccurrences(string text, string needle)

@@ -30,7 +30,7 @@ namespace DwarfMapper.DocTooling
             var summaries = LoadSummaries(assembly);
 
             var types = assembly.GetExportedTypes()
-                .Where(t => !t.IsNested || t.IsPublic)
+                .Where(IsRenderableType)
                 .OrderBy(t => t.Namespace, StringComparer.Ordinal)
                 .ThenBy(t => t.Name, StringComparer.Ordinal)
                 .ToList();
@@ -74,7 +74,32 @@ namespace DwarfMapper.DocTooling
             return sb.ToString();
         }
 
-        private static void RenderEnum(StringBuilder sb, Type type, Dictionary<string, string> summaries)
+        /// <summary>
+        ///     Whether a type that <see cref="Assembly.GetExportedTypes" /> returned belongs on the page.
+        ///     <para>
+        ///         The test is about NESTING, not visibility: GetExportedTypes already returns only publicly
+        ///         visible types, so the only thing left to decide is whether a nested one is public in its own
+        ///         right. <see cref="Type.IsPublic" /> answers that question WRONG for a nested type - it is
+        ///         false for every nested type however visible, because the nested flavour is
+        ///         <see cref="Type.IsNestedPublic" />. Reading IsPublic therefore dropped every public nested
+        ///         type from the reference page (found 2026-09-20; latent, because the runtime assembly's only
+        ///         nested types are private today).
+        ///     </para>
+        ///     <para>
+        ///         Internal rather than private so the two arms can be pinned directly: Render reflects one
+        ///         fixed assembly, so no test input can put a public nested type in front of the filter.
+        ///     </para>
+        /// </summary>
+        internal static bool IsRenderableType(Type type)
+        {
+            return !type.IsNested || type.IsNestedPublic;
+        }
+
+        /// <summary>
+        ///     Renders one enum's value table. Internal so the memberless case can be stated: an enum with no
+        ///     members is legal C#, and the reflected assembly has none, so nothing else can put one here.
+        /// </summary>
+        internal static void RenderEnum(StringBuilder sb, Type type, Dictionary<string, string> summaries)
         {
             sb.Append("| Value | Numeric | Summary |\n|---|---|---|\n");
             foreach (var name in Enum.GetNames(type).OrderBy(n => n, StringComparer.Ordinal))
@@ -119,7 +144,12 @@ namespace DwarfMapper.DocTooling
         ///     constructor simply report "—": inventing constructor arguments would produce a "default" that no
         ///     caller ever sees, which is worse than admitting the page cannot say.
         /// </summary>
-        private static object? TryCreateDefaults(Type type)
+        /// <remarks>
+        ///     Internal rather than private for the reason IsRenderableType is: Render reflects one fixed
+        ///     assembly, so no test input can put an abstract type, an interface or a throwing constructor in
+        ///     front of this method.
+        /// </remarks>
+        internal static object? TryCreateDefaults(Type type)
         {
             if (type.IsAbstract || type.IsInterface)
             {
@@ -133,6 +163,11 @@ namespace DwarfMapper.DocTooling
                 return null;
             }
 
+            // This guard is what makes a MissingMethodException impossible below, which is why there is no catch
+            // for one (owner ruling 2026-09-21, deleted with its proof): every shape that could raise it has
+            // already returned - an abstract type or an interface above, an open generic above that, and here
+            // anything with no PUBLIC parameterless constructor, including a struct with none declared and a
+            // class whose own is private.
             if (type.GetConstructor(Type.EmptyTypes) is null)
             {
                 return null;
@@ -142,17 +177,17 @@ namespace DwarfMapper.DocTooling
             {
                 return Activator.CreateInstance(type);
             }
-            catch (MissingMethodException)
-            {
-                return null;
-            }
             catch (TargetInvocationException)
             {
                 return null;
             }
         }
 
-        private static object? SafeGet(object instance, PropertyInfo p)
+        /// <summary>
+        ///     Reads one property for the defaults column. A getter that throws costs that one cell, not the
+        ///     page. Internal for the same reason as its neighbours: Render reflects one fixed assembly.
+        /// </summary>
+        internal static object? SafeGet(object instance, PropertyInfo p)
         {
             try
             {
@@ -164,7 +199,8 @@ namespace DwarfMapper.DocTooling
             }
         }
 
-        private static string FormatValue(object? value)
+        /// <summary>Renders one default value as a markdown code span. Internal so each arm can be stated directly.</summary>
+        internal static string FormatValue(object? value)
         {
             return value switch
             {
@@ -176,7 +212,8 @@ namespace DwarfMapper.DocTooling
             };
         }
 
-        private static string Kind(Type type)
+        /// <summary>The word the page uses for a type. Internal so every arm can be pinned, including the ones the reflected assembly has no example of.</summary>
+        internal static string Kind(Type type)
         {
             return type.IsEnum ? "enum"
                 : type.IsInterface ? "interface"
@@ -207,7 +244,11 @@ namespace DwarfMapper.DocTooling
         ///     failure rather than an empty page — silently rendering a reference with no summaries would look
         ///     like the code is undocumented.
         /// </summary>
-        private static Dictionary<string, string> LoadSummaries(Assembly assembly)
+        /// <remarks>
+        ///     Internal for the reason its neighbours are: Render reflects one fixed assembly, whose XML the
+        ///     build always produces, so the failure below cannot be reached through any public entry point.
+        /// </remarks>
+        internal static Dictionary<string, string> LoadSummaries(Assembly assembly)
         {
             var xmlPath = Path.ChangeExtension(assembly.Location, ".xml");
             if (!File.Exists(xmlPath))
@@ -268,9 +309,24 @@ namespace DwarfMapper.DocTooling
                         break;
 
                     case XElement { Name.LocalName: "see" or "seealso" } e:
-                        var cref = e.Attribute("cref")?.Value ?? e.Attribute("langword")?.Value ?? "";
+                        // A langword is a C# keyword and is rendered as written. It used to go through the
+                        // cref path below, which strips a doc-comment ID's two-character prefix, so
+                        // `<see langword="null"/>` rendered as "ll" and `"false"` as "lse" (found 2026-09-20 by
+                        // the first test to cover this arm). No page shows it today only because every langword
+                        // in the reflected assembly sits in a <param>, which this renderer does not read.
+                        var langword = e.Attribute("langword")?.Value;
+                        if (langword is not null)
+                        {
+                            sb.Append(langword);
+                            break;
+                        }
+
+                        // A cref is a doc-comment ID: "T:Namespace.Type", "M:Namespace.Type.Method". The page
+                        // wants the last segment, and for an ID with no namespace the part after the prefix.
+                        var cref = e.Attribute("cref")?.Value ?? "";
                         var idx = cref.LastIndexOf('.');
-                        sb.Append(idx >= 0 ? cref[(idx + 1)..] : cref.Length > 2 ? cref[2..] : cref);
+                        sb.Append(idx >= 0 ? cref[(idx + 1)..] :
+                            cref.Length > 2 && cref[1] == ':' ? cref[2..] : cref);
                         break;
                 }
 

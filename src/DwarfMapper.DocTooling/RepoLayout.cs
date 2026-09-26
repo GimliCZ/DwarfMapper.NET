@@ -23,14 +23,38 @@ namespace DwarfMapper.DocTooling
                     return _root;
                 }
 
-                var dir = AppContext.BaseDirectory;
-                while (dir is not null && !File.Exists(Path.Combine(dir, "DwarfMapper.NET.sln")))
-                    dir = Path.GetDirectoryName(dir);
-
-                return _root = dir ??
-                               throw new DocToolingException(
-                                   "Could not find DwarfMapper.NET.sln above " + AppContext.BaseDirectory + ". The doc pipeline reads and rewrites files in the working tree, so it " + "cannot run detached from the repository.");
+                return _root = ResolveRoot(AppContext.BaseDirectory);
             }
+        }
+
+        /// <summary>
+        ///     The repository root at or above <paramref name="startDirectory" />, or the failure that says the
+        ///     pipeline cannot run where it was started.
+        /// </summary>
+        /// <remarks>
+        ///     Takes the starting directory rather than reading <see cref="AppContext.BaseDirectory" /> itself so
+        ///     that both outcomes can be stated: a test cannot move the base directory of its own process, so
+        ///     until this was split out, the not-found failure was unreachable and every test ran from inside the
+        ///     repository, where the walk always succeeds.
+        /// </remarks>
+        internal static string ResolveRoot(string startDirectory)
+        {
+            return FindRoot(startDirectory) ??
+                   throw new DocToolingException(
+                       "Could not find DwarfMapper.NET.sln above " + startDirectory + ". The doc pipeline reads and rewrites files in the working tree, so it " + "cannot run detached from the repository.");
+        }
+
+        /// <summary>
+        ///     Walks up from <paramref name="startDirectory" /> looking for the solution file, and returns
+        ///     <see langword="null" /> when it reaches the top without finding one.
+        /// </summary>
+        internal static string? FindRoot(string startDirectory)
+        {
+            var dir = startDirectory;
+            while (dir is not null && !File.Exists(Path.Combine(dir, "DwarfMapper.NET.sln")))
+                dir = Path.GetDirectoryName(dir);
+
+            return dir;
         }
 
         /// <summary>The <c>docs/</c> directory.</summary>

@@ -156,12 +156,55 @@ if ($Nightly) {
 # tests/DwarfMapper.Testing.Tests/GraphOracleSensitivityTests.cs is the set of failures it now has to
 # produce. Generator (94.6 vs 94.5), DwarfMapper and DocTooling stay inside the band and are left alone.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# Re-measured 2026-09-20 (round-30 sweep, fast tier, Release, exact covered/coverable from
+# TestResults/coverage-report/Summary.json, truncated as the rule requires):
+#   DwarfMapper 96.4/100.0 · Generator 100.0/99.9 · DocTooling 96.3/92.1 · CodeFixes 98.5/96.6 · Testing 100.0/100.0
+# Exact covered/coverable: DwarfMapper 324/336 = 96.4286 · Generator 13642/13642 · DocTooling 421/437 =
+# 96.3387 · CodeFixes 465/472 = 98.5169 · Testing 813/813.
+#
+# Four floors move, all upward, all mandatory under the band rule (the gate threw on every one of them):
+#
+#   DwarfMapper  91.2 -> 96.4   the round-30 runtime work; what remains uncovered is MapConfig, which the
+#                               2026-09-14 ruling keeps at zero runtime coverage by design
+#   Generator    95.5 -> 100    the round-30 file-by-file sweep, closed assembly by assembly
+#   CodeFixes    96.2 -> 98.5   the code-fix surface tests; the remainder is the named Roslyn null-guard
+#                               exemption (2026-09-15 ruling)
+#   Testing      96.4 -> 100    the object-factory construction rulings, the dangling-dependency test for
+#                               SafeTypes, and the oracle cycle-guard restructure
+#
+# TWO FLOORS ARE NOW 100, WHICH IS A HARDER PROMISE THAN IT LOOKS: any line that stops being covered fails
+# the gate, including a line ADDED without a test. That is the ratchet working as intended, and it is the
+# same rule the other floors follow - the floor equals the measurement, truncated. It is not a claim that
+# either assembly can never gain an untested line; it is the requirement that gaining one is a build
+# failure rather than a quiet slide.
+#
+# DocTooling (96.3 vs 96.0) stays inside the 1.0 pp band and is left alone - and it is the one assembly
+# with real gaps left: 16 uncovered lines and 19 open branch outcomes, most of them in
+# ApiReferenceRenderer.
+# ───────────────────────────────────────────────────────────────────────────────────────────────────
+#
+# Re-measured 2026-09-21 (round-30 sweep, DocTooling closed), fast tier, Release, exact covered/coverable from
+# TestResults/coverage-report/Summary.json, truncated as the rule requires:
+#   DwarfMapper 96.4/100.0 · Generator 100.0/100.0 · DocTooling 99.1/99.2 · CodeFixes 98.5/96.7 · Testing 100.0/100.0
+# Exact covered/coverable: DocTooling 441/445 = 99.1011.
+#
+#   DocTooling  96.0 -> 99.1   the doc-pipeline sweep: the exception type's constructors, the doc-XML reader's
+#                              skip and see-tag arms, the type filter, the defaults probe's refusals, the value
+#                              reader and shape words, the repository-root walk and the missing-doc-XML failure
+#
+# What is left uncovered in DocTooling is four lines and two conditions, all three of them owner questions
+# rather than gaps: TryCreateDefaults' MissingMethodException catch, RenderEnum's zero-member loop arm, and
+# DocSnippetInjector's progress guard (which its own Stryker-disable comment calls untestable by construction).
+#
+# The other four floors are unchanged and still equal their measurements from 2026-09-20.
+# ───────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
-    'DwarfMapper'            = 91.2
-    'DwarfMapper.Generator'  = 95.5
-    'DwarfMapper.DocTooling' = 96.0
-    'DwarfMapper.CodeFixes'  = 96.2
-    'DwarfMapper.Testing'    = 96.4
+    'DwarfMapper'            = 96.4
+    'DwarfMapper.Generator'  = 100.0
+    'DwarfMapper.DocTooling' = 99.1
+    'DwarfMapper.CodeFixes'  = 98.5
+    'DwarfMapper.Testing'    = 100.0
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -517,7 +560,23 @@ try {
             $dll = Join-Path $root $target.Dll
             if (-not (Test-Path $dll)) { throw "ilverify: $($target.Dll) not built - build the solution Release first" }
             $refArgs = @('-r', $refPackGlob)
-            foreach ($extra in $target.ExtraRefs) { $refArgs += @('-r', (Join-Path $root $extra)) }
+            # Each extra glob is EXPANDED and the target itself dropped from it. The Gallery's dependency
+            # root is its own bin directory, so `-r <bin>/*.dll` handed ilverify the very assembly being
+            # verified: newer builds of the tool refuse that with "Multiple input files matching same simple
+            # name" and exit 134 (nightly, 2026-09-20), while 10.0.11 silently tolerated it. Passing the
+            # expanded set minus the target is identical in what it resolves and no longer depends on which
+            # build of ilverify the host installed.
+            # ...and no two references may share a SIMPLE NAME either, which is the other half of the same
+            # tool error. The ref pack is added first and wins, so a framework assembly keeps its reference
+            # build; an extra directory only contributes names the ref pack does not already carry.
+            $refNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($extra in $target.ExtraRefs) {
+                Get-ChildItem -Path (Join-Path $root $extra) -File -ErrorAction SilentlyContinue |
+                    Where-Object { -not [string]::Equals($_.FullName, $dll, [System.StringComparison]::OrdinalIgnoreCase) } |
+                    ForEach-Object {
+                        if ($refNames.Add($_.Name)) { $refArgs += @('-r', $_.FullName) }
+                    }
+            }
             $out = @(& ilverify $dll @refArgs | ForEach-Object { $_.ToString() })
             $exit = $LASTEXITCODE
             $out | ForEach-Object { Write-Host "   $_" -ForegroundColor DarkGray }
@@ -580,7 +639,10 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.pipeline.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.testing.json'
-        if ($legs -contains 'generator') {
+        # Every leg runs through Invoke-DecontaminatedMutationLeg (gate-checks.ps1): planted mutants are removed
+        # on every exit - including the R2 band throw a leg that beats its floor must raise - and a leg refuses
+        # to start on a tree an earlier, killed run left contaminated (round 30).
+        if ($legs -contains 'generator') { Invoke-DecontaminatedMutationLeg -Leg 'generator' -Root $root -Body {
             $legStart = Get-Date
             # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
             # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
@@ -600,23 +662,21 @@ try {
             Assert-MutantsWereTested -Leg 'generator' -Since $legStart
             Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
                 -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
-            Remove-PlantedMutants -Leg 'generator' -Root $root
-            Assert-NoMutatedProductBinaries -Leg 'generator' -Root $root
-        }
+        } }
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
         # also provides.
         if ($legs -contains 'doc tooling') {
             Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
-            $legStart = Get-Date
-            $legExit = Invoke-StrykerLeg -Leg 'doc tooling' -ConfigFile 'stryker-config.doctooling.json' -TimeoutMinutes 30
-            if ($legExit) { throw "mutation score below break threshold (doc tooling)" }
-            Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
-            Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-                -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
-            Remove-PlantedMutants -Leg 'doc tooling' -Root $root
-            Assert-NoMutatedProductBinaries -Leg 'doc tooling' -Root $root
+            Invoke-DecontaminatedMutationLeg -Leg 'doc tooling' -Root $root -Body {
+                $legStart = Get-Date
+                $legExit = Invoke-StrykerLeg -Leg 'doc tooling' -ConfigFile 'stryker-config.doctooling.json' -TimeoutMinutes 30
+                if ($legExit) { throw "mutation score below break threshold (doc tooling)" }
+                Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
+                Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                    -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
+            }
         }
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
@@ -625,14 +685,14 @@ try {
         # case is untested.
         if ($legs -contains 'runtime') {
             Write-Host "== 4/4c Mutation testing (runtime assembly) ==" -ForegroundColor Cyan
-            $legStart = Get-Date
-            $legExit = Invoke-StrykerLeg -Leg 'runtime' -ConfigFile 'stryker-config.runtime.json' -TimeoutMinutes 30
-            if ($legExit) { throw "mutation score below break threshold (runtime)" }
-            Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
-            Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-                -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
-            Remove-PlantedMutants -Leg 'runtime' -Root $root
-            Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
+            Invoke-DecontaminatedMutationLeg -Leg 'runtime' -Root $root -Body {
+                $legStart = Get-Date
+                $legExit = Invoke-StrykerLeg -Leg 'runtime' -ConfigFile 'stryker-config.runtime.json' -TimeoutMinutes 30
+                if ($legExit) { throw "mutation score below break threshold (runtime)" }
+                Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
+                Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                    -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
+            }
         }
 
         # The CODE FIXES. Added round 27 after measuring what the other three legs do NOT cover: 15.3 % of
@@ -645,14 +705,14 @@ try {
         # than one that fails loudly, and until this leg existed nothing proved the tests would notice.
         if ($legs -contains 'code fixes') {
             Write-Host "== 4/4d Mutation testing (code fixes) ==" -ForegroundColor Cyan
-            $legStart = Get-Date
-            $legExit = Invoke-StrykerLeg -Leg 'code fixes' -ConfigFile 'stryker-config.codefixes.json' -TimeoutMinutes 30
-            if ($legExit) { throw "mutation score below break threshold (code fixes)" }
-            Assert-MutantsWereTested -Leg 'code fixes' -Since $legStart
-            Assert-LegScoreWithinBand -Leg 'code fixes' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-                -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
-            Remove-PlantedMutants -Leg 'code fixes' -Root $root
-            Assert-NoMutatedProductBinaries -Leg 'code fixes' -Root $root
+            Invoke-DecontaminatedMutationLeg -Leg 'code fixes' -Root $root -Body {
+                $legStart = Get-Date
+                $legExit = Invoke-StrykerLeg -Leg 'code fixes' -ConfigFile 'stryker-config.codefixes.json' -TimeoutMinutes 30
+                if ($legExit) { throw "mutation score below break threshold (code fixes)" }
+                Assert-MutantsWereTested -Leg 'code fixes' -Since $legStart
+                Assert-LegScoreWithinBand -Leg 'code fixes' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                    -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
+            }
         }
 
         # ── 4/4e: the ROUND-27 MEMBER-RESOLUTION PHASES ──────────────────────────────────────────
@@ -668,17 +728,17 @@ try {
         # (Issues/round27/AUDIT-mutation-scope.md).
         if ($legs -contains 'pipeline') {
             Write-Host '== 4/4e Mutation testing (member-resolution phases) ==' -ForegroundColor Cyan
-            $legStart = Get-Date
-            # 90, not 60: MEASURED at 37 minutes, and the repo's precedent is ~2x measured (the generator leg
-            # runs 31 and is fused at 60). A 60-minute fuse was the first guess here and a contended run blew
-            # straight through it, reporting a HANG for a leg that was simply still working.
-            $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 90
-            if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
-            Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
-            Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-                -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
-            Remove-PlantedMutants -Leg 'pipeline' -Root $root
-            Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
+            Invoke-DecontaminatedMutationLeg -Leg 'pipeline' -Root $root -Body {
+                $legStart = Get-Date
+                # 90, not 60: MEASURED at 37 minutes, and the repo's precedent is ~2x measured (the generator leg
+                # runs 31 and is fused at 60). A 60-minute fuse was the first guess here and a contended run blew
+                # straight through it, reporting a HANG for a leg that was simply still working.
+                $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 90
+                if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
+                Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
+                Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                    -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
+            }
         }
 
         # ── 4/4f: DwarfMapper.Testing's VERIFIERS ────────────────────────────────────────────────
@@ -695,16 +755,26 @@ try {
         #
         # ONE AREA again: the five verifier files, not the package. ObjectFactoryV2 (326 lines) and
         # GraphOracleComparer (394 lines) are fixture machinery and stay the named follow-on.
+        #
+        # THE FUSE IS 45, NOT 30, SINCE 2026-09-21, AND THE REASON IS THE POINT: killing this leg's survivors
+        # made it SLOWER. Three of them were mutants that made StructuralComparer's depth count backwards, and a
+        # test that walks a cycle or a chain past the cap turns such a mutant from a cheap Survived into a
+        # non-terminating run that costs the full `additional-timeout` cushion (2 min) before Stryker calls it a
+        # Timeout. Measured: 24:52 and 21:18 with three survivors, then a 30-min kill at 108 of 110 mutants once
+        # they were killed. A Timeout here is a DETECTION, so this is the leg working, not hanging - the fuse was
+        # simply cut for the cheaper population. Raise it again the same way if a future kill converts more
+        # survivors into non-terminating mutants; do NOT lower `additional-timeout` to fit, which would start
+        # calling slow machines' mutants detected.
         if ($legs -contains 'testing') {
             Write-Host '== 4/4f Mutation testing (testing-toolkit verifiers) ==' -ForegroundColor Cyan
-            $legStart = Get-Date
-            $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 30
-            if ($legExit) { throw 'mutation score below break threshold (testing)' }
-            Assert-MutantsWereTested -Leg 'testing' -Since $legStart
-            Assert-LegScoreWithinBand -Leg 'testing' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
-                -ConfigPath (Join-Path $root 'stryker-config.testing.json') -Since $legStart
-            Remove-PlantedMutants -Leg 'testing' -Root $root
-            Assert-NoMutatedProductBinaries -Leg 'testing' -Root $root
+            Invoke-DecontaminatedMutationLeg -Leg 'testing' -Root $root -Body {
+                $legStart = Get-Date
+                $legExit = Invoke-StrykerLeg -Leg 'testing' -ConfigFile 'stryker-config.testing.json' -TimeoutMinutes 45
+                if ($legExit) { throw 'mutation score below break threshold (testing)' }
+                Assert-MutantsWereTested -Leg 'testing' -Since $legStart
+                Assert-LegScoreWithinBand -Leg 'testing' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+                    -ConfigPath (Join-Path $root 'stryker-config.testing.json') -Since $legStart
+            }
         }
     }
 

@@ -25,10 +25,7 @@ namespace DwarfMapper.DocTooling
         /// </summary>
         public static IReadOnlyDictionary<string, SnippetRegion> ScanAll()
         {
-            return Merge(Directory
-                .GetFiles(RepoLayout.Samples, "*.cs", SearchOption.AllDirectories)
-                .Where(IsNotBuildOutput)
-                .OrderBy(p => p, StringComparer.Ordinal)
+            return Merge(SampleFiles()
                 .SelectMany(path => ScanFile(
                     Path.GetRelativePath(RepoLayout.Root, path).Replace('\\', '/'),
                     File.ReadAllText(path))));
@@ -56,6 +53,22 @@ namespace DwarfMapper.DocTooling
             }
 
             return result;
+        }
+
+        /// <summary>Every sample source file the scanner reads, build output excluded, ordinally ordered.</summary>
+        // Internal rather than private, for IsNotBuildOutput's reason: this is the other half of "which files
+        // do we read", and no test through ScanAll() can tell "*.cs" from a pattern that matches everything.
+        // THE MUTATION THAT BLANKS THE PATTERN DOES NOT NARROW IT - Directory.GetFiles treats an empty
+        // searchPattern as "every file", so it returns MORE (57 against 17 in this assembly's own folder), and
+        // it survived a mutation leg because today's corpus has no non-.cs file carrying a snippet marker. The pattern is a contract, so it is
+        // pinned where a test can reach it.
+        internal static List<string> SampleFiles()
+        {
+            return Directory
+                .GetFiles(RepoLayout.Samples, "*.cs", SearchOption.AllDirectories)
+                .Where(IsNotBuildOutput)
+                .OrderBy(p => p, StringComparer.Ordinal)
+                .ToList();
         }
 
         // Internal rather than private: the exclusion is a path-shape contract the tests pin directly —

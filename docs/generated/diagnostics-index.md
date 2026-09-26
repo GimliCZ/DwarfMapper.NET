@@ -17,7 +17,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF009` | Error | MapProperty source not found |
 | `DWARF010` | Error | Ambiguous source member |
 | `DWARF011` | Error | Duplicate explicit mapping |
-| `DWARF012` | Error | Conflicting [MapIgnore] and [MapProperty] |
+| `DWARF012` | Error | Conflicting [MapIgnore] and a mapping directive |
 | `DWARF013` | Error | Ambiguous conversion method |
 | `DWARF014` | Error | Conversion method not found |
 | `DWARF015` | Error | Incomplete enum mapping |
@@ -110,5 +110,9 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF105` | Error | Invalid [MapDenseEnumKeys] target |
 | `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive |
 | `DWARF107` | Warning | A converter's nullable return is stored where null is forbidden |
+| `DWARF108` | Warning | OnCycle = SetNull requires a reference-type destination |
+| `DWARF109` | Error | [AfterMap] by-ref target type does not exactly match this pair's destination |
+| `DWARF110` | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry |
+| `DWARF111` | Warning | [ProvidesMap] method is not registered because its pair is already provided |
 
-102 diagnostics.
+106 diagnostics.

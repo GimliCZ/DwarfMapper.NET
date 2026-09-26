@@ -45,17 +45,15 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var a in compilation.Assembly.GetAttributes())
             {
-                if (a.AttributeClass?.ToDisplayString() != KnownNames.ValidationRootFqn)
+                if (!KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.ValidationRootFqn))
                 {
                     continue;
                 }
 
-                var autoValidate = false;
-                foreach (var named in a.NamedArguments)
-                    if (named.Key == "AutoValidate" && named.Value.Value is bool b)
-                    {
-                        autoValidate = b;
-                    }
+                // AutoValidate is the attribute's only settable property and a bool, so a set value is always a bool
+                // constant: asked this way, no branch tests a key or a type that no application has.
+                var autoValidate = MapperExtractor.TryGetNamedArgument(a.NamedArguments, "AutoValidate", out var value) &&
+                                   Equals(value.Value, true);
 
                 return (true, autoValidate);
             }
@@ -81,7 +79,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var asm in compilation.SourceModule.ReferencedAssemblySymbols)
             foreach (var a in asm.GetAttributes())
-                switch (a.AttributeClass?.ToDisplayString())
+                switch (KnownNames.AttributeClassName(a.AttributeClass))
                 {
                     case KnownNames.DwarfProvidesMapFqn:
                         if (ReadPair(a) is { } p)
@@ -127,14 +125,14 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var a in compilation.Assembly.GetAttributes())
             {
-                var name = a.AttributeClass?.ToDisplayString();
+                var name = KnownNames.AttributeClassName(a.AttributeClass);
                 if (name != KnownNames.DwarfProvidesMapFqn && name != KnownNames.DwarfRequiresMapFqn)
                 {
                     continue;
                 }
 
                 var reference = a.ApplicationSyntaxReference;
-                if (GeneratedSourceExtensions.IsGeneratorAuthored(reference?.SyntaxTree))
+                if (!IsHandWritten(reference))
                 {
                     continue;
                 }
@@ -145,6 +143,21 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return found;
+        }
+
+        /// <summary>
+        ///     Whether the attribute application at <paramref name="reference" /> was written in this compilation's own
+        ///     source rather than emitted by a generator.
+        /// </summary>
+        /// <remarks>
+        ///     An attribute of <c>compilation.Assembly</c> always has an application syntax reference, so the "no
+        ///     reference" answer was an outcome <see cref="HandWrittenManifests" /> never reached. A missing reference
+        ///     reads as generator-authored, exactly as <see cref="GeneratedSourceExtensions.IsGeneratorAuthored" /> reads
+        ///     a missing tree.
+        /// </remarks>
+        internal static bool IsHandWritten(SyntaxReference? reference)
+        {
+            return !GeneratedSourceExtensions.IsGeneratorAuthored(reference?.SyntaxTree);
         }
 
         private static (string Source, string Destination)? ReadPair(AttributeData a)

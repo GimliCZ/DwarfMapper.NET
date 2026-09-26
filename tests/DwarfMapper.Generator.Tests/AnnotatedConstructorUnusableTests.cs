@@ -76,6 +76,12 @@ namespace DwarfMapper.Generator.Tests
                 },
                 {
                     "copy constructor", "[DwarfMapperConstructor] public Dst(Dst other) { A = other.A; }", "COPY constructor"
+                },
+                {
+                    "static constructor", "[DwarfMapperConstructor] static Dst() { }", "STATIC constructor"
+                },
+                {
+                    "obsolete, two parameters", "[DwarfMapperConstructor] [System.Obsolete] public Dst(int a, int b) { A = a; }", "marked [Obsolete]"
                 }
             };
         }
@@ -270,6 +276,7 @@ namespace DwarfMapper.Generator.Tests
         [InlineData("obsolete", "[DwarfMapperConstructor] [System.Obsolete] public Dst(int a) { A = a; }", "does not generate calls to obsolete members", "Drop the [Obsolete], or annotate a supported constructor")]
         [InlineData("ref", "[DwarfMapperConstructor] public Dst(ref int a) { A = a; }", "which cannot be written as a named argument (CS1620)", "Take it by value or by 'in'")]
         [InlineData("out", "[DwarfMapperConstructor] public Dst(out int a) { a = 1; A = 1; }", "which cannot be written as a named argument (CS1620)", "Take it by value or by 'in'")]
+        [InlineData("static", "[DwarfMapperConstructor] static Dst() { }", "never constructs the destination", "belongs on an instance constructor")]
         public void Each_reason_carries_the_remedy_for_the_filter_that_produced_it(
             string label,
             string ctor,

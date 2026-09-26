@@ -106,5 +106,102 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Contains(diags, d => d.Id == "DWARF063" && d.Severity == DiagnosticSeverity.Warning);
         }
+
+        // Emits source WITHOUT running the generator, for a library whose manifest attributes were written by hand.
+        private static PortableExecutableReference CompileWithoutGenerator(string assemblyName, string source)
+        {
+            using var ms = new MemoryStream();
+            var result = GeneratorTestHarness.BuildCompilation(assemblyName, source).Emit(ms);
+            Assert.True(result.Success,
+                "library compilation failed:\n" +
+                string.Join("\n",
+                    result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
+            return MetadataReference.CreateFromImage(ms.ToArray());
+        }
+
+        [Fact]
+        public void Root_reports_DWARF061_for_a_pair_only_a_referenced_consumer_requires()
+        {
+            // A mid-tier consumer compiled with the generator carries [assembly: DwarfRequiresMap] in its metadata. The
+            // root consumes nothing itself, so the requirement it reports is the one it read from that metadata.
+            var consumer = CompileToReference("Shared.Consumer",
+                """
+                namespace Shared;
+                public class Doc { public int V { get; set; } }
+                public class Model { public int V { get; set; } }
+                public class Use
+                {
+                    public Model Convert(global::DwarfMapper.IDwarfMapper m, Doc d) => m.Map<Model>(d);
+                }
+                """);
+
+            var diags = RunRoot("[assembly: global::DwarfMapper.DwarfMapperValidationRoot]", consumer);
+
+            Assert.Contains(diags,
+                d => d.Id == "DWARF061" &&
+                     d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Shared.Doc", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void A_referenced_manifest_with_a_null_type_provides_nothing()
+        {
+            // Written by hand in a library built without the generator: a manifest with a null type argument names no
+            // pair, so the root's own requirement stays unprovided.
+            var library = CompileWithoutGenerator("Shared.NullManifest",
+                """
+                [assembly: global::DwarfMapper.DwarfProvidesMap(typeof(Shared.Doc), null)]
+                [assembly: global::DwarfMapper.DwarfProvidesMap(null, typeof(Shared.Model))]
+                namespace Shared;
+                public class Doc { public int V { get; set; } }
+                public class Model { public int V { get; set; } }
+                """);
+
+            var diags = RunRoot(RootSource, library);
+
+            Assert.Contains(diags, d => d.Id == "DWARF061");
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF063");
+        }
+
+        [Fact]
+        public void A_referenced_look_alike_manifest_attribute_of_another_shape_provides_nothing()
+        {
+            // A library that declares its own DwarfMapper.DwarfProvidesMapAttribute with ONE parameter: its name is the
+            // manifest's, its shape is not, so it names no pair and the root's requirement stays unprovided.
+            var library = CompileWithoutGenerator("Shared.LookAlike",
+                """
+                [assembly: DwarfMapper.DwarfProvidesMap(typeof(Shared.Doc))]
+                namespace DwarfMapper
+                {
+                    [System.AttributeUsage(System.AttributeTargets.Assembly, AllowMultiple = true)]
+                    public sealed class DwarfProvidesMapAttribute : System.Attribute { public DwarfProvidesMapAttribute(System.Type source) { } }
+                }
+                namespace Shared
+                {
+                    public class Doc { public int V { get; set; } }
+                    public class Model { public int V { get; set; } }
+                }
+                """);
+
+            var diags = RunRoot(RootSource, library);
+
+            Assert.Contains(diags, d => d.Id == "DWARF061");
+        }
+
+        [Fact]
+        public void A_referenced_requires_manifest_with_a_null_type_requires_nothing()
+        {
+            // The requires-side twin: a hand-written requirement with a null type argument names no pair, so a root that
+            // consumes nothing itself has nothing to report.
+            var library = CompileWithoutGenerator("Shared.NullRequirement",
+                """
+                [assembly: global::DwarfMapper.DwarfRequiresMap(typeof(Shared.Doc), null)]
+                namespace Shared;
+                public class Doc { public int V { get; set; } }
+                """);
+
+            var diags = RunRoot("[assembly: global::DwarfMapper.DwarfMapperValidationRoot]", library);
+
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF061");
+        }
     }
 }

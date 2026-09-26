@@ -188,11 +188,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         private const int MinimumWriteCallsScanned = 1500;
 
         /// <summary>
-        ///     Measured 2026-09-07: 77 escaped names (an <c>Emit*</c> sibling or an <c>Identifiers.*</c> call)
-        ///     reach a writer. This is the floor that distinguishes "the scan found no violation" from "the scan
-        ///     found nothing at all" — the failure mode this round has now recorded five times.
+        ///     Measured 2026-09-10 (was 77 as of 2026-09-07): 75 escaped names (an <c>Emit*</c> sibling or an
+        ///     <c>Identifiers.*</c> call) reach a writer. Re-pinned by round 30's coverage sweep, which deleted
+        ///     <c>MapEmitter.cs</c>'s dead "legacy flat Members path" projection arm — genuinely unreachable
+        ///     (<c>method.Members</c> is always empty for a projection method model) and never entered by any
+        ///     test — taking its two <c>member.EmitTargetName</c>/<c>member.EmitSourceName</c> call sites with
+        ///     it. This is the floor that distinguishes "the scan found no violation" from "the scan found
+        ///     nothing at all" — the failure mode this round has now recorded five times.
         /// </summary>
-        private const int MinimumEscapedEmissionSites = 77;
+        private const int MinimumEscapedEmissionSites = 75;
 
         [Fact]
         public void The_emitting_population_is_the_union_of_both_discriminators()
@@ -268,54 +272,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 var path = Path.Combine(RepoPaths.GeneratorSrcDir, relative);
                 Assert.True(File.Exists(path), $"Emitting file not found — has it moved? {relative}");
 
-                var text = File.ReadAllText(path);
-                var root = CSharpSyntaxTree.ParseText(text).GetRoot();
-
-                foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-                {
-                    if (call.Expression is not MemberAccessExpressionSyntax writer ||
-                        !TextWriters.Contains(writer.Name.Identifier.ValueText, StringComparer.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    writeCalls++;
-
-                    foreach (var argument in call.ArgumentList.Arguments)
-                    foreach (var access in argument.DescendantNodesAndSelf().OfType<MemberAccessExpressionSyntax>())
-                    {
-                        var member = access.Name.Identifier.ValueText;
-                        if (member.StartsWith("Emit", StringComparison.Ordinal))
-                        {
-                            escapedSites++;
-                            continue;
-                        }
-
-                        if (!RawNameFields.Contains(member, StringComparer.Ordinal))
-                        {
-                            continue;
-                        }
-
-                        // Already inside Identifiers.Escape / EscapeTypeName / EscapePath / Unescaped — the
-                        // second sanctioned mechanism, for a name read straight off a symbol rather than
-                        // carried on a model that could own an Emit* sibling.
-                        if (IsWrappedInAnIdentifiersCall(access, call))
-                        {
-                            escapedSites++;
-                            continue;
-                        }
-
-                        var line = access.GetLocation().GetLineSpan().StartLinePosition.Line;
-                        var sourceLine = text.Split('\n')[line].Trim();
-
-                        if (Array.Exists(NotEmission, e => sourceLine.Contains(e.Line, StringComparison.Ordinal)))
-                        {
-                            continue;
-                        }
-
-                        offenders.Add($"{relative}:{line + 1}  {sourceLine}");
-                    }
-                }
+                var (calls, escaped) = ScanFile(relative, File.ReadAllText(path), offenders);
+                writeCalls += calls;
+                escapedSites += escaped;
             }
 
             // Non-vacuity (B9), twice over: the scan must have found write calls at all, and must have seen the
@@ -368,6 +327,106 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             Assert.All(NotEmission, e => Assert.False(string.IsNullOrWhiteSpace(e.Why)));
             Assert.All(NotAnEmitter, e => Assert.False(string.IsNullOrWhiteSpace(e.Why)));
+        }
+
+        /// <summary>
+        ///     The scan must see a raw name read through a null-conditional. <c>elem?.ConverterMethod</c> is a member
+        ///     BINDING inside a conditional access, not a member access, and a walk over member accesses alone passed
+        ///     <c>MapEmitter.SpanMap.cs</c>'s raw element converter until the call came out as <c>class(src[__i])</c>.
+        /// </summary>
+        [Fact]
+        public void A_raw_name_read_through_a_null_conditional_is_an_offender()
+        {
+            const string code = """
+                                class C
+                                {
+                                    void M(System.Text.StringBuilder sb, X elem)
+                                    {
+                                        sb.Append(elem?.ConverterMethod);
+                                        sb.Append(elem?.EmitConverterMethod);
+                                    }
+                                }
+                                """;
+            var offenders = new List<string>();
+
+            var (writeCalls, escapedSites) = ScanFile("Probe.cs", code, offenders);
+
+            Assert.Equal(2, writeCalls);
+            Assert.Equal(1, escapedSites);
+            Assert.Equal(["Probe.cs:5  sb.Append(elem?.ConverterMethod);"], offenders);
+        }
+
+        /// <summary>
+        ///     Walks one file's text-writing calls, adding every raw symbol-derived name that reaches one to
+        ///     <paramref name="offenders" />, and answers how many writer calls and escaped names it saw.
+        /// </summary>
+        private static (int WriteCalls, int EscapedSites) ScanFile(string relative, string text, List<string> offenders)
+        {
+            var writeCalls = 0;
+            var escapedSites = 0;
+            var root = CSharpSyntaxTree.ParseText(text).GetRoot();
+
+            foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (call.Expression is not MemberAccessExpressionSyntax writer ||
+                    !TextWriters.Contains(writer.Name.Identifier.ValueText, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                writeCalls++;
+
+                foreach (var argument in call.ArgumentList.Arguments)
+                foreach (var access in argument.DescendantNodesAndSelf().Select(MemberName).OfType<SimpleNameSyntax>())
+                {
+                    var member = access.Identifier.ValueText;
+                    if (member.StartsWith("Emit", StringComparison.Ordinal))
+                    {
+                        escapedSites++;
+                        continue;
+                    }
+
+                    if (!RawNameFields.Contains(member, StringComparer.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    // Already inside Identifiers.Escape / EscapeTypeName / EscapePath / Unescaped — the
+                    // second sanctioned mechanism, for a name read straight off a symbol rather than
+                    // carried on a model that could own an Emit* sibling.
+                    if (IsWrappedInAnIdentifiersCall(access, call))
+                    {
+                        escapedSites++;
+                        continue;
+                    }
+
+                    var line = access.GetLocation().GetLineSpan().StartLinePosition.Line;
+                    var sourceLine = text.Split('\n')[line].Trim();
+
+                    if (Array.Exists(NotEmission, e => sourceLine.Contains(e.Line, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+
+                    offenders.Add($"{relative}:{line + 1}  {sourceLine}");
+                }
+            }
+
+            return (writeCalls, escapedSites);
+        }
+
+        /// <summary>
+        ///     The member name of a member access (<c>elem.X</c>) or of a member binding (the <c>.X</c> of
+        ///     <c>elem?.X</c>), or null for any other node.
+        /// </summary>
+        private static SimpleNameSyntax? MemberName(SyntaxNode node)
+        {
+            return node switch
+            {
+                MemberAccessExpressionSyntax access => access.Name,
+                MemberBindingExpressionSyntax binding => binding.Name,
+                _ => null
+            };
         }
 
         /// <summary>

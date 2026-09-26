@@ -100,8 +100,11 @@ namespace DwarfMapper.Generator.Diagnostics
 
         public static readonly DiagnosticDescriptor IgnoreExplicitConflict = new(
             "DWARF012",
-            "Conflicting [MapIgnore] and [MapProperty]",
-            "Destination member '{0}' is both ignored via [MapIgnore] and mapped via [MapProperty]; remove one",
+            "Conflicting [MapIgnore] and a mapping directive",
+            // {1} is the directive the consumer wrote — [MapProperty], [Reinterpret], [MapShare] or
+            // [MapDenseEnumKeys] — carried as MessageArg2 by each report site. The text once named [MapProperty]
+            // for all four, sending three of them looking for an attribute that is not on the method.
+            "Destination member '{0}' is both ignored via [MapIgnore] and mapped via {1}; remove one",
             Category,
             DiagnosticSeverity.Error,
             true,
@@ -2018,5 +2021,143 @@ namespace DwarfMapper.Generator.Diagnostics
             "correct; this is informational so the bypass is visible rather than silent. Remove [Reinterpret] from " +
             "the member to use the conversion or directive instead, or keep it and the block copy stands.",
             HelpBase + "dwarf106");
+
+        /// <summary>
+        ///     <c>OnCycle = SetNull</c> was requested for a recursion-capable pair whose destination is a
+        ///     non-nullable value type — the on-stack guard's back-edge cannot return a value it has no way
+        ///     to represent.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round-30 coverage sweep. <c>EmitSetNullGuardedBody</c>'s back-edge arm writes an
+        ///         unconditional <c>return null!;</c>, which does not compile against a struct return type
+        ///         (CS0037) — a defect no fixture had ever exercised in the years this feature has existed,
+        ///         because every prior SetNull test used a reference-type destination and the fuzzer's schema
+        ///         never generates a struct one under this option either.
+        ///     </para>
+        ///     <para>
+        ///         The fallback is the plain None+Throw depth-guarded body (no on-stack guard): safe for
+        ///         acyclic data, and a genuinely cyclic source now throws <c>DwarfMappingDepthException</c>
+        ///         once <c>MaxDepth</c> is exceeded rather than terminating early. The rejected alternative —
+        ///         emitting <c>default(T)</c> for the back-edge — was considered and refused: it would
+        ///         silently place a phantom zero-valued element into the result, which is exactly the
+        ///         mislinking this generator's whole design exists to prevent.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor OnCycleSetNullRequiresReferenceTarget = new(
+            "DWARF108",
+            "OnCycle = SetNull requires a reference-type destination",
+            "OnCycle = SetNull applies to '{0}', but its destination '{1}' is a value type and cannot hold " +
+            "null — the on-stack guard that breaks a cycle by returning null has no value to return. Falling " +
+            "back to the default depth-guarded body for this pair: an acyclic source still maps correctly, " +
+            "but a genuinely cyclic source now throws DwarfMappingDepthException instead of terminating " +
+            "early. Make '{1}' a reference type (a class or a record class) to use OnCycle = SetNull for it, " +
+            "or leave it a value type and accept the depth-limited fallback — say so with " +
+            "[SuppressMessage(\"DwarfMapper\", \"DWARF108:...\")] on the mapper class, or add DWARF108 to " +
+            "<NoWarn> in the project to accept it everywhere. A per-site #pragma does NOT suppress generator " +
+            "diagnostics.",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf108");
+
+        /// <summary>
+        ///     An <c>[AfterMap]</c> hook takes its target by <c>ref</c>, but the hook's declared
+        ///     parameter type is only a BASE of this pair's actual destination type, not the same type.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Found writing DWARF108's regression test: an <c>[AfterMap]</c> hook declared
+        ///         <c>ref AnimalDto</c> matches a <c>[MapDerivedType]</c> dispatch method's own return
+        ///         type exactly, so it applies there without issue — but the SAME hook also matches
+        ///         (by the ordinary <c>HasImplicitConversion</c> "applies" test every hook-collection
+        ///         site uses) the CONCRETE arm method <c>Map(Dog d) : DogDto</c>, whose local is
+        ///         actually typed <c>DogDto</c>. <c>ref DogDto</c> does not convert to <c>ref
+        ///         AnimalDto</c> — C# has no ref covariance — so the generator emitted
+        ///         <c>Finish(ref __dwarf_target)</c> against a <c>ref AnimalDto</c> parameter with a
+        ///         <c>DogDto</c> local: <c>CS0037</c>'s sibling, <c>CS1503</c>, in a <c>.g.cs</c> no
+        ///         consumer can edit.
+        ///     </para>
+        ///     <para>
+        ///         The "applies" check every <c>HookCall</c> construction site uses
+        ///         (<c>HasImplicitConversion(targetType, h.P0)</c>) is a BY-VALUE test: correct for a
+        ///         plain-value hook parameter, where widening the argument at the call site is exactly
+        ///         what C# does. It is the wrong test once <see cref="Model.HookCall.TargetByRef" /> is
+        ///         true, because passing BY REF requires an identity conversion, not an implicit one.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor AfterMapRefTargetTypeMismatch = new(
+            "DWARF109",
+            "[AfterMap] by-ref target type does not exactly match this pair's destination",
+            "[AfterMap] '{0}' takes its target by 'ref', but its declared parameter type does not exactly " +
+            "match this pair's destination type: {1}. A 'ref' parameter needs an identity match — C# has no " +
+            "ref covariance — so this hook is skipped for THIS pair; other pairs whose destination is exactly " +
+            "the hook's declared type are unaffected. Take the target by value instead — a reference-type " +
+            "destination never needs 'ref' — since no overload can fix this: a base-typed 'ref' hook still " +
+            "matches every derived pair by the same by-value rule and will report DWARF109 there too.",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf109");
+
+        /// <summary>
+        ///     DWARF110 (Info) — a <c>[DwarfMapper]</c> class that code at namespace scope cannot name, because it or
+        ///     a type it is nested in is <c>private</c>, <c>protected</c> or <c>private protected</c>, is left out
+        ///     of the generated extension methods, <c>AddDwarfMappers()</c> and the ambient registry.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Those three are top-level generated classes that hold a <c>new()</c> of every mapper, and they
+        ///         cannot see a type hidden inside another. Emitting the reference anyway was CS0122 in generated
+        ///         files and a broken build for the whole assembly (round 30). Leaving the mapper out is the fix;
+        ///         leaving it out SILENTLY is not — an author who nests a mapper may well expect
+        ///         <c>AddDwarfMappers()</c> to register it. Info, because the mapper itself is generated and works
+        ///         wherever it is visible: nothing is broken, one expectation is not met.
+        ///     </para>
+        ///     <para>Args: {0} = the mapper's name, {1} = which containing type hides it and how.</para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor MapperLeftOutOfAggregates = new(
+            "DWARF110",
+            "Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry",
+            "Mapper '{0}' cannot be named from outside the types it is nested in ({1}), so it is left out " +
+            "of the generated extension methods, AddDwarfMappers() and the ambient registry. The mapper itself is " +
+            "still generated and usable wherever it is visible. To include it, make it and every type it is nested " +
+            "in internal, protected internal or public.",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            helpLinkUri: HelpBase + "dwarf110");
+
+        /// <summary>
+        ///     <c>DWARF111</c> (Warning) — a <c>[ProvidesMap]</c> method is not registered, because its pair (or
+        ///     collection shape) is already registered by a generated map or by an earlier <c>[ProvidesMap]</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The attribute asks for exactly one thing, a registration, and gets none — silently, before this.
+        ///         The same-assembly counterpart of <c>DWARF063</c>, which counts distinct ASSEMBLIES. Warning like
+        ///         <c>DWARF063</c>: the author owns both sides, and the marked method does nothing.
+        ///     </para>
+        ///     <para>
+        ///         Deliberately NOT reported: two generated (or update-into) maps of one pair. A first cut did, and
+        ///         broke eight of this repo's own builds, every hit a mapper differing only in class-level policy
+        ///         (Preserve vs SetNull, a by-value enum variant, attribute vs config) — and the Gallery's
+        ///         same-mapper Replace/Patch variants besides. Whether that first-wins drop deserves an Info is an
+        ///         owner question, recorded with that measurement.
+        ///     </para>
+        ///     <para>
+        ///         Reported with <c>Location.None</c> from the aggregate stage (the model carries no location), so the
+        ///         message leads with its id and names the method, the pair and what already registers it. Args: {0} =
+        ///         the whole message after the id, built by <c>AggregateEmitter.EmitAmbientRegistration</c>.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ProvidesMapAlreadyProvided = new(
+            "DWARF111",
+            "[ProvidesMap] method is not registered because its pair is already provided",
+            "DWARF111: {0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf111");
     }
 }

@@ -95,20 +95,21 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // OriginalDefinition is MapConfig`2, so pt always carries exactly two type arguments.
                 if (!SymbolEqualityComparer.Default.Equals(pt.OriginalDefinition, mapConfigDef))
-                {
-                    continue;
-                }
-
-                if (pt.TypeArguments.Length != 2)
                 {
                     continue;
                 }
 
                 var src = pt.TypeArguments[0];
                 var tgt = pt.TypeArguments[1];
-                var syntaxRef = method.DeclaringSyntaxReferences.FirstOrDefault();
-                if (syntaxRef?.GetSyntax() is not MethodDeclarationSyntax decl)
+                // A constructor (or any member whose declaration is not a method declaration) has the same one-parameter
+                // shape and is not a convention method.
+                var decl = method.DeclaringSyntaxReferences
+                    .Select(r => r.GetSyntax())
+                    .OfType<MethodDeclarationSyntax>()
+                    .FirstOrDefault();
+                if (decl is null)
                 {
                     continue;
                 }

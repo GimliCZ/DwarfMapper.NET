@@ -36,23 +36,19 @@ namespace DwarfMapper.Generator.Pipeline
         private const string FlagsFqn = "System.FlagsAttribute";
 
         /// <summary>
-        ///     What a proven pair emits: the destination inline array's length and element type, and the enum the
-        ///     source dictionary is keyed by.
+        ///     What a proven pair emits: the destination inline array's length, and the enum the source dictionary is
+        ///     keyed by.
         /// </summary>
         internal readonly struct DensePlan
         {
-            public DensePlan(int length, ITypeSymbol elementType, ITypeSymbol keyType)
+            public DensePlan(int length, ITypeSymbol keyType)
             {
                 Length = length;
-                ElementType = elementType;
                 KeyType = keyType;
             }
 
             /// <summary>The <c>[InlineArray(n)]</c> count — the exclusive upper bound on every emitted index.</summary>
             public int Length { get; }
-
-            /// <summary>The inline array's element type, which the source's value type must match.</summary>
-            public ITypeSymbol ElementType { get; }
 
             /// <summary>The enum the source dictionary is keyed by.</summary>
             public ITypeSymbol KeyType { get; }
@@ -99,7 +95,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             foreach (var a in enumKey.GetAttributes())
-                if (a.AttributeClass?.ToDisplayString() == FlagsFqn)
+                if (KnownNames.IsAttributeClass(a.AttributeClass, FlagsFqn))
                 {
                     reason = $"is keyed by '{enumKey.ToDisplayString()}', which is a [Flags] enum. A flags enum's " +
                              "key space is the POWER SET of its members — 'A | B' is a legitimate key that no " +
@@ -169,7 +165,7 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            plan = new DensePlan(length, elementType, enumKey);
+            plan = new DensePlan(length, enumKey);
             reason = "";
             return true;
         }
@@ -298,7 +294,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>One declared enum member and the constant array slot it writes.</summary>
-        private readonly struct DeclaredSlot
+        internal readonly struct DeclaredSlot
         {
             public DeclaredSlot(string memberFq, int index)
             {
@@ -325,7 +321,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     text is a function of the symbol's contents rather than of member declaration order as Roslyn
         ///     happens to return it.
         /// </remarks>
-        private static IEnumerable<DeclaredSlot> DeclaredSlots(ITypeSymbol enumKey, int offset)
+        internal static IEnumerable<DeclaredSlot> DeclaredSlots(ITypeSymbol enumKey, int offset)
         {
             // The explicit comparer is what DeterminismSourceScanTests' D1 asks for, and it is honest
             // rather than a way past the scan: the key is a long, so ordering is numeric and could not
@@ -369,7 +365,7 @@ namespace DwarfMapper.Generator.Pipeline
                     named.TypeArguments[0] is INamedTypeSymbol elem &&
                     elem.Name == "KeyValuePair" &&
                     elem.TypeArguments.Length == 2 &&
-                    elem.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+                    KnownNames.IsNamespace(elem.ContainingNamespace, "System.Collections.Generic"))
                 {
                     key = elem.TypeArguments[0];
                     value = elem.TypeArguments[1];
@@ -400,7 +396,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             var declared = -1;
             foreach (var a in tgt.GetAttributes())
-                if (a.AttributeClass?.ToDisplayString() == InlineArrayFqn &&
+                if (KnownNames.IsAttributeClass(a.AttributeClass, InlineArrayFqn) &&
                     a.ConstructorArguments.Length == 1 &&
                     a.ConstructorArguments[0].Value is int n)
                 {
@@ -448,7 +444,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     either throw or wrap into a NEGATIVE number a range test could read as in-bounds. It is reported
         ///     as out of range instead, which is a refusal — the direction this feature must always fail in.
         /// </remarks>
-        private static bool TryValueOf(object? constant, out long value, out string printed)
+        internal static bool TryValueOf(object? constant, out long value, out string printed)
         {
             switch (constant)
             {

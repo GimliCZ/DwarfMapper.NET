@@ -331,6 +331,62 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
             Assert.Contains("\"Text\"", fixedText, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     The same, when the existing <c>Overrides</c> is written as an IMPLICIT ARRAY —
+        ///     <c>Overrides = new[] { "Alias" }</c>, the form older code and older language versions use. The fix must
+        ///     add to that initializer rather than append a second <c>Overrides</c> argument, which would not compile.
+        /// </summary>
+        [Fact]
+        public async Task Marking_a_second_override_extends_an_existing_implicit_array()
+        {
+            const string withOverrides = """
+                                         using DwarfMapper;
+                                         namespace Demo;
+                                         public class Command { public string Raw { get; set; } = ""; }
+                                         public class AliasCommand : Command { public string Alias { get; set; } = ""; }
+                                         public class CommandDto { public string Text { get; set; } = ""; }
+                                         public class AliasCommandDto : CommandDto { public string Alias { get; set; } = ""; }
+
+                                         [DwarfMapper]
+                                         [GenerateMap<Command, CommandDto>]
+                                         [GenerateMap<AliasCommand, AliasCommandDto>]
+                                         [RestatesBase<AliasCommand, AliasCommandDto>(Overrides = new[] { "Alias" })]
+                                         public partial class M
+                                         {
+                                         }
+                                         """;
+
+            const string at = "RestatesBase<AliasCommand, AliasCommandDto>(Overrides = new[] { \"Alias\" })";
+            var i = withOverrides.IndexOf(at, StringComparison.Ordinal);
+            Assert.True(i >= 0);
+
+            var tree = CSharpSyntaxTree.ParseText(withOverrides);
+            var diagnostic = Diagnostic.Create(DiagnosticDescriptors.RestatedBaseDrift,
+                Location.Create(tree, new TextSpan(i, at.Length)),
+                ImmutableDictionary.CreateRange([new KeyValuePair<string, string?>("Member", "Text")]),
+                "AliasCommand",
+                "AliasCommandDto");
+
+            using var workspace = new AdhocWorkspace();
+            var document = workspace.AddProject("FixAsm", LanguageNames.CSharp).AddDocument("M.cs", withOverrides);
+            var actions = new List<CodeAction>();
+            var context = new CodeFixContext(document, diagnostic, (a, _) => actions.Add(a), CancellationToken.None);
+            await new RestateBaseConfigurationCodeFixProvider().RegisterCodeFixesAsync(context)
+                .ConfigureAwait(true);
+
+            var action = Assert.Single(actions, a => a.EquivalenceKey == "DWARF085_Override");
+            var operations = await action.GetOperationsAsync(CancellationToken.None).ConfigureAwait(true);
+            var changed = operations.OfType<ApplyChangesOperation>().Single()
+                .ChangedSolution.GetDocument(document.Id)!;
+            var fixedText = (await changed.GetTextAsync().ConfigureAwait(true)).ToString();
+
+            // Still ONE Overrides argument, still an implicit array, now naming both members.
+            Assert.Equal(1, fixedText.Split("Overrides =").Length - 1);
+            Assert.Contains("new[]", fixedText, StringComparison.Ordinal);
+            Assert.Contains("\"Alias\"", fixedText, StringComparison.Ordinal);
+            Assert.Contains("\"Text\"", fixedText, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Fix_all_is_provided_by_the_batch_fixer()
         {
@@ -338,6 +394,18 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
             Assert.NotNull(provider);
             Assert.Same(WellKnownFixAllProviders.BatchFixer, provider);
+        }
+
+        /// <summary>
+        ///     The fix answers to <c>DWARF085</c> and to nothing else — the exact set: a second id would offer to rewrite a
+        ///     class's pair-scoped attributes on a diagnostic that never compared a restatement with its base.
+        /// </summary>
+        [Fact]
+        public void The_fix_is_registered_for_DWARF085_alone()
+        {
+            var ids = new RestateBaseConfigurationCodeFixProvider().FixableDiagnosticIds;
+
+            Assert.Equal("DWARF085", Assert.Single(ids));
         }
     }
 }

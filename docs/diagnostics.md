@@ -66,7 +66,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
-The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR12` family — see
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR14` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
 ### Adopting incrementally (the strictness valve)
@@ -115,6 +115,8 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR09` | **A type the `[MapTo]` registry constructs has no accessible parameterless constructor** — the registry builds every type it touches with `new T { … }`, and that is two kinds of type: the `[MapTo]` target itself, and every nested object — including a collection's **element** type. A positional record or any other constructor-only type in either position cannot be built that way, and used to reach the compiler as `CS1729` in a generated file when it was the nested one. **Fix:** add a public parameterless constructor, or map the pair with the `[DwarfMapper]` class model, which supports constructor mapping. The message names the type at fault and, for a nested one, the member it was reached through. |
 | `DWARFR12` | **`[MapIgnore]` argument is not read by the `[MapTo]` registry** (Warning) — the registry's member-form `[MapIgnore]` ignores the **annotated source member itself**, so an argument written on it (`[MapIgnore("x")]`) is never read: the member is still ignored, and `"x"` names nothing. It used to be silently discarded — while the identical text on a co-located `[GenerateMap]` host member is refused as `DWARF089`. **Fix:** write the bare `[MapIgnore]`, or map the pair with the `[DwarfMapper]` class model, where `[MapIgnore("Member")]` names a destination member to exclude. |
 | `DWARFR11` | **`[DwarfMapperConstructor]` is not read by the `[MapTo]` registry** (Warning) — the directive names the constructor DwarfMapper must build a target with, and this front door selects no constructor at all: every type it constructs — the `[MapTo]` target and every nested object (including a collection's element type) — is built with `new T { … }` and its members assigned afterwards. The mapping is still generated and still complete; what it is not is the construction the caller asked for, and the *same* annotation on the *same* type is honoured through a `[DwarfMapper]` class-model map over that pair. **Fix:** map the pair with the class model — a `partial Dst Map(Src s)` on a `[DwarfMapper]` class, which selects the annotated constructor — or remove the attribute if the object-initializer mapping is what you want. |
+| `DWARFR13` | **A `[MapTo]` source type cannot be generic** — the registry emits extension methods on the source type, and a generic source (`class Src<T>`, or any class nested in a generic type such as `Outer<T>.Src`) left `T` undeclared in them: the generated file failed with `CS0246` and no diagnostic said why. The `[DwarfMapper]` class model refuses the same shape as `DWARF054`. Nothing is generated for the type. **Fix:** put `[MapTo]` on a non-generic source type, or map the closed pair (`Src<int>` → `Dto`) with the `[DwarfMapper]` class model, for example `[GenerateMap<Src<int>, Dto>]`. |
+| `DWARFR14` | **A `[MapTo]` target type cannot be an open generic** — `[MapTo(typeof(Dto<>))]`, or `typeof(Outer<>.Dto)` for a class nested in an unbound generic type, names no type the registry can construct. It used to be refused as `DWARFR09` ("no public parameterless constructor"), which was the wrong reason: `Dto<T>` has a constructor, and adding another changes nothing. Nothing is generated for the source type. **Fix:** close the type arguments (`typeof(Dto<int>)`), or map the pair with the `[DwarfMapper]` class model. |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
 ---
@@ -175,9 +177,11 @@ one, or pin the intended one with `[MapProperty]`.
 A destination member has more than one `[MapProperty]`. **Fix:** keep a single mapping for it.
 
 ## dwarf012
-**Conflicting [MapIgnore] and [MapProperty]** · Error
+**Conflicting [MapIgnore] and a mapping directive** · Error
 
-A member is both ignored and mapped. **Fix:** remove one of the two attributes.
+A member is both ignored and mapped. The message names the directive that maps it — `[MapProperty]`,
+`[Reinterpret]`, `[MapShare]` or `[MapDenseEnumKeys]` — so you know which attribute conflicts with the
+`[MapIgnore]`. **Fix:** remove one of the two attributes.
 
 ## dwarf013
 **Ambiguous conversion method** · Error
@@ -298,8 +302,12 @@ generated, and the one `CS8795` that follows is signposted by [`DWARF096`](#dwar
 
 A member set through a constructor parameter or `init`-only property takes part in a reference cycle under
 `ReferenceHandling=Preserve`. A cycle can only be reconstructed when the looping member is assigned *after* the
-object is created (the mapper records each object before filling it, so cycles can point back to it). **Fix:**
-make the member a settable property, or break the cycle.
+object is created (the mapper records each object before filling it, so cycles can point back to it). The
+diagnostic names only the parameter or member that carries the cycle: one whose mapping leads back to the type being
+built, directly or through a collection or dictionary (`TreeDto(int v, List<TreeDto> kids)` names `kids`, never `v`),
+and, in a same-type map, one whose source member can hold a reference back to the source type. An `init`-only or
+`required` member counts exactly like a constructor parameter: C# fills it in the object initializer, before the
+mapper can record the new object. **Fix:** make the member a settable, non-`required` property, or break the cycle.
 
 ## dwarf031
 **Mapping nests too deeply** · Error
@@ -1757,6 +1765,10 @@ class's pairs legitimately matches nothing on the others and is not reported. A 
 async-stream **element** pair is [`DWARF090`](#dwarf090)'s report (the directive is dropped element-wise),
 not this one.
 
+A **pair-scoped** `[MapIgnore<TTarget>("Name")]` whose type argument matches a mapped pair but whose name
+matches no member of `TTarget` reports this id too — the message names the attribute as written and the type
+it was judged against. Its *type* argument matching no pair is [`DWARF056`](#dwarf056)'s report instead.
+
 **Fix:** fix the name (the message quotes it as written), or remove the attribute. To ignore a member of a
 specific pair from the class, prefer the pair-scoped `[MapIgnore<TTarget>("Name")]`, which
 [`DWARF056`](#dwarf056) guards against typos in the type argument the same way.
@@ -1861,6 +1873,7 @@ The message names the constructor and the **specific** filter that rejected it, 
 | Marked `[Obsolete]` | Drop the `[Obsolete]`, or annotate a supported constructor |
 | A copy constructor (its single parameter is the destination type) | Annotate a constructor whose parameters come from the source type |
 | A `ref` / `out` parameter | Take it by value or by `in` (CS1620 — `ref`/`out` cannot be written as a named argument), or annotate a different constructor |
+| A `static` constructor | Move the annotation to an instance constructor — a static constructor never constructs the destination |
 
 **An absent annotation is silent, and that is the rule rather than an oversight.** This reports a directive that
 was *written and discarded*; where nothing was written, nothing was discarded. It is raised once per mapping
@@ -2413,6 +2426,104 @@ why it gets its own id rather than a fifth noun on DWARF070's message.
 
 Only fires for a genuinely annotated destination. A destination written in a `#nullable disable` context is
 *oblivious*, the compiler raises nothing there, and neither does this.
+
+---
+
+## dwarf108
+**OnCycle = SetNull requires a reference-type destination** · Warning
+
+`OnCycle = SetNull` breaks a reference cycle by having the on-stack guard return `null` for a back-edge — and
+a **value-type** (`struct`) destination cannot hold `null`. This fires for a specific recursion-capable pair
+reached through the option (typically an element type behind a `List<T>`/array edge), not for the whole
+mapper: `Node` self-referencing through `List<Node> Children`, mapped onto `struct NodeDto { List<NodeDto>
+Children; }`, is exactly the shape.
+
+DwarfMapper **falls back** to the plain depth-guarded body for that pair — the same code an acyclic-only
+mapper gets under the default `OnCycle = Throw`. An acyclic source still maps correctly; a genuinely cyclic
+source now throws `DwarfMappingDepthException` once `MaxDepth` is exceeded, rather than terminating early by
+nulling the back-edge.
+
+**Fix:** make the destination a reference type (a `class` or a `record class`) to get `SetNull`'s early
+termination, or leave it a value type and accept the depth-limited fallback (raise `MaxDepth` if a deep but
+acyclic value-type graph needs to map without throwing). Say so with
+`[SuppressMessage("DwarfMapper", "DWARF108:…")]` on the mapper class for an in-file, next-to-the-code hatch, or
+add `DWARF108` to `<NoWarn>` in the project to accept it everywhere. **`#pragma warning disable DWARF108` does
+not work**, and neither does a pragma for any other `DWARF…` id — pragmas are applied by the compiler's
+diagnostic filtering, which source-generator-reported diagnostics do not pass through, a Roslyn limitation
+rather than something DwarfMapper can fix. `[SuppressMessage]` works anyway: the generator reads it directly
+off the class symbol at generation time and skips reporting, the same mechanism [`DWARF076`](#dwarf076) uses —
+it needs no compiler-level suppression pipeline, so the pragma limitation does not apply to it.
+
+**Not [`DWARF037`](#dwarf037), and not [`DWARF030`](#dwarf030).** DWARF037 is `OnCycle` losing to a *mapper
+option* (`ReferenceHandling = Preserve`); this is `OnCycle` losing to a *type shape* on one specific pair, and
+the rest of the mapper is unaffected. DWARF030 is the identical impossibility under `Preserve` mode instead —
+there, a constructor argument (not a value type) is what can't hold the back-edge — reported separately
+because the two modes have unrelated remedies: DWARF030 says make the member settable, this one says make the
+type a reference type.
+
+---
+
+## dwarf109
+**[AfterMap] by-ref target type does not exactly match this pair's destination** · Error
+
+An `[AfterMap]` hook that takes its target by `ref` — `[AfterMap] void Finish(ref Dto d)`, needed for a
+value-type destination — is matched to a pair by the same rule every hook uses: the hook applies if the
+pair's destination type **implicitly converts** to the hook's declared parameter type. That rule is correct
+for an ordinary by-value parameter, where the compiler upcasts the argument at the call site. It is the wrong
+rule once the parameter is `ref`, because C# has **no `ref` covariance**: `ref DerivedDto` does not bind to a
+`ref BaseDto` parameter even though `DerivedDto` converts to `BaseDto` by value.
+
+This surfaces through `[MapDerivedType]`: a hook declared against the dispatch method's own base return type
+(`[AfterMap] void Finish(ref AnimalDto d)`) matches the dispatch method itself perfectly — its local really is
+typed `AnimalDto` — but the SAME hook also matches every concrete arm's own declared pair by the ordinary
+by-value rule (`DogDto` converts to `AnimalDto`), and those pairs' locals are typed `DogDto`, not `AnimalDto`.
+
+DwarfMapper **skips the hook for the mismatched pair only** — the dispatch method (and any other pair whose
+destination is exactly the hook's declared type) still calls it normally; this is a fact about one pair, not
+the mapper.
+
+**Fix:** take the target by value — a reference-type destination never needs `ref` (`ref` exists for a
+value-type destination, whose changes would otherwise be lost, and `AnimalDto`/`DogDto` above are both
+classes). A separate `[AfterMap]` overload does **not** fix this: a hook declared against the base type still
+matches every derived pair by the same by-value rule, so adding `[AfterMap] void Finish2(ref DogDto d)`
+gives `Dog`'s pair a working hook but leaves the base-typed `Finish(ref AnimalDto d)` still mismatched
+against it — DWARF109 keeps firing. There is no `ref`-typed overload set that clears this for every pair at
+once; dropping `ref` is the only fix that generalizes.
+
+## dwarf110
+**Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry** · Info
+
+A `[DwarfMapper]` class nested inside another type is generated normally — its partial half is emitted inside
+the containing type and works wherever the class is visible. Three generated classes, however, live at
+namespace scope and hold a `new()` of every mapper: the `x.ToDto()` convenience extensions, `AddDwarfMappers()`
+and the ambient registration. When the mapper, or any type it is nested in, is `private`, `protected` or
+`private protected`, those classes cannot name it, so DwarfMapper leaves the mapper out of all three and reports
+this, naming the type that hides it.
+
+**Fix:** if you want the mapper registered and reachable through the extensions and `IDwarfMapper`, make it and
+every type it is nested in `internal`, `protected internal` or `public`. If keeping it private is the point,
+suppress this in `.editorconfig` (`dotnet_diagnostic.DWARF110.severity = none`).
+
+## dwarf111
+**[ProvidesMap] method is not registered because its pair is already provided** · Warning
+
+A `[ProvidesMap]` method asks for one thing — an ambient registration — and does not get it, because the same
+`(source, destination)` is already registered in this assembly:
+
+- **by a generated map** — including a collection shape a generated map registers, such as `IEnumerable<Src>` →
+  `List<Dst>`, and `[ProvidesMap]` on the generated method itself. The generated map is kept whichever mapper
+  comes first: `[ProvidesMap]` is for shapes the generator cannot express;
+- **by an earlier `[ProvidesMap]`** of the same pair — the first mapper in name order is kept.
+
+Reported without a location, so the message names the method, the pair and what already registers it. A mapper
+that cannot self-register ([`DWARF062`](#dwarf062)) is not a competing provider. The same event across
+assemblies is [`DWARF063`](#dwarf063).
+
+Two **generated** maps of one pair in one assembly are not reported: mappers that differ only in class-level
+policy (`Preserve` vs `SetNull`, say) are the ordinary reason for two, and the registry keeps the first in name
+order.
+
+**Fix:** remove the `[ProvidesMap]` attribute — or, for two `[ProvidesMap]` methods, all but one.
 
 ---
 

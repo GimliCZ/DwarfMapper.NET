@@ -17,7 +17,7 @@ DWARF008 | DwarfMapper | Error | MapProperty target not found
 DWARF009 | DwarfMapper | Error | MapProperty source not found
 DWARF010 | DwarfMapper | Error | Ambiguous source member
 DWARF011 | DwarfMapper | Error | Duplicate explicit mapping
-DWARF012 | DwarfMapper | Error | Conflicting [MapIgnore] and [MapProperty]
+DWARF012 | DwarfMapper | Error | Conflicting [MapIgnore] and a mapping directive
 DWARF013 | DwarfMapper | Error | Ambiguous conversion method
 DWARF014 | DwarfMapper | Error | Conversion method not found
 DWARF015 | DwarfMapper | Error | Incomplete enum mapping
@@ -112,6 +112,10 @@ DWARF104 | DwarfMapper | Error | Invalid [MapShare] target
 DWARF105 | DwarfMapper | Error | Invalid [MapDenseEnumKeys] target
 DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
 DWARF107 | DwarfMapper | Warning | A converter's nullable return is stored where null is forbidden
+DWARF108 | DwarfMapper | Warning | OnCycle = SetNull requires a reference-type destination
+DWARF109 | DwarfMapper | Error | [AfterMap] by-ref target type does not exactly match this pair's destination
+DWARF110 | DwarfMapper | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry
+DWARF111 | DwarfMapper | Warning | [ProvidesMap] method is not registered because its pair is already provided
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a
@@ -130,3 +134,5 @@ DWARFR09 | DwarfMapper.Registry | Error | A type the [MapTo] registry constructs
 DWARFR10 | DwarfMapper.Registry | Error | Member has a source match but auto-matching is disabled
 DWARFR11 | DwarfMapper.Registry | Warning | [DwarfMapperConstructor] is not read by the [MapTo] registry
 DWARFR12 | DwarfMapper.Registry | Warning | [MapIgnore] argument is not read by the [MapTo] registry
+DWARFR13 | DwarfMapper.Registry | Error | A [MapTo] source type cannot be generic
+DWARFR14 | DwarfMapper.Registry | Error | A [MapTo] target type cannot be an open generic

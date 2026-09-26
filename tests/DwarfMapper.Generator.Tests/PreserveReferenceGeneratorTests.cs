@@ -143,10 +143,10 @@ namespace DwarfMapper.Generator.Tests
                                public partial class M { public partial ImmutableNode Map(ImmutableNode n); }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.Contains(diags,
-                d =>
-                    d.Severity == DiagnosticSeverity.Error &&
-                    d.Id == "DWARF030");
+            // Exactly one, naming Next: V is an int and cannot carry the cycle.
+            var dwarf030 = Assert.Single(diags, d => d.Id == "DWARF030");
+            Assert.Equal(DiagnosticSeverity.Error, dwarf030.Severity);
+            Assert.StartsWith("Member 'Next' ", dwarf030.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
         // ── 8. Preserve mode: DwarfRefContext constructed with identity map flag ──────
@@ -297,6 +297,220 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        // ── 14b. Preserve + self-referential HashSet<T> element: register-before-fill ──
+        [Fact]
+        public void Preserve_self_referential_hashset_element_registers_before_fill()
+        {
+            // EmitHashSet's registerBeforeFill arm — TryGetReference/SetReference around the fill loop, so a
+            // shared or cyclic reference reached through a HashSet edge resolves to the same instance instead
+            // of being duplicated. Every existing Preserve+HashSet fixture used a non-recursive element
+            // (identity int, or an acyclic object), which takes EmitHashSet's OTHER two arms.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public HashSet<Node>? Children { get; set; } }
+                               public class NodeDto { public int V { get; set; } public HashSet<NodeDto>? Children { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("TryGetReference", generated, StringComparison.Ordinal);
+            Assert.Contains("SetReference", generated, StringComparison.Ordinal);
+        }
+
+        // ── 14c. Preserve + a recursion-capable element ALSO reached through an immutable
+        //         collection: the immutable helper threads (ctx, depth) even though it cannot
+        //         itself register-before-fill ────────────────────────────────────────────────
+        [Fact]
+        public void Preserve_immutable_array_of_a_recursion_capable_element_threads_ctx()
+        {
+            // EmitImmutableArray/EmitImmutableCollection's `elemNeedsCtx` arm — never independently true in
+            // any existing fixture, because every Preserve+ImmutableArray/ImmutableList/ImmutableHashSet test
+            // used a non-recursive element. Node becomes recursion-capable through the LIST edge (Kids);
+            // Extra (an ImmutableArray of the SAME element type) must thread ctx too, even though an
+            // immutable collection can never itself register-before-fill.
+            const string src = """
+                               using System.Collections.Generic;
+                               using System.Collections.Immutable;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node> Kids { get; set; } = new(); public ImmutableArray<Node> Extra { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } = new(); public ImmutableArray<NodeDto> Extra { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_immutable_list_of_a_recursion_capable_element_threads_ctx()
+        {
+            // The same arm in EmitImmutableCollection (ImmutableList/ImmutableHashSet share one emitter,
+            // separate from EmitImmutableArray above).
+            const string src = """
+                               using System.Collections.Generic;
+                               using System.Collections.Immutable;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node> Kids { get; set; } = new(); public ImmutableList<Node>? Extra { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } = new(); public ImmutableList<NodeDto>? Extra { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_queue_of_a_recursion_capable_element_threads_ctx()
+        {
+            // The same elemNeedsCtx arm in EmitStackQueue (Stack<T>/Queue<T> share one emitter): a
+            // Queue/Stack target can never register-before-fill either, but its element conversion still
+            // needs (ctx, depth) when that element is recursion-capable through some other edge.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public List<Node> Kids { get; set; } = new(); public Queue<Node>? Extra { get; set; } }
+                               public class NodeDto { public int V { get; set; } public List<NodeDto> Kids { get; set; } = new(); public Queue<NodeDto>? Extra { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial NodeDto Map(Node n); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void SetNull_span_map_of_a_recursion_capable_element_allocates_the_setNull_context()
+        {
+            // EmitElementContext's IsSetNullMode arm (`preserve: false, setNull: true`) — the element-wise
+            // (span/async-stream) twin of EmitMethod's own SetNull context creation. IntegrationTests exercises
+            // this shape at RUNTIME (ElementWiseReferenceHandlingRuntimeTests.EwrSetNullMapper), but that
+            // project's own build-time generator invocation is invisible to coverlet — only a generator-level
+            // test running the generator IN-PROCESS (GeneratorTestHarness) counts toward this assembly's
+            // measured coverage.
+            const string src = """
+                               using System;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                               public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                               [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+                               public partial class M { public partial void MapSpan(ReadOnlySpan<Node> src, Span<NodeDto> dst); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("preserve: false, setNull: true", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_async_stream_map_of_a_recursion_capable_element_allocates_shared_context()
+        {
+            // EmitAsyncStreamMapMethod's own ctx gate (`elem?.ConverterMethod is not null &&
+            // elem.ConverterNeedsDepthCtx`) — the async-stream twin of the span-map gate closed above. Same
+            // reason it was open: IntegrationTests exercises the runtime shape (EwrPreserveMapper.MapStream)
+            // but that project's build-time generator run is invisible to this assembly's measured coverage.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                               public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M { public partial IAsyncEnumerable<NodeDto> MapStream(IAsyncEnumerable<Node> src); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("new global::DwarfMapper.DwarfRefContext(", generated, StringComparison.Ordinal);
+            Assert.Contains("preserve: true", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Preserve_register_before_populate_after_hook_taking_the_target_by_ref()
+        {
+            // EmitPreserveRegisterBeforePopulate has its OWN after-hooks loop — textually similar to, but a
+            // separate emission site from, EmitMethod's and the MapConstructor factory path's — and its
+            // TargetByRef arm had never fired: every existing Preserve register-before-populate fixture used
+            // a hook taking the target by value, or no hook at all.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                               public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                               [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                               public partial class M
+                               {
+                                   public partial NodeDto Map(Node n);
+                                   [AfterMap] private static void Touch(ref NodeDto d) { }
+                               }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("Touch(ref __dwarf_t);", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Two_members_blitting_the_same_pair_reuse_one_synthesized_helper()
+        {
+            // SynthesizeBlit's memoization check (`if (synth.ContainsKey(name)) return name;`) had never
+            // fired: every blit fixture in the suite maps exactly one array member of its struct pair, so the
+            // helper is always created fresh, never reused. Two members sharing the same layout-identical
+            // struct-array pair must resolve to the SAME helper (one declaration, not two).
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct SrcV { public int X; public int Y; }
+                               public struct DstV { public int X; public int Y; }
+                               public class C { public SrcV[] A { get; set; } = System.Array.Empty<SrcV>(); public SrcV[] B { get; set; } = System.Array.Empty<SrcV>(); }
+                               public class D { public DstV[] A { get; set; } = System.Array.Empty<DstV>(); public DstV[] B { get; set; } = System.Array.Empty<DstV>(); }
+                               [DwarfMapper] public partial class M { public partial D Map(C c); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+            var helperCount = System.Text.RegularExpressions.Regex.Matches(generated, "private static global::Demo.DstV\\[\\] __DwarfBlit_").Count;
+            Assert.Equal(1, helperCount);
+        }
+
+        [Fact]
+        public void Two_members_blitting_the_same_list_shape_pair_reuse_one_synthesized_helper()
+        {
+            // SynthesizeBlitListShape's own memoization check, the List-storage twin of SynthesizeBlit's —
+            // every blit-list fixture in the suite maps exactly one List<T> member of its struct pair.
+            const string src = """
+                               using System.Collections.Generic;
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct SrcV { public int X; public int Y; }
+                               public struct DstV { public int X; public int Y; }
+                               public class C { public List<SrcV> A { get; set; } = new(); public List<SrcV> B { get; set; } = new(); }
+                               public class D { public List<DstV> A { get; set; } = new(); public List<DstV> B { get; set; } = new(); }
+                               [DwarfMapper] public partial class M { public partial D Map(C c); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            var helperCount = System.Text.RegularExpressions.Regex.Matches(generated, "__DwarfBlitL_").Count;
+            Assert.True(helperCount > 0, "expected a list-shape blit helper to be emitted:\n" + generated);
+            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
+                "private static global::System.Collections.Generic.List<global::Demo.DstV> __DwarfBlitL_").Count;
+            Assert.Equal(1, declCount);
+        }
+
+        [Fact]
+        public void Two_members_widening_the_same_pair_reuse_one_synthesized_helper()
+        {
+            // SynthesizeSimdWiden's memoization check — every SIMD-widen fixture in the suite maps exactly
+            // one array member of its primitive-widen pair.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class C { public int[] A { get; set; } = System.Array.Empty<int>(); public int[] B { get; set; } = System.Array.Empty<int>(); }
+                               public class D { public long[] A { get; set; } = System.Array.Empty<long>(); public long[] B { get; set; } = System.Array.Empty<long>(); }
+                               [DwarfMapper] public partial class M { public partial D Map(C c); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
+                "private static long\\[\\] __DwarfWiden_").Count;
+            Assert.Equal(1, declCount);
+        }
+
         // ── 15. None mode: acyclic mapper has NO DwarfRefContext param (zero overhead) ─
         [Fact]
         public void None_mode_acyclic_mapper_has_no_DwarfRefContext_param()
@@ -385,7 +599,8 @@ namespace DwarfMapper.Generator.Tests
                                public partial class M { public partial ImmutableNode Map(ImmutableNode n); }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.Contains(diags, d => d.Id == "DWARF030");
+            var dwarf030 = Assert.Single(diags, d => d.Id == "DWARF030");
+            Assert.StartsWith("Member 'Next' ", dwarf030.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
     }
 }

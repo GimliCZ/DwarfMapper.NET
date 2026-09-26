@@ -437,6 +437,56 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>Dispatches body emission to the per-shape emitter. Shared by Synthesize / SynthesizeInPlace.</summary>
+        /// <summary>
+        ///     What every collection emitter is given: the writer, the names it emits into, and the two policy
+        ///     bits every arm honours. Built once in <see cref="EmitBody" /> and passed down, so the arms below
+        ///     differ only in what is genuinely different about them.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         MEASURED, not guessed: all eight arms of EmitBody's switch passed the SAME eight leading
+        ///         arguments — <c>w, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
+        ///         threadCtx</c> — and the seven emitters sat at 9 to 11 parameters each, every one of them over
+        ///         the ceiling <c>ResolverParameterDisciplineTests</c> pins. They are all under it now.
+        ///     </para>
+        ///     <para>
+        ///         The hazard this removes is not hypothetical. <c>identity</c> and <c>nullAsNull</c> were two
+        ///         adjacent booleans repeated at eight call sites, and in three of the emitters a THIRD adjacent
+        ///         bool followed; transposing any pair compiles clean and no test distinguishes the orders. One
+        ///         construction site replaces eight chances to get the order wrong, and the members are named
+        ///         where they are read.
+        ///     </para>
+        ///     <para>
+        ///         <c>ThreadCtx</c> is one member although the emitters spelled it two ways — <c>threadCtx</c> in
+        ///         the array/list/set arms, <c>elemNeedsCtx</c> in the lazy and immutable ones. EmitBody passed
+        ///         the same value to both, so they were one notion wearing two names, which is how the two drift
+        ///         apart later.
+        ///     </para>
+        ///     <para>
+        ///         The method name member is <c>HelperName</c>, not <c>Name</c>, and the rename was forced by a
+        ///         scan rather than chosen: <c>EmittedIdentifiersAreEscapedTests</c> refuses a member called
+        ///         <c>Name</c> reaching a writer, because that is the shape of <c>ISymbol.Name</c> - lossy in
+        ///         exactly the way that breaks emission (a member called <c>@class</c> arrives as <c>class</c>).
+        ///         This value is a name the generator COMPOSED for a synthesized helper, so it is safe to write
+        ///         raw; calling it <c>Name</c> advertised the opposite. The accurate name is also the one that
+        ///         does not need an allowlist entry.
+        ///     </para>
+        ///     <para>
+        ///         Passed BY VALUE, not <c>in</c>, unlike <see cref="MapperOptions" />: the lazy arm captures
+        ///         these values inside a Select lambda, and an <c>in</c> parameter cannot be captured (CS1628).
+        ///         The compiler settled that, not a preference.
+        ///     </para>
+        /// </remarks>
+        private readonly record struct CollectionEmit(
+            CodeWriter Writer,
+            string HelperName,
+            string SrcParamType,
+            string Elem,
+            string Item,
+            bool Identity,
+            bool NullAsNull,
+            bool ThreadCtx);
+
         private static void EmitBody(
             CodeWriter w,
             string name,
@@ -453,20 +503,13 @@ namespace DwarfMapper.Generator.Pipeline
             bool tgtElemIsValueType,
             bool itemReadTwice)
         {
+            // Built ONCE, from the values every arm passed identically; the arms below now differ
+            // only in what is actually different about them.
+            var e = new CollectionEmit(w, name, srcParamType, elemFq, item, identity, shape.NullAsNull, threadCtx);
             switch (shape.Target)
             {
                 case TargetKind.Array:
-                    EmitArray(w,
-                        name,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        shape,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx,
-                        registerBeforeFill,
-                        itemReadTwice);
+                    EmitArray(e, shape, registerBeforeFill, itemReadTwice);
                     break;
 
                 case TargetKind.List:
@@ -474,104 +517,40 @@ namespace DwarfMapper.Generator.Pipeline
                 case TargetKind.IList:
                 case TargetKind.IReadOnlyList:
                 case TargetKind.IReadOnlyCollection:
-                    EmitList(w,
-                        name,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        shape,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx,
-                        registerBeforeFill,
-                        tgtElemIsValueType);
+                    EmitList(e, shape, registerBeforeFill, tgtElemIsValueType);
                     break;
 
                 case TargetKind.HashSet:
                 case TargetKind.ISet:
                 case TargetKind.IReadOnlySet:
-                    EmitHashSet(w,
-                        name,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        shape,
-                        srcType,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx,
-                        registerBeforeFill);
+                    EmitHashSet(e, shape, srcType, registerBeforeFill);
                     break;
 
                 case TargetKind.Queue:
                 case TargetKind.Stack:
-                    EmitStackQueue(w,
-                        name,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        shape.Target == TargetKind.Stack,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx,
-                        shape.SourceExpr);
+                    EmitStackQueue(e, shape.Target == TargetKind.Stack, shape.SourceExpr);
                     break;
 
                 case TargetKind.IEnumerable:
                     // IEnumerable is lazy — cannot register-before-fill (no concrete instance exists).
                     // Still thread ctx/depth to element if needed (via closure in the Select lambda).
-                    EmitLazyEnumerable(w,
-                        name,
-                        srcParamType,
-                        srcElem,
-                        elemFq,
-                        item,
-                        shape,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx);
+                    EmitLazyEnumerable(e, srcElem, shape);
                     break;
 
                 case TargetKind.ImmutableArray:
                     // ImmutableArray is a value-type struct — cannot be registered.
                     // Thread ctx/depth to element via the fill loop.
-                    EmitImmutableArray(w,
-                        name,
-                        srcFq,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx);
+                    EmitImmutableArray(e, srcFq);
                     break;
 
                 case TargetKind.ImmutableList:
                 case TargetKind.IImmutableList:
-                    EmitImmutableCollection(w,
-                        name,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx,
-                        "ImmutableList",
-                        shape.SourceExpr);
+                    EmitImmutableCollection(e, "ImmutableList", shape.SourceExpr);
                     break;
 
                 case TargetKind.ImmutableHashSet:
                 case TargetKind.IImmutableSet:
-                    EmitImmutableCollection(w,
-                        name,
-                        srcParamType,
-                        elemFq,
-                        item,
-                        identity,
-                        shape.NullAsNull,
-                        threadCtx,
-                        "ImmutableHashSet",
-                        shape.SourceExpr);
+                    EmitImmutableCollection(e, "ImmutableHashSet", shape.SourceExpr);
                     break;
             }
         }
@@ -594,47 +573,40 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         private static void EmitArray(
-            CodeWriter w,
-            string name,
-            string srcParamType,
-            string elem,
-            string item,
+            CollectionEmit e,
             Shape shape,
-            bool identity,
-            bool nullAsNull,
-            bool threadCtx,
             bool registerBeforeFill,
             bool itemReadTwice)
         {
-            var retType = nullAsNull ? elem + "[]?" : elem + "[]";
-            var paramType = srcParamType; // nullable-aware; null guard inside the body handles it
-            var emptyExpr = nullAsNull ? "null" : "global::System.Array.Empty<" + elem + ">()";
-            var ctxParams = threadCtx ? CtxDepthParams : "";
+            var retType = e.NullAsNull ? e.Elem + "[]?" : e.Elem + "[]";
+            var paramType = e.SrcParamType; // nullable-aware; null guard inside the body handles it
+            var emptyExpr = e.NullAsNull ? "null" : "global::System.Array.Empty<" + e.Elem + ">()";
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
-            using (w.Block("private " + retType + " " + name + "(" + paramType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retType + " " + e.HelperName + "(" + paramType + " src" + ctxParams + ")"))
             {
-                if (identity && shape.SourceIsArray && !registerBeforeFill && !threadCtx)
+                if (e.Identity && shape.SourceIsArray && !registerBeforeFill && !e.ThreadCtx)
                 {
-                    // identity array→array: Clone() fast-path (only safe without register-before-fill / ctx threading).
-                    w.Line("return src is null ? " + emptyExpr + " : (" + elem + "[])src.Clone();");
+                    // e.Identity array→array: Clone() fast-path (only safe without register-before-fill / ctx threading).
+                    e.Writer.Line("return src is null ? " + emptyExpr + " : (" + e.Elem + "[])src.Clone();");
                 }
                 else if (shape.Count != CountKind.None)
                 {
                     var countExpr = shape.Count == CountKind.Length ? "src.Length" : "src.Count";
-                    var arrayAlloc = ArrayNewExpr(elem, countExpr);
-                    w.Line("if (src is null) return " + emptyExpr + ";");
+                    var arrayAlloc = ArrayNewExpr(e.Elem, countExpr);
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
                     if (registerBeforeFill)
                     {
-                        w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + elem + "[])__cc;");
+                        e.Writer.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + e.Elem + "[])__cc;");
                     }
 
-                    w.Line("var __r = " + arrayAlloc + ";");
+                    e.Writer.Line("var __r = " + arrayAlloc + ";");
                     if (registerBeforeFill)
                     {
-                        w.Line("ctx.SetReference(src, __r);");
+                        e.Writer.Line("ctx.SetReference(src, __r);");
                     }
 
-                    if (shape.SourceIsArray && !registerBeforeFill && !threadCtx)
+                    if (shape.SourceIsArray && !registerBeforeFill && !e.ThreadCtx)
                     {
                         // Non-recursive array→array (None mode): index with a single length-bounded counter over
                         // src[__i] so the JIT proves BOTH the source read and the destination store in-bounds and
@@ -645,23 +617,23 @@ namespace DwarfMapper.Generator.Pipeline
                         //
                         // Round 29 T0.2d — the SAME rule the span map's inline element loop applies, asked through
                         // the same ElementExprReadsItemTwice (see MapEmitter.SpanMap.cs): when the shared element
-                        // expression reads its item TWICE, substituting the indexer into both reads is CS8629 -
+                        // expression reads its e.Item TWICE, substituting the indexer into both reads is CS8629 -
                         // `src[__i].HasValue ? conv(src[__i].Value) : null`, where the null-state of the first read
                         // does not flow to the second — inside a .g.cs, where no consumer pragma can reach it. Bind
                         // the element once instead; the loop shape the JIT proves in-bounds is untouched, so the
                         // elision this arm exists for survives. Single-read arms keep the substitution, byte for
                         // byte, so no already-measured array shape moves.
-                        w.Line(itemReadTwice
-                            ? "for (int __i = 0; __i < " + countExpr + "; __i++) { var __item = src[__i]; __r[__i] = " + item + "; }"
-                            : "for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = " + item.Replace("__item", "src[__i]") + "; }");
+                        e.Writer.Line(itemReadTwice
+                            ? "for (int __i = 0; __i < " + countExpr + "; __i++) { var __item = src[__i]; __r[__i] = " + e.Item + "; }"
+                            : "for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = " + e.Item.Replace("__item", "src[__i]") + "; }");
                     }
                     else
                     {
-                        w.Line("var __i = 0;");
-                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r[__i++] = " + item + "; }");
+                        e.Writer.Line("var __i = 0;");
+                        e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __r[__i++] = " + e.Item + "; }");
                     }
 
-                    w.Line("return __r;");
+                    e.Writer.Line("return __r;");
                 }
                 else
                 {
@@ -673,10 +645,10 @@ namespace DwarfMapper.Generator.Pipeline
                     // cannot be reconstructed correctly because the final array doesn't exist until after fill.
                     // That degenerate case is documented: register-before-fill is structurally impossible for
                     // unknown-count sources mapping to an array target. Two-parents-sharing is fully correct.
-                    w.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
                     if (registerBeforeFill)
                     {
-                        w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + elem + "[])__cc;");
+                        e.Writer.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + e.Elem + "[])__cc;");
                     }
 
                     // ISSUE-019: the count is not knowable from the STATIC type, but the runtime value very often
@@ -688,76 +660,69 @@ namespace DwarfMapper.Generator.Pipeline
                     // returns false otherwise), so the call always binds.
                     // Called in STATIC form: generated files carry no using directives, so the extension-method
                     // instance form would not compile.
-                    using (w.Block("if (global::System.Linq.Enumerable.TryGetNonEnumeratedCount(" + shape.SourceExpr + ", out var __n))"))
+                    using (e.Writer.Block("if (global::System.Linq.Enumerable.TryGetNonEnumeratedCount(" + shape.SourceExpr + ", out var __n))"))
                     {
-                        w.Line("var __ra = " + ArrayNewExpr(elem, "__n") + ";");
-                        w.Line("var __ai = 0;");
-                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __ra[__ai++] = " + item + "; }");
+                        e.Writer.Line("var __ra = " + ArrayNewExpr(e.Elem, "__n") + ";");
+                        e.Writer.Line("var __ai = 0;");
+                        e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __ra[__ai++] = " + e.Item + "; }");
                         // Registered AFTER the fill, exactly as the buffered path below does: the probe must not
                         // change Preserve semantics depending on the source's runtime type.
                         if (registerBeforeFill)
                         {
-                            w.Line("ctx.SetReference(src, __ra);");
+                            e.Writer.Line("ctx.SetReference(src, __ra);");
                         }
 
-                        w.Line("return __ra;");
+                        e.Writer.Line("return __ra;");
                     }
 
-                    w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __buf.Add(" + item + "); }");
-                    w.Line("var __r = __buf.ToArray();");
+                    e.Writer.Line("var __buf = new global::System.Collections.Generic.List<" + e.Elem + ">();");
+                    e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __buf.Add(" + e.Item + "); }");
+                    e.Writer.Line("var __r = __buf.ToArray();");
                     if (registerBeforeFill)
                     {
-                        w.Line("ctx.SetReference(src, __r);");
+                        e.Writer.Line("ctx.SetReference(src, __r);");
                     }
 
-                    w.Line("return __r;");
+                    e.Writer.Line("return __r;");
                 }
             }
         }
 
         private static void EmitList(
-            CodeWriter w,
-            string name,
-            string srcParamType,
-            string elem,
-            string item,
+            CollectionEmit e,
             Shape shape,
-            bool identity,
-            bool nullAsNull,
-            bool threadCtx,
             bool registerBeforeFill,
             bool tgtElemIsValueType)
         {
-            var listFq = "global::System.Collections.Generic.List<" + elem + ">";
-            var retFq = nullAsNull ? listFq + "?" : listFq;
-            var emptyExpr = nullAsNull ? "null" : "new " + listFq + "()";
-            var paramType = srcParamType; // nullable-aware; null guard inside handles it
-            var ctxParams = threadCtx ? CtxDepthParams : "";
+            var listFq = "global::System.Collections.Generic.List<" + e.Elem + ">";
+            var retFq = e.NullAsNull ? listFq + "?" : listFq;
+            var emptyExpr = e.NullAsNull ? "null" : "new " + listFq + "()";
+            var paramType = e.SrcParamType; // nullable-aware; null guard inside handles it
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
             // Return type is always List<T> (concrete); the field type is an interface but assignable.
-            using (w.Block("private " + retFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retFq + " " + e.HelperName + "(" + paramType + " src" + ctxParams + ")"))
             {
-                if (identity && !registerBeforeFill && !threadCtx)
+                if (e.Identity && !registerBeforeFill && !e.ThreadCtx)
                 {
-                    w.Line("return src is null ? " + emptyExpr + " : new " + listFq + "(" + shape.SourceExpr + ");");
+                    e.Writer.Line("return src is null ? " + emptyExpr + " : new " + listFq + "(" + shape.SourceExpr + ");");
                 }
                 else if (registerBeforeFill)
                 {
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + listFq + ")__cc;");
-                    w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
-                    w.Line("ctx.SetReference(src, __r);");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                    w.Line("return __r;");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + listFq + ")__cc;");
+                    e.Writer.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
+                    e.Writer.Line("ctx.SetReference(src, __r);");
+                    e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + e.Item + "); }");
+                    e.Writer.Line("return __r;");
                 }
                 else
                 {
-                    // Plain fill. When threadCtx is true (None/SetNull recursive element), `item` already
+                    // Plain fill. When e.ThreadCtx is true (None/SetNull recursive element), `e.Item` already
                     // contains the (..., ctx, depth + 1) arguments and ctx is in scope from the signature.
                     // Pre-size from the known source count (CapacityArg) so large lists don't repeatedly
                     // double+copy their backing array — same rationale as the array/dictionary paths.
-                    w.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
 
                     var capacity = CapacityArg(shape);
 
@@ -780,86 +745,72 @@ namespace DwarfMapper.Generator.Pipeline
                     // filling, so a cycle could observe the default-valued tail).
                     if (tgtElemIsValueType && capacity.Length > 0)
                     {
-                        w.Line("var __n = " + capacity + ";");
-                        w.Line("var __r = new " + listFq + "(__n);");
-                        w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
-                        w.Line("var __d = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r);");
-                        w.Line("var __i = 0;");
-                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __d[__i++] = " + item + "; }");
-                        w.Line("return __r;");
+                        e.Writer.Line("var __n = " + capacity + ";");
+                        e.Writer.Line("var __r = new " + listFq + "(__n);");
+                        e.Writer.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
+                        e.Writer.Line("var __d = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r);");
+                        e.Writer.Line("var __i = 0;");
+                        e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __d[__i++] = " + e.Item + "; }");
+                        e.Writer.Line("return __r;");
                     }
                     else
                     {
-                        w.Line("var __r = new " + listFq + "(" + capacity + ");");
-                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                        w.Line("return __r;");
+                        e.Writer.Line("var __r = new " + listFq + "(" + capacity + ");");
+                        e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + e.Item + "); }");
+                        e.Writer.Line("return __r;");
                     }
                 }
             }
         }
 
         private static void EmitHashSet(
-            CodeWriter w,
-            string name,
-            string srcParamType,
-            string elem,
-            string item,
+            CollectionEmit e,
             Shape shape,
             ITypeSymbol srcType,
-            bool identity,
-            bool nullAsNull,
-            bool threadCtx,
             bool registerBeforeFill)
         {
-            var setFq = "global::System.Collections.Generic.HashSet<" + elem + ">";
-            var retFq = nullAsNull ? setFq + "?" : setFq;
-            var emptyExpr = nullAsNull ? "null" : "new " + setFq + "()";
-            var paramType = srcParamType; // nullable-aware; null guard inside handles it
-            var ctxParams = threadCtx ? CtxDepthParams : "";
+            var setFq = "global::System.Collections.Generic.HashSet<" + e.Elem + ">";
+            var retFq = e.NullAsNull ? setFq + "?" : setFq;
+            var emptyExpr = e.NullAsNull ? "null" : "new " + setFq + "()";
+            var paramType = e.SrcParamType; // nullable-aware; null guard inside handles it
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
-            using (w.Block("private " + retFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retFq + " " + e.HelperName + "(" + paramType + " src" + ctxParams + ")"))
             {
-                if (identity && IsHashSetType(srcType) && !registerBeforeFill && !threadCtx)
+                if (e.Identity && IsHashSetType(srcType) && !registerBeforeFill && !e.ThreadCtx)
                 {
-                    w.Line("return src is null ? " + emptyExpr + " : new " + setFq + "(" + shape.SourceExpr + ");");
+                    e.Writer.Line("return src is null ? " + emptyExpr + " : new " + setFq + "(" + shape.SourceExpr + ");");
                 }
                 else if (registerBeforeFill)
                 {
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + setFq + ")__cc;");
-                    w.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
-                    w.Line("ctx.SetReference(src, __r);");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                    w.Line("return __r;");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + setFq + ")__cc;");
+                    e.Writer.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
+                    e.Writer.Line("ctx.SetReference(src, __r);");
+                    e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + e.Item + "); }");
+                    e.Writer.Line("return __r;");
                 }
                 else
                 {
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                    w.Line("return __r;");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
+                    e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + e.Item + "); }");
+                    e.Writer.Line("return __r;");
                 }
             }
         }
 
         private static void EmitLazyEnumerable(
-            CodeWriter w,
-            string name,
-            string srcParamType,
+            CollectionEmit e,
             ITypeSymbol srcElemType,
-            string elem,
-            string item,
-            Shape shape,
-            bool identity,
-            bool nullAsNull,
-            bool elemNeedsCtx)
+            Shape shape)
         {
             // Return type is IEnumerable<T>, MATERIALISED into a fresh List<T>.
             //
             // This used to hand back a lazy sequence — `src` itself when the element needed no transform, or an
             // un-materialised Enumerable.Select otherwise. Both leak the source across the map boundary and were
             // silent about it:
-            //   * identity  → the destination WAS the source collection. Mutating either corrupted the other, and
+            //   * e.Identity  → the destination WAS the source collection. Mutating either corrupted the other, and
             //                 a consumer can cast the IEnumerable<T> back to List<T> and write straight into the
             //                 source. (This is AutoMapper's v3.1 "assignable collection" bug.)
             //   * deferred  → the destination was a live query over the source: the element conversion re-ran on
@@ -869,63 +820,56 @@ namespace DwarfMapper.Generator.Pipeline
             //
             // Map() returns an independent value; that contract outranks saving one allocation. The zero-alloc
             // paths that are genuinely safe (blit/SIMD into a NEW buffer) are unaffected — they already copy.
-            var ieFq = "global::System.Collections.Generic.IEnumerable<" + elem + ">";
-            var retFq = nullAsNull ? ieFq + "?" : ieFq;
-            var emptyExpr = nullAsNull
+            var ieFq = "global::System.Collections.Generic.IEnumerable<" + e.Elem + ">";
+            var retFq = e.NullAsNull ? ieFq + "?" : ieFq;
+            var emptyExpr = e.NullAsNull
                 ? "null"
-                : "global::System.Array.Empty<" + elem + ">()";
-            var paramType = srcParamType; // nullable-aware; null guard inside handles it
-            var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
+                : "global::System.Array.Empty<" + e.Elem + ">()";
+            var paramType = e.SrcParamType; // nullable-aware; null guard inside handles it
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
-            // One materialising path for both the identity and the converting case: `item` already carries the
+            // One materialising path for both the e.Identity and the converting case: `e.Item` already carries the
             // element conversion (it is just `__item` when no transform is needed), so the fill is the same.
-            _ = identity;
+            _ = e.Identity;
             _ = srcElemType;
             var cap = CapacityArg(shape);
-            using (w.Block("private " + retFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retFq + " " + e.HelperName + "(" + paramType + " src" + ctxParams + ")"))
             {
-                w.Line("if (src is null) return " + emptyExpr + ";");
+                e.Writer.Line("if (src is null) return " + emptyExpr + ";");
                 if (cap.Length > 0)
                 {
                     // Size is known up front (src.Length / src.Count): allocate the exact array once and fill it by
                     // index. Cheapest possible independent copy — one allocation, no List growth/reallocation, no
                     // per-Add bounds+version checks — and the source is enumerated exactly ONCE.
-                    w.Line("var __a = new " + elem + "[" + cap + "];");
-                    w.Line("var __i = 0;");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __a[__i++] = " + item + "; }");
-                    w.Line("return __a;");
+                    e.Writer.Line("var __a = new " + e.Elem + "[" + cap + "];");
+                    e.Writer.Line("var __i = 0;");
+                    e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __a[__i++] = " + e.Item + "; }");
+                    e.Writer.Line("return __a;");
                 }
                 else
                 {
                     // Size unknown (a bare IEnumerable<T>): a single growing pass. Still exactly one enumeration —
                     // we must never count-then-enumerate, which would double-enumerate a side-effecting sequence.
-                    w.Line("var __r = new global::System.Collections.Generic.List<" + elem + ">();");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                    w.Line("return __r;");
+                    e.Writer.Line("var __r = new global::System.Collections.Generic.List<" + e.Elem + ">();");
+                    e.Writer.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + e.Item + "); }");
+                    e.Writer.Line("return __r;");
                 }
             }
         }
 
         private static void EmitImmutableArray(
-            CodeWriter w,
-            string name,
-            string srcFq,
-            string srcParamType,
-            string elem,
-            string item,
-            bool identity,
-            bool nullAsNull,
-            bool elemNeedsCtx)
+            CollectionEmit e,
+            string srcFq)
         {
-            var tgtFq = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
-            var paramType = srcParamType; // nullable-aware; null guard inside handles it
+            var tgtFq = "global::System.Collections.Immutable.ImmutableArray<" + e.Elem + ">";
+            var paramType = e.SrcParamType; // nullable-aware; null guard inside handles it
             // ImmutableArray<T> is a value type. Under AsNull, we emit ImmutableArray<T>? (nullable struct)
             // so a null source maps to null (HasValue=false) rather than default(ImmutableArray<T>)
             // which would yield HasValue=true with an empty value — a silent loss.
-            var emptyExpr = nullAsNull
+            var emptyExpr = e.NullAsNull
                 ? "null"
-                : "global::System.Collections.Immutable.ImmutableArray<" + elem + ">.Empty";
-            var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
+                : "global::System.Collections.Immutable.ImmutableArray<" + e.Elem + ">.Empty";
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
             // When the source type itself is ImmutableArray<T> (a value-type struct), the nullable
             // parameter is Nullable<ImmutableArray<T>> which does NOT implement IEnumerable<T>.
@@ -936,23 +880,23 @@ namespace DwarfMapper.Generator.Pipeline
             var srcExpr = srcIsImmutableArrayStruct ? "src.GetValueOrDefault()" : "src";
 
             // Under AsNull, return ImmutableArray<T>? so null source yields null (HasValue=false).
-            var retTypeFq = nullAsNull ? tgtFq + "?" : tgtFq;
+            var retTypeFq = e.NullAsNull ? tgtFq + "?" : tgtFq;
 
-            using (w.Block("private " + retTypeFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retTypeFq + " " + e.HelperName + "(" + paramType + " src" + ctxParams + ")"))
             {
-                if (identity && !elemNeedsCtx)
+                if (e.Identity && !e.ThreadCtx)
                 {
                     // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(" + srcExpr + ");");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(" + srcExpr + ");");
                 }
                 else
                 {
                     // Need element conversion or ctx threading: build a List first, then CreateRange.
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                    w.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + item + "); }");
-                    w.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(__buf);");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("var __buf = new global::System.Collections.Generic.List<" + e.Elem + ">();");
+                    e.Writer.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + e.Item + "); }");
+                    e.Writer.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(__buf);");
                 }
             }
         }
@@ -964,36 +908,29 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>"ImmutableHashSet"</c>); each uses the matching factory's <c>CreateRange</c> and <c>.Empty</c>.
         /// </summary>
         private static void EmitImmutableCollection(
-            CodeWriter w,
-            string name,
-            string srcParamType,
-            string elem,
-            string item,
-            bool identity,
-            bool nullAsNull,
-            bool elemNeedsCtx,
+            CollectionEmit e,
             string immutableType,
             string srcExpr)
         {
-            var tgtFq = "global::System.Collections.Immutable." + immutableType + "<" + elem + ">";
-            var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
-            var emptyExpr = nullAsNull ? "null" : tgtFq + ".Empty";
+            var tgtFq = "global::System.Collections.Immutable." + immutableType + "<" + e.Elem + ">";
+            var retFq = e.NullAsNull ? tgtFq + "?" : tgtFq;
+            var emptyExpr = e.NullAsNull ? "null" : tgtFq + ".Empty";
             var createRange = "global::System.Collections.Immutable." + immutableType + ".CreateRange";
-            var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
-            using (w.Block("private " + retFq + " " + name + "(" + srcParamType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retFq + " " + e.HelperName + "(" + e.SrcParamType + " src" + ctxParams + ")"))
             {
-                if (identity && !elemNeedsCtx)
+                if (e.Identity && !e.ThreadCtx)
                 {
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("return " + createRange + "(" + srcExpr + ");");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("return " + createRange + "(" + srcExpr + ");");
                 }
                 else
                 {
-                    w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                    w.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + item + "); }");
-                    w.Line("return " + createRange + "(__buf);");
+                    e.Writer.Line("if (src is null) return " + emptyExpr + ";");
+                    e.Writer.Line("var __buf = new global::System.Collections.Generic.List<" + e.Elem + ">();");
+                    e.Writer.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + e.Item + "); }");
+                    e.Writer.Line("return " + createRange + "(__buf);");
                 }
             }
         }
@@ -1010,43 +947,36 @@ namespace DwarfMapper.Generator.Pipeline
         ///     </para>
         /// </summary>
         private static void EmitStackQueue(
-            CodeWriter w,
-            string name,
-            string srcParamType,
-            string elem,
-            string item,
+            CollectionEmit e,
             bool isStack,
-            bool identity,
-            bool nullAsNull,
-            bool elemNeedsCtx,
             string srcExpr)
         {
             var concrete = isStack ? "Stack" : "Queue";
-            var tgtFq = "global::System.Collections.Generic." + concrete + "<" + elem + ">";
-            var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
-            var emptyExpr = nullAsNull ? "null" : "new " + tgtFq + "()";
-            var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
+            var tgtFq = "global::System.Collections.Generic." + concrete + "<" + e.Elem + ">";
+            var retFq = e.NullAsNull ? tgtFq + "?" : tgtFq;
+            var emptyExpr = e.NullAsNull ? "null" : "new " + tgtFq + "()";
+            var ctxParams = e.ThreadCtx ? CtxDepthParams : "";
 
-            using (w.Block("private " + retFq + " " + name + "(" + srcParamType + " src" + ctxParams + ")"))
+            using (e.Writer.Block("private " + retFq + " " + e.HelperName + "(" + e.SrcParamType + " src" + ctxParams + ")"))
             {
-                w.Line("if (src is null) return " + emptyExpr + ";");
+                e.Writer.Line("if (src is null) return " + emptyExpr + ";");
 
                 // Materialize the mapped elements in SOURCE enumeration order.
                 string seq;
-                if (identity && !elemNeedsCtx)
+                if (e.Identity && !e.ThreadCtx)
                 {
                     seq = srcExpr;
                 }
                 else
                 {
-                    w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                    w.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + item + "); }");
+                    e.Writer.Line("var __buf = new global::System.Collections.Generic.List<" + e.Elem + ">();");
+                    e.Writer.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + e.Item + "); }");
                     seq = "__buf";
                 }
 
                 // Stack pushes in order, so reverse the input to keep the result's top-first enumeration == source order.
                 var ctorArg = isStack ? "global::System.Linq.Enumerable.Reverse(" + seq + ")" : seq;
-                w.Line("return new " + tgtFq + "(" + ctorArg + ");");
+                e.Writer.Line("return new " + tgtFq + "(" + ctorArg + ");");
             }
         }
 
@@ -1462,7 +1392,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool IsHashSetType(ITypeSymbol t)
         {
-            return t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && n.Name == "HashSet" && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+            return t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && n.Name == "HashSet" && KnownNames.IsNamespace(n.ContainingNamespace, "System.Collections.Generic");
         }
 
         private static bool IsIEnumerableT(ITypeSymbol t, out ITypeSymbol? element)
@@ -1481,7 +1411,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // Fallback: namespace + name check (handles some multi-targeting scenarios)
-            if (n.Name == "IEnumerable" && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic" && n.TypeKind == TypeKind.Interface)
+            if (n.Name == "IEnumerable" && KnownNames.IsNamespace(n.ContainingNamespace, "System.Collections.Generic") && n.TypeKind == TypeKind.Interface)
             {
                 element = n.TypeArguments[0];
                 return true;
@@ -1496,7 +1426,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsExactNamedType(ITypeSymbol t, string name, string ns, int arity, out ITypeSymbol? firstArg)
         {
             firstArg = null;
-            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && n.ContainingNamespace?.ToDisplayString() == ns)
+            if (t is INamedTypeSymbol n && n.Name == name && n.TypeArguments.Length == arity && KnownNames.IsNamespace(n.ContainingNamespace, ns))
             {
                 firstArg = n.TypeArguments[0];
                 return true;
@@ -1640,6 +1570,19 @@ namespace DwarfMapper.Generator.Pipeline
         private static IEnumerable<ITypeSymbol> Self(ITypeSymbol t)
         {
             yield return t;
+
+            // A type parameter reports no AllInterfaces of its own, even when constrained to interfaces: its interfaces
+            // are those of its constraint types, which member lookup on a T-typed value does see. Walk each constraint
+            // the same way.
+            if (t is ITypeParameterSymbol typeParameter)
+            {
+                foreach (var constraint in typeParameter.ConstraintTypes)
+                    foreach (var candidate in Self(constraint))
+                        yield return candidate;
+
+                yield break;
+            }
+
             foreach (var i in t.AllInterfaces)
                 yield return i;
         }

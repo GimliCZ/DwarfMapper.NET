@@ -143,11 +143,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "| `A` | `int` | `1` |  |",
                 "| `B` | `int` | `1` | documented |",
                 "| `C` | `int` | `1` | ",
+                "| `D` | `int` |",
                 "| plain | not an option row | x |  |"
             ]);
 
             // A: blank prose, six cells. C: blank prose on the five-cell boundary — still an option row.
-            // The separator and the backtick-less row must stay outside the population entirely.
+            // D: TRUNCATED — it opens like an option row but carries no prose cell at all, so there is no
+            // blank cell to report and reading cells[4] would throw. The separator and the backtick-less row
+            // must stay outside the population entirely.
             Assert.Equal(["A", "C"], undocumented);
         }
 

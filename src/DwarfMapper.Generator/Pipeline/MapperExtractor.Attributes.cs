@@ -13,7 +13,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var members = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.ReinterpretFqn && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string m)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.ReinterpretFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string m)
                 {
                     members.Add(m);
                 }
@@ -36,7 +36,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var members = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapShareFqn &&
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapShareFqn) &&
                     attr.ConstructorArguments.Length == 1 &&
                     attr.ConstructorArguments[0].Value is string m)
                 {
@@ -69,24 +69,56 @@ namespace DwarfMapper.Generator.Pipeline
             var members = new List<(string, int)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapDenseEnumKeysFqn ||
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapDenseEnumKeysFqn) ||
                     attr.ConstructorArguments.Length != 1 ||
                     !(attr.ConstructorArguments[0].Value is string m))
                 {
                     continue;
                 }
 
-                var offset = 0;
-                foreach (var named in attr.NamedArguments)
-                    if (named.Key == "Offset" && named.Value.Value is int o)
-                    {
-                        offset = o;
-                    }
+                var offset = TryGetNamedArgument(attr.NamedArguments, "Offset", out var o) && o.Value is int i ? i : 0;
 
                 members.Add((m, offset));
             }
 
             return members;
+        }
+
+        /// <summary>
+        ///     The value an attribute application sets for the named argument <paramref name="key" />, when it sets
+        ///     one.
+        /// </summary>
+        /// <remarks>
+        ///     One lookup for the readers of attributes that have a single settable property. There, a loop testing
+        ///     each named argument's key has an outcome no real application can produce: a key that is not the one
+        ///     property. Asked here, both answers are reachable, and a duplicate key is already CS0643.
+        /// </remarks>
+        internal static bool TryGetNamedArgument(ImmutableArray<KeyValuePair<string, TypedConstant>> namedArguments, string key, out TypedConstant value)
+        {
+            foreach (var named in namedArguments)
+                if (string.Equals(named.Key, key, StringComparison.Ordinal))
+                {
+                    value = named.Value;
+                    return true;
+                }
+
+            value = default;
+            return false;
+        }
+
+        /// <summary>
+        ///     Whether <paramref name="sourceName" /> is a readable source member that can hold null: the members
+        ///     SkipNullSourceMembers defers behind a null test. False for a name the source does not declare.
+        /// </summary>
+        /// <remarks>
+        ///     Every member that reaches this question was resolved from a readable source member, so through a mapper
+        ///     the name is always found. "Not a member" is answered here once, where the unit test asks it, instead of
+        ///     as an inline lookup miss no input takes. A pure predicate, kept beside the other attribute and member
+        ///     readers rather than among the seam-stage passes whose golden-corpus reach extracted-reach measures.
+        /// </remarks>
+        internal static bool IsNullCapableSourceMember(IReadOnlyDictionary<string, ITypeSymbol> sourceTypeByName, string sourceName)
+        {
+            return sourceTypeByName.TryGetValue(sourceName, out var type) && (type.IsReferenceType || IsNullableValue(type, out _));
         }
 
         /// <summary>
@@ -111,7 +143,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var keys = new List<(string, string)>();
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapCollectionKeyFqn && attr.ConstructorArguments.Length >= 2 && attr.ConstructorArguments[0].Value is string collection && attr.ConstructorArguments[1].Value is string key)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapCollectionKeyFqn) && attr.ConstructorArguments.Length >= 2 && attr.ConstructorArguments[0].Value is string collection && attr.ConstructorArguments[1].Value is string key)
                 {
                     keys.Add((collection, key));
                 }
@@ -218,14 +250,19 @@ namespace DwarfMapper.Generator.Pipeline
         ///     into generic type arguments — so e.g. <c>ICollection&lt;Internal&gt;</c> / <c>Internal[]</c> are NOT
         ///     effectively public, while <c>ICollection&lt;PublicDto&gt;</c> is.
         /// </summary>
-        private static bool IsEffectivelyPublic(ITypeSymbol t)
+        internal static bool IsEffectivelyPublic(ITypeSymbol t)
         {
             if (t is IArrayTypeSymbol arr)
             {
                 return IsEffectivelyPublic(arr.ElementType);
             }
 
-            for (ISymbol? s = t; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
+            // The type itself, then each type that contains it. This walked ContainingSymbol up to the namespace,
+            // which also carried a null exit no symbol can take — every symbol in that chain is public inside a
+            // namespace or fails the accessibility check first — so one branch was untestable by construction.
+            // Containing TYPES are the only symbols whose accessibility decides the question, and the walk over them
+            // ends on null for every top-level type.
+            for (ITypeSymbol? s = t; s is not null; s = s.ContainingType)
                 if (s.DeclaredAccessibility != Accessibility.Public)
                 {
                     return false;
@@ -336,7 +373,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static IEnumerable<string> ObsoleteMemberNames(ITypeSymbol type)
         {
-            for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            foreach (var t in TypeAndBasesBelowObject(type))
                 foreach (var member in t.GetMembers())
                     if (member is IPropertySymbol or IFieldSymbol && IsObsolete(member))
                     {
@@ -344,10 +381,28 @@ namespace DwarfMapper.Generator.Pipeline
                     }
         }
 
+        /// <summary>
+        ///     A type and its base types, stopping before <c>object</c> — and ending early, on null, for a type with no
+        ///     base at all (an interface). The ONE statement of the member-declaring walk that IgnoreObsoleteMembers and
+        ///     the <c>required</c>-member check both need.
+        /// </summary>
+        /// <remarks>
+        ///     Shared because the required-member check only ever sees classes and structs, whose chain always reaches
+        ///     <c>object</c>: its own copy of this loop carried a null exit no input could take. The obsolete-member
+        ///     walk DOES see interfaces (an update-into destination), so one walk has both exits reached by real input.
+        ///     Internal because <see cref="ImmutabilityProof" />'s member walk is the same walk: it answers interfaces
+        ///     before walking, so its own copy had the same unreachable null exit.
+        /// </remarks>
+        internal static IEnumerable<ITypeSymbol> TypeAndBasesBelowObject(ITypeSymbol type)
+        {
+            for (ITypeSymbol? t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                yield return t;
+        }
+
         private static bool IsObsolete(ISymbol symbol)
         {
             foreach (var attribute in symbol.GetAttributes())
-                if (attribute.AttributeClass is { Name: "ObsoleteAttribute" } a && a.ContainingNamespace?.ToDisplayString() == "System")
+                if (attribute.AttributeClass is { Name: "ObsoleteAttribute" } a && KnownNames.IsNamespace(a.ContainingNamespace, "System"))
                 {
                     return true;
                 }
@@ -385,13 +440,13 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in symbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 0 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 0 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
 
                 // Parameterless usage means "enabled" — the constructor's default.
-                return attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not bool b || b;
+                return IsEnabledFlag(attr.ConstructorArguments);
             }
 
             return null;
@@ -411,12 +466,12 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
 
-                var enabled = attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not bool b || b;
+                var enabled = IsEnabledFlag(attr.ConstructorArguments);
 
                 // B24 / DWARF099. The set is built here, so this is where a CONTRADICTION over one pair is
                 // visible: the resolver below returns the first match by declaration order, which made SOURCE
@@ -444,6 +499,36 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return result;
+        }
+
+        /// <summary>
+        ///     The <c>enabled</c> flag of a <c>(bool enabled = true)</c> attribute: no argument means the constructor's
+        ///     default of <see langword="true" />, a bool means itself, and anything else falls back to the default.
+        /// </summary>
+        /// <remarks>
+        ///     Extracted from ReadMapNullSkip and ReadPairNullSkips and tested directly because the "not a bool" answer
+        ///     cannot come from source: a constructor argument that does not bind — wrong type or wrong arity — reaches
+        ///     the generator as NO argument, so a non-bool constant in a bool parameter never arrives.
+        /// </remarks>
+        internal static bool IsEnabledFlag(ImmutableArray<TypedConstant> constructorArguments)
+        {
+            return constructorArguments.Length == 0 || constructorArguments[0].Value is not bool b || b;
+        }
+
+        /// <summary>
+        ///     The value of an attribute's single bool constructor argument, when it has exactly one and it is a bool.
+        ///     Extracted from ReadMethodAutoNest for the reason <see cref="IsEnabledFlag" /> states.
+        /// </summary>
+        internal static bool TryReadSingleBool(ImmutableArray<TypedConstant> constructorArguments, out bool value)
+        {
+            if (constructorArguments.Length == 1 && constructorArguments[0].Value is bool b)
+            {
+                value = b;
+                return true;
+            }
+
+            value = false;
+            return false;
         }
 
         /// <summary>The C# literal for a bool, spelled rather than lower-cased at runtime (CA1308).</summary>
@@ -650,7 +735,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool ReadMethodAutoNest(IMethodSymbol method, bool classDefault)
         {
             foreach (var attr in method.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == KnownNames.AutoNestFqn && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is bool b)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.AutoNestFqn) && TryReadSingleBool(attr.ConstructorArguments, out var b))
                 {
                     return b;
                 }

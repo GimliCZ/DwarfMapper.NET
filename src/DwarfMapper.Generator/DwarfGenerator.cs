@@ -122,7 +122,7 @@ namespace DwarfMapper.Generator
                     foreach (var entry in entries)
                         spc.ReportDiagnostic(Diagnostic.Create(
                             DiagnosticDescriptors.HandWrittenManifestAttribute,
-                            entry.Location?.ToLocation() ?? Location.None,
+                            LocationInfo.ToLocationOrNone(entry.Location),
                             entry.AttributeName));
                 });
 
@@ -179,7 +179,10 @@ namespace DwarfMapper.Generator
             var ownProvided = mappers.Collect().Combine(coLocated.Collect())
                 .Select(static (pair, _) =>
                 {
-                    var usable = pair.Left.AddRange(pair.Right).Where(static m => !m.HasBlockingError).ToList();
+                    // Same filter as EmitAggregates' registration, so the manifest never claims a pair it did not register.
+                    var usable = pair.Left.AddRange(pair.Right)
+                        .Where(static m => !m.HasBlockingError && m.IsNameableFromAssembly)
+                        .ToList();
                     return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
                 });
 
@@ -471,6 +474,11 @@ namespace DwarfMapper.Generator
 
             ReportDivergentSynthesizedPairs(spc, usable);
 
+            // The three aggregates below are top-level classes that NAME each mapper. One nested as private,
+            // protected or private protected cannot be named from there (CS0122 in a generated file), so it is left
+            // out of all three — as the ambient registry already leaves out a map whose types it cannot name.
+            usable = usable.Where(static m => m.IsNameableFromAssembly).ToList();
+
             var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable, publicExtensions);
             if (facade is not null)
             {
@@ -495,7 +503,7 @@ namespace DwarfMapper.Generator
 
             // Ambient cross-assembly registry: a module initializer self-registers this assembly's stateless,
             // public-typed create-maps into DwarfMapperRegistry, plus the [assembly: DwarfProvidesMap] manifest.
-            var (ambient, unregisterable) = AggregateEmitter.EmitAmbientRegistration(usable);
+            var (ambient, unregisterable, shadowed) = AggregateEmitter.EmitAmbientRegistration(usable);
             if (ambient is not null)
             {
                 spc.AddNormalizedSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
@@ -506,6 +514,13 @@ namespace DwarfMapper.Generator
                     DiagnosticDescriptors.AmbientMapperNotRegistered,
                     Location.None,
                     mapper));
+
+            // DWARF111: a [ProvidesMap] whose pair this assembly already registers, so the method is not registered.
+            foreach (var message in shadowed)
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.ProvidesMapAlreadyProvided,
+                    Location.None,
+                    message));
         }
 
         private static void Execute(SourceProductionContext spc, MapperClassModel model)
@@ -533,9 +548,9 @@ namespace DwarfMapper.Generator
                 spc.ReportDiagnostic(diagnostic.ToDiagnostic());
             }
 
-            if (model.HasBlockingError)
+            if (CascadeSignpost(model) is { } signpost)
             {
-                ReportCascadeSignpost(spc, model);
+                spc.ReportDiagnostic(signpost);
                 return;
             }
 
@@ -563,7 +578,13 @@ namespace DwarfMapper.Generator
         ///         errors: DWARF096 has already named them, at the method they belong to.
         ///     </para>
         /// </remarks>
-        private static void ReportCascadeSignpost(SourceProductionContext spc, MapperClassModel model)
+        /// <returns>
+        ///     The DWARF078 signpost, or <see langword="null" /> when the class has no class-level error — which is the
+        ///     same predicate as <see cref="MapperClassModel.HasBlockingError" />, so the caller asks this once and lets
+        ///     the answer decide emission, rather than asking <c>HasBlockingError</c> first and then carrying an
+        ///     "errors, but none to name" exit no model can take.
+        /// </returns>
+        private static Diagnostic? CascadeSignpost(MapperClassModel model)
         {
             // Distinct ids, in report order, so the message names the causes rather than repeating one id per
             // affected member. Ordinal comparison: these are ASCII identifiers, never user text.
@@ -585,16 +606,13 @@ namespace DwarfMapper.Generator
                 }
             }
 
-            if (ids.Count == 0)
-            {
-                return;
-            }
-
-            spc.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.NoCodeGenerated,
-                first?.ToLocation() ?? Location.None,
-                model.ClassName,
-                string.Join(", ", ids)));
+            return ids.Count == 0
+                ? null
+                : Diagnostic.Create(
+                    DiagnosticDescriptors.NoCodeGenerated,
+                    LocationInfo.ToLocationOrNone(first),
+                    model.ClassName,
+                    string.Join(", ", ids));
         }
     }
 }

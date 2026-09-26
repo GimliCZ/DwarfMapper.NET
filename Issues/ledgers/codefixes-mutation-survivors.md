@@ -18,12 +18,20 @@ This file carries the case analysis behind every mutant that remains. The machin
 | batch 2 — restatement shapes | 177 | 141 | 27 | 9 | 79.66 % |
 | batch 3 — pair parsing, target selection | 177 | 150 | 20 | 7 | 84.75 % |
 | batch 4 — argument-less attributes | 177 | **154** | 19 | 4 | **87.01 %** |
+| round 30 — RestateBase refactor (caef954, 7f96555) | 179 | **156** | 19 | 4 | **87.15 %** |
+| round 30 — trivia fallback removed (48213d0) | 178 | **156** | 18 | 4 | **87.64 %** |
 
 Per provider at the end: `ResolveExplicitOnlyMember` 90.3 %, `RestateBaseConfiguration` 87.6 %,
 `AddMapIgnore` 87.5 %, `AddReverseMapInverse` 80.0 %.
 
-**`rawCeiling` is 87.57 %** — `(177 − 22) / 177`. The measured 87.01 % therefore sits exactly one
-probably-equivalent mutant below the highest score this leg can honestly reach.
+**`rawCeiling` is 87.70 %** — `(179 − 22) / 179`, re-measured 2026-09-15 after the round-30 RestateBase refactor
+(was `(177 − 22) / 177` = 87.57 % at round 27). The measured 87.15 % therefore sits exactly one probably-equivalent
+mutant below the highest score this leg can honestly reach, as the round-27 87.01 % did. That probably-equivalent
+row was retired the same round (see "The one that is not proven" below). **Re-measured after it, the leg reads
+87.64 % = `(178 − 22) / 178`**: every undetected mutant is proven, and the measured score is the ceiling. The refactor removed three
+killed mutants on the lines it changed and added the `PairScopedName` and `Retarget` ternaries; the one new survivor,
+`true ? generic : null`, is killed by
+`RestateBaseRestatementTests.A_three_type_argument_look_alike_naming_the_base_target_first_is_not_restated`.
 
 ## What the 61 kills were about
 
@@ -113,7 +121,7 @@ This one rests on **caller discipline, not on the language**, and it is recorded
 absolute. The day a caller reads those outs after a false return, the mutant becomes killable and this entry
 must be deleted rather than argued with.
 
-### The one that is not proven
+### The one that is not proven — retired 2026-09-15
 
 The trivia source for an added attribute list —
 `classDecl.AttributeLists.LastOrDefault() ?? (SyntaxNode)classDecl`. Dropping the left operand always takes
@@ -121,3 +129,13 @@ the class declaration's trivia, and the result is re-annotated with `Formatter.A
 afterwards, so the normalised output has been identical in every case tried. That is evidence, not a proof:
 a formatting-sensitive input may yet distinguish them. Filed **`probably-equivalent`** — explicitly
 low-priority, never "do not attempt".
+
+**Retired in round 30.** The coverage sweep never settled whether the mutant was equivalent. It showed instead that
+the `??` fallback cannot run:
+- an attribute list is added only for an attribute copied from `toCopy`;
+- `toCopy` is filled only from `classDecl.AttributeLists`.
+
+So the class always has a last attribute list at that point. The fallback was removed in favour of
+`AttributeLists[AttributeLists.Count - 1]`. The mutant can no longer be generated. Stryker produces none for the
+index arithmetic, and a hand-planted `Count + 1` throws in ten RestateBase tests. The leg's undetected mutants are
+now all proven.

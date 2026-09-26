@@ -144,6 +144,34 @@ namespace DwarfMapper.Generator.Model
     ///     <c>ImmutableArray&lt;T&gt;</c>, a struct that is never null and can still wrap a null array — <c>is
     ///     null</c> against it is CS0037, so the two forms are not interchangeable.
     /// </param>
+    /// <param name="ConverterParamTypeFqn">
+    ///     When <see cref="ConverterMethod" /> is a USER-declared method adopted by name (auto-matched, or
+    ///     <c>[MapProperty(Use = …)]</c>), the fully-qualified type of the parameter of the overload that was
+    ///     adopted; <see langword="null" /> for every synthesized converter and every edge resolved some other way.
+    ///     <para>
+    ///         Never emitted — it is the call-graph edge's disambiguator. An overloaded name is one method per
+    ///         parameter type, and the recursion-cycle phase used to fan a bare name out to every overload except
+    ///         the caller: a helper's edge to <c>Map(Child)</c> also reached <c>Map(Holder)</c> (a manufactured
+    ///         cycle, and a needless context allocation), while <c>Map(Node)</c>'s own <c>Next = Map(n.Next)</c> was
+    ///         the one edge excluded (a real cycle hidden, so no depth guard and a stack overflow on cyclic data).
+    ///     </para>
+    /// </param>
+    /// <param name="SourceReachesSourceType">
+    ///     Set on a constructor argument under <c>ReferenceHandling = Preserve</c> when the type of the source member
+    ///     it reads can lead back to the mapped source type — through a member, an element, a dictionary key or
+    ///     value, or a generic argument. Never emitted: it is DWARF030's oracle for a self-map, where an argument
+    ///     carries the SOURCE graph into the target by reference — bare (<c>next: n.Next</c>) or one level down, as
+    ///     the elements a same-type collection helper copies (<c>__r.Add(__item)</c>) — an edge the call graph cannot
+    ///     see because no method is called. A member typed <c>int</c> or an unrelated <c>Address</c> cannot carry the
+    ///     cycle, and used to be named all the same.
+    /// </param>
+    /// <param name="MustInitialize">
+    ///     The destination member is <c>init</c>-only or <c>required</c>, so C# accepts an assignment to it only inside
+    ///     the object initializer (CS8852 / CS9035 anywhere else). The main path writes every member there anyway;
+    ///     the register-before-populate path under <c>ReferenceHandling = Preserve</c> assigns members AFTER
+    ///     registering the instance, so it needs to know which ones cannot wait — and DWARF030 needs to know which
+    ///     members share a constructor argument's limitation: filled before the object exists.
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -163,7 +191,10 @@ namespace DwarfMapper.Generator.Model
         string? SourceAccessExpression = null,
         bool ConverterReturnIsNullableRef = false,
         string? ShareEmptyFallback = null,
-        bool ShareGuardsDefault = false) : IEquatable<MemberMap>
+        bool ShareGuardsDefault = false,
+        string? ConverterParamTypeFqn = null,
+        bool SourceReachesSourceType = false,
+        bool MustInitialize = false) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

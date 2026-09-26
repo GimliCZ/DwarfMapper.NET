@@ -1753,6 +1753,43 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(collection, stream);
         }
 
+        /// <summary>
+        ///     The EXPLICIT-map site. Every row of the theory above reaches its converter by auto-adoption; a
+        ///     <c>[MapProperty(Use = …)]</c> rename resolves through <c>ResolveExplicitMaps</c>, which computes
+        ///     <c>ConverterReturnIsNullableRef</c> at its own site, gated on "no NullSubstitute coalesced the null
+        ///     away". The mutation leg inverted that gate and nothing failed — the explicit path had no pin.
+        /// </summary>
+        private const string ExplicitUseNullableReturnConverter = """
+            #nullable enable
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public class ChildDto { public int V { get; set; } }
+                public class Src { public Child Inner { get; set; } = new(); }
+                public class Dst { public ChildDto Inner { get; set; } = new(); }
+                [DwarfMapper] public partial class M
+                {
+                    [MapProperty(nameof(Src.Inner), nameof(Dst.Inner), Use = nameof(ToDto))]
+                    public partial Dst Map(Src s);
+                    public ChildDto? ToDto(Child c) => c.V < 0 ? null : new ChildDto { V = c.V };
+                }
+            }
+            """;
+
+        [Fact]
+        public void An_explicit_Use_converter_with_a_nullable_return_is_forgiven_and_reported_too()
+        {
+            AssertWarningFree(ExplicitUseNullableReturnConverter, "[MapProperty(Use = ToDto)] with ChildDto? ToDto into ChildDto Inner");
+
+            var generated = GeneratorAssert.CompilesClean(ExplicitUseNullableReturnConverter, NullableContextOptions.Enable);
+            Assert.Contains("Inner = ToDto(s.Inner)!,", generated, StringComparison.Ordinal);
+
+            var message = Dwarf107Message(ExplicitUseNullableReturnConverter);
+            Assert.Contains("'ToDto' is declared to return a nullable reference", message, StringComparison.Ordinal);
+            Assert.Contains("destination member 'Inner'", message, StringComparison.Ordinal);
+        }
+
         // ── 7. the two sites the requirement-4 audit found, which neither named defect would have reached ──
         // The audit enumerated every emitted `!` in the generator (a literal in generator source is the only
         // way one can reach a .g.cs) and crossed that list with every IsSynthesized call, every ElementExpr /

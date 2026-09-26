@@ -139,13 +139,10 @@ namespace DwarfMapper.Generator.Pipeline
                    layout.Padding * 4 >= layout.Size;
         }
 
+        // No depth guard of its own: Measure enters at 0, and every deeper call arrives through MeasureMember, which
+        // refuses past MaxDepth before it gets here.
         private static Layout? MeasureStruct(ITypeSymbol type, int depth)
         {
-            if (depth > MaxDepth)
-            {
-                return null;
-            }
-
             if (type is not INamedTypeSymbol named || named.TypeKind != TypeKind.Struct)
             {
                 return null; // classes, enums, interfaces and delegates are not laid out by these rules
@@ -161,7 +158,7 @@ namespace DwarfMapper.Generator.Pipeline
             // this generator would have to read. BlittableProof.LayoutIdentical decides it the same way and
             // for the same reason. It is measured so an OUTER struct with an optional member still gets a
             // number; it never carries a remedy of its own, hence the empty order.
-            if (named is { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T })
+            if (named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
             {
                 if (MeasureMember(named.TypeArguments[0], depth + 1) is not { } inner)
                 {
@@ -301,17 +298,14 @@ namespace DwarfMapper.Generator.Pipeline
                 return null;
             }
 
-            var primitive = BlittableProof.PrimitiveSize(type);
+            // An enum is measured as its underlying primitive. Only an enum has an underlying type, and one whose
+            // underlying type has no fixed width falls through to the refusals below, as that type itself would.
+            var primitive = BlittableProof.PrimitiveSize(type is INamedTypeSymbol { EnumUnderlyingType: { } underlying }
+                ? underlying
+                : type);
             if (primitive > 0)
             {
                 return (primitive, primitive);
-            }
-
-            if (type.TypeKind == TypeKind.Enum &&
-                type is INamedTypeSymbol { EnumUnderlyingType: { } underlying })
-            {
-                var width = BlittableProof.PrimitiveSize(underlying);
-                return width > 0 ? (width, width) : null;
             }
 
             if (FixedLayoutBclSize(type) is { } bcl)

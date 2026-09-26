@@ -34,7 +34,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? classLocation,
             List<DiagnosticInfo> diagnostics)
         {
-            var declarations = ReadRestatesBase(classSymbol);
+            var declarations = ReadRestatesBase(classSymbol, classLocation);
             if (declarations.Count == 0)
             {
                 return;
@@ -58,10 +58,8 @@ namespace DwarfMapper.Generator.Pipeline
                 }
             }
 
-            foreach (var (derivedSrc, derivedTgt, overrides, loc) in declarations)
+            foreach (var (derivedSrc, derivedTgt, overrides, location) in declarations)
             {
-                var location = loc ?? classLocation;
-
                 var derived = declaredPairs.Find(p =>
                     SymbolEqualityComparer.Default.Equals(p.Src, derivedSrc) && SymbolEqualityComparer.Default.Equals(p.Tgt, derivedTgt));
 
@@ -258,7 +256,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     a name. Their mappings are supposed to differ, and reporting that would be the check crying wolf on
         ///     the one shape where divergence is the whole point.
         /// </remarks>
-        private static bool SameMemberType(ITypeSymbol baseTgt, ITypeSymbol derivedTgt, string memberName)
+        internal static bool SameMemberType(ITypeSymbol baseTgt, ITypeSymbol derivedTgt, string memberName)
         {
             var baseType = MemberTypeOf(baseTgt, memberName);
             var derivedType = MemberTypeOf(derivedTgt, memberName);
@@ -286,9 +284,9 @@ namespace DwarfMapper.Generator.Pipeline
             // The models carry display strings rather than symbols (they must stay value-equatable), so the check
             // has to get back to symbols to ask about base chains and member types. Matching against the pairs the
             // class itself declares keeps this to a small, local search rather than a compilation-wide lookup.
-            foreach (var attr in classSymbol.GetAttributes())
+            foreach (var (_, ac) in WithNonNullKey(classSymbol.GetAttributes(), a => a.AttributeClass))
             {
-                if (attr.AttributeClass is not { } ac || ac.TypeArguments.Length != 2)
+                if (ac.TypeArguments.Length != 2)
                 {
                     continue;
                 }
@@ -328,35 +326,29 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         private static List<(ITypeSymbol Src, ITypeSymbol Tgt, HashSet<string> Overrides, LocationInfo? Loc)>
-            ReadRestatesBase(INamedTypeSymbol classSymbol)
+            ReadRestatesBase(INamedTypeSymbol classSymbol, LocationInfo? classLocation)
         {
             var result = new List<(ITypeSymbol, ITypeSymbol, HashSet<string>, LocationInfo?)>();
 
             foreach (var attr in classSymbol.GetAttributes())
             {
-                if (attr.AttributeClass is not { Name: KnownNames.RestatesBase } ac || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (attr.AttributeClass is not { Name: KnownNames.RestatesBase } ac || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
 
                 var overrides = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var named in attr.NamedArguments)
+                if (TryGetNamedArgument(attr.NamedArguments, "Overrides", out var named))
                 {
-                    if (named.Key != "Overrides")
-                    {
-                        continue;
-                    }
-
-                    foreach (var v in named.Value.Values)
+                    foreach (var v in named.Values)
                         if (v.Value is string s && s.Length > 0)
                         {
                             overrides.Add(s);
                         }
                 }
 
-                var loc = attr.ApplicationSyntaxReference is { } r
-                    ? LocationInfo.From(Location.Create(r.SyntaxTree, r.Span))
-                    : null;
+                // Anchored at the attribute, or at the mapper class when the attribute has no position of its own.
+                var loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference, classLocation);
 
                 result.Add((ac.TypeArguments[0], ac.TypeArguments[1], overrides, loc));
             }

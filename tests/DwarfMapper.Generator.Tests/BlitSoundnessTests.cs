@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Reflection;
 using Microsoft.CodeAnalysis;
@@ -96,6 +96,95 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(new object[] { 1 }, mapped[0]);
             Assert.Equal(new object[] { 2 }, mapped[1]);
             Assert.Equal(new object[] { 3 }, mapped[2]);
+            AssertNoBlitHelper(asm);
+        }
+
+        /// <summary>
+        ///     <b>The positive control for the two layout-attribute tests below, and they are vacuous without it.</b>
+        ///     Each of those asserts <c>AssertNoBlitHelper</c> on a <c>{ byte B; int X; }</c> pair. That assertion
+        ///     guards nothing unless the SAME pair blits when the attribute is absent — a mixed-width struct might
+        ///     be refused for some entirely different reason, and the tests would pass while measuring it.
+        /// </summary>
+        [Fact]
+        public void The_byte_int_pair_used_by_the_layout_tests_does_blit_when_nothing_disturbs_it()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct SrcV { public byte B; public int X; }
+                             public struct DstV { public byte B; public int X; }
+                             public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                             public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                             [DwarfMapper] public partial class M { public partial B Map(A a); }
+                             """;
+            var (asm, errors) = GeneratorTestHarness.EmitAssembly(s);
+            Assert.True(asm is not null, string.Join(Environment.NewLine, errors));
+
+            Assert.True(BlitHelpers(asm).Count > 0,
+                "the undisturbed { byte B; int X; } pair did not blit, so the Pack and FieldOffset tests below " +
+                "are asserting the absence of something that was never going to be there.");
+        }
+
+        /// <summary>
+        ///     <c>Pack</c> is part of the layout, and it is the most dangerous of the layout attributes to miss:
+        ///     the two structs agree on field NAMES, field TYPES and field ORDER, so every check that reads the
+        ///     symbol model sees an identical pair. Only the byte offsets differ. A blit here does not shorten or
+        ///     lengthen the copy — it silently reads each member from the wrong offset, which is the corruption
+        ///     shape rather than the crash shape.
+        ///     <para>
+        ///         <c>{ byte B; int X; }</c> is 8 bytes under the default packing (3 bytes of padding after
+        ///         <c>B</c>) and 5 bytes under <c>Pack = 1</c>.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void Pack_is_part_of_the_layout()
+        {
+            const string s = """
+                             using System.Runtime.InteropServices;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct SrcV { public byte B; public int X; }
+                             [StructLayout(LayoutKind.Sequential, Pack = 1)]
+                             public struct DstV { public byte B; public int X; }
+                             public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                             public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                             [DwarfMapper] public partial class M { public partial B Map(A a); }
+                             """;
+            var (asm, errors) = GeneratorTestHarness.EmitAssembly(s);
+            Assert.True(asm is not null, string.Join(Environment.NewLine, errors));
+
+            // Values first, because "did not blit" is only half the claim: the scalar path must still be RIGHT.
+            var mapped = MapArray(asm, ("B", (byte)7), ("X", 1), ("B", (byte)9), ("X", 2));
+            Assert.Equal(new object[] { (byte)7, 1 }, mapped[0]);
+            Assert.Equal(new object[] { (byte)9, 2 }, mapped[1]);
+            AssertNoBlitHelper(asm);
+        }
+
+        /// <summary>
+        ///     <c>LayoutKind.Explicit</c> with OVERLAPPING fields — a union. Same names, same types, same
+        ///     declaration order as the sequential twin, and a total size that can match it exactly, so size
+        ///     arithmetic alone cannot separate them. Blitting a union would make <c>Y</c> read <c>X</c>'s bytes.
+        /// </summary>
+        [Fact]
+        public void Explicit_field_offsets_that_overlap_are_part_of_the_layout()
+        {
+            const string s = """
+                             using System.Runtime.InteropServices;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct SrcV { public int X; public int Y; }
+                             [StructLayout(LayoutKind.Explicit)]
+                             public struct DstV
+                             {
+                                 [FieldOffset(0)] public int X;
+                                 [FieldOffset(0)] public int Y;
+                             }
+                             public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                             public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                             [DwarfMapper] public partial class M { public partial B Map(A a); }
+                             """;
+            var (asm, errors) = GeneratorTestHarness.EmitAssembly(s);
+            Assert.True(asm is not null, string.Join(Environment.NewLine, errors));
             AssertNoBlitHelper(asm);
         }
 

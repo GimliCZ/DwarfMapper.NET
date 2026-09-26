@@ -11,6 +11,99 @@ namespace DwarfMapper.Generator.Tests
     {
         // ── string → T (IParsable) ────────────────────────────────────────────────
 
+        /// <summary>
+        ///     <c>DateTimeOffset</c> parses with <c>RoundtripKind</c>, like <c>DateTime</c>, so an "o"-format string's
+        ///     offset survives. It has its own arm because it is not a <c>SpecialType</c>, and no fixture parsed into it.
+        /// </summary>
+        [Fact]
+        public void String_to_DateTimeOffset_parses_with_RoundtripKind()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public string V { get; set; } = ""; }
+                               public class D { public System.DateTimeOffset V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial D Map(S s); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains(
+                "global::System.DateTimeOffset.Parse(v, global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind)",
+                generated,
+                StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A consumer type's <c>Parse(string, IFormatProvider)</c> declared without nullable annotations displays its
+        ///     provider parameter as <c>System.IFormatProvider</c>, not <c>System.IFormatProvider?</c>, and is still the
+        ///     culture-taking overload the conversion calls.
+        /// </summary>
+        [Fact]
+        public void String_to_a_parsable_type_declared_without_nullable_annotations_passes_the_culture()
+        {
+            const string src = """
+                               #nullable disable
+                               using DwarfMapper;
+                               namespace Demo;
+                               public readonly struct Money : System.IParsable<Money>
+                               {
+                                   public static Money Parse(string s, System.IFormatProvider provider) => default;
+                                   public static bool TryParse(string s, System.IFormatProvider provider, out Money result) { result = default; return true; }
+                               }
+                               public class S { public string V { get; set; } = ""; }
+                               public class D { public Money V { get; set; } }
+                               [DwarfMapper]
+                               public partial class M { public partial D Map(S s); }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("global::Demo.Money.Parse(v, global::System.Globalization.CultureInfo.InvariantCulture)",
+                generated,
+                StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A source that is neither <c>bool</c>/<c>char</c> nor <c>IFormattable</c> has no formatting conversion to
+        ///     <c>string</c>, so the parse/format arm declines and the member is refused rather than guessed at.
+        /// </summary>
+        [Fact]
+        public void A_struct_that_is_not_formattable_is_not_converted_to_string()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct Point { public int X; }
+                               public class S { public Point V { get; set; } }
+                               public class D { public string V { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M { public partial D Map(S s); }
+                               """;
+            GeneratorAssert.Reports(src, "DWARF005");
+        }
+
+        /// <summary>
+        ///     The round-trip "o" format is chosen for the REAL <c>System.DateTimeOffset</c> — a struct. A consumer class
+        ///     that happens to be named <c>System.DateTimeOffset</c> is an ordinary <c>IFormattable</c> and gets the
+        ///     invariant-culture <c>ToString</c> every other formattable type gets.
+        /// </summary>
+        [Fact]
+        public void A_class_named_System_DateTimeOffset_is_formatted_as_an_ordinary_formattable()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace System { public sealed class DateTimeOffset : IFormattable { public string ToString(string? f, IFormatProvider? p) => ""; } }
+                               namespace Demo
+                               {
+                                   public class S { public System.DateTimeOffset V { get; set; } = new(); }
+                                   public class D { public string V { get; set; } = ""; }
+                                   [DwarfMapper]
+                                   public partial class M { public partial D Map(S s); }
+                               }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("v.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("v.ToString(\"o\"", generated, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void String_to_int_auto_resolves_no_error()
         {

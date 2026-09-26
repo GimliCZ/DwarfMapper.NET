@@ -18,6 +18,59 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>The runtime attributes' namespace (also the <c>ContainingNamespace.Name</c> checked at match sites).</summary>
         public const string Ns = "DwarfMapper";
 
+        /// <summary>
+        ///     Whether an attribute's class is the one named by <paramref name="fqn" />. Takes the class as nullable
+        ///     because <c>AttributeData.AttributeClass</c> is declared that way; every attribute a compilation hands the
+        ///     generator does carry a class, so the null answer is reached only through this helper's own test — one
+        ///     place, instead of the same unreachable null-conditional at thirty match sites.
+        /// </summary>
+        public static bool IsAttributeClass(Microsoft.CodeAnalysis.INamedTypeSymbol? attributeClass, string fqn)
+        {
+            return attributeClass?.ToDisplayString() == fqn;
+        }
+
+        /// <summary>
+        ///     An attribute class's fully-qualified name, or <see langword="null" /> for no class — for the match sites
+        ///     that switch on or keep the name rather than compare it once (see <see cref="IsAttributeClass" />).
+        /// </summary>
+        public static string? AttributeClassName(Microsoft.CodeAnalysis.INamedTypeSymbol? attributeClass)
+        {
+            return attributeClass?.ToDisplayString();
+        }
+
+        /// <summary>
+        ///     Whether <paramref name="containingNamespace" /> is the namespace named <paramref name="name" />. Takes the
+        ///     namespace as nullable because <c>ISymbol.ContainingNamespace</c> is declared that way; every named type a
+        ///     compilation hands the generator does have one (the global namespace included), so the null answer is
+        ///     reached only through this helper's own test — one place, instead of the same unreachable
+        ///     null-conditional at every type- and attribute-match site.
+        /// </summary>
+        public static bool IsNamespace(Microsoft.CodeAnalysis.INamespaceSymbol? containingNamespace, string name)
+        {
+            return containingNamespace?.ToDisplayString() == name;
+        }
+
+        /// <summary>
+        ///     An attribute class's SIMPLE name, or <see langword="null" /> for no class — for the sites that match by
+        ///     simple name (<c>SuppressMessageAttribute</c>, <c>[MapConstructor]</c>) or keep it. Nullable for the reason
+        ///     <see cref="IsAttributeClass" /> states: the null answer is reached only through this helper's own test.
+        /// </summary>
+        public static string? AttributeSimpleName(Microsoft.CodeAnalysis.INamedTypeSymbol? attributeClass)
+        {
+            return attributeClass?.Name;
+        }
+
+        /// <summary>
+        ///     Whether an attribute class has the simple name <paramref name="simpleName" /> AND lives in the namespace
+        ///     <paramref name="ns" />. Deliberately not <see cref="IsAttributeClass" />: a name-plus-namespace test also
+        ///     accepts a nested or generic class the fully-qualified display string would not, and folding one into the
+        ///     other would change which attributes match.
+        /// </summary>
+        public static bool IsAttributeNamed(Microsoft.CodeAnalysis.INamedTypeSymbol? attributeClass, string simpleName, string ns)
+        {
+            return attributeClass is not null && attributeClass.Name == simpleName && IsNamespace(attributeClass.ContainingNamespace, ns);
+        }
+
         // ── Attribute simple names (matched via AttributeClass.Name) ──
         public const string DwarfMapper = "DwarfMapperAttribute";
         public const string DwarfMapperOptions = "DwarfMapperOptionsAttribute";

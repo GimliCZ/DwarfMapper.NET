@@ -92,7 +92,28 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.False(ExampleCatalogue.IsNotBuildOutput($"g{sep}bin{sep}Debug{sep}05_A.cs"));
             Assert.True(ExampleCatalogue.IsNotBuildOutput($"g{sep}05_A.cs"));
         }
-    }
+    
+        [Fact]
+        public void GalleryFiles_reads_only_cs_files_and_finds_some()
+        {
+            // The SEARCH PATTERN is a contract, and it is unreachable through ExampleCatalogue's public entry point: with
+            // today's corpus a wrong pattern gives the same answer, which is why a mutation leg carried the
+            // blanked pattern as a survivor. The trap is that blanking it does NOT match nothing -
+            // Directory.GetFiles reads an empty searchPattern as "every file" - so the failure is reading TOO
+            // MUCH. Under it, a `.csproj` or a `packages.lock.json` whose name started with an ordinal would be bound to an example as its source file.
+            //
+            // Both halves matter: the emptiness check refuses a pattern matching nothing, the extension check
+            // refuses one matching everything. The live Gallery tree carries non-.cs files outside bin/obj, so
+            // this can tell those apart.
+            var files = ExampleCatalogue.GalleryFiles();
+
+            Assert.NotEmpty(files);
+            Assert.All(files,
+                f => Assert.True(f.EndsWith(".cs", StringComparison.Ordinal),
+                    $"GalleryFiles() returned a non-source file: {f}. A blank search pattern reads every file, and " +
+                    "an example ordinal in a non-.cs file would then be read as though it were a sample."));
+        }
+}
 
 // The synthetic example types live at namespace level (CA1034 forbids visible nested types). They are
 // reflection fixtures for ExampleCatalogueTests only.

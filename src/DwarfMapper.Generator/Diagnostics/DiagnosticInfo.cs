@@ -34,12 +34,14 @@ namespace DwarfMapper.Generator.Diagnostics
         // first, silently, which is a defect shape this project has already been bitten by twice.
         string? SourcePair = null,
         // True when this error is confined to ONE mapping method and must NOT suppress the whole mapper class.
-        // Only DWARF028 (ProjectionNotTranslatable) sets it, and only after MapperExtractor has dropped the
+        // DWARF028 (ProjectionNotTranslatable) sets it, and only after MapperExtractor has dropped the
         // projection method it belongs to: the member cannot be translated, so that ONE method cannot be
         // generated, but the .Map methods sitting beside it on the same class are unaffected and used to be
-        // taken down with it (TASKS.md I14). Read by MapperClassModel.HasBlockingError, which decides emission;
-        // the diagnostic is still REPORTED either way. Part of value equality, like SeverityOverride, so the
-        // incremental cache tells a scoped refusal from a class-killing one.
+        // taken down with it (TASKS.md I14). DWARF109 (AfterMapRefTargetTypeMismatch) sets it too, for the
+        // same reason: the mismatch is a fact about one declared pair, not the whole class. Read by
+        // MapperClassModel.HasBlockingError, which decides emission; the diagnostic is still REPORTED either
+        // way. Part of value equality, like SeverityOverride, so the incremental cache tells a scoped refusal
+        // from a class-killing one.
         bool ScopedToMethod = false,
         // A second message argument, for the rare descriptor whose message must name TWO things: DWARF064 names
         // the target the [MapValue] is for AND the real spelling of the source member it shadows, because that

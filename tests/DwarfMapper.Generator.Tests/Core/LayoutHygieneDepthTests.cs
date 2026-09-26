@@ -9,11 +9,12 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace DwarfMapper.Generator.Tests.Core
 {
     /// <summary>
-    ///     <see cref="LayoutHygiene" />'s depth guard, in both methods that carry one.
+    ///     <see cref="LayoutHygiene" />'s depth guard.
     ///     <para>
-    ///         <c>MeasureStruct</c> and <c>MeasureMember</c> each open with <c>if (depth &gt; MaxDepth) return
-    ///         null</c>. Nothing in the corpus nests structs seventeen deep, so both guards were unreached — the
-    ///         round-29 Codecov patch report flagged them as four of <c>LayoutHygiene.cs</c>'s seven lines.
+    ///         <c>MeasureMember</c> opens with <c>if (depth &gt; MaxDepth) return null</c>. Nothing in the corpus
+    ///         nests structs seventeen deep, so the guard was unreached — the round-29 Codecov patch report flagged
+    ///         it. <c>MeasureStruct</c> carried a copy until round 30 removed it: it is entered at depth 0 by
+    ///         <c>Measure</c> and otherwise only through <c>MeasureMember</c>, which has already refused.
     ///     </para>
     ///     <para>
     ///         A depth guard is worth a test for the reason the repository applies to every recursion in the

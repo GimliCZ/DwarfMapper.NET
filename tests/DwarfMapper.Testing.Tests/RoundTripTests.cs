@@ -118,5 +118,27 @@ namespace DwarfMapper.Testing.Tests
                 ex.Message,
                 StringComparison.Ordinal);
         }
+        /// <summary>
+        ///     The verifier runs EXACTLY the number of iterations it was asked for. Nothing observed the count
+        ///     before, so an off-by-one in the loop bound - one extra pair verified, or one fewer - changed
+        ///     nothing any test could see, while changing how much evidence a passing RoundTrip.Verify carries.
+        /// </summary>
+        [Fact]
+        public void The_verifier_runs_exactly_the_iterations_it_was_asked_for()
+        {
+            var forwardCalls = 0;
+
+            RoundTrip.Verify<Sample, Sample>(s =>
+                {
+                    forwardCalls++;
+                    return s;
+                },
+                s => s,
+                seed: 5,
+                iterations: 3);
+
+            Assert.Equal(3, forwardCalls);
+        }
+
     }
 }

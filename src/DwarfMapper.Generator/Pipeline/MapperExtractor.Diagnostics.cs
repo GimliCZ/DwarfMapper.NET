@@ -23,7 +23,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static void ExpandWrapperMaps(
             INamedTypeSymbol classSymbol,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             List<DiagnosticInfo> diagnostics,
             LocationInfo? loc)
         {
@@ -40,7 +40,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var attr in classSymbol.GetAttributes())
             {
-                if (attr.AttributeClass is not { Name: KnownNames.GenerateWrapperMap } || attr.AttributeClass.ContainingNamespace?.ToDisplayString() != KnownNames.Ns || attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
+                if (attr.AttributeClass is not { Name: KnownNames.GenerateWrapperMap } || !KnownNames.IsNamespace(attr.AttributeClass.ContainingNamespace, KnownNames.Ns) || attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
                 {
                     continue;
                 }
@@ -138,7 +138,9 @@ namespace DwarfMapper.Generator.Pipeline
                 severity));
         }
 
-        private static string AccessibilityText(Accessibility a)
+        // Internal so its no-accessibility fallback is testable: every symbol it is asked about is a declared
+        // class or method, which never reports NotApplicable.
+        internal static string AccessibilityText(Accessibility a)
         {
             return a switch
             {
@@ -200,12 +202,12 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var fwd in partials)
             {
                 if (!fwd.GetAttributes()
-                        .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.RoundTripFqn))
+                        .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.RoundTripFqn)))
                 {
                     continue;
                 }
 
-                var loc = LocationInfo.From(fwd.Locations.FirstOrDefault() ?? Location.None);
+                var loc = LocationInfo.FromFirst(fwd.Locations);
                 var src = fwd.Parameters[0].Type;
                 var dto = fwd.ReturnType;
 

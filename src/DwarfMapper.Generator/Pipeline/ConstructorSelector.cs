@@ -203,7 +203,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsAnnotated(IMethodSymbol ctor)
         {
             return ctor.GetAttributes()
-                .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute);
+                .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, DwarfMapperConstructorAttribute));
         }
 
         /// <summary>
@@ -331,12 +331,15 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             bool allowNonPublic)
         {
-            if (!IsAccessible(ctor, compilation, allowNonPublic))
+            // Static first: a static constructor is declared private, so the accessibility test would otherwise answer
+            // for it, and UnusableReason (which follows this order) would tell the caller to widen an accessibility
+            // C# does not allow on a static constructor (CS0515).
+            if (ctor.IsStatic)
             {
                 return false;
             }
 
-            if (ctor.IsStatic)
+            if (!IsAccessible(ctor, compilation, allowNonPublic))
             {
                 return false;
             }
@@ -385,7 +388,10 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics)
         {
-            foreach (var ctor in target.InstanceConstructors)
+            // Static constructors too: Roslyn lists them apart from InstanceConstructors, and one can carry the
+            // attribute. Walking instance constructors alone dropped that directive without a word, the one case this
+            // report exists for.
+            foreach (var ctor in target.InstanceConstructors.Concat(target.StaticConstructors))
             {
                 if (ctor.IsImplicitlyDeclared || !IsAnnotated(ctor))
                 {
@@ -409,12 +415,17 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The FIRST test in <see cref="IsUsableCandidate" /> that this constructor fails, phrased with its
         ///     remedy. Order matches the predicate's, so the reason given is the reason applied.
         /// </summary>
-        private static string UnusableReason(
+        internal static string UnusableReason(
             IMethodSymbol ctor,
             INamedTypeSymbol target,
             Compilation compilation,
             bool allowNonPublic)
         {
+            if (ctor.IsStatic)
+            {
+                return "it is a STATIC constructor, which never constructs the destination — the directive " + "belongs on an instance constructor.";
+            }
+
             if (!IsAccessible(ctor, compilation, allowNonPublic))
             {
                 // Two different remedies, and giving the wrong one is worse than giving none. AllowNonPublic
@@ -427,11 +438,6 @@ namespace DwarfMapper.Generator.Pipeline
                        (assemblyCanReachIt
                            ? "and this mapper does not set [DwarfMapper(AllowNonPublic = true)]. Set that " + "option, or make the constructor public."
                            : "which no mapper option can reach from another type — [DwarfMapper(AllowNonPublic " + "= true)] widens the filter only as far as this assembly can see. Make the " + "constructor internal (with that option set) or public.");
-            }
-
-            if (ctor.IsStatic)
-            {
-                return "it is a STATIC constructor, which never constructs the destination — the directive " + "belongs on an instance constructor.";
             }
 
             if (ctor.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, target))
@@ -457,7 +463,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>The C# keyword for an accessibility, spelled out rather than lower-cased at runtime.</summary>
-        private static string AccessibilityWord(Accessibility a)
+        internal static string AccessibilityWord(Accessibility a)
         {
             return a switch
             {
@@ -480,7 +486,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         private static bool IsObsolete(IMethodSymbol method)
         {
-            return method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == ObsoleteAttribute);
+            return method.GetAttributes().Any(a => KnownNames.IsAttributeClass(a.AttributeClass, ObsoleteAttribute));
         }
     }
 }

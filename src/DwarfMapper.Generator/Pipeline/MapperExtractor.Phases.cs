@@ -25,6 +25,56 @@ namespace DwarfMapper.Generator.Pipeline
     /// </summary>
     internal static partial class MapperExtractor
     {
+        // ── DWARF109: an [AfterMap] hook's "applies to this pair?" test is a BY-VALUE implicit-
+        // conversion check (HasImplicitConversion(actualTarget, h.P0)) at every one of the five sites
+        // that construct a HookCall. That is correct for an ordinary by-value hook parameter — but
+        // once the hook takes its target BY REF, the true requirement is an IDENTITY match: C# has no
+        // ref covariance, so `ref DerivedDto` does not bind to a `ref BaseDto` parameter even though
+        // DerivedDto converts to BaseDto by value. Found via a [MapDerivedType] dispatch method whose
+        // [AfterMap] hook declared the dispatch's own BASE return type: the hook matched the dispatch
+        // method itself (its local IS exactly that base type) and ALSO matched a concrete arm's
+        // declared pair (whose local is the derived type) — compiling clean for the former and CS1503
+        // for the latter, in a .g.cs no consumer can edit. Shared here rather than reimplemented at
+        // each site, so a sixth site added later inherits the check instead of being free to omit it.
+        private static bool RefHookTargetMismatches(
+            ITypeSymbol actualTarget,
+            (string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind) h,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
+        {
+            if (h.TargetRefKind != RefKind.Ref)
+            {
+                return false;
+            }
+
+            // The TARGET parameter is h.P0 for the one-parameter form (Name(target)) and h.P1 for the
+            // two-parameter form (Name(source, target)) — h.P0 is the SOURCE parameter there. Getting
+            // this backwards (comparing against the source type) was the actual bug the first version
+            // of this check shipped with: BlitSoundnessTests' two-parameter ref hook, whose target type
+            // matched exactly, was rejected because its SOURCE type didn't.
+            var hookTargetType = h.P1 ?? h.P0;
+            if (SymbolEqualityComparer.Default.Equals(actualTarget, hookTargetType))
+            {
+                return false;
+            }
+
+            var hookName = h.Name;
+            var hookParamType = hookTargetType;
+
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.AfterMapRefTargetTypeMismatch,
+                location,
+                hookName,
+                // ScopedToMethod: true — this describes a fact about the ONE method/pair being built at
+                // this call site, not the mapper class. Skipping the incompatible hook still leaves that
+                // method (and the class) emittable; MapperClassModel.HasBlockingError would otherwise
+                // take the WHOLE class down for an unrelated hook mismatch on one pair (the exact I14
+                // shape ProjectionNotTranslatable's own ScopedToMethod comment warns against).
+                ScopedToMethod: true,
+                MessageArg2: $"the hook declares 'ref {hookParamType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}', this pair's destination is '{actualTarget.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}'"));
+            return true;
+        }
+
         // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
         // After recursion-capability is finalised, flag every recursion-capable method so the
         // emitter wraps its body in the on-stack guard (TryEnterNode/ExitNode) and the public
@@ -34,12 +84,19 @@ namespace DwarfMapper.Generator.Pipeline
         // This is the None-mode analogue of the Preserve post-pass above, but far simpler:
         // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
         // wrapper) — the guard only nulls a re-entrant back-edge.
-        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode)
+        private static void ApplySetNullPostPass(List<MapMethodModel> methods, bool isSetNullMode, List<DiagnosticInfo> diagnostics, LocationInfo? classLocation, INamedTypeSymbol classSymbol)
         {
             if (!isSetNullMode)
             {
                 return;
             }
+
+            // Same escape hatch DWARF076 already offers (MapperExtractor.Conversions.cs' HasSuppressMessage,
+            // reused rather than reimplemented): #pragma cannot reach a generator-reported diagnostic — Roslyn
+            // does not run these through pragma filtering — but [SuppressMessage] is an ordinary attribute the
+            // generator itself can read off the class symbol, independent of that limitation. Computed once,
+            // outside the loop: it does not vary per method.
+            var setNullSuppressed = HasSuppressMessage(classSymbol, "DWARF108");
 
             for (var i = 0; i < methods.Count; i++)
             {
@@ -59,6 +116,39 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // ── DWARF108: the on-stack guard's back-edge is `return null!;`
+                // (MapEmitter.EmitSetNullGuardedBody), which does not compile against a
+                // non-nullable value-type destination (CS0037). Span / async-stream / update-into /
+                // projection / derived-dispatch / top-level-collection models never reach that
+                // emitter at all — EmitMethod returns out of each of them before the SetNull
+                // section — so only the ordinary object-pair shape (a synthesized nested mapper or
+                // a public entry) is actually at risk here.
+                var reachesSetNullGuard = !m.IsSpanMap && !m.IsAsyncStreamMap && !m.IsUpdateInto &&
+                                          !m.IsProjection && !m.IsTopLevelCollectionConversion &&
+                                          m.DerivedTypeArms.Count == 0;
+                if (reachesSetNullGuard && !m.ReturnIsReferenceType)
+                {
+                    // classLocation (the [DwarfMapper] class identifier), not null: this diagnostic is about
+                    // the `OnCycle = SetNull` the user wrote, not about a synthesized helper method with no
+                    // source position of its own — the right target on its own merits, independent of
+                    // suppression mechanics.
+                    if (!setNullSuppressed)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.OnCycleSetNullRequiresReferenceTarget,
+                            classLocation,
+                            m.MethodName,
+                            MessageArg2: m.ReturnTypeFullName));
+                    }
+
+                    // Falls back to the plain depth-guarded body EVEN WHEN the diagnostic is suppressed: unlike
+                    // DWARF076 (where suppression accepts the shallow copy as-is), the fallback here is a
+                    // correctness requirement, not a stylistic one — the on-stack guard's `return null!;`
+                    // does not compile against this destination (CS0037) regardless of whether the user
+                    // wants to hear about it.
+                    continue; // leave IsSetNullMode=false.
+                }
+
                 methods[i] = m with
                 {
                     IsSetNullMode = true
@@ -66,145 +156,116 @@ namespace DwarfMapper.Generator.Pipeline
             }
         }
 
-        // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
-        // After recursion-capability is finalised, propagate IsPreserveMode and detect DWARF030.
-        private static void ReportCyclicConstructorParameters(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, List<DiagnosticInfo> diagnostics, bool isPreserveMode, Dictionary<string, int> declaredNameCount)
+        // ── DWARF030: a constructor argument that takes part in a reference cycle ──
+        // Register-before-populate needs the object to exist before the looping member is filled, and a constructor
+        // argument is filled before the object exists — so a cycle through one cannot be reconstructed. Only the
+        // argument that carries the cycle is named:
+        //   * an argument that CALLS a method is on the cycle when that call leads back to the method being
+        //     generated — including through a collection or dictionary helper, whose element call the registry
+        //     records because a helper is not a method model;
+        //   * in a self-map (S == T) an argument whose source member's type can lead back to the source type carries
+        //     the source graph into the target by reference — bare, or as the elements a same-type collection
+        //     helper copies without mapping them (MemberMap.SourceReachesSourceType).
+        // Runs on the call graph exactly as DetectDeclaredMethodsOnRecursionCycle left it: the later phases redirect
+        // converters to depth companions and dispatch wrappers, names that are not nodes of this graph.
+        //
+        // It used to name every converter-less argument of a recursion-capable self-map (`v` for
+        // `Node(int v, List<Node> kids)`, never `kids`), every argument of any other self-map (`V` beside `Next`),
+        // and nothing when the cycle ran through a collection between distinct types (`TreeDto(int v,
+        // List<TreeDto> kids)` compiled, and silently mapped a cyclic Tree into two TreeDto instances).
+        //
+        // Anchored where the reader can act: a declared method's own declaration, or — for a synthesized pair, which
+        // has none — the declared method that first reached it. It used to carry no location at all, so an ERROR
+        // landed on the project node and named a parameter of a type the reader then had to find by hand.
+        private static void ReportCyclicConstructorParameters(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, NestedMappingRegistry nestedRegistry, Dictionary<int, LocationInfo?> publicMethodLocs, List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels, List<DiagnosticInfo> diagnostics, bool isPreserveMode, Dictionary<string, int> declaredNameCount)
         {
-            if (isPreserveMode)
+            if (!isPreserveMode)
             {
-                for (var i = 0; i < methods.Count; i++)
+                return;
+            }
+
+            var nestedOrigins = new Dictionary<string, LocationInfo?>(StringComparer.Ordinal);
+            foreach (var (_, nestedName, origin) in pendingNestedModels)
+                nestedOrigins[nestedName] = origin;
+
+            // A copy: the helper edges answer this question only, and must not reach the recursion phases.
+            var graph = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (var node in allCallGraph)
+                graph[node.Key] = new HashSet<string>(node.Value, StringComparer.Ordinal);
+
+            foreach (var (helperName, elemMethod, elemParamTypeFqn) in nestedRegistry.HelperElementEdges)
+            {
+                if (!graph.TryGetValue(helperName, out var helperEdges))
                 {
-                    var m = methods[i];
-
-                    // ── DWARF030: detect cyclic constructor parameters ─────────────────
-                    // Two patterns:
-                    // (A) Explicit cycle: ctor arg has ConverterNeedsDepthCtx = true (calls recursion-capable
-                    //     synthesized method). The back-edge is injected via ctor → can't register-before-populate.
-                    // (B) Identity self-map cycle: S == T AND the method has ctor args that copy S? members
-                    //     by identity (no converter). Example: record ImmutableNode(int V, ImmutableNode? Next)
-                    //     mapped to itself — Next is copied as s.Next (source ref), not the target. The record
-                    //     is immutable so we can't fix it up. Even though this method may not be "recursion-capable"
-                    //     in the type-graph sense (S=T → implicit conversion → no synthesized method), the
-                    //     DATA can still be cyclic and the ctor arg prevents register-before-populate.
-                    if (m.ConstructorArguments.Count > 0)
-                    {
-                        // Pattern A: explicit recursion-capable ctor arg whose converter is on a
-                        // call-graph cycle that includes the OUTER method. Under Preserve, ALL auto-nested
-                        // object mappers are forced recursion-capable for uniform topology tracking, so
-                        // ConverterNeedsDepthCtx=true alone is not sufficient — we must also verify that
-                        // the converter can reach back to the outer method (i.e. they are on the SAME cycle),
-                        // otherwise an acyclic nested mapper (e.g. Address→AddressDto) would be falsely
-                        // flagged as cyclic just because it got forced-RC for Preserve threading.
-                        // A scalar ctor param (int, string, Guid, enum) will have ConverterMethod=null and
-                        // never reaches this branch.
-                        var outerMethodKey = DeclKey(m, declaredNameCount);
-                        foreach (var ctorArg in m.ConstructorArguments)
-                            if (ctorArg.ConverterMethod is not null &&
-                                ctorArg.ConverterNeedsDepthCtx &&
-                                CanReach(allCallGraph,
-                                    ctorArg.ConverterMethod,
-                                    outerMethodKey))
-                            {
-                                var loc = (LocationInfo?)null;
-                                diagnostics.Add(new DiagnosticInfo(
-                                    DiagnosticDescriptors.CyclicConstructorParameter,
-                                    loc,
-                                    ctorArg.TargetName));
-                            }
-
-                        // Pattern B: self-map (S == T) with any ctor arg that has no converter.
-                        // For S==T, direct-assignment ctor args copy the source reference into the target.
-                        // If the source has a cycle (n.Next = n), the target's ctor arg will hold the source,
-                        // not the target. Since the type is immutable (has ctor args), we can't fix this up.
-                        // We only flag ctor args that are of reference type (not int/string/etc.) — but since
-                        // we don't have type info here, we flag ALL ctor args when the method is S→S and
-                        // recursion-capable (proven by members using ConverterNeedsDepthCtx).
-                        // More precisely: the method must be recursion-capable to be affected.
-                        if (m.IsRecursionCapable && string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
-                        {
-                            foreach (var ctorArg in m.ConstructorArguments)
-                                // Only flag args with no converter (identity copy of potentially cyclic member).
-                                // Args with a converter have already been checked above (Pattern A) or map scalars.
-                                if (ctorArg.ConverterMethod is null && !ctorArg.ConverterNeedsDepthCtx)
-                                {
-                                    var loc = (LocationInfo?)null;
-                                    diagnostics.Add(new DiagnosticInfo(
-                                        DiagnosticDescriptors.CyclicConstructorParameter,
-                                        loc,
-                                        ctorArg.TargetName));
-                                }
-                        }
-                    }
-
-                    // Only recursion-capable methods need the Preserve-mode register-before-populate emission.
-                    if (!m.IsRecursionCapable)
-                    {
-                        continue;
-                    }
-
-                    // Mark the method as Preserve mode.
-                    methods[i] = m with
-                    {
-                        IsPreserveMode = true
-                    };
+                    helperEdges = new HashSet<string>(StringComparer.Ordinal);
+                    graph[helperName] = helperEdges;
                 }
 
-                // Pattern B (public declared methods): detect S==T self-recursive declared methods
-                // where the target has ctor args. These are recursion-capable by definition.
-                // The check above already covers it since we iterate ALL methods.
-                // Additional check: for public partial methods that are Preserve+RecursionCapable,
-                // check if the SOURCE type == RETURN type with ctor args — this covers user-declared
-                // self-mappers like Map(ImmutableNode n) → ImmutableNode.
-                // (This is already covered by the loop above for cases where m.IsRecursionCapable.)
-                //
-                // Special case: S==T where the method is NOT recursion-capable (pure identity copy,
-                // no auto-nest synthesized method). This happens for record self-maps. We detect it
-                // separately here because the isRecursionCapable gate filters them out above.
-                for (var i = 0; i < methods.Count; i++)
+                helperEdges.Add(ExactOverloadKey(elemMethod, elemParamTypeFqn, declaredNameCount) ?? elemMethod);
+            }
+
+            // One pair can be emitted twice — a declared method and the helper a nested edge reached — and would
+            // otherwise name the same parameter twice. Upper-cased because a `required` member bound by a constructor
+            // is ALSO an initializer member (CS9035), and arrives once as `kids` and once as `Kids`.
+            var reported = new HashSet<(string TargetType, string Parameter)>();
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                // An init-only or required member is filled before the object exists exactly as a constructor
+                // argument is: the object initializer runs before register-before-populate can record the instance.
+                var filledBeforeRegistration = m.ConstructorArguments.Concat(m.Members.Where(member => member.MustInitialize)).ToList();
+                if (filledBeforeRegistration.Count == 0)
                 {
-                    var m = methods[i];
-                    if (m.ConstructorArguments.Count == 0)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (m.IsRecursionCapable)
-                    {
-                        continue; // already handled above
-                    }
+                // Declared methods are indexed; every other model with constructor arguments is a drained pair.
+                if (!publicMethodLocs.TryGetValue(i, out var location))
+                {
+                    nestedOrigins.TryGetValue(m.MethodName, out location);
+                }
 
-                    if (!m.ParameterIsReferenceType)
+                var outerKey = DeclKey(m, declaredNameCount);
+                var isSelfMap = string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal);
+                foreach (var ctorArg in filledBeforeRegistration)
+                {
+                    var onCycle = (isSelfMap && ctorArg.SourceReachesSourceType) ||
+                                  (ctorArg.ConverterMethod is not null &&
+                                   CanReach(graph, ExactOverloadKey(ctorArg.ConverterMethod, ctorArg.ConverterParamTypeFqn, declaredNameCount) ?? ctorArg.ConverterMethod, outerKey));
+                    if (onCycle && reported.Add((m.ReturnTypeFullName, ctorArg.TargetName.ToUpperInvariant())))
                     {
-                        continue; // value types excluded
-                    }
-
-                    // S == T (same type) with ctor args and NOT recursion-capable:
-                    // This is the "record ImmutableNode(ImmutableNode? Next)" self-map case.
-                    // The method isn't recursion-capable because S=T uses implicit conversion (no auto-nest),
-                    // but at RUNTIME a cyclic ImmutableNode CAN exist. Under Preserve mode, this is
-                    // an unsupported pattern → DWARF030 for the cyclic ctor args.
-                    if (string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
-                        // Flag ctor args that have the same type as the source (cyclic back-edge).
-                        // Since we don't have type info here, flag ALL non-scalar ctor args where
-                        // the source name suggests it's a complex member (has a converter or is the cycle).
-                        // Conservative approach: flag all ctor args with no converter when S==T.
-                        // The scalar ctor args (int, string, etc.) would also get flagged — this is
-                        // acceptable since the real issue is that ANY ctor arg in this scenario is suspect
-                        // (the ENTIRE pattern of immutable S=T mapping with cycles is broken).
-                        // In practice, DWARF030 is a COMPILE ERROR — the user MUST fix the type design.
-                    {
-                        foreach (var ctorArg in m.ConstructorArguments)
-                        {
-                            var loc = (LocationInfo?)null;
-                            diagnostics.Add(new DiagnosticInfo(
-                                DiagnosticDescriptors.CyclicConstructorParameter,
-                                loc,
-                                ctorArg.TargetName));
-                        }
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.CyclicConstructorParameter,
+                            location,
+                            ctorArg.TargetName));
                     }
                 }
             }
+        }
 
+        // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
+        // After recursion-capability is finalised, mark the methods that need register-before-populate emission.
+        private static void MarkPreserveModeMethods(List<MapMethodModel> methods, bool isPreserveMode)
+        {
+            if (!isPreserveMode)
+            {
+                return;
+            }
+
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                // Only recursion-capable methods need the Preserve-mode register-before-populate emission.
+                if (!m.IsRecursionCapable)
+                {
+                    continue;
+                }
+
+                methods[i] = m with
+                {
+                    IsPreserveMode = true
+                };
+            }
         }
 
         // ── MF-B fix: Preserve + [MapDerivedType] dispatch wrapper synthesis ─────────
@@ -226,12 +287,17 @@ namespace DwarfMapper.Generator.Pipeline
         // PUBLIC dispatch by name to instead call the wrapper (with ConverterNeedsDepthCtx=true).
         // Any public method with patched members is promoted to IsRecursionCapable+IsPreserveMode
         // so the emitter creates a shared DwarfRefContext and threads it through all members.
-        private static void SynthesizePreserveDispatchWrappers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, Dictionary<string, SynthesizedMethod> synthesized, int maxDepth, bool isPreserveMode)
+        internal static void SynthesizePreserveDispatchWrappers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, Dictionary<string, SynthesizedMethod> synthesized, int maxDepth, bool isPreserveMode)
         {
             var dispatchWrapperByPublicName = new Dictionary<string, string>(
                 StringComparer.Ordinal);
             if (isPreserveMode)
             {
+                // Candidates first; a wrapper is synthesized only once a caller has actually been redirected to it.
+                // A dispatch method on a recursion cycle already had every caller redirected to its depth companion
+                // by MarkRecursionCapableCallers, so its wrapper would be a private method nothing calls — emitted
+                // into the consumer's .g.cs all the same.
+                var wrapperModels = new Dictionary<string, MapMethodModel>(StringComparer.Ordinal);
                 for (var i = 0; i < methods.Count; i++)
                 {
                     var m = methods[i];
@@ -254,19 +320,14 @@ namespace DwarfMapper.Generator.Pipeline
                         m.ParameterTypeFullName,
                         m.ReturnTypeFullName);
 
-                    if (!synthesized.ContainsKey(wrapperName))
-                    {
-                        var wrapperCode = BuildDispatchWrapperCode(m, wrapperName);
-                        synthesized[wrapperName] = new SynthesizedMethod(wrapperName, wrapperCode);
-                    }
-
+                    wrapperModels[wrapperName] = m;
                     dispatchWrapperByPublicName[m.MethodName] = wrapperName;
-                    recursionCapableNames.Add(wrapperName);
                 }
 
                 // Patch: redirect members/ctor-args that call a public dispatch method to the wrapper.
                 if (dispatchWrapperByPublicName.Count > 0)
                 {
+                    var usedWrappers = new HashSet<string>(StringComparer.Ordinal);
                     for (var i = 0; i < methods.Count; i++)
                     {
                         var m = methods[i];
@@ -292,6 +353,7 @@ namespace DwarfMapper.Generator.Pipeline
                                     ConverterMethod = wn,
                                     ConverterNeedsDepthCtx = true
                                 };
+                                usedWrappers.Add(wn);
                                 patched = true;
                             }
                         }
@@ -312,6 +374,7 @@ namespace DwarfMapper.Generator.Pipeline
                                     ConverterMethod = wn,
                                     ConverterNeedsDepthCtx = true
                                 };
+                                usedWrappers.Add(wn);
                                 patched = true;
                             }
                         }
@@ -333,6 +396,22 @@ namespace DwarfMapper.Generator.Pipeline
                             };
                         }
                     }
+
+                    // In candidate order, so the synthesized table fills in the order it always did.
+                    foreach (var candidate in wrapperModels)
+                    {
+                        if (!usedWrappers.Contains(candidate.Key))
+                        {
+                            continue;
+                        }
+
+                        if (!synthesized.ContainsKey(candidate.Key))
+                        {
+                            synthesized[candidate.Key] = new SynthesizedMethod(candidate.Key, BuildDispatchWrapperCode(candidate.Value, candidate.Key));
+                        }
+
+                        recursionCapableNames.Add(candidate.Key);
+                    }
                 }
             }
             // ── End MF-B fix ─────────────────────────────────────────────────────────
@@ -344,7 +423,7 @@ namespace DwarfMapper.Generator.Pipeline
         // (DerivedTypeArms.Count > 0) whose arm converters are recursion-capable (i.e.
         // need ctx+depth forwarding).  This includes Preserve-mode auto-nested pairs
         // (__DwarfMap_Obj_*) which were force-marked recursion-capable in the block above.
-        private static void ThreadContextThroughDispatchArms(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
+        internal static void ThreadContextThroughDispatchArms(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
         {
             for (var i = 0; i < methods.Count; i++)
             {
@@ -406,7 +485,7 @@ namespace DwarfMapper.Generator.Pipeline
         // public method before knowing the Holder mapper needs ctx. We now re-check all public
         // declared methods under Preserve mode and patch any member/ctor-arg that calls a
         // newly-added recursionCapableNames entry without ConverterNeedsDepthCtx=true.
-        private static void PropagateContextToPublicMethodsSecondPass(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth, bool isPreserveMode)
+        internal static void PropagateContextToPublicMethodsSecondPass(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth, bool isPreserveMode)
         {
             if (isPreserveMode)
             {
@@ -481,7 +560,7 @@ namespace DwarfMapper.Generator.Pipeline
         // The public Map(S s) method needs to create a DwarfRefContext if it calls (directly
         // or indirectly through its members) a recursion-capable synthesized pair.
         // We patch the already-added method models here.
-        private static void MarkRecursionCapableCallers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
+        internal static void MarkRecursionCapableCallers(List<MapMethodModel> methods, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
         {
             for (var i = 0; i < methods.Count; i++)
             {
@@ -801,7 +880,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     the dependency visible — which is the point of cutting the method up, and the reason the
         ///     compiler caught it rather than a reviewer having to.
         /// </remarks>
-        private static void DetectDeclaredMethodsOnRecursionCycle(List<MapMethodModel> methods, NestedMappingRegistry nestedRegistry, List<(MapMethodModel Model, string MethodName)> pendingNestedModels, HashSet<string> recursionCapableNames, Dictionary<string, int> declaredNameCount, HashSet<string> nodesOnCycle, HashSet<string> selfRecursivePublicMethods, Dictionary<string, HashSet<string>> allCallGraph)
+        private static void DetectDeclaredMethodsOnRecursionCycle(List<MapMethodModel> methods, NestedMappingRegistry nestedRegistry, List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels, HashSet<string> recursionCapableNames, Dictionary<string, int> declaredNameCount, HashSet<string> nodesOnCycle, HashSet<string> selfRecursivePublicMethods, Dictionary<string, HashSet<string>> allCallGraph)
         {
 
             // Count declared methods per name to detect overloads.
@@ -820,7 +899,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Helper: get the graph key for a declared method.
             // Seed with synthesized method edges (already computed in registry, but not accessible here).
             // Re-derive from pending models (synthesized methods always have unique names).
-            foreach (var (model, _) in pendingNestedModels)
+            foreach (var (model, _, _) in pendingNestedModels)
             {
                 var callerName = model.MethodName;
                 if (!allCallGraph.ContainsKey(callerName))
@@ -831,13 +910,13 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var mem in model.Members)
                     if (mem.ConverterMethod is not null)
                     {
-                        allCallGraph[callerName].Add(mem.ConverterMethod);
+                        allCallGraph[callerName].Add(ExactOverloadKey(mem.ConverterMethod, mem.ConverterParamTypeFqn, declaredNameCount) ?? mem.ConverterMethod);
                     }
 
                 foreach (var arg in model.ConstructorArguments)
                     if (arg.ConverterMethod is not null)
                     {
-                        allCallGraph[callerName].Add(arg.ConverterMethod);
+                        allCallGraph[callerName].Add(ExactOverloadKey(arg.ConverterMethod, arg.ConverterParamTypeFqn, declaredNameCount) ?? arg.ConverterMethod);
                     }
             }
 
@@ -851,9 +930,10 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var callerKey = DeclKey(m, declaredNameCount);
-                if (!allCallGraph.ContainsKey(callerKey))
+                if (!allCallGraph.TryGetValue(callerKey, out var callerEdges))
                 {
-                    allCallGraph[callerKey] = new HashSet<string>(StringComparer.Ordinal);
+                    callerEdges = new HashSet<string>(StringComparer.Ordinal);
+                    allCallGraph[callerKey] = callerEdges;
                 }
 
                 foreach (var mem in m.Members)
@@ -863,38 +943,10 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    // Resolve the edge target: if the converter is an overloaded declared method,
-                    // we can't determine which overload without param-type info, so we add edges
-                    // to ALL overloads of that name.  For non-overloaded names and synthesized
-                    // names, add the name directly.
-                    if (declaredNameCount.TryGetValue(mem.ConverterMethod, out var oc) && oc > 1)
-                        // Add edges to all OTHER overloads (not the method itself — a converter can't be
-                        // a self-call when it was auto-matched to a DIFFERENT overload by parameter type).
-                    {
-                        for (var j = 0; j < methods.Count; j++)
-                        {
-                            var ov = methods[j];
-                            if (!ov.IsPartial)
-                            {
-                                continue;
-                            }
-
-                            if (!string.Equals(ov.MethodName, mem.ConverterMethod, StringComparison.Ordinal))
-                            {
-                                continue;
-                            }
-
-                            var ovKey = DeclKey(ov, declaredNameCount);
-                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
-                            {
-                                allCallGraph[callerKey].Add(ovKey);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        allCallGraph[callerKey].Add(mem.ConverterMethod);
-                    }
+                    // The exact overload when resolution recorded it; otherwise the bare name, which
+                    // ExpandBareOverloadedEdges below turns into every overload but the caller when it is overloaded.
+                    // (It was fanned out here AND there, in three identical copies of that loop.)
+                    allCallGraph[callerKey].Add(ExactOverloadKey(mem.ConverterMethod, mem.ConverterParamTypeFqn, declaredNameCount) ?? mem.ConverterMethod);
                 }
 
                 foreach (var arg in m.ConstructorArguments)
@@ -904,32 +956,16 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    if (declaredNameCount.TryGetValue(arg.ConverterMethod, out var oc) && oc > 1)
-                    {
-                        for (var j = 0; j < methods.Count; j++)
-                        {
-                            var ov = methods[j];
-                            if (!ov.IsPartial)
-                            {
-                                continue;
-                            }
+                    allCallGraph[callerKey].Add(ExactOverloadKey(arg.ConverterMethod, arg.ConverterParamTypeFqn, declaredNameCount) ?? arg.ConverterMethod);
+                }
 
-                            if (!string.Equals(ov.MethodName, arg.ConverterMethod, StringComparison.Ordinal))
-                            {
-                                continue;
-                            }
-
-                            var ovKey = DeclKey(ov, declaredNameCount);
-                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
-                            {
-                                allCallGraph[callerKey].Add(ovKey);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        allCallGraph[callerKey].Add(arg.ConverterMethod);
-                    }
+                // A [MapDerivedType] dispatch method has no members: its calls are its ARMS. Without these edges
+                // `Map(Animal)` → arm → `Friend` → `Map(Animal)` was not a cycle in this graph at all, and was only
+                // ever flagged when an overloaded bare name happened to fan out into one elsewhere. A bare overloaded
+                // arm name is expanded below like any other edge.
+                foreach (var armEdge in m.DerivedTypeArms)
+                {
+                    allCallGraph[callerKey].Add(ExactOverloadKey(armEdge.ConverterMethod, armEdge.ConverterParamTypeFqn, declaredNameCount) ?? armEdge.ConverterMethod);
                 }
             }
 
@@ -957,45 +993,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
-            // For synthesized methods calling overloaded declared methods, also expand edges
-            // so DFS can follow the full cycle. If synth-method calls "Map" and there are
-            // two overloads "Map§A" and "Map§B", add edges to all variants except self.
-            foreach (var callerKey in allCallGraph.Keys.ToList())
-            {
-                var edges = allCallGraph[callerKey];
-                var expandedEdges = new List<string>();
-                foreach (var edge in edges)
-                    if (declaredNameCount.TryGetValue(edge, out var oc) && oc > 1)
-                        // Replace simple name with qualified variants (excluding self to avoid false cycles).
-                    {
-                        for (var j = 0; j < methods.Count; j++)
-                        {
-                            var ov = methods[j];
-                            if (!ov.IsPartial)
-                            {
-                                continue;
-                            }
-
-                            if (!string.Equals(ov.MethodName, edge, StringComparison.Ordinal))
-                            {
-                                continue;
-                            }
-
-                            var ovKey = DeclKey(ov, declaredNameCount);
-                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
-                            {
-                                expandedEdges.Add(ovKey);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        expandedEdges.Add(edge);
-                    }
-
-                edges.Clear();
-                foreach (var e in expandedEdges) edges.Add(e);
-            }
+            ExpandBareOverloadedEdges(allCallGraph, methods, declaredNameCount);
 
             // Find which declared methods are on a cycle (can reach themselves in allCallGraph).
             // ISSUE-023: one Tarjan SCC pass answers "is this node on a cycle?" for EVERY node, replacing a
@@ -1032,7 +1030,7 @@ namespace DwarfMapper.Generator.Pipeline
         // with different return (target) types overload only by return type — illegal C# (CS0111). The
         // consumer would otherwise see a raw CS0111 inside generated code. Detect, report loudly, and drop
         // the duplicate emission so DWARF060 is the single actionable diagnostic (the build still fails).
-        private static void ReportSameSourceSignatureCollisions(List<MapMethodModel> methods, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics)
+        internal static void ReportSameSourceSignatureCollisions(List<MapMethodModel> methods, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics)
         {
             {
                 var sigOwner = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -1203,6 +1201,67 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Replaces every edge that is a bare OVERLOADED declared name with edges to each of that name's overloads
+        ///     except the caller itself — the only safe reading of a name that does not say which overload it meant.
+        /// </summary>
+        /// <remarks>
+        ///     Internal and unit-tested because no generator input reaches it any more: since c56b9e5 and 3dfe5c5 every
+        ///     member, constructor-argument and arm edge that calls a user-declared method records the exact overload
+        ///     (<see cref="ExactOverloadKey" />), and the None-mode helper edges skip overloaded element methods. It
+        ///     stays as the fallback for a future edge that does not, rather than being argued away — the overloaded
+        ///     fan-out is how 7635d71 and the unflatten-leaf hole both hid. Excluding the caller is also what hid
+        ///     them: a bare self-call is never a cycle here.
+        /// </remarks>
+        internal static void ExpandBareOverloadedEdges(Dictionary<string, HashSet<string>> graph, List<MapMethodModel> methods, Dictionary<string, int> declaredNameCount)
+        {
+            foreach (var callerKey in graph.Keys.ToList())
+            {
+                var edges = graph[callerKey];
+                var expandedEdges = new List<string>();
+                foreach (var edge in edges)
+                    if (declaredNameCount.TryGetValue(edge, out var oc) && oc > 1)
+                    {
+                        foreach (var ov in methods)
+                        {
+                            if (!ov.IsPartial || !string.Equals(ov.MethodName, edge, StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
+
+                            var ovKey = DeclKey(ov, declaredNameCount);
+                            if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
+                            {
+                                expandedEdges.Add(ovKey);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        expandedEdges.Add(edge);
+                    }
+
+                edges.Clear();
+                foreach (var e in expandedEdges) edges.Add(e);
+            }
+        }
+
+        /// <summary>
+        ///     The <see cref="DeclKey" /> of the one overload <paramref name="edge" />'s converter was adopted from, when
+        ///     resolution recorded it and the name is overloaded; otherwise <see langword="null" />, and the caller
+        ///     falls back to the bare-name treatment.
+        /// </summary>
+        /// <remarks>
+        ///     The exact key INCLUDES the caller itself. The bare-name fallback excludes it, because a bare name
+        ///     cannot say which overload it meant \u2014 and that exclusion is what hid an overloaded self-map's own cycle.
+        /// </remarks>
+        private static string? ExactOverloadKey(string? converterMethod, string? converterParamTypeFqn, Dictionary<string, int> declaredNameCount)
+        {
+            return converterParamTypeFqn is not null && converterMethod is not null && declaredNameCount.TryGetValue(converterMethod, out var cnt) && cnt > 1
+                ? converterMethod + "\u00a7" + converterParamTypeFqn
+                : null;
+        }
+
+        /// <summary>
         ///     The source members this mapper disowns for <paramref name="method" /> — class-level
         ///     <c>[MapIgnoreSource]</c> plus the method's own, by their REAL source spelling. Read by the DWARF064
         ///     shadow rule, whose message names <c>[MapIgnoreSource]</c> as the way to declare a shadow
@@ -1277,12 +1336,12 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 acc.Diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.GenericMapperMethodUnsupported,
-                    LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None),
+                    LocationInfo.FromFirst(method.Locations),
                     method.Name));
                 return;
             }
 
-            var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
+            var methodLocation = LocationInfo.FromFirst(method.Locations);
             methodDiagStart = acc.Diagnostics.Count;
 
             // Before any endpoint-specific handling, because the mistake is the same one at all of them: this
@@ -1307,13 +1366,15 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            if (method.ReturnType is not INamedTypeSymbol targetType)
+            if (method.ReturnType is not (INamedTypeSymbol or IArrayTypeSymbol))
             {
                 acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod,
                     methodLocation,
                     method.Name));
                 return;
             }
+
+            var targetType = method.ReturnType;
 
             var sourceType = method.Parameters[0].Type;
 
@@ -1372,6 +1433,9 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 var resolvedArms =
                     new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
+                // Keyed by the arm's source type, which is unique per method (seenSrcTypes below): the overload each
+                // arm adopted, for the recursion-cycle phase's edge (see MemberMap.ConverterParamTypeFqn).
+                var armParamTypes = new Dictionary<string, string?>(StringComparer.Ordinal);
                 var seenSrcTypes = new HashSet<string>(StringComparer.Ordinal);
 
                 foreach (var (derivedSrc, derivedTgt, _) in rawDerivedPairs)
@@ -1441,6 +1505,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var armConverter,
                         out _,
                         out var armNeedsCtx,
+                        out var armParamType,
                         methodAutoNest,
                         acc.NestedRegistry,
                         policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -1461,6 +1526,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     resolvedArms.Add((derivedSrc, derivedTgt, armConverter, armNeedsCtx));
+                    armParamTypes[srcFqn] = armParamType;
                 }
 
                 // Sort arms most-derived-first.
@@ -1478,7 +1544,8 @@ namespace DwarfMapper.Generator.Pipeline
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         a.ConverterMethod,
-                        a.NeedsCtx))
+                        a.NeedsCtx,
+                        armParamTypes[a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)]))
                     .ToArray();
 
                 // Collect applicable hooks.
@@ -1512,6 +1579,11 @@ namespace DwarfMapper.Generator.Pipeline
 
                     var targetIsRef = h.TargetRefKind == RefKind.Ref;
                     if (targetType.IsValueType && !targetIsRef)
+                    {
+                        continue;
+                    }
+
+                    if (RefHookTargetMismatches(targetType, h, methodLocation, acc.Diagnostics))
                     {
                         continue;
                     }
@@ -1564,7 +1636,11 @@ namespace DwarfMapper.Generator.Pipeline
             // with targetType as both src and target — they check the TARGET shape first.
             // Scope: only fires when the return type IS a collection/dict; object/record/scalar
             // return types fail both TryResolve calls and fall through unchanged.
-            var isCollReturn = CollectionConverter.TryResolve(targetType,
+            // An ARRAY return always takes this route, including the shapes CollectionConverter declines (a
+            // multi-dimensional array): an array is never constructed member by member, so the conversion owns
+            // both the success and the refusal, exactly as it does for an array MEMBER. Below this block the
+            // return is therefore a named type.
+            var isCollReturn = targetType is IArrayTypeSymbol || CollectionConverter.TryResolve(targetType,
                 targetType,
                 out _,
                 out _,
@@ -1580,12 +1656,27 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (isCollReturn || isDictReturn)
             {
+                // The route emits `return helper(param);` — there is nowhere for an extra parameter to go, so a
+                // second parameter is refused here rather than dropped from the implementing half (which emitted
+                // CS0759 + CS8795 into the consumer's .g.cs for `partial List<D> Map(List<S> s, int x)`).
+                if (method.Parameters.Length > 1)
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod,
+                        methodLocation,
+                        method.Name));
+                    return;
+                }
+
                 var tlResolved = TryResolveConversion(
                     ctx.SemanticModel.Compilation,
                     sourceType,
                     targetType,
                     null,
-                    decls.AllMethods,
+                    // The method itself is in AllMethods, and the user-declared-conversion arm scans that list
+                    // too: an array return from a source no collection shape accepts (a ReadOnlySpan<S>) found
+                    // ITSELF there and emitted a depth wrapper calling itself (CS0457). A List return never got
+                    // that far only because DWARF027 answers first for a named collection target.
+                    ExcludingMethod(decls.AllMethods, method.Name, sourceType, targetType),
                     // This pair is resolved as a WHOLE, so the method must not be a candidate for its own
                     // conversion — the same self-exclusion the [GenerateMap] collection path needs.
                     ExcludingPair(decls.MapperMethods, sourceType, targetType),
@@ -1598,6 +1689,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var tlConverter,
                     out _,
                     out var tlNeedsCtx,
+                    out _,
                     methodAutoNest,
                     acc.NestedRegistry,
                     policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -1668,6 +1760,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
 
+            // Every array return was claimed by Fix 1 (see isCollReturn), so construction sees a named type.
+            var namedTargetType = (INamedTypeSymbol)targetType;
+
             // Selection must see the FULL explicit-rename set — method-level [MapProperty] PLUS the
             // [ReverseMap]-inherited renames and pair-scoped [MapProperty<S,T>] renames — so a ctor parameter
             // bound ONLY via a rename still counts as satisfiable. Previously reverse/pair renames were merged
@@ -1715,7 +1810,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Choose construction strategy for the target type, now with the full rename set visible.
             var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation,
-                targetType,
+                namedTargetType,
                 acc.Diagnostics,
                 methodLocation,
                 out var objInitOnly,
@@ -1790,7 +1885,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 (resolvedFgDirectives, fgInjectedMembers) = ResolveFlattenGraphDirectives(
                     sourceType,
-                    targetType,
+                    namedTargetType,
                     flattenGraphRaw,
                     ctx.SemanticModel.Compilation,
                     methodLocation,
@@ -1861,12 +1956,12 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Compute which consumed-param members are `required` and whose ctor lacks [SetsRequiredMembers].
                 // Those must still be emitted in the object initializer to satisfy the C# `required` rule.
-                requiredMustInitialize = ComputeRequiredMustInitialize(ctor, targetType, consumedParams);
+                requiredMustInitialize = ComputeRequiredMustInitialize(ctor, namedTargetType, consumedParams);
             }
 
             var members = ResolveMembers(
                 sourceType,
-                targetType,
+                namedTargetType,
                 ignores,
                 ctx.SemanticModel.Compilation,
                 methodLocation,
@@ -1891,20 +1986,20 @@ namespace DwarfMapper.Generator.Pipeline
                 policy.NullStrategy,
                 flattenRoots,
                 reinterpretMembers,
+                decls.MapperReservedConverters,
                 consumedParams,
                 requiredMustInitialize,
                 acc.NestedRegistry,
                 mapValues,
                 decls.ValueProviders,
+                IgnoredSourcesFor(decls, method),
                 extraParams,
                 mapPropExtras,
                 stringFormats,
-                decls.MapperReservedConverters,
                 // NOT gated on objInitOnly: a parameterless constructor can still carry
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
                 // would. Gating here produced a false DWARF079 on that shape.
                 CtorSetsRequiredMembers(ctor),
-                ignoredSourceMembers: IgnoredSourcesFor(decls, method),
                 shareMembers: shareMembers,
                 denseEnumMembers: denseEnumMembers);
 
@@ -1914,7 +2009,7 @@ namespace DwarfMapper.Generator.Pipeline
             members.AddRange(fgInjectedMembers);
 
             // ── Source-member coverage (RequiredMapping = Both) ───────────────────────────
-            ReportSourceMemberCoverage(method, ctx, decls, policy, acc, sourceType, targetType, members,
+            ReportSourceMemberCoverage(method, ctx, decls, policy, acc, sourceType, namedTargetType, members,
                 ctorArgs, resolvedFgDirectives, extraParamSig, methodLocation, methodDiagStart);
         }
 
@@ -1997,6 +2092,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var asConv,
                         out var asNull,
                         out var asNeedsCtx,
+                        out _,
                         asAutoNest,
                         acc.NestedRegistry,
                         reservedConverters: decls.MapperReservedConverters))
@@ -2387,6 +2483,7 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     updFlatten,
                     updReinterpret,
+                    decls.MapperReservedConverters,
                     null,
                     null,
                     acc.NestedRegistry,
@@ -2394,7 +2491,6 @@ namespace DwarfMapper.Generator.Pipeline
                     decls.ValueProviders,
                     mapPropertyExtras: updMapPropExtras,
                     stringFormats: ReadStringFormats(method),
-                    mapperReservedConverters: decls.MapperReservedConverters,
                     // Update-into writes into an instance the CALLER already constructed, so there is no
                     // object initializer to omit a member from and `required` cannot be violated here.
                     // Without this, ignoring a required member on an update-into method reported a false
@@ -2512,7 +2608,13 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     // Target is a reference type → by-value is fine (mutations propagate); ref optional.
-                    updAfter.Add(new HookCall(h.Name, takesSource, h.TargetRefKind == RefKind.Ref));
+                    var updTargetIsRef = h.TargetRefKind == RefKind.Ref;
+                    if (RefHookTargetMismatches(updTgt, h, methodLocation, acc.Diagnostics))
+                    {
+                        continue;
+                    }
+
+                    updAfter.Add(new HookCall(h.Name, takesSource, updTargetIsRef));
                 }
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
@@ -2770,6 +2872,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var spanConv,
                         out var spanNull,
                         out var spanNeedsCtx,
+                        out _,
                         spanAutoNest,
                         acc.NestedRegistry,
                         // Reservation is mapper-wide: a converter dedicated by Use=, or a [MapConstructor]
@@ -3018,6 +3121,11 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                if (RefHookTargetMismatches(targetType, h, methodLocation, acc.Diagnostics))
+                {
+                    continue;
+                }
+
                 applicableAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
             }
 
@@ -3048,6 +3156,13 @@ namespace DwarfMapper.Generator.Pipeline
                 ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
                 ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                 ReturnIsPublicType: IsEffectivelyPublic(targetType),
+                // Left at its default (true) here for years — invisible until DWARF108's post-pass
+                // started reading it for EVERY recursion-capable pair, public entries included, and a
+                // struct-destination declared mapper under OnCycle=SetNull kept its on-stack guard
+                // (CS0037: `return null!;` against a non-nullable value type). Same failure shape as
+                // ParameterIsPublicType/ReturnIsPublicType two lines up: a flag nobody read until a new
+                // feature did.
+                ReturnIsReferenceType: targetType.IsReferenceType,
                 Withheld: withheld,
                 ParameterTypeSignature: sourceType.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                 ReturnTypeSignature: DeclaredReturnSignature(method),
@@ -3076,7 +3191,7 @@ namespace DwarfMapper.Generator.Pipeline
             MapperDeclarations decls,
             MapperPolicy policy,
             MapperAccumulators acc,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             Compilation genComp,
             LocationInfo? genLoc,
             Dictionary<int, HostPairDirectives> hostDirectives)
@@ -3120,7 +3235,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // target's members — which would e.g. flag List<T>.Capacity via DWARF001. The source may be ANY
                 // IEnumerable<T> (custom user collections like a ConcurrentList<T> included), matching the
                 // member-level collection handling.
-                var genIsColl = CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _);
+                // An array target always takes this route, for the reason the declared path's isCollReturn gives.
+                var genIsColl = genTgt is IArrayTypeSymbol || CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _);
                 var genIsDict = !genIsColl && DictionaryConverter.TryResolve(genTgt, genTgt, out _, out _, out _, out _, out _);
 
                 // An ENUM target needs the same treatment, and for the same reason: it is a VALUE to convert,
@@ -3158,6 +3274,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var gConv,
                         out _,
                         out var gNeedsCtx,
+                        out _,
                         policy.ClassAutoNest,
                         acc.NestedRegistry,
                         policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -3218,6 +3335,9 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // Every array target was claimed by the conversion route above.
+                var genTgtNamed = (INamedTypeSymbol)genTgt;
+
                 // Pair-scoped [MapConstructor<S,T>(factory)] override: delegate construction to a user factory
                 // method and only populate settable members afterward (AutoMapper ConstructUsing semantics).
                 string? genFactory = null;
@@ -3260,14 +3380,14 @@ namespace DwarfMapper.Generator.Pipeline
                     // Factory builds the object; only settable members are assigned afterward, so init-only /
                     // required members are excluded (the factory owns them) and there are no ctor args.
                     genCtorArgs = Array.Empty<MemberMap>();
-                    genConsumed = CollectFactoryExcludedMembers(genTgt);
+                    genConsumed = CollectFactoryExcludedMembers(genTgtNamed);
                     genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     // Kept separately from genConsumed so DWARF080 can tell "the ctor assigns it" (no loss) from
                     // "the factory owns it and the source value is dropped" (silent loss).
                     genFactoryExcluded = genConsumed;
                 }
                 else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation,
-                             genTgt,
+                             genTgtNamed,
                              acc.Diagnostics,
                              genLoc,
                              out var genObjInitOnly,
@@ -3311,13 +3431,13 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
+                    genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgtNamed, genConsumed);
                     genCtorSetsRequired = CtorSetsRequiredMembers(genCtor);
                 }
 
                 var genMembers = ResolveMembers(
                     genSrc,
-                    genTgt,
+                    genTgtNamed,
                     genIgnores,
                     genComp,
                     genLoc,
@@ -3344,6 +3464,7 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     Array.Empty<string>(),
                     new List<string>(),
+                    decls.MapperReservedConverters,
                     genConsumed,
                     genRequiredInit,
                     acc.NestedRegistry,
@@ -3353,7 +3474,6 @@ namespace DwarfMapper.Generator.Pipeline
                     // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
                     // directive and does not thread this drops the format in silence — D20 in miniature.
                     stringFormats: genFormats,
-                    mapperReservedConverters: decls.MapperReservedConverters,
                     requiredMembersAlreadySatisfied: genCtorSetsRequired,
                     factoryExcludedMembers: genFactoryExcluded,
                     ignoredSourceMembers: ClassIgnoredSources(decls));
@@ -3389,6 +3509,11 @@ namespace DwarfMapper.Generator.Pipeline
 
                     var tIsRef = h.TargetRefKind == RefKind.Ref;
                     if (genTgt.IsValueType && !tIsRef)
+                    {
+                        continue;
+                    }
+
+                    if (RefHookTargetMismatches(genTgt, h, genLoc, acc.Diagnostics))
                     {
                         continue;
                     }
@@ -3452,9 +3577,9 @@ namespace DwarfMapper.Generator.Pipeline
             MapperDeclarations decls,
             MapperPolicy policy,
             MapperAccumulators acc,
-            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            List<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             Compilation genComp,
-            List<(MapMethodModel Model, string MethodName)> pendingNestedModels,
+            List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels,
             CancellationToken ct)
         {
 
@@ -3630,15 +3755,15 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     new List<string>(),
                     new List<string>(), // no flatten/reinterpret
+                    // A synthesized nested mapper must not adopt a dedicated converter either — the author never wrote
+                    // this pair, so they certainly did not offer it one.
+                    decls.MapperReservedConverters,
                     nestedConsumed,
                     nestedRequiredMustInit,
                     acc.NestedRegistry,
                     MatchPairValues(decls.PairValues, nestedTgt),
                     decls.ValueProviders,
                     mapPropertyExtras: nestedExtras,
-                    // A acc.Synthesized nested mapper must not adopt a dedicated converter either — the author
-                    // never wrote this pair, so they certainly did not offer it one.
-                    mapperReservedConverters: decls.MapperReservedConverters,
                     requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
                     factoryExcludedMembers: nestedFactoryExcluded,
                     ignoredSourceMembers: ClassIgnoredSources(decls));
@@ -3705,6 +3830,11 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
+                    if (RefHookTargetMismatches(nestedTgt, h, nestedLocation, acc.Diagnostics))
+                    {
+                        continue;
+                    }
+
                     nestedAfter.Add(new HookCall(h.Name, takesSource, nestedTargetIsRef));
                 }
 
@@ -3727,7 +3857,7 @@ namespace DwarfMapper.Generator.Pipeline
                     nestedTgt.IsReferenceType, // patched below
                     FactoryMethod: nestedFactory);
 
-                pendingNestedModels.Add((nestedModel, nestedName));
+                pendingNestedModels.Add((nestedModel, nestedName, nestedLocation));
             }
 
         }

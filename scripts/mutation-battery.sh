@@ -77,7 +77,7 @@ MUTANTS=(
 "M07|src/DwarfMapper.Generator/Pipeline/CollectionConverter.cs|s/SourceIsValueType ? \"src.GetValueOrDefault()\" : \"src\"/SourceIsValueType ? \"src\" : \"src.GetValueOrDefault()\"/|ValueTypeSourceCollectionTests|a value-type source collection emitting uncompilable code again"
 "M08|src/DwarfMapper.Generator/Pipeline/CollectionConverter.cs|s/Count = sourceIsValueType ? CountKind.None : count;/Count = count;/|ValueTypeSourceCollectionTests|src.Count emitted on a Nullable<T> source"
 "M09|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (extra.HasNullSub)/if (!extra.HasNullSub)/|ProjectionRuntimeParityTests|NullSubstitute silently dropped by projection"
-"M10|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (extra.When is not null)/if (extra.When is null)/|ProjectionRuntimeParityTests|When= silently dropped by projection"
+"M10|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/return extra.When is not null/return extra.When is null/|ProjectionRuntimeParityTests|When= silently dropped by projection"
 "M11|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.SkipNullSourceMembers)$/if (!options.SkipNullSourceMembers)/|ProjectionRuntimeParityTests|SkipNullSourceMembers silently dropped by projection"
 "M12|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.AllowNonPublic /if (!options.AllowNonPublic /|ProjectionRuntimeParityTests|a non-public source member reported as simply missing"
 "M13|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (use is not null)/if (use is null)/|EndpointContractTests|Use= silently dropped by projection"

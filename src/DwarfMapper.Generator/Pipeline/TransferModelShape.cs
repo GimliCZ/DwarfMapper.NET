@@ -545,7 +545,7 @@ namespace DwarfMapper.Generator.Pipeline
             // to change that project, or nothing.
             if (type.DeclaringSyntaxReferences.IsEmpty)
             {
-                var assembly = type.ContainingAssembly?.Name ?? "another assembly";
+                var assembly = AssemblyDisplayName(type.ContainingAssembly);
                 return Verdict.No(
                     $"'{type.Name}' is declared in referenced assembly '{assembly}', not in source, so its " +
                     "shape cannot be checked and its declaration cannot be rewritten");
@@ -599,7 +599,7 @@ namespace DwarfMapper.Generator.Pipeline
                     $"'{declaring.OriginalDefinition.Name}<>', which would change every other instantiation too");
             }
 
-            if (type.BaseType is { SpecialType: not SpecialType.System_Object } baseType)
+            if (BaseBeyondObject(type) is { } baseType)
             {
                 return Verdict.No($"'{type.Name}' derives from '{baseType.Name}'");
             }
@@ -673,7 +673,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var attribute in attributes)
             {
-                var name = attribute.AttributeClass?.Name;
+                var name = KnownNames.AttributeSimpleName(attribute.AttributeClass);
                 switch (name)
                 {
                     case "Key":
@@ -887,6 +887,31 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return null;
+        }
+
+        /// <summary>
+        ///     How a refusal names <paramref name="assembly" />: by its name, or as "another assembly" when there is none.
+        /// </summary>
+        /// <remarks>
+        ///     Only a type imported from metadata is refused by assembly name, and every such type has a containing
+        ///     assembly, so the "none" answer was an outcome no compilation produced. Asked here, a unit test passes none.
+        /// </remarks>
+        internal static string AssemblyDisplayName(IAssemblySymbol? assembly)
+        {
+            return assembly?.Name ?? "another assembly";
+        }
+
+        /// <summary>
+        ///     The base type <paramref name="type" /> declares beyond <c>object</c>, or null when it has none.
+        /// </summary>
+        /// <remarks>
+        ///     Every class that reaches the base-type rule is declared in source, so its base type is never null: only
+        ///     <c>object</c> itself and an interface have none, and both are refused before it. Asked here, a unit test
+        ///     passes them.
+        /// </remarks>
+        internal static INamedTypeSymbol? BaseBeyondObject(INamedTypeSymbol type)
+        {
+            return type.BaseType is { SpecialType: not SpecialType.System_Object } baseType ? baseType : null;
         }
 
         /// <summary>Symbol-aware membership, so the two callers of the inline path agree on the comparer.</summary>

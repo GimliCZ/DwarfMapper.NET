@@ -168,6 +168,66 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void Reports_when_the_ignored_required_member_is_also_a_constructor_argument()
+        {
+            // Pipeline-leg survivor 11484 (Issues/ledgers/pipeline-mutation-survivors.md, "Left open"): the guard
+            // exempted any required member the chosen constructor also binds, on the reasoning that the ctor
+            // "supplies" it. C# disagrees. Without [SetsRequiredMembers] a required member bound through the
+            // constructor must STILL appear in the object initializer (ComputeRequiredMustInitialize exists for
+            // exactly that), so ignoring it emitted `new C(X: s.X) { … }` with X omitted — CS9035 in the
+            // consumer's .g.cs and no DWARF079, the silent shape this diagnostic exists to prevent.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int X { get; set; } public string Name { get; set; } = ""; }
+                               public class C
+                               {
+                                   public C(int X) { this.X = X; }
+                                   public required int X { get; set; }
+                                   public string Name { get; set; } = "";
+                               }
+
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapIgnore(nameof(C.X))]
+                                   public partial C Map(Src s);
+                               }
+                               """;
+
+            var message = Assert.Single(GeneratorAssert.Reports(src, Id)).GetMessage(CultureInfo.InvariantCulture);
+            Assert.Contains("'X'", message, StringComparison.Ordinal);
+            Assert.Contains("CS9035", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Is_silent_when_the_constructor_bound_required_member_is_not_ignored()
+        {
+            // The twin of the test above, so the fix cannot over-reach: the same constructor-bound required member,
+            // NOT ignored, is double-set (ctor argument + initializer) and compiles clean with no DWARF079.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int X { get; set; } public string Name { get; set; } = ""; }
+                               public class C
+                               {
+                                   public C(int X) { this.X = X; }
+                                   public required int X { get; set; }
+                                   public string Name { get; set; } = "";
+                               }
+
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   public partial C Map(Src s);
+                               }
+                               """;
+
+            GeneratorAssert.CompilesClean(src);
+            GeneratorAssert.DoesNotReport(src, Id);
+        }
+
+        [Fact]
         public void Is_silent_for_update_into_which_has_no_object_initializer()
         {
             // Update-into writes into an instance the CALLER already constructed. There is no object initializer

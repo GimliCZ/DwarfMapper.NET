@@ -38,6 +38,13 @@ namespace DwarfMapper.Generator.Pipeline
             _ctxUpgradeCandidates =
                 new();
 
+        // ── Collection/dict helper → element-method edges, every mode ──────────────
+        // A helper is not a method model, so its call to its element/key/value method is invisible to the
+        // declared call graph. DWARF030 needs that edge to see a constructor argument whose cycle runs through a
+        // collection (`TreeDto(List<TreeDto> kids)`); recorded separately from the None-mode candidates above so
+        // adding it cannot change which methods the recursion phases mark.
+        private readonly List<(string HelperName, string ElemMethod, string? ElemParamTypeFqn)> _helperElementEdges = new();
+
         // ── Recursion-capability analysis ────────────────────────────────────────────
         // Directed graph: _edges[method] = set of methods that 'method' calls.
         // Built during the drain loop (via SetCurrentPair + GetOrReserve).
@@ -63,8 +70,8 @@ namespace DwarfMapper.Generator.Pipeline
         // answer is "no" — the same verdict a mapper with no pair-scoped attributes produces.
         private Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?>? _pairIsCustomized;
 
-        // Cached result; null until ComputeRecursionCapability() is called.
-        private HashSet<string>? _recursionCapable;
+        // Cached result; empty until ComputeRecursionCapability() replaces it.
+        private HashSet<string> _recursionCapable = new(StringComparer.Ordinal);
 
         /// <summary>
         ///     Whether the depth cap was exceeded. When true a DWARF031 was already scheduled.
@@ -85,6 +92,9 @@ namespace DwarfMapper.Generator.Pipeline
         public IReadOnlyList<(string HelperName, string[] ElemMethods, Action<Func<string, string>> ReSynth)>
             CtxUpgradeCandidates
             => _ctxUpgradeCandidates;
+
+        /// <summary>The recorded helper → element-method edges (see <see cref="RecordHelperElementEdge" />).</summary>
+        public IReadOnlyList<(string HelperName, string ElemMethod, string? ElemParamTypeFqn)> HelperElementEdges => _helperElementEdges;
 
         /// <summary>
         ///     Dequeues the next pending (src, tgt, methodName, autoNest, origin) to build.
@@ -224,13 +234,8 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            if (!_edges.TryGetValue(_currentPair, out var deps))
-            {
-                deps = new HashSet<string>(StringComparer.Ordinal);
-                _edges[_currentPair] = deps;
-            }
-
-            deps.Add(calleeName);
+            // SetCurrentPair created this node before _currentPair could name it, and no entry is ever removed.
+            _edges[_currentPair].Add(calleeName);
         }
 
         // ── Recursion-capability analysis ────────────────────────────────────────────
@@ -261,7 +266,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         public bool IsRecursionCapable(string methodName)
         {
-            return _recursionCapable?.Contains(methodName) == true;
+            return _recursionCapable.Contains(methodName);
         }
 
         /// <summary>
@@ -283,6 +288,16 @@ namespace DwarfMapper.Generator.Pipeline
         public void RecordCtxUpgradeCandidate(string helperName, string[] elemMethods, Action<Func<string, string>> reSynth)
         {
             _ctxUpgradeCandidates.Add((helperName, elemMethods, reSynth));
+        }
+
+        /// <summary>
+        ///     Records that collection/dict helper <paramref name="helperName" /> calls <paramref name="elemMethod" />
+        ///     for each element; <paramref name="elemParamTypeFqn" /> is the adopted overload's parameter type when the
+        ///     element method is a user-declared one (see <c>MemberMap.ConverterParamTypeFqn</c>).
+        /// </summary>
+        public void RecordHelperElementEdge(string helperName, string elemMethod, string? elemParamTypeFqn)
+        {
+            _helperElementEdges.Add((helperName, elemMethod, elemParamTypeFqn));
         }
 
         // ── Name synthesis ────────────────────────────────────────────────────────

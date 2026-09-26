@@ -49,7 +49,12 @@ namespace DwarfMapper.Generator.Tests
             var (diagnostics, _) = Run(
                 "[MapProperty(nameof(Src.N), nameof(Dst.NInt), StringFormat = \"N0\")] [MapIgnore(\"N\")] [MapIgnore(\"D\")]");
 
-            Assert.Contains(diagnostics, d => d.Id == "DWARF073");
+            var d = Assert.Single(diagnostics.Where(x => x.Id == "DWARF073"));
+            // Three refusals share DWARF073 and a bare "{0}" format; this arm's text is what distinguishes
+            // it, and it has to name the member and the type it found there.
+            Assert.Contains("for 'NInt' needs a string destination, but it is 'int'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         [Fact]

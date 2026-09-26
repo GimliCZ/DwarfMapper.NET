@@ -116,7 +116,17 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF043"));
+            var d = Find(diags, "DWARF043");
+            Assert.NotNull(d);
+            // Names BOTH the path the caller wrote and the segment that broke it — the second is the part a
+            // five-hop path needs, and the descriptor's format is a bare "{0}", so only the text carries it.
+            Assert.Contains("source path 'Customer.City' has no member 'City'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+            // The walk failed, so the explicit map `continue`s before the flat-name lookup. Without that, the
+            // null leaf type would fall into the "unknown source" arm and the one bad segment would be
+            // reported twice, once as a path and once as a member that does not exist.
+            Assert.Null(Find(diags, "DWARF009"));
         }
 
         [Fact]
@@ -134,7 +144,11 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF043"));
+            var d = Find(diags, "DWARF043");
+            Assert.NotNull(d);
+            Assert.Contains("source path 'Nope.Name' has no member 'Nope'",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         [Fact]
@@ -158,6 +172,11 @@ namespace DwarfMapper.Generator.Tests
             Assert.NotNull(d);
             // Item 8: a nullable interior hop can NRE at runtime → Warning, not a mere suggestion.
             Assert.Equal(DiagnosticSeverity.Warning, d.Severity);
+            // The message is the whole diagnostic (a bare "{0}" descriptor): it must name the path and say
+            // what the hazard is, or the warning is a code with nothing to act on.
+            Assert.Contains("source path 'Customer.Name' traverses a nullable member; a null interior value throws at runtime",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         [Fact]
@@ -319,5 +338,60 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.CompilesClean(src);
         }
 #pragma warning restore CA1305
+        [Fact]
+        public void A_source_name_that_only_STARTS_with_a_dot_is_not_a_path_and_names_itself()
+        {
+            // A dot INSIDE a name makes it a path; a dot at position 0 does not, because there is no first
+            // segment for it to separate. Reading ".Name" as a path walks to an empty segment and reports
+            // DWARF043 "source path '.Name' has no member ''" - which blames a member the consumer never wrote
+            // and hides the real mistake, the stray dot. The name is reported as what it literally is instead.
+            //
+            // The sibling test above pins the opposite for a REAL path ("Window.Middle" is DWARF043, not
+            // DWARF009); together they say where the boundary is.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public string Name { get; set; } = ""; }
+                               public class D { public string Full { get; set; } = ""; }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [MapProperty(".Name", "Full")]
+                                   public partial D Map(S s);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+
+            var d = Find(diags, "DWARF009");
+            Assert.NotNull(d);
+            Assert.Contains("'.Name'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            Assert.Null(Find(diags, "DWARF043"));
+        }
+
+        [Fact]
+        public void A_target_name_that_only_STARTS_with_a_dot_is_not_an_unflatten_and_names_itself()
+        {
+            // The destination half of the same rule. Read as an unflatten, ".Full" reports DWARF045
+            // "unflatten intermediate '' is not a writable destination member" - and consumes 'Full' on the way,
+            // so the reader is told about an empty intermediate they never wrote. Reported as a plain unknown
+            // destination member, the message names '.Full' and the stray dot is visible.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public string Name { get; set; } = ""; }
+                               public class D { public string Full { get; set; } = ""; }
+                               [DwarfMapper] public partial class M
+                               {
+                                   [MapProperty("Name", ".Full")]
+                                   public partial D Map(S s);
+                               }
+                               """;
+            var (diags, _) = GeneratorTestHarness.Run(src);
+
+            var d = Find(diags, "DWARF008");
+            Assert.NotNull(d);
+            Assert.Contains("'.Full'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            Assert.Null(Find(diags, "DWARF045"));
+        }
+
     }
 }

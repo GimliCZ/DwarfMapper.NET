@@ -181,5 +181,31 @@ namespace DwarfMapper.Testing.Tests
                 destination.Name = source.Name;
             }
         }
+        /// <summary>
+        ///     The last-write-wins verifier runs EXACTLY the iterations it was asked for, and writes three times
+        ///     in each: once into the destination that sees only the last write, and twice into the one that
+        ///     sees both. Nothing observed either number before, so an off-by-one in the loop bound was invisible
+        ///     while changing how much evidence a passing verification carries.
+        /// </summary>
+        [Fact]
+        public void The_last_write_wins_verifier_runs_exactly_the_iterations_it_was_asked_for()
+        {
+            var writes = 0;
+
+            LensLaws.VerifyLastWriteWins<Sample, Sample>((source, destination) =>
+                {
+                    writes++;
+                    destination.Id = source.Id;
+                    destination.Name = source.Name;
+                    destination.Maybe = source.Maybe;
+                    destination.Nums = source.Nums;
+                    destination.Child = source.Child;
+                },
+                seed: 7,
+                iterations: 3);
+
+            Assert.Equal(9, writes);
+        }
+
     }
 }

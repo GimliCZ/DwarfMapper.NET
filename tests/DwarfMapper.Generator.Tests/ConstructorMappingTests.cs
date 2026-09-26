@@ -406,6 +406,36 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     The same CS9035 rule on the EXPLICIT path: a <c>[MapProperty]</c> whose target is a required
+        ///     member the constructor also takes must still appear in the initializer. The auto-match path had
+        ///     this test above; the explicit arm reads the same <c>RequiredMustInitialize</c> set at its own
+        ///     skip site and had nothing pinning it.
+        /// </summary>
+        [Fact]
+        public void Explicit_map_into_a_required_ctor_param_without_SetsRequiredMembers_still_initializes_it()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int X { get; set; } }
+                               public class C
+                               {
+                                   public C(int X) { this.X = X; }
+                                   public required int X { get; init; }
+                               }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapProperty("X", "X")]
+                                   public partial C Map(S s);
+                               }
+                               """;
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("X: s.X", generated, StringComparison.Ordinal);
+            Assert.Contains("X = s.X", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     When the selected ctor IS annotated [SetsRequiredMembers], the required member
         ///     must NOT appear in the object initializer (no double-set).
         /// </summary>

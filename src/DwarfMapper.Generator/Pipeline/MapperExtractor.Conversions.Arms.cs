@@ -39,7 +39,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             resolved = false;
 
-            if (req.AutoNest && req.NestedRegistry is not null && req.TgtType is INamedTypeSymbol namedTgt)
+            if (req.AutoNest && req.TgtType is INamedTypeSymbol namedTgt)
             {
                 // AutoNestWouldClaim is this same condition, asked by the blit gate one arm earlier; the two
                 // are one method so they cannot drift apart (round 29 T0.2c).
@@ -132,6 +132,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var innerConvT,
                         out _,
                         out _,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -139,10 +140,12 @@ namespace DwarfMapper.Generator.Pipeline
                         reservedConverters: req.ReservedConverters))
                 {
                     converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
-                    // A possibly-null reference source needs the explicit null test. A value-type source
-                    // (non-Nullable<>) always yields a value, and a direct assignment (no converter) already
-                    // lifts through the implicit U→U?, so both keep NullHandling.None.
-                    if (innerConvT is not null && SourceMayBeNullRef(req.SrcType))
+                    // A possibly-null reference source needs the explicit null test; a value-type source
+                    // (non-Nullable<>) always yields a value and keeps NullHandling.None. innerConvT is never null
+                    // here: the inner call answers true without a converter only through its direct-assignment arm,
+                    // and a built-in implicit src→U into a value type U lifts to src→U?, which the outer call's
+                    // same arm already claimed before reaching this one.
+                    if (SourceMayBeNullRef(req.SrcType))
                     {
                         nullHandling = NullHandling.NullableProjectRef;
                     }
@@ -225,6 +228,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var innerConv,
                         out _,
                         out _,
+                        out _,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -295,6 +299,7 @@ namespace DwarfMapper.Generator.Pipeline
                         req.TargetName,
                         diagnostics,
                         out var innerNonNull,
+                        out _,
                         out _,
                         out _,
                         req.AutoNest,
@@ -369,7 +374,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Ambiguity counts as "the user wrote a conversion for this pair": the resolver refuses it with
             // DWARF013, and a block copy that quietly resolved the ambiguity by ignoring both candidates would
             // be the loudest possible bypass.
-            FindUserDeclaredConversion(elemReq, out var found, out var ambiguous);
+            FindUserDeclaredConversion(elemReq, out var found, out _, out var ambiguous);
             if (ambiguous || (found is not null && !PrefersSynthesizedObjectMap(elemReq, found)))
             {
                 return true;
@@ -435,7 +440,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 // Name the thing that is not being called. A declared method is named directly; an operator has
                 // no name a user could grep for, so it is described by the pair it converts between.
-                FindUserDeclaredConversion(probe, out var found, out _);
+                FindUserDeclaredConversion(probe, out var found, out _, out _);
                 bypassed = found is not null
                     ? $"the declared conversion method '{found}'"
                     : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
@@ -447,7 +452,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // phrase comes from the customization rule itself — the only place that knows which kind matched
                 // and therefore whether it was DECLARED FOR this pair (an attribute) or MATCHED TO it by
                 // implicit conversion (a hook), and which verb reads correctly for it.
-                if (req.NestedRegistry?.PairCustomization(srcElem, tgtElem) is not { } customization)
+                if (req.NestedRegistry.PairCustomization(srcElem, tgtElem) is not { } customization)
                 {
                     return;
                 }
@@ -524,8 +529,7 @@ namespace DwarfMapper.Generator.Pipeline
             // struct), so this location exists whenever a layout came back. LocationInfo.From can still decline
             // a span it cannot map onto a live IDE snapshot, and the member's own location is a better answer
             // there than none at all.
-            var declared = element.Locations.FirstOrDefault(l => l.IsInSource);
-            var location = (declared is null ? null : LocationInfo.From(declared)) ?? req.Location;
+            var location = LocationInfo.FromFirstInSource(element.Locations, req.Location);
 
             var message =
                 $"'{element.ToDisplayString()}' is {layout.Size.ToString(CultureInfo.InvariantCulture)} bytes with " +
@@ -657,7 +661,7 @@ namespace DwarfMapper.Generator.Pipeline
             // [AfterMap] taking the target by value writes into a copy once the target is a struct. Asked
             // through the registry's own rule, so this and the blit gate cannot disagree about what customizes
             // a pair.
-            if (req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true)
+            if (req.NestedRegistry.PairIsCustomized(srcElem, tgtElem))
             {
                 return;
             }
@@ -732,21 +736,15 @@ namespace DwarfMapper.Generator.Pipeline
             // the fix rewrites the very symbol classified here.
             //
             // OriginalDefinition: a closed generic's id is its definition's id, and the definition is what has
-            // a declaration to rewrite.
-            var nestedIds = new List<string>();
-            foreach (var model in inlined)
-                if (model.OriginalDefinition.GetDocumentationCommentId() is { Length: > 0 } nestedId)
-                {
-                    nestedIds.Add(nestedId);
-                }
-
+            // a declaration to rewrite. A named type always has an id — "T:" for a declared one, "!:" for an
+            // error type — so every model contributes one.
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionElementCouldBeAStruct,
                 req.Location,
                 message,
                 TransferModelId: target.OriginalDefinition.GetDocumentationCommentId(),
-                NestedTransferModelIds: nestedIds.Count == 0
+                NestedTransferModelIds: inlined.Count == 0
                     ? null
-                    : string.Join("|", nestedIds),
+                    : string.Join("|", inlined.Select(model => model.OriginalDefinition.GetDocumentationCommentId())),
                 TransferModelSize: verdict.Size.ToString(CultureInfo.InvariantCulture)));
         }
 
@@ -936,7 +934,8 @@ namespace DwarfMapper.Generator.Pipeline
             // either — and only when the message named it in the first place; adding a second sentence instead
             // would say the same thing twice about a pair that is usually public on both sides (fix round 2).
             var caveatTarget = verdict.DerivationCheckedWithinAssemblyOnly;
-            var caveatSource = namesTheSource && sourceVerdict is { DerivationCheckedWithinAssemblyOnly: true };
+            // namesTheSource already required a source verdict, so GetValueOrDefault reads the real one.
+            var caveatSource = namesTheSource && sourceVerdict.GetValueOrDefault().DerivationCheckedWithinAssemblyOnly;
 
             if (caveatTarget || caveatSource)
             {
@@ -950,6 +949,27 @@ namespace DwarfMapper.Generator.Pipeline
 
             return message;
         }
+
+        /// <summary>
+        ///     True when <paramref name="registry" /> marks the <paramref name="srcElem" />→<paramref name="tgtElem" />
+        ///     element pair as customized (a pair-scoped <c>[MapProperty]</c>/<c>[MapIgnore]</c>/<c>[MapValue]</c> or
+        ///     hook matching it), so the blit gate below must keep the element loop rather than reinterpret past it.
+        /// </summary>
+        /// <remarks>
+        ///     Carved out of <see cref="HandleCollectionConversion" /> as its own named unit because no fixture
+        ///     reachable through the generator's surface can drive <paramref name="registry" /> to <see langword="null" />:
+        ///     <c>ConversionRequest.NestedRegistry</c> is built exactly once per <c>Extract</c> call
+        ///     (<c>MapperExtractor.cs</c>) and threaded, unconditionally non-null, through every member, constructor-
+        ///     argument, flatten-directive and hetero-arm resolution that reaches this arm — round-30 item G's own
+        ///     finding that the testability problem here is concentration, not cruft. A direct unit test is what
+        ///     proves both arms of the null-conditional; see
+        ///     <c>MapperExtractorArmPredicateTests.NestedRegistryMarksPairCustomized_...</c>.
+        /// </remarks>
+        internal static bool NestedRegistryMarksPairCustomized(
+            NestedMappingRegistry? registry,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem) =>
+            registry?.PairIsCustomized(srcElem, tgtElem) == true;
 
         /// <summary>
         ///     Collections: element-wise conversion, including the in-place and context-threading shapes.
@@ -1006,7 +1026,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // would apply, so the two agree byte for byte — which is exactly why the proof is allowed to
                 // replace it, and only it.
                 var elemHasUserConversion = ElementPairResolvesToUserConversion(req, srcElem, tgtElem);
-                var elemPairIsCustomized = req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true;
+                var elemPairIsCustomized = NestedRegistryMarksPairCustomized(req.NestedRegistry, srcElem, tgtElem);
                 var elemPairKeepsTheLoop = elemHasUserConversion || elemPairIsCustomized;
 
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
@@ -1153,6 +1173,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var elemConv,
                         out var elemNull,
                         out var elemNeedsCtx,
+                        out var elemParamType,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1195,7 +1216,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // with (elem, ctx, depth + 1), threading ONE shared context across the collection edge. This
                 // is what lets a cycle routed through a collection break (SetNull → back-edge null) or
                 // depth-cap, instead of the element re-entering the public entry (fresh context → StackOverflow).
-                if ((req.IsPreserve || req.IsSetNull) && elemConv is not null && GeneratedNames.IsObjectMap(elemConv) && req.NestedRegistry is not null)
+                if ((req.IsPreserve || req.IsSetNull) && elemConv is not null && GeneratedNames.IsObjectMap(elemConv))
                 {
                     req.NestedRegistry.ForceRecursionCapable(elemConv);
                     elemNeedsCtx = true;
@@ -1252,6 +1273,10 @@ namespace DwarfMapper.Generator.Pipeline
                     elemNeedsCtx,
                     elemForgivesArg,
                     elemForgivesResult);
+                if (elemConv is not null)
+                {
+                    req.NestedRegistry.RecordHelperElementEdge(converterMethod, elemConv, elemParamType);
+                }
                 // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
                 // element is recursion-capable (Preserve, or None/SetNull self-referential element).
                 converterNeedsCtx = (req.IsPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
@@ -1269,7 +1294,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // collection helper calling it was never re-synthesized, so it still called it with one argument.
                 // That emitted code which did not compile (CS7036). The equivalent partial-method mapper worked,
                 // because its element resolved to a declared method and so WAS recorded here.
-                if (!req.IsPreserve && !req.IsSetNull && !elemNeedsCtx && req.NestedRegistry is not null && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))
+                if (!req.IsPreserve && !req.IsSetNull && !elemNeedsCtx && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))
                 {
                     var hName = converterMethod;
                     var capSrc = req.SrcType;
@@ -1355,6 +1380,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var keyConv,
                         out var keyNull,
                         out var keyNeedsCtx,
+                        out var keyParamType,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1382,6 +1408,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var valConv,
                         out var valNull,
                         out var valNeedsCtx,
+                        out var valParamType,
                         req.AutoNest,
                         req.NestedRegistry,
                         req.NullAsNull,
@@ -1397,7 +1424,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
                 // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
                 // what lets a cycle routed through a dictionary value break (SetNull) or depth-cap.
-                if ((req.IsPreserve || req.IsSetNull) && req.NestedRegistry is not null)
+                if (req.IsPreserve || req.IsSetNull)
                 {
                     if (keyConv is not null && GeneratedNames.IsObjectMap(keyConv))
                     {
@@ -1473,6 +1500,15 @@ namespace DwarfMapper.Generator.Pipeline
                     valForgivesResult,
                     keyForgivesArg,
                     keyForgivesResult);
+                if (keyConv is not null)
+                {
+                    req.NestedRegistry.RecordHelperElementEdge(converterMethod, keyConv, keyParamType);
+                }
+
+                if (valConv is not null)
+                {
+                    req.NestedRegistry.RecordHelperElementEdge(converterMethod, valConv, valParamType);
+                }
                 // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
                 // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
@@ -1480,7 +1516,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // None+Throw: a key/value resolved to a PUBLIC declared method. Record a re-synthesis
                 // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
-                if (!req.IsPreserve && !req.IsSetNull && req.NestedRegistry is not null)
+                if (!req.IsPreserve && !req.IsSetNull)
                 {
                     var keyIsPublicObj = keyConv is not null &&
                                          !keyNeedsCtx &&

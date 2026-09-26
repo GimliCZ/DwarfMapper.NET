@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -41,7 +42,7 @@ namespace DwarfMapper.Generator.Pipeline
                 return null;
             }
 
-            if (method.Name != "Map" || method.ContainingType?.ToDisplayString() != FacadeInterface)
+            if (!IsFacadeMap(method.Name, method.ContainingType))
             {
                 return null;
             }
@@ -68,6 +69,21 @@ namespace DwarfMapper.Generator.Pipeline
             return ToPair(source, destination);
         }
 
+        /// <summary>
+        ///     Whether a method named <paramref name="name" /> declared on <paramref name="containingType" /> is
+        ///     <c>IDwarfMapper.Map</c>.
+        /// </summary>
+        /// <remarks>
+        ///     Takes the name and the containing type rather than the method, so both "not the facade" answers can be
+        ///     asked directly. Through a compilation neither is reachable at <see cref="ExtractFacadeRequire" />:
+        ///     <see cref="IsFacadeMapCall" /> admits only invocations named <c>Map</c>, and a method bound from an
+        ///     invocation always has a containing type.
+        /// </remarks>
+        internal static bool IsFacadeMap(string name, INamedTypeSymbol? containingType)
+        {
+            return name == "Map" && containingType?.ToDisplayString() == FacadeInterface;
+        }
+
         /// <summary>Reads assembly-level <c>[UsesMap]</c> (generic and non-generic) from the compilation.</summary>
         public static IReadOnlyList<(string Source, string Destination)> ReadAssemblyUsesMap(
             Compilation compilation,
@@ -76,7 +92,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new List<(string, string)>();
             foreach (var attr in compilation.Assembly.GetAttributes())
             {
-                var pair = ReadUsesMapAttribute(attr);
+                var pair = ReadUsesMapAttribute(attr.AttributeClass, attr.ConstructorArguments);
                 if (pair is not null)
                 {
                     result.Add(pair.Value);
@@ -94,7 +110,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new List<(string, string)>();
             foreach (var attr in ctx.Attributes)
             {
-                var pair = ReadUsesMapAttribute(attr);
+                var pair = ReadUsesMapAttribute(attr.AttributeClass, attr.ConstructorArguments);
                 if (pair is not null)
                 {
                     result.Add(pair.Value);
@@ -104,9 +120,19 @@ namespace DwarfMapper.Generator.Pipeline
             return result;
         }
 
-        private static (string Source, string Destination)? ReadUsesMapAttribute(AttributeData attr)
+        /// <summary>
+        ///     The pair a <c>[UsesMap]</c> application declares, read from its attribute class and constructor arguments,
+        ///     or <c>null</c> for any other attribute.
+        /// </summary>
+        /// <remarks>
+        ///     Takes the class and the arguments rather than the <see cref="AttributeData" />: the class is declared
+        ///     nullable, and every attribute a compilation hands the generator carries one, so the "no class" answer is
+        ///     reached only through this method's own test.
+        /// </remarks>
+        internal static (string Source, string Destination)? ReadUsesMapAttribute(
+            INamedTypeSymbol? cls,
+            ImmutableArray<TypedConstant> constructorArguments)
         {
-            var cls = attr.AttributeClass;
             if (cls is null)
             {
                 return null;
@@ -121,10 +147,10 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // Non-generic: UsesMapAttribute(Type source, Type destination).
-            if (cls.ToDisplayString() == KnownNames.UsesMapFqn && attr.ConstructorArguments.Length == 2)
+            if (cls.ToDisplayString() == KnownNames.UsesMapFqn && constructorArguments.Length == 2)
             {
-                return ToPair(attr.ConstructorArguments[0].Value as ITypeSymbol,
-                    attr.ConstructorArguments[1].Value as ITypeSymbol);
+                return ToPair(constructorArguments[0].Value as ITypeSymbol,
+                    constructorArguments[1].Value as ITypeSymbol);
             }
 
             return null;
@@ -153,37 +179,14 @@ namespace DwarfMapper.Generator.Pipeline
             // Only effectively-public pairs are ambient (cross-assembly) — and only such types can appear in the
             // generated [assembly: DwarfRequiresMap(typeof(...))] without an accessibility error. Internal/nested
             // consumption is in-assembly; use the concrete mapper there.
-            if (!IsEffectivelyPublic(source) || !IsEffectivelyPublic(destination))
+            // The ONE statement of the rule, shared with facade and ambient-registration gating: a second copy lived here
+            // and had already drifted from the registration side's walk once it was rewritten.
+            if (!MapperExtractor.IsEffectivelyPublic(source) || !MapperExtractor.IsEffectivelyPublic(destination))
             {
                 return null;
             }
 
             return (source.ToDisplayString(Fq), destination.ToDisplayString(Fq));
-        }
-
-        private static bool IsEffectivelyPublic(ITypeSymbol type)
-        {
-            if (type is IArrayTypeSymbol arr)
-            {
-                return IsEffectivelyPublic(arr.ElementType);
-            }
-
-            for (ISymbol? s = type; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
-                if (s.DeclaredAccessibility != Accessibility.Public)
-                {
-                    return false;
-                }
-
-            if (type is INamedTypeSymbol named)
-            {
-                foreach (var typeArgument in named.TypeArguments)
-                    if (!IsEffectivelyPublic(typeArgument))
-                    {
-                        return false;
-                    }
-            }
-
-            return true;
         }
     }
 }

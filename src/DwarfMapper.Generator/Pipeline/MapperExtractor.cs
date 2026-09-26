@@ -97,7 +97,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var classSymbol = (INamedTypeSymbol)ctx.TargetSymbol;
             if (classSymbol.GetAttributes().Any(a =>
-                    a.AttributeClass?.ToDisplayString() == KnownNames.DwarfMapperFqn))
+                    KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.DwarfMapperFqn)))
             {
                 return null; // a [DwarfMapper] class — the primary pipeline emits into it directly
             }
@@ -302,11 +302,11 @@ namespace DwarfMapper.Generator.Pipeline
             // (item 20). Open generics are never emitted; only the closed instantiations actually declared.
             var genComp = ctx.SemanticModel.Compilation;
             var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
-            var genPairs = new List<(ITypeSymbol Src, INamedTypeSymbol Tgt)>();
+            var genPairs = new List<(ITypeSymbol Src, ITypeSymbol Tgt)>();
             foreach (var attr in classSymbol.GetAttributes())
-                if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac && ac.TypeArguments.Length == 2 && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns && ac.TypeArguments[1] is INamedTypeSymbol gt)
+                if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac && ac.TypeArguments.Length == 2 && KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns) && ac.TypeArguments[1] is INamedTypeSymbol or IArrayTypeSymbol)
                 {
-                    genPairs.Add((ac.TypeArguments[0], gt));
+                    genPairs.Add((ac.TypeArguments[0], ac.TypeArguments[1]));
                 }
 
             // Member-level directives written on the CO-LOCATED HOST itself, read before the wrapper expansion
@@ -399,7 +399,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
             ExtractGenerateMapPairs(ctx, decls, policy, acc, genPairs, genComp, genLoc, hostDirectives);
             // ── Drain the NestedMappingRegistry queue ────────────────────────────────
-            var pendingNestedModels = new List<(MapMethodModel Model, string MethodName)>();
+            var pendingNestedModels = new List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)>();
             DrainNestedMappingQueue(ctx, decls, policy, acc, genPairs, genComp, pendingNestedModels, ct);
             // ── Recursion-capability analysis ────────────────────────────────────────
             // Now that the full dependency graph is known, compute which pairs are on cycles.
@@ -419,7 +419,7 @@ namespace DwarfMapper.Generator.Pipeline
             // None mode is unaffected: isPreserveMode=false skips this block.
             if (isPreserveMode)
             {
-                foreach (var (_, name) in pendingNestedModels)
+                foreach (var (_, name, _) in pendingNestedModels)
                     // Only object-mapper pairs (__DwarfMap_Obj_* prefix). Collection helpers
                     // (__DwarfMapColl_*) and dict helpers (__DwarfMapDict_*) already receive
                     // the preserve treatment via isPreserve=true in CollectionConverter/DictionaryConverter.
@@ -435,7 +435,7 @@ namespace DwarfMapper.Generator.Pipeline
             // Build a set of method names that are recursion-capable (for the public method check).
             var recursionCapableNames = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var (model, name) in pendingNestedModels)
+            foreach (var (model, name, _) in pendingNestedModels)
             {
                 var isRecursionCapable = nestedRegistry.IsRecursionCapable(name);
                 if (isRecursionCapable)
@@ -464,6 +464,8 @@ namespace DwarfMapper.Generator.Pipeline
             var selfRecursivePublicMethods = new HashSet<string>(StringComparer.Ordinal);
 
             DetectDeclaredMethodsOnRecursionCycle(methods, nestedRegistry, pendingNestedModels, recursionCapableNames, declaredNameCount, nodesOnCycle, selfRecursivePublicMethods, allCallGraph);
+            // ── DWARF030: while converter names are still the call graph's own node names ──
+            ReportCyclicConstructorParameters(methods, allCallGraph, nestedRegistry, publicMethodLocs, pendingNestedModels, diagnostics, isPreserveMode, declaredNameCount);
             // ── None+Throw: upgrade collection/dict helpers whose element method is self-recursive ──
             UpgradeElementHelpersOnRecursionCycle(methods, nestedRegistry, recursionCapableNames, selfRecursivePublicMethods, nodesOnCycle, declaredNameCount);
             // ── Mark public methods and synthesized methods that call recursion-capable pairs ─
@@ -475,9 +477,9 @@ namespace DwarfMapper.Generator.Pipeline
             // ── MF-B fix: Preserve + [MapDerivedType] dispatch wrapper synthesis ─────────
             SynthesizePreserveDispatchWrappers(methods, recursionCapableNames, synthesized, maxDepth, isPreserveMode);
             // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
-            ReportCyclicConstructorParameters(methods, allCallGraph, diagnostics, isPreserveMode, declaredNameCount);
+            MarkPreserveModeMethods(methods, isPreserveMode);
             // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
-            ApplySetNullPostPass(methods, isSetNullMode);
+            ApplySetNullPostPass(methods, isSetNullMode, diagnostics, genLoc, classSymbol);
 
             // Report DWARF031 if the registry cap was exceeded.
             if (nestedRegistry.CapExceeded)
@@ -541,6 +543,17 @@ namespace DwarfMapper.Generator.Pipeline
                         pi.Loc,
                         $"[MapIgnore<{pi.Target.ToDisplayString()}>(\"{pi.Member}\")] matches no mapped pair targeting {pi.Target.ToDisplayString()}"));
                 }
+                // DWARF095, pair-scoped: the type argument matched a pair, so DWARF056 stays quiet, but the name
+                // matches no member of that type — consumed, yet excluding nothing. Judged against the type alone
+                // (not an endpoint walk), so no liveness blinding applies.
+                else if (!IgnorableMemberNames(pi.Target, ctx.SemanticModel.Compilation, allowNonPublic, ignorableNamesMemo)
+                             .Contains(pi.Member))
+                {
+                    var target = pi.Target.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnscopedIgnoreNoMatch,
+                        pi.Loc,
+                        $"[MapIgnore<{target}>(\"{pi.Member}\")] on mapper '{classSymbol.Name}' names no destination member of " + $"'{target}' — it excludes nothing (directive names match exactly, " + "including case); fix the name or remove the attribute"));
+                }
 
             foreach (var pv in pairValues)
                 if (!pv.Consumed)
@@ -583,6 +596,19 @@ namespace DwarfMapper.Generator.Pipeline
                         .OrderBy(n => n, StringComparer.Ordinal).ToList()
                     : new List<string>();
 
+            // A co-located mapper is a new top-level internal class, so the assembly can always name it. Any other
+            // mapper hidden inside a private / protected / private protected type is left out of the aggregates
+            // (they cannot reference it) — and told so, rather than silently (DWARF110).
+            var hidingLink = separateEmit ? null : FirstUnnameableLink(classSymbol);
+            if (hidingLink is not null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapperLeftOutOfAggregates,
+                    LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                    classSymbol.ToDisplayString(NestedTypeNameFormat),
+                    MessageArg2: $"'{hidingLink.ToDisplayString(NestedTypeNameFormat)}' is " +
+                                 AccessibilityText(hidingLink.DeclaredAccessibility)));
+            }
+
             return new MapperClassModel(
                 classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
                 emitClassName,
@@ -596,7 +622,36 @@ namespace DwarfMapper.Generator.Pipeline
                 EquatableArray.From(containingTypes),
                 EquatableArray.From(conventionRefs),
                 registerCollectionShapes,
-                EquatableArray.From(handWrittenProvides));
+                EquatableArray.From(handWrittenProvides),
+                hidingLink is null);
+        }
+
+        /// <summary>
+        ///     The type that stops code at namespace scope in the same assembly from naming <paramref name="type" />:
+        ///     the first of <paramref name="type" /> and the types it is nested in, innermost first, whose
+        ///     accessibility is not <c>public</c>, <c>internal</c> or <c>protected internal</c>. <see langword="null" />
+        ///     when every link is reachable, so the assembly's top-level generated classes can name it.
+        /// </summary>
+        /// <summary>
+        ///     A nested type's name qualified by its CONTAINING types and nothing else — <c>Outer.Inner.M</c> — which is
+        ///     how a reader finds it in their own file. <see cref="SymbolDisplayFormat.MinimallyQualifiedFormat" />
+        ///     prints a nested type as its bare name, which names the wrong thing when two types nest an <c>M</c>.
+        /// </summary>
+        private static readonly SymbolDisplayFormat NestedTypeNameFormat = new(
+            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
+            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters);
+
+        internal static INamedTypeSymbol? FirstUnnameableLink(INamedTypeSymbol type)
+        {
+            for (var current = type; current is not null; current = current.ContainingType)
+            {
+                if (current.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal))
+                {
+                    return current;
+                }
+            }
+
+            return null;
         }
 
         // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes
@@ -628,11 +683,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Under <c>[SetsRequiredMembers]</c> the answer to the second is no, and ignoring the member is
         ///     legitimate.
         /// </remarks>
-        private static bool CtorSetsRequiredMembers(IMethodSymbol? ctor)
+        private static bool CtorSetsRequiredMembers(IMethodSymbol ctor)
         {
-            return ctor is not null &&
-                   ctor.GetAttributes()
-                       .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+            return ctor.GetAttributes()
+                .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, SetsRequiredMembersAttribute));
         }
 
         /// <summary>
@@ -658,7 +712,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var marked = method.GetAttributes().Any(a =>
-                    string.Equals(a.AttributeClass?.Name, KnownNames.ProvidesMap, StringComparison.Ordinal) && a.AttributeClass?.ContainingNamespace?.ToDisplayString() == KnownNames.Ns);
+                    KnownNames.IsAttributeNamed(a.AttributeClass, KnownNames.ProvidesMap, KnownNames.Ns));
 
                 if (!marked)
                 {
@@ -671,7 +725,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     diagnostics?.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.ProvidesMapInvalidShape,
-                        LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None),
+                        LocationInfo.FromFirst(method.Locations),
                         method.Name));
                     continue;
                 }
@@ -694,7 +748,7 @@ namespace DwarfMapper.Generator.Pipeline
             // If the chosen ctor is annotated [SetsRequiredMembers], C# considers all required members
             // satisfied — no double-set needed.
             var ctorHasSetsRequired = ctor.GetAttributes()
-                .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+                .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, SetsRequiredMembersAttribute));
 
             if (ctorHasSetsRequired)
             {
@@ -703,9 +757,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Collect required member names from the target type hierarchy.
             var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (var current = (ITypeSymbol)targetType;
-                 current is not null && current.SpecialType != SpecialType.System_Object;
-                 current = current.BaseType)
+            foreach (var current in TypeAndBasesBelowObject(targetType))
                 foreach (var member in current.GetMembers())
                     switch (member)
                     {
@@ -798,7 +850,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static IEnumerable<string> ReadIgnores(ISymbol symbol)
         {
             return symbol.GetAttributes()
-                .Where(a => a.AttributeClass?.ToDisplayString() == KnownNames.MapIgnoreFqn)
+                .Where(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.MapIgnoreFqn))
                 .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
                 .Where(s => s is not null)
                 .Select(s => s!);
@@ -811,7 +863,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static IEnumerable<string> ReadIgnoreSources(ISymbol symbol)
         {
             return symbol.GetAttributes()
-                .Where(a => a.AttributeClass?.ToDisplayString() == KnownNames.MapIgnoreSourceFqn)
+                .Where(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.MapIgnoreSourceFqn))
                 .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
                 .Where(s => s is not null)
                 .Select(s => s!);
@@ -1388,7 +1440,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var attr in symbol.GetAttributes())
             {
-                var cls = attr.AttributeClass?.ToDisplayString();
+                var cls = KnownNames.AttributeClassName(attr.AttributeClass);
                 string message;
 
                 if (cls == KnownNames.MapPropertyFqn && attr.ConstructorArguments.Length == 1)
@@ -1459,7 +1511,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 foreach (var attr in member.GetAttributes())
                 {
-                    var cls = attr.AttributeClass?.ToDisplayString();
+                    var cls = KnownNames.AttributeClassName(attr.AttributeClass);
                     var isProperty = cls == KnownNames.MapPropertyFqn;
                     var isIgnore = cls == KnownNames.MapIgnoreFqn;
                     if (!isProperty && !isIgnore)
@@ -1490,7 +1542,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.MemberFormDirectiveOnMapper,
-                        member.Locations.FirstOrDefault() is { } loc ? LocationInfo.From(loc) : null,
+                        LocationInfo.FromFirst(member.Locations),
                         message));
                 }
             }
@@ -1501,7 +1553,7 @@ namespace DwarfMapper.Generator.Pipeline
             var maps = new List<(string Source, string Target, string? Use)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn))
                 {
                     continue;
                 }
@@ -1533,7 +1585,7 @@ namespace DwarfMapper.Generator.Pipeline
             var result = new List<(string, bool, TypedConstant, string?, string?)>();
             foreach (var attr in method.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapValueFqn)
+                if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapValueFqn))
                 {
                     continue;
                 }
@@ -1543,12 +1595,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                string? use = null;
-                foreach (var na in attr.NamedArguments)
-                    if (na.Key == "Use" && na.Value.Value is string u)
-                    {
-                        use = u;
-                    }
+                var use = TryGetNamedArgument(attr.NamedArguments, "Use", out var u) ? u.Value as string : null;
 
                 // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven.
                 var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
@@ -1569,7 +1616,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Renders a non-failing constant as a C# literal. Callers that can fail on assignability must
         ///     validate BEFORE calling (the MapConfig path is pre-validated by the compiler via the generic member type).
         /// </summary>
-        private static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType)
+        internal static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType)
         {
             if (value is null)
             {
@@ -1592,6 +1639,35 @@ namespace DwarfMapper.Generator.Pipeline
             return targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
                 ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
                 : formatted;
+        }
+
+        /// <summary>
+        ///     The C# literal a constant <c>[MapValue]</c> assigns: <paramref name="constLiteral" /> when the value arrived
+        ///     pre-rendered (a <c>MapConfig</c> convention method), otherwise <see cref="TryFormatConstant" />'s rendering of
+        ///     the attribute's <paramref name="value" /> for <paramref name="targetType" />.
+        /// </summary>
+        /// <remarks>
+        ///     Shared by the create map and the projection. They differ only in what they can receive: the projection reads
+        ///     method-level <c>[MapValue]</c> alone, which never arrives pre-rendered, so an inline "pre-rendered?" test there
+        ///     had an outcome no mapper reaches. Asked here, both answers are reached, the pre-rendered one through the
+        ///     create map's <c>MapConfig</c> path.
+        /// </remarks>
+        internal static bool TryRenderMapValueConstant(
+            string? constLiteral,
+            TypedConstant value,
+            ITypeSymbol targetType,
+            Compilation compilation,
+            out string literal,
+            out string why)
+        {
+            if (constLiteral is not null)
+            {
+                literal = constLiteral;
+                why = "";
+                return true;
+            }
+
+            return TryFormatConstant(value, targetType, compilation, out literal, out why);
         }
 
         private static bool TryFormatConstant(
@@ -1625,24 +1701,11 @@ namespace DwarfMapper.Generator.Pipeline
                 return true;
             }
 
-            if (tc.Kind == TypedConstantKind.Enum)
+            // Enum or primitive (string/bool/char/numeric): one assignability rule, worded per kind.
+            var refusal = ConstantAssignmentRefusal(tc.Type, tc.Kind == TypedConstantKind.Enum, targetType, compilation);
+            if (refusal is not null)
             {
-                if (tc.Type is null || !HasImplicitConversion(compilation, tc.Type, targetType))
-                {
-                    why =
-                        $"[MapValue] enum constant of type '{tc.Type?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
-                    return false;
-                }
-
-                literal = RenderConstantLiteral(tc.Value, tc.Type, targetType);
-                return true;
-            }
-
-            // Primitive (string/bool/char/numeric).
-            if (tc.Type is not null && !HasImplicitConversion(compilation, tc.Type, targetType))
-            {
-                why =
-                    $"[MapValue] constant of type '{tc.Type.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
+                why = refusal;
                 return false;
             }
 
@@ -1650,6 +1713,26 @@ namespace DwarfMapper.Generator.Pipeline
             // and would not compile when assigned to float/decimal.
             literal = RenderConstantLiteral(tc.Value, tc.Type, targetType);
             return true;
+        }
+
+        /// <summary>
+        ///     Why a non-null <c>[MapValue]</c> constant of <paramref name="constantType" /> cannot be assigned to
+        ///     <paramref name="targetType" />, or <see langword="null" /> when it can.
+        /// </summary>
+        /// <remarks>
+        ///     Roslyn gives every non-null enum or primitive constant its type, so a missing
+        ///     <paramref name="constantType" /> is an outcome no attribute application produces. The enum and primitive
+        ///     arms each tested for it, and answered it in opposite ways. Asked once here, where a unit test can pass no
+        ///     type at all, it is refused: an assignment that cannot be shown to convert is not rendered.
+        /// </remarks>
+        internal static string? ConstantAssignmentRefusal(ITypeSymbol? constantType, bool isEnum, ITypeSymbol targetType, Compilation compilation)
+        {
+            if (constantType is not null && HasImplicitConversion(compilation, constantType, targetType))
+            {
+                return null;
+            }
+
+            return $"[MapValue] {(isEnum ? "enum constant" : "constant")} of type '{constantType?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
         }
 
         /// <summary>

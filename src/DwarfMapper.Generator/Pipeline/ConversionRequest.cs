@@ -42,7 +42,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? Location,
             string TargetName,
             bool AutoNest,
-            NestedMappingRegistry? NestedRegistry,
+            NestedMappingRegistry NestedRegistry,
             bool NullAsNull,
             bool IsPreserve,
             bool AllowInterfaceSrc,

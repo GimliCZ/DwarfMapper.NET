@@ -88,7 +88,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
         {
             element = type;
-            if (type is INamedTypeSymbol n && n.Name == "IQueryable" && n.TypeArguments.Length == 1 && n.ContainingNamespace?.ToDisplayString() == "System.Linq")
+            if (type is INamedTypeSymbol n && n.Name == "IQueryable" && n.TypeArguments.Length == 1 && KnownNames.IsNamespace(n.ContainingNamespace, "System.Linq"))
             {
                 element = n.TypeArguments[0];
                 return true;
@@ -220,7 +220,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </param>
         /// <param name="ignoredSourceMembers">
         ///     Source members disowned by <c>[MapIgnoreSource]</c>, by real name, for the DWARF064 shadow rule this
-        ///     endpoint shares with the create map. Null means none were declared.
+        ///     endpoint shares with the create map. Empty when none were declared.
         /// </param>
         private static List<ProjectionMemberMap> ResolveProjectionMembers(
             ITypeSymbol sourceType,
@@ -234,7 +234,7 @@ namespace DwarfMapper.Generator.Pipeline
             EnumPolicy enumPolicy,
             string paramExpr,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
-                mapPropertyExtras = null,
+                mapPropertyExtras,
             // I19: the projection endpoint reads NullCollections like every other endpoint. It used to read it
             // nowhere at all, so a null source collection came back EMPTY through .Map (the documented AsEmpty
             // default) and NULL through .Project — the same member answering differently depending on which
@@ -244,15 +244,15 @@ namespace DwarfMapper.Generator.Pipeline
             // [DwarfMapper(ImplicitConversions = false)] a lossy-but-C#-implicit conversion (long -> double) was
             // an Error at .Map and produced no diagnostic at all at .Project — the strict TRUST setting silently
             // off at one endpoint. The one call site passes the mapper's real setting.
-            HashSet<string>? consumedSources = null,
-            IReadOnlyList<string>? flattenRoots = null,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
-                mapValues = null,
+            HashSet<string>? consumedSources,
+            IReadOnlyList<string> flattenRoots,
+            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
+                mapValues,
             // Source members disowned by [MapIgnoreSource], by real name. Read by the DWARF064 shadow rule, which
             // this endpoint shares with the create map through TryValidateMapValueTarget — and which reached
             // the create map's [MapIgnoreSource] set first and this one not at all, the "fixed at 1 of N sites"
-            // shape. Null means "none declared".
-            HashSet<string>? ignoredSourceMembers = null)
+            // shape. Empty means "none declared".
+            HashSet<string> ignoredSourceMembers)
         {
             // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
             // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -265,11 +265,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // A [MapValue]'d target is explicitly targeted too, exactly as ResolveMembers reads it: opting a
                 // retired member back in deliberately must keep working at both endpoints, and reading only
                 // [MapProperty] here would have made "at both endpoints" false the moment [MapValue] arrived.
-                if (mapValues is not null)
-                {
-                    foreach (var mv in mapValues)
-                        explicitTargets.Add(mv.Target);
-                }
+                foreach (var mv in mapValues)
+                    explicitTargets.Add(mv.Target);
 
                 ignores = new HashSet<string>(ignores, IgnoreNameComparer);
                 foreach (var name in ObsoleteMemberNames(targetType))
@@ -285,7 +282,7 @@ namespace DwarfMapper.Generator.Pipeline
             var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
             if (options.SkipNullSourceMembers)
             {
-                for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                foreach (var t in TypeAndBasesBelowObject(targetType))
                     foreach (var tm in t.GetMembers())
                         if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
                         {
@@ -321,7 +318,7 @@ namespace DwarfMapper.Generator.Pipeline
             // cannot read is not a leaf this endpoint can pull up, and warnNullableHop: false because DWARF044
             // describes a null dereference in emitted C#, which a translated path does not perform (the dotted
             // [MapProperty] source below already makes that call, in the same words).
-            var flattenInfos = ResolveFlattenInfos(flattenRoots ?? Array.Empty<string>(),
+            var flattenInfos = ResolveFlattenInfos(flattenRoots,
                 sourceType,
                 comparer,
                 compilation,
@@ -399,7 +396,8 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (ignores.Contains(tgtName))
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName,
+                        MessageArg2: "[MapProperty]"));
                     continue;
                 }
 
@@ -432,25 +430,10 @@ namespace DwarfMapper.Generator.Pipeline
                 // dropped in silence: the rename still bound, so completeness was satisfied and nothing was
                 // reported, while .Map applied the modifier and .Project did not — the same mapper yielding
                 // different data depending on which method you called. Same rule as Use= above.
-                if (extrasByTarget.TryGetValue(tgtName, out var extra))
+                if (UntranslatableModifierReason(extrasByTarget, tgtName) is { } modifierReason)
                 {
-                    if (extra.HasNullSub)
-                    {
-                        EmitDwarf028(diagnostics,
-                            location,
-                            tgtName,
-                            "NullSubstitute is not translatable in projection (the substitution would be silently " + "dropped and a null stored instead); remove it or map this member at runtime");
-                        continue;
-                    }
-
-                    if (extra.When is not null)
-                    {
-                        EmitDwarf028(diagnostics,
-                            location,
-                            tgtName,
-                            "When= is not translatable in projection (the predicate cannot run inside an expression " + "tree, so the member would always be assigned); remove it or map this member at runtime");
-                        continue;
-                    }
+                    EmitDwarf028(diagnostics, location, tgtName, modifierReason);
+                    continue;
                 }
 
                 // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
@@ -517,9 +500,7 @@ namespace DwarfMapper.Generator.Pipeline
             // The validation is the create map's own, hoisted rather than copied — see TryValidateMapValueTarget.
             // What differs here is only what this endpoint can SEE: the public-only writable set, the projection
             // source lookup, and the constructor the projection actually calls.
-            foreach (var mv in mapValues ??
-                               Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
-                                   string? Use, string? ConstLiteral)>())
+            foreach (var mv in mapValues)
             {
                 if (!TryValidateMapValueTarget(mv.Target,
                         handled,
@@ -529,7 +510,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // The projection lookup is already keyed the way this pair matches and carries the real
                         // source name — the spelling [MapIgnoreSource] is read under, here and for source coverage.
                         name => sources.TryGetValue(name, out var shadowed)
-                                && !(ignoredSourceMembers?.Contains(shadowed.Name) ?? false)
+                                && !ignoredSourceMembers.Contains(shadowed.Name)
                             ? shadowed.Name
                             : null,
                         location,
@@ -541,8 +522,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (mv.IsConstant)
                 {
-                    var literal = mv.ConstLiteral;
-                    if (literal is null && !TryFormatConstant(mv.Value, mvTgtType, compilation, out literal, out var why))
+                    if (!TryRenderMapValueConstant(mv.ConstLiteral, mv.Value, mvTgtType, compilation, out var literal, out var why))
                     {
                         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch,
                             location,
@@ -837,13 +817,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<DiagnosticInfo> diagnostics,
             string targetMemberName,
             EnumPolicy enumPolicy,
-            StringComparer? comparer,
+            StringComparer comparer,
             bool autoNest,
             bool nullAsNull,
             bool implicitConversions)
         {
-            comparer ??= StringComparer.Ordinal;
-
             // ── Depth guard ───────────────────────────────────────────────────────
             if (depth > ProjectionMaxDepth)
             {
@@ -1050,9 +1028,8 @@ namespace DwarfMapper.Generator.Pipeline
             // would need CreateChecked — fall through to DWARF028 for that case.
             if (srcType.TypeKind == TypeKind.Enum && TypeInterfaces.IsIntegral(tgtType))
             {
-                // Get the enum's underlying integral type for a width-safety check.
-                var enumUnderlying = ((INamedTypeSymbol)srcType).EnumUnderlyingType;
-                if (enumUnderlying is not null && IsWideningOrSameWidth(enumUnderlying, tgtType))
+                // Width-safety check on the enum's underlying integral type.
+                if (EnumFitsIntegral(srcType, tgtType))
                 {
                     var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     return $"({tgtFqn}){srcExpr}";
@@ -1070,8 +1047,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (TypeInterfaces.IsIntegral(srcType) && tgtType.TypeKind == TypeKind.Enum)
             {
                 // integral→enum: safe when source integral width ≤ enum underlying width.
-                var enumUnderlying = ((INamedTypeSymbol)tgtType).EnumUnderlyingType;
-                if (enumUnderlying is not null && IsWideningOrSameWidth(srcType, enumUnderlying))
+                if (IntegralFitsEnum(srcType, tgtType))
                 {
                     var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     return $"({tgtFqn}){srcExpr}";
@@ -1108,7 +1084,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // ── UNSAFE: string↔T parsable (ParsableConverter would fire) ─────────
             if ((srcType.SpecialType == SpecialType.System_String && tgtType.TypeKind != TypeKind.Enum && TypeInterfaces.ImplementsIParsable(compilation, tgtType)) ||
-                (tgtType.SpecialType == SpecialType.System_String && srcType.SpecialType != SpecialType.System_String && srcType.TypeKind != TypeKind.Enum && (TypeInterfaces.ImplementsIFormattable(srcType) || srcType.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char)))
+                (tgtType.SpecialType == SpecialType.System_String && srcType.SpecialType != SpecialType.System_String && srcType.TypeKind != TypeKind.Enum && IsStringFormattable(srcType)))
             {
                 EmitDwarf028(diagnostics,
                     location,
@@ -1272,7 +1248,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     widening or same-width (thus safe as a direct inline cast in SQL projection).
         ///     Both must be integral types.
         /// </summary>
-        private static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
+        internal static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
         {
             // (bit width, isSigned) per integral type. Honours the enum's ACTUAL underlying type
             // (byte/short/uint/long/…), not a fixed int assumption.
@@ -1490,6 +1466,27 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Whether every value of the enum <paramref name="enumType" /> survives a plain cast to
+        ///     <paramref name="integral" />: its underlying type is the same width as the target or widens to it. False for
+        ///     a type with no underlying type.
+        /// </summary>
+        /// <remarks>
+        ///     The projection asks it only about real enums, which always have an underlying type, so "no underlying type"
+        ///     is answered here once, where the unit test asks it, instead of as an inline null test at each cast that no
+        ///     mapper can fail.
+        /// </remarks>
+        internal static bool EnumFitsIntegral(ITypeSymbol enumType, ITypeSymbol integral)
+        {
+            return enumType is INamedTypeSymbol { EnumUnderlyingType: { } underlying } && IsWideningOrSameWidth(underlying, integral);
+        }
+
+        /// <summary>The integral-to-enum twin of <see cref="EnumFitsIntegral" />.</summary>
+        internal static bool IntegralFitsEnum(ITypeSymbol integral, ITypeSymbol enumType)
+        {
+            return enumType is INamedTypeSymbol { EnumUnderlyingType: { } underlying } && IsWideningOrSameWidth(integral, underlying);
+        }
+
+        /// <summary>
         ///     Whether a projection source expression needs a null-navigation guard. A reference type needs one
         ///     only when it is nullable-annotated (<c>T?</c>) or nullable-oblivious (compiled with
         ///     <c>#nullable disable</c>). A NON-nullable-annotated reference is guaranteed non-null, so guarding it
@@ -1567,12 +1564,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<DiagnosticInfo> diagnostics,
             string targetMemberName,
             EnumPolicy enumPolicy,
-            StringComparer? comparer,
+            StringComparer comparer,
             bool autoNest,
             bool nullAsNull,
             bool implicitConversions)
         {
-            comparer ??= StringComparer.Ordinal;
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
@@ -1942,6 +1938,33 @@ namespace DwarfMapper.Generator.Pipeline
             return false;
         }
 
+        /// <summary>
+        ///     Why the <c>[MapProperty]</c> modifier recorded for <paramref name="target" /> cannot be carried into a
+        ///     projection, or <see langword="null" /> when the target has no modifier to refuse.
+        /// </summary>
+        /// <remarks>
+        ///     <c>ReadMapPropertyExtras</c> records only a target that carries <c>NullSubstitute</c> or <c>When</c>, so an
+        ///     entry with neither never reaches the projection through a mapper. Answering it here states that case once,
+        ///     where a test can ask it, instead of leaving an exit no input takes at the call site. NullSubstitute is
+        ///     named first when both are present, as the inline checks this replaced did.
+        /// </remarks>
+        internal static string? UntranslatableModifierReason(IReadOnlyDictionary<string, (bool HasNullSub, string? When)> extrasByTarget, string target)
+        {
+            if (!extrasByTarget.TryGetValue(target, out var extra))
+            {
+                return null;
+            }
+
+            if (extra.HasNullSub)
+            {
+                return "NullSubstitute is not translatable in projection (the substitution would be silently " + "dropped and a null stored instead); remove it or map this member at runtime";
+            }
+
+            return extra.When is not null
+                ? "When= is not translatable in projection (the predicate cannot run inside an expression " + "tree, so the member would always be assigned); remove it or map this member at runtime"
+                : null;
+        }
+
         // The comparer already collapsed case when it is OrdinalIgnoreCase or Flexible, so the second pass can
         // only ever add matches the first pass could not see — never override one it did.
 
@@ -1988,6 +2011,21 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Whether turning <paramref name="source" /> into a string goes through a formatting call a query provider
+        ///     cannot translate: an <c>IFormattable</c> type, or <c>bool</c> / <c>char</c>, whose <c>ToString</c> the
+        ///     runtime resolver calls too.
+        /// </summary>
+        /// <remarks>
+        ///     <c>char</c> is named explicitly because a core library need not declare it <c>IFormattable</c>. The modern
+        ///     BCL does, so through a real compilation the interface test always answers first; the unit test builds a
+        ///     core library that does not.
+        /// </remarks>
+        internal static bool IsStringFormattable(ITypeSymbol source)
+        {
+            return TypeInterfaces.ImplementsIFormattable(source) || source.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char;
+        }
+
+        /// <summary>
         ///     Recognises <c>System.Span&lt;T&gt;</c> / <c>System.ReadOnlySpan&lt;T&gt;</c>, returning the element
         ///     type and whether it is the read-only form. Used to detect zero-alloc span map methods.
         /// </summary>
@@ -1995,7 +2033,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             element = null!;
             isReadOnly = false;
-            if (t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && n.ContainingNamespace is { Name: "System" } ns && ns.ContainingNamespace?.IsGlobalNamespace == true && (string.Equals(n.Name, "Span", StringComparison.Ordinal) || string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal)))
+            if (t is INamedTypeSymbol n && n.TypeArguments.Length == 1 && KnownNames.IsNamespace(n.ContainingNamespace, "System") && (string.Equals(n.Name, "Span", StringComparison.Ordinal) || string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal)))
             {
                 element = n.TypeArguments[0];
                 isReadOnly = string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal);
@@ -2034,7 +2072,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>True for <c>System.Threading.CancellationToken</c>.</summary>
         private static bool IsCancellationToken(ITypeSymbol t)
         {
-            return t is INamedTypeSymbol { Name: "CancellationToken" } n && n.ContainingNamespace?.ToDisplayString() == "System.Threading";
+            return t is INamedTypeSymbol { Name: "CancellationToken" } n && KnownNames.IsNamespace(n.ContainingNamespace, "System.Threading");
         }
 
         /// <summary>
@@ -2063,7 +2101,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         as the runtime path does.
         ///     </para>
         /// </summary>
-        private sealed class FlexibleNameComparer : StringComparer
+        internal sealed class FlexibleNameComparer : StringComparer
         {
             public static readonly FlexibleNameComparer Instance = new();
 

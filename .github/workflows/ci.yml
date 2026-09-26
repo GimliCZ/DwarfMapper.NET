@@ -310,11 +310,86 @@ jobs:
       # reference, no CopyLocal), so no *.stryker-unchanged marker is written and restore never touches
       # them. The next incremental build keeps the mutant. Runs the SAME function housekeeping's three
       # legs call, dot-sourced rather than re-implemented, so the two cannot drift.
+      # REMOVE first, then assert - the order housekeeping's Invoke-DecontaminatedMutationLeg uses, and
+      # for the same reason. Asserting alone made every generator and pipeline leg red (2026-09-20): the
+      # expected residue of an analyzer-only reference is exactly what Stryker cannot restore, so the
+      # assertion fired on it every time and reported a known condition as a failure. Removing first keeps
+      # the assertion meaningful - it still fails on anything the delete could not clear, which is the
+      # unexpected contamination it exists to catch - while the well-understood residue no longer stops the
+      # leg. `always()` so a leg that failed its own threshold is decontaminated too; the runner is thrown
+      # away, but the artifacts and the next step are not.
+      - name: Remove the planted mutants an analyzer-only reference leaves behind
+        if: always()
+        shell: pwsh
+        run: |
+          . ./scripts/gate-checks.ps1
+          Remove-PlantedMutants -Leg '${{ matrix.leg }}' -Root (Get-Location).Path
       - name: Assert no mutated product binary survived the leg
+        if: always()
         shell: pwsh
         run: |
           . ./scripts/gate-checks.ps1
           Assert-NoMutatedProductBinaries -Leg '${{ matrix.leg }}' -Root (Get-Location).Path
+      # ── Publish the VERIFIED report to the Stryker dashboard ─────────────────────────────────────────
+      # An upload of the FINISHED report, deliberately NOT Stryker's own `dashboard` reporter. The reporter
+      # publishes DURING the run — before "Assert the run was not vacuous" has established that the run
+      # measured anything at all. A vacuous leg exits 0 with a score over an empty population, and that is
+      # precisely the number that must never leave this machine. Everything above this line passes first.
+      # Keeping it out of the configs also means a local `housekeeping.ps1 -MutationLeg` neither uploads nor
+      # needs a key, so the six configs stay exactly as measured.
+      #
+      # Schedule/dispatch only: a `full-ci` pull request would publish under a ref like '123/merge', which is
+      # not a branch anyone reads a history for.
+      #
+      # `module` separates the six legs inside one project version; the dashboard aggregates modules into the
+      # project score. Both halves of the identity are READ from the leg's own config rather than repeated
+      # here — for the same reason every other number in this repository is read rather than typed.
+      #
+      # A failed upload FAILS the leg, on purpose. The dashboard is now the repository's only published
+      # quality number, and a badge still showing last week's score because an upload has been quietly
+      # 4xx-ing is the failure mode the static badges existed to prevent: a badge that can quietly lie is
+      # worse than no badge at all.
+      - name: Publish the verified report to the Stryker dashboard
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STRYKER_DASHBOARD_API_KEY:-}" ]; then
+            echo "::error::STRYKER_DASHBOARD_API_KEY is not set — this leg measured a score nobody will see"
+            exit 1
+          fi
+          report=$(find StrykerOutput -name mutation-report.json -print | sort | tail -n 1)
+          project=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['name'])" '${{ matrix.config }}')
+          module=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['module'])" '${{ matrix.config }}')
+          echo "publishing ${{ matrix.leg }} as module '$module' of '$project', version '${{ github.ref_name }}'"
+          status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
+            "https://dashboard.stryker-mutator.io/api/reports/$project/${{ github.ref_name }}?module=$module" \
+            -H 'Content-Type: application/json' \
+            -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
+            --data-binary @"$report")
+          cat dashboard-response.json; echo
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            # This step has never run before this workflow first reaches master, and exactly one thing in it is
+            # unverified: `?module=`. The endpoint and the X-Api-Key header are documented; the module
+            # parameter's SPELLING is not, so a first-contact 4xx most likely means that name is wrong rather
+            # than that anything is broken. Say so here, with the pieces needed to fix it in one edit, instead
+            # of leaving six red legs reporting an opaque status code.
+            echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
+            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/${{ github.ref_name }}?module=$module"
+            echo "Response body is above. The URL SHAPE is documentation-verified - the dashboard's HTTP API"
+            echo "documents exactly '\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx"
+            echo "suspect the API KEY or the project name before the parameter. The report itself was measured"
+            echo "and gated before this step ran and is attached as an artifact, so a failed upload loses no"
+            echo "measurement: fix the credential or the name and the next nightly publishes."
+            exit 1
+          fi
+          # NOT asserted: anything about the response BODY. The dashboard documents the endpoint and the module
+          # query parameter but says nothing about what a success returns, so a check that the body mentions the
+          # module would be gating on a guess - and would fail all six legs on every run if the API answers with
+          # a bare object. The body is echoed above for a human to read on the first publish; the module landing
+          # correctly is confirmed by the dashboard showing SIX modules for the version, which is a thing to look
+          # at once rather than a thing to assert on every run from undocumented shape.
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
       # only thing that distinguishes a real regression from a re-classification.
       - if: always()

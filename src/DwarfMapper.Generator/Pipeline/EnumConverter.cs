@@ -199,15 +199,8 @@ namespace DwarfMapper.Generator.Pipeline
             // so that two mapping methods using the same incomplete enum pair each report DWARF015.
             var targetNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var m in EnumMembers(tgt)) targetNames.Add(m.Name);
-            var seenValuesForDiag = new HashSet<object>();
-            foreach (var m in EnumMembers(src))
+            foreach (var m in DistinctValuedMembers(src))
             {
-                if (m.ConstantValue is null ||
-                    !seenValuesForDiag.Add(m.ConstantValue))
-                {
-                    continue; // alias of an already-emitted value
-                }
-
                 if (!targetNames.Contains(m.Name))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IncompleteEnumMapping, location, m.Name));
@@ -239,15 +232,8 @@ namespace DwarfMapper.Generator.Pipeline
                 w.Line("{");
                 using (w.Indent())
                 {
-                    var seenValues = new HashSet<object>();
-                    foreach (var m in EnumMembers(src))
+                    foreach (var m in DistinctValuedMembers(src))
                     {
-                        if (m.ConstantValue is null ||
-                            !seenValues.Add(m.ConstantValue))
-                        {
-                            continue; // alias of an already-emitted value
-                        }
-
                         if (targetNames.Contains(m.Name))
                         {
                             w.Line(Fq(src) + "." + Identifiers.Escape(m.Name) + " => " + Fq(tgt) + "." + Identifiers.Escape(m.Name) + ",");
@@ -294,14 +280,8 @@ namespace DwarfMapper.Generator.Pipeline
                     w.Line("var __r = default(" + Fq(tgt) + ");");
                     w.Line("var __rest = (" + underlying + ")v;");
 
-                    var seenValues = new HashSet<object>();
-                    foreach (var m in EnumMembers(src))
+                    foreach (var m in DistinctValuedMembers(src))
                     {
-                        if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
-                        {
-                            continue;
-                        }
-
                         if (!targetNames.Contains(m.Name))
                         {
                             continue;
@@ -334,7 +314,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool IsFlagsEnum(INamedTypeSymbol enumType)
         {
             foreach (var attribute in enumType.GetAttributes())
-                if (attribute.AttributeClass is { Name: "FlagsAttribute" } a && a.ContainingNamespace?.ToDisplayString() == "System")
+                if (KnownNames.IsAttributeNamed(attribute.AttributeClass, "FlagsAttribute", "System"))
                 {
                     return true;
                 }
@@ -357,7 +337,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///         them with no per-type list to drift out of date.
         ///     </para>
         /// </summary>
-        private static bool IsZero(object constantValue)
+        /// <remarks>
+        ///     Internal so a unit test can pass a value that is not <see cref="IConvertible" />: an enum constant is always
+        ///     a boxed integral, so that answer was never reached through the converter.
+        /// </remarks>
+        internal static bool IsZero(object? constantValue)
         {
             return constantValue is IConvertible c && c.ToDecimal(CultureInfo.InvariantCulture) == 0m;
         }
@@ -373,6 +357,25 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                     yield return f;
+                }
+        }
+
+        /// <summary>
+        ///     The enum's nameable constant members, first of each value: an alias of a value already yielded is skipped,
+        ///     so a switch never carries two arms for one constant.
+        /// </summary>
+        /// <remarks>
+        ///     The one statement of the alias rule four emitters each spelled inline. A constant with no value is skipped
+        ///     too: an enum member always has one, so that answer is reached only through this method's own test, with a
+        ///     class constant set to null.
+        /// </remarks>
+        internal static IEnumerable<IFieldSymbol> DistinctValuedMembers(INamedTypeSymbol enumType)
+        {
+            var seen = new HashSet<object>();
+            foreach (var m in EnumMembers(enumType))
+                if (m.ConstantValue is not null && seen.Add(m.ConstantValue))
+                {
+                    yield return m;
                 }
         }
 
@@ -394,13 +397,16 @@ namespace DwarfMapper.Generator.Pipeline
             isError = false;
             foreach (var attribute in member.GetAttributes())
             {
-                if (attribute.AttributeClass?.ToDisplayString() != "System.ObsoleteAttribute")
+                if (!KnownNames.IsAttributeClass(attribute.AttributeClass, "System.ObsoleteAttribute"))
                 {
                     continue;
                 }
 
                 // ObsoleteAttribute(string message, bool error): the second constructor argument is the error flag.
-                isError = attribute.ConstructorArguments.Length >= 2 && attribute.ConstructorArguments[1].Value is true;
+                // Compared with Equals rather than tested with `is true`: that argument is always a bool when it arrives.
+                // A mistyped one fails constructor binding and records no arguments at all, and a consumer-declared
+                // look-alike taking another type crashes the compiler's own obsolete decoding first (both measured).
+                isError = attribute.ConstructorArguments.Length >= 2 && Equals(attribute.ConstructorArguments[1].Value, true);
                 return true;
             }
 
@@ -492,20 +498,19 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attribute in member.GetAttributes())
             {
                 var cls = attribute.AttributeClass;
-                if (cls is { Name: "EnumMemberAttribute" } && cls.ContainingNamespace?.ToDisplayString() == "System.Runtime.Serialization")
+                // Value is EnumMemberAttribute's only settable property, so it is looked up by name: a loop testing each
+                // named argument's key has an answer no application gives, because the compiler drops an unknown one.
+                if (cls is { Name: "EnumMemberAttribute" } && KnownNames.IsNamespace(cls.ContainingNamespace, "System.Runtime.Serialization") &&
+                    MapperExtractor.TryGetNamedArgument(attribute.NamedArguments, "Value", out var value) && value.Value is string v)
                 {
-                    foreach (var na in attribute.NamedArguments)
-                        if (na.Key == "Value" && na.Value.Value is string v)
-                        {
-                            return v;
-                        }
+                    return v;
                 }
             }
 
             foreach (var attribute in member.GetAttributes())
             {
                 var cls = attribute.AttributeClass;
-                if (cls is { Name: "DescriptionAttribute" } && cls.ContainingNamespace?.ToDisplayString() == "System.ComponentModel" && attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is string d)
+                if (cls is { Name: "DescriptionAttribute" } && KnownNames.IsNamespace(cls.ContainingNamespace, "System.ComponentModel") && attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is string d)
                 {
                     return d;
                 }
@@ -601,14 +606,8 @@ namespace DwarfMapper.Generator.Pipeline
                     w.Line("{");
                     using (w.Indent())
                     {
-                        var seenValues = new HashSet<object>();
-                        foreach (var m in EnumMembers(src))
+                        foreach (var m in DistinctValuedMembers(src))
                         {
-                            if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
-                            {
-                                continue;
-                            }
-
                             var text = flags ? m.Name : SerializedName(m, stringSource);
                             w.Line(Fq(src) + "." + Identifiers.Escape(m.Name) + " => \"" + Escape(text) + "\",");
                         }

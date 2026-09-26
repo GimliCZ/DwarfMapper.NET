@@ -140,24 +140,43 @@ namespace DwarfMapper.Generator.Pipeline
                     return false;
                 }
 
-                var su = ((INamedTypeSymbol)src).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
-                var du = ((INamedTypeSymbol)dst).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
-                return su != SpecialType.None && su == du;
+                return SameSpecialType(EnumUnderlying(src), EnumUnderlying(dst));
             }
 
             if (srcIsEnum)
             {
-                var su = ((INamedTypeSymbol)src).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
-                return su != SpecialType.None && su == dst.SpecialType;
+                return SameSpecialType(EnumUnderlying(src), dst.SpecialType);
             }
 
             if (dstIsEnum)
             {
-                var du = ((INamedTypeSymbol)dst).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
-                return du != SpecialType.None && du == src.SpecialType;
+                return SameSpecialType(EnumUnderlying(dst), src.SpecialType);
             }
 
             return false;
+        }
+
+        /// <summary>
+        ///     The special type an enum is backed by, or <see cref="SpecialType.None" /> for a type that is not an enum.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="CanReinterpretEnums" /> asks it only of a type whose <c>TypeKind</c> is <c>Enum</c>, and every enum
+        ///     has an integral underlying type, so the "none" answer was an outcome that method never reached. Asked here,
+        ///     a unit test passes a type that is not an enum.
+        /// </remarks>
+        internal static SpecialType EnumUnderlying(ITypeSymbol type)
+        {
+            return (type as INamedTypeSymbol)?.EnumUnderlyingType?.SpecialType ?? SpecialType.None;
+        }
+
+        /// <summary>Whether <paramref name="a" /> and <paramref name="b" /> are the same special type, and a real one.</summary>
+        /// <remarks>
+        ///     Every caller passes at least one type known to be special, an enum's underlying type or a primitive, so
+        ///     "both none" was an outcome no caller reached. Asked here, a unit test passes it.
+        /// </remarks>
+        internal static bool SameSpecialType(SpecialType a, SpecialType b)
+        {
+            return a != SpecialType.None && a == b;
         }
 
         /// <summary>
@@ -401,7 +420,7 @@ namespace DwarfMapper.Generator.Pipeline
                     return wa > 0 && wa == PrimitiveSize(b);
                 }
 
-                return a.SpecialType == b.SpecialType && a.SpecialType != SpecialType.None;
+                return SameSpecialType(a.SpecialType, b.SpecialType);
             }
 
             if (a is not INamedTypeSymbol na || b is not INamedTypeSymbol nb)
@@ -570,7 +589,12 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>The type declaration that lexically contains the field (or the member it backs), as a (tree, span) key.</summary>
-        private static (SyntaxTree Tree, TextSpan Span)? DeclaringPart(IFieldSymbol f)
+        /// <remarks>
+        ///     Internal so a unit test can pass a field whose declaration is not a type declaration, such as an enum
+        ///     member: the proof asks it only about instance fields, which always sit inside one, so the "no type
+        ///     declaration" answer was never reached through it.
+        /// </remarks>
+        internal static (SyntaxTree Tree, TextSpan Span)? DeclaringPart(IFieldSymbol f)
         {
             var owner = f.DeclaringSyntaxReferences.Length > 0 ? f : f.AssociatedSymbol;
             if (owner is null || owner.DeclaringSyntaxReferences.Length == 0)
@@ -594,7 +618,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             foreach (var attr in t.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.StructLayoutAttribute")
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, "System.Runtime.InteropServices.StructLayoutAttribute"))
                 {
                     if (attr.ConstructorArguments.Length >= 1 &&
                         attr.ConstructorArguments[0].Value is int kind &&
@@ -632,7 +656,7 @@ namespace DwarfMapper.Generator.Pipeline
         public static int InlineArrayLength(INamedTypeSymbol t)
         {
             foreach (var attr in t.GetAttributes())
-                if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.CompilerServices.InlineArrayAttribute" &&
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, "System.Runtime.CompilerServices.InlineArrayAttribute") &&
                     attr.ConstructorArguments.Length == 1 &&
                     attr.ConstructorArguments[0].Value is int length)
                 {

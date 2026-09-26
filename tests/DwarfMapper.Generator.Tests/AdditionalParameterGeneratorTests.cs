@@ -48,6 +48,29 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void Two_extra_parameters_differing_only_by_case_bind_in_declaration_order()
+        {
+            // Case-insensitive matching admits a tie C# itself allows: `tenant` and `Tenant` are distinct
+            // parameters and both match destination Tenant. The search stops at the FIRST match, so the
+            // tie-break is declaration order — the same rule every other ordered lookup here uses — and the
+            // loser is the one DWARF047 names as unused. Without the early exit the LAST one would win, and
+            // which parameter fed the member would depend on where the caller happened to declare it.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class S { public int Id { get; set; } }
+                               public class D { public int Id { get; set; } public string Tenant { get; set; } = ""; }
+                               [DwarfMapper] public partial class M { public partial D Map(S s, string tenant, string Tenant); }
+                               """;
+            var (diags, gen) = GeneratorTestHarness.Run(src);
+            Assert.Contains("Tenant = tenant,", gen, StringComparison.Ordinal);
+            var unused = Find(diags, "DWARF047");
+            Assert.NotNull(unused);
+            Assert.Contains("'Tenant'", unused.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        [Fact]
         public void Extra_parameter_wins_over_by_name_member()
         {
             // Source also has a member named Note, but the extra parameter takes precedence.

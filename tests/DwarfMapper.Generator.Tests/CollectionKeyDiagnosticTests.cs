@@ -102,5 +102,62 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Contains("DWARF074", Ids(source));
         }
+
+        /// <summary>
+        ///     The collection member may be a FIELD on both sides. Its type is looked up by name across properties AND
+        ///     fields; every other fixture declared properties, so the field arm had never answered.
+        /// </summary>
+        [Fact]
+        public void A_list_field_is_accepted_as_the_keyed_collection()
+        {
+            const string source = """
+                                  using System.Collections.Generic;
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Item { public int Id { get; set; } }
+                                  public class Src { public List<Item> Items = new(); }
+                                  public class Dst { public List<Item> Items = new(); }
+                                  [DwarfMapper]
+                                  public partial class M
+                                  {
+                                      [MapCollectionKey(nameof(Dst.Items), nameof(Item.Id))]
+                                      public partial void Merge(Src src, Dst dst);
+                                  }
+                                  """;
+
+            Assert.DoesNotContain("DWARF074", Ids(source));
+            GeneratorAssert.EmitsCompilableCode(source);
+        }
+
+        /// <summary>
+        ///     A keyed collection fed from a DOTTED source path has no single source member of that name to check the
+        ///     List&lt;T&gt; shape on, so it is refused — from a class source, whose walk ends at <c>object</c>, and from an
+        ///     interface source, whose walk ends when the base type runs out.
+        /// </summary>
+        [Theory]
+        [InlineData("public class Src { public Holder H { get; set; } = new(); }", "Src")]
+        [InlineData("public interface ISrc { Holder H { get; } }", "ISrc")]
+        public void A_keyed_collection_fed_from_a_dotted_source_path_reports_DWARF074(string sourceDeclaration, string sourceType)
+        {
+            var source = """
+                         using System.Collections.Generic;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Item { public int Id { get; set; } }
+                         public class Holder { public List<Item> Inner { get; set; } = new(); }
+                         public class Dst { public List<Item> Items { get; set; } = new(); }
+
+                         """
+                         + sourceDeclaration + "\n"
+                         + "[DwarfMapper]\npublic partial class M\n{\n"
+                         + "    [MapProperty(\"H.Inner\", nameof(Dst.Items))]\n"
+                         + "    [MapCollectionKey(nameof(Dst.Items), nameof(Item.Id))]\n"
+                         + "    public partial void Merge(" + sourceType + " src, Dst dst);\n}\n";
+
+            var dwarf074 = Assert.Single(GeneratorTestHarness.Run(source).Diagnostics, d => d.Id == "DWARF074");
+            Assert.Contains("must be a List<T> on both source and destination",
+                dwarf074.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
     }
 }

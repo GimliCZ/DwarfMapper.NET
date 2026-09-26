@@ -66,8 +66,9 @@ namespace DwarfMapper.Generator.Pipeline
             out string? converterMethod,
             out NullHandling nullHandling,
             out bool converterNeedsCtx,
-            bool autoNest = false,
-            NestedMappingRegistry? nestedRegistry = null,
+            out string? converterParamTypeFqn,
+            bool autoNest,
+            NestedMappingRegistry nestedRegistry,
             bool nullAsNull = false,
             bool isPreserve = false,
             bool allowInterfaceSrc = false,
@@ -78,6 +79,11 @@ namespace DwarfMapper.Generator.Pipeline
             converterMethod = null;
             nullHandling = NullHandling.None;
             converterNeedsCtx = false;
+            // The parameter type of the DECLARED method a name was adopted from, set only where a declared name
+            // becomes the converter (Use= and auto-adoption, below). An overloaded name is a different method per
+            // parameter type, and the recursion-cycle phase cannot tell which one a bare name meant — see
+            // MemberMap.ConverterParamTypeFqn.
+            converterParamTypeFqn = null;
 
             // One bundle for the arms below. Five of the six read 19 or 20 of this method's parameters, so
             // passing them individually would give each arm a signature nobody could read. diagnostics and
@@ -124,6 +130,7 @@ namespace DwarfMapper.Generator.Pipeline
                         }
 
                         converterMethod = m.Name;
+                        converterParamTypeFqn = m.ParamType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         return true;
                     }
 
@@ -216,7 +223,7 @@ namespace DwarfMapper.Generator.Pipeline
             // so that a user method can intentionally shadow the built-in behavior. The search itself is
             // FindUserDeclaredConversion — shared verbatim with the array/list blit gate, which has to ask
             // the same question one arm earlier (round 29 T0.2c); see that method's remarks.
-            FindUserDeclaredConversion(req, out var found, out var ambiguous);
+            FindUserDeclaredConversion(req, out var found, out var foundParamType, out var ambiguous);
             if (ambiguous)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
@@ -228,6 +235,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (found is not null && !PrefersSynthesizedObjectMap(req, found))
             {
                 converterMethod = found;
+                converterParamTypeFqn = foundParamType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 nullHandling = UserConverterNullGuard(req, found);
                 return true;
             }
@@ -358,7 +366,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         resolves at the top of the chain and is unaffected — only auto-adoption is blocked.
         ///     </para>
         /// </remarks>
-        private static void FindUserDeclaredConversion(ConversionRequest req, out string? found, out bool ambiguous)
+        private static void FindUserDeclaredConversion(ConversionRequest req, out string? found, out ITypeSymbol? foundParamType, out bool ambiguous)
         {
             static bool IsReserved(IReadOnlyCollection<string>? reserved, string name)
             {
@@ -366,12 +374,14 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             found = null;
+            foundParamType = null;
             ambiguous = false;
 
             foreach (var c in req.AutoCandidates)
                 if (!IsReserved(req.ReservedConverters, c.Name) && HasImplicitConversion(req.Compilation, req.SrcType, c.ParamType) && HasImplicitConversion(req.Compilation, c.ReturnType, req.TgtType))
                 {
                     ambiguous |= found is not null;
+                    foundParamType ??= c.ParamType;
                     found ??= c.Name;
                 }
 
@@ -392,6 +402,7 @@ namespace DwarfMapper.Generator.Pipeline
                 if (HasImplicitConversion(req.Compilation, req.SrcType, m.ParamType) && HasImplicitConversion(req.Compilation, m.ReturnType, req.TgtType))
                 {
                     ambiguous |= found is not null;
+                    foundParamType ??= m.ParamType;
                     found ??= m.Name;
                 }
             }
@@ -419,7 +430,6 @@ namespace DwarfMapper.Generator.Pipeline
         {
             return (req.IsPreserve || req.IsSetNull) &&
                    req.AutoNest &&
-                   req.NestedRegistry is not null &&
                    req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
                    req.TgtType is INamedTypeSymbol namedTgt &&
                    IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt);
@@ -432,7 +442,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool AutoNestWouldClaim(ConversionRequest req)
         {
             return req.AutoNest &&
-                   req.NestedRegistry is not null &&
                    req.TgtType is INamedTypeSymbol namedTgt &&
                    IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt, req.AllowInterfaceSrc);
         }
@@ -445,7 +454,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     When <paramref name="allowInterfaceSrc" /> is <see langword="true" />, interface source types
         ///     are accepted (used by [MapDerivedType] arm resolution where the caller explicitly opts in).
         /// </summary>
-        private static bool IsMappableObjectPair(
+        internal static bool IsMappableObjectPair(
             Compilation compilation,
             ITypeSymbol src,
             INamedTypeSymbol tgt,
@@ -552,7 +561,7 @@ namespace DwarfMapper.Generator.Pipeline
                 });
         }
 
-        private static bool HasDerivedTypesInCompilation(Compilation compilation, ITypeSymbol src)
+        internal static bool HasDerivedTypesInCompilation(Compilation compilation, ITypeSymbol src)
         {
             if (src is not INamedTypeSymbol { TypeKind: TypeKind.Class } namedSrc)
             {
@@ -591,7 +600,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
         }
 
-        private static bool IsAbstractOrInterfaceAutoNestSource(
+        internal static bool IsAbstractOrInterfaceAutoNestSource(
             Compilation compilation,
             ITypeSymbol src,
             INamedTypeSymbol tgt)
@@ -655,7 +664,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Returns true when <paramref name="type" /> implements <c>IEnumerable</c> (generic or non-generic),
         ///     which means it is a collection/sequence type that belongs to CollectionConverter/DictionaryConverter.
         /// </summary>
-        private static bool ImplementsIEnumerable(INamedTypeSymbol type)
+        internal static bool ImplementsIEnumerable(INamedTypeSymbol type)
         {
             // Fast checks: well-known collection / dict names (all supported + well-known unsupported)
             if (type.Name is "List" or "Array" or "HashSet" or "Dictionary"
@@ -696,7 +705,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     is not string, is not already handled by CollectionConverter or DictionaryConverter)
         ///     → should emit DWARF027 rather than DWARF005.
         /// </summary>
-        private static bool IsUnsupportedCollectionTarget(ITypeSymbol type)
+        internal static bool IsUnsupportedCollectionTarget(ITypeSymbol type)
         {
             if (type.SpecialType == SpecialType.System_String)
             {
@@ -766,7 +775,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             foreach (var a in symbol.GetAttributes())
             {
-                if (!string.Equals(a.AttributeClass?.Name, "SuppressMessageAttribute", StringComparison.Ordinal))
+                if (!string.Equals(KnownNames.AttributeSimpleName(a.AttributeClass), "SuppressMessageAttribute", StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -809,7 +818,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 foreach (var a in attrs)
                 {
-                    if (!string.Equals(a.AttributeClass?.Name, KnownNames.MapConstructor, StringComparison.Ordinal))
+                    if (!string.Equals(KnownNames.AttributeSimpleName(a.AttributeClass), KnownNames.MapConstructor, StringComparison.Ordinal))
                     {
                         continue;
                     }
@@ -891,7 +900,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>DWARF013</c>. The declared method wins, which is the same precedence the rest of resolution uses.
         /// </remarks>
         private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> GeneratedPairCandidates(
-            IReadOnlyList<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            IReadOnlyList<(ITypeSymbol Src, ITypeSymbol Tgt)> genPairs,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> declared)
         {
             var candidates = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
@@ -992,15 +1001,15 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
             {
                 var isBefore = m.GetAttributes()
-                    .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.BeforeMapFqn);
+                    .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.BeforeMapFqn));
                 var isAfter = m.GetAttributes()
-                    .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.AfterMapFqn);
+                    .Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.AfterMapFqn));
                 if (!isBefore && !isAfter)
                 {
                     continue;
                 }
 
-                var loc = LocationInfo.From(m.Locations.FirstOrDefault() ?? Location.None);
+                var loc = LocationInfo.FromFirst(m.Locations);
 
                 // A partial declaration whose implementing part is absent has no body: C# erases it and every call
                 // to it, and where THIS generator supplies the missing part the call is into the method being
@@ -1393,7 +1402,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     emitted <c>Inner = s.Inner is null ? null! : ToDto(s.Inner)</c> — the null ARM forgiven and the
         ///     CALL not, which is CS8601 in the consumer's .g.cs (round 29 task 2.8 concern 1).
         /// </summary>
-        private static bool ConverterReturnIsNullableRef(
+        internal static bool ConverterReturnIsNullableRef(
             string? converterMethod,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)

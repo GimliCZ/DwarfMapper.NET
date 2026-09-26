@@ -63,6 +63,41 @@ function Test-CoverageWithinBand {
 # against a fake report, and catches a leg whose exit code lied) and throws on floor(score) >= break + 1
 # with the R2 raise message. Passes inside the band.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The per-leg adjudication out of Issues/ledgers/equivalent-mutants.md: how many mutants are PROVEN
+# equivalent, the ceiling that follows from them, and how many kills the leg is known to report without
+# any test performing them. Returns $null for a leg the ledger does not carry, so a new leg gates on the
+# band alone until someone adjudicates it.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Get-LegAdjudication {
+    param([Parameter(Mandatory)][string]$Leg)
+
+    $path = Join-Path $PSScriptRoot '..' 'Issues' 'ledgers' 'equivalent-mutants.md'
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+
+    $text = Get-Content -Raw -LiteralPath $path
+    # The ledger is prose around ONE fenced json block; take the first fence rather than the whole file.
+    $fence = [regex]::Match($text, '(?s)```json\s*(\{.*?\})\s*```')
+    if (-not $fence.Success) { return $null }
+
+    try { $doc = $fence.Groups[1].Value | ConvertFrom-Json } catch { return $null }
+    # The leg key is the config's own name for it; 'doc tooling' and 'code fixes' carry a space in the
+    # housekeeping switch but not in the ledger, which keys them as one word.
+    $key = $Leg -replace ' ', ''
+    $legs = $doc.legs
+    if ($null -eq $legs -or -not ($legs.PSObject.Properties.Name -contains $key)) { return $null }
+    $row = $legs.$key
+
+    $phantom = 0
+    if ($row.PSObject.Properties.Name -contains 'reportedPhantomKills') { $phantom = [int]$row.reportedPhantomKills }
+
+    return [pscustomobject]@{
+        ProvenEquivalent     = [int]$row.provenEquivalent
+        RawCeiling           = [double]$row.rawCeiling
+        ReportedPhantomKills = $phantom
+    }
+}
+
 function Assert-MutationScoreWithinBand {
     param(
         [Parameter(Mandatory)][string]$Leg,
@@ -86,6 +121,42 @@ function Assert-MutationScoreWithinBand {
     $score = $detected / $scoreable * 100
     $scoreFloored = [int][math]::Floor([math]::Round($score, 6))
     $shown = [math]::Round($score, 2)
+
+    # ── The proven ceiling as an INSTRUMENT ──────────────────────────────────────────────────────────
+    # A measured score ABOVE the leg's proven ceiling is arithmetically impossible: the ceiling is
+    # (scoreable - provenEquivalent) / scoreable, so exceeding it means a mutant the ledger proved
+    # unkillable was reported killed. On 2026-09-23 the generator leg did exactly that - 97.11 % against a
+    # 96.62 % ceiling - and the two extra "kills" were Stryker's static-mutant attribution, not tests:
+    # both were planted permanently in src/ and the whole solution stayed green. Without this branch the
+    # band check below reads the same run as "raise the floor to 97", which would gate the leg on accidental
+    # kills and turn the next honest run into a reported REGRESSION that never happened.
+    # The ceiling is recomputed HERE, from this report's own denominator and the ledger's proven count,
+    # rather than read from the ledger's `rawCeiling`. That field is TRUNCATED to two decimals while $score
+    # is not, so comparing the two reports an excess that is pure storage artifact: the runtime leg's
+    # 123/126 is 97.619048 % against a stored ceiling of 97.61, and the two are the same number. Measured
+    # across all six legs at the commit that fixes this, runtime was the one that tripped it.
+    $legData = Get-LegAdjudication -Leg $Leg
+    $exactCeiling = if ($null -ne $legData) { ($scoreable - $legData.ProvenEquivalent) / $scoreable * 100 } else { 0 }
+    if ($null -ne $legData -and $score -gt ($exactCeiling + 0.0005)) {
+        $expectedSurvivors = $legData.ProvenEquivalent - $legData.ReportedPhantomKills
+        if ($survived -ne $expectedSurvivors) {
+            throw ("mutation ($Leg): RAW score $shown% ($detected/$scoreable) is ABOVE the proven ceiling " +
+                   "$([math]::Round($exactCeiling, 2))%, and $survived mutant(s) survived where the ledger expects " +
+                   "$expectedSurvivors ($($legData.ProvenEquivalent) proven-equivalent less " +
+                   "$($legData.ReportedPhantomKills) recorded phantom kill(s)). Either an equivalence proof is " +
+                   "WRONG or the phantom count is stale. Do NOT raise the floor on this run: PLANT the mutant " +
+                   "in src/ and run the whole solution first - a report that says Killed is not evidence a test " +
+                   "kills it, because Stryker runs a `"static`": true mutant against every test and counts any " +
+                   "failure as its kill.")
+        }
+
+        Write-Host ("   ${Leg}: RAW $shown% exceeds the proven ceiling $([math]::Round($exactCeiling, 2))% by the " +
+                    "$($legData.ReportedPhantomKills) recorded static-mutant phantom kill(s); $survived " +
+                    "survivor(s) match the ledger, so the CEILING is banded against instead of the report.") -ForegroundColor DarkYellow
+        $score = $exactCeiling
+        $scoreFloored = [int][math]::Floor([math]::Round($score, 6))
+        $shown = "$([math]::Round($exactCeiling, 2)) (capped at the proven ceiling; the report said $shown)"
+    }
 
     if ($score -lt $Break) {
         throw ("mutation ($Leg): RAW score $shown% ($detected/$scoreable) is below break $Break - " +
@@ -459,6 +530,58 @@ function Assert-NoMutatedProductBinaries {
     }
 
     Write-Host "   ${Leg}: $($planted.Count) product assemblies under tests/**/bin, none mutated" -ForegroundColor DarkGray
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Invoke-DecontaminatedMutationLeg — runs one mutation leg so that its planted mutants are removed on EVERY
+# exit, and refuses to start a leg on a tree that is already contaminated.
+#
+# WHY (round 30, measured twice in one day). Each leg used to end with Remove-PlantedMutants and
+# Assert-NoMutatedProductBinaries as its LAST two statements, after Assert-LegScoreWithinBand. So:
+#   * a leg that beat its floor by a full point THREW at the R2 band check - as it must - and never reached
+#     the sweep, leaving six mutated DwarfMapper.Generator.dll copies in tests/**/bin/Release;
+#   * a leg killed from outside (the harness stopped one for low memory) never reached it either, and the NEXT
+#     leg measured on the contaminated tree and reported a score that described a mutated product.
+# The finally closes the first. The pre-flight closes the second, which no finally can: a killed process runs
+# nothing, so the only place to catch its leftovers is the start of the next leg.
+#
+# The body's own failure is re-thrown after decontamination, so an R2 or below-break red still fails the run
+# with its own message. If the post-leg sweep ALSO fails, both are reported - neither hides the other.
+function Invoke-DecontaminatedMutationLeg {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][scriptblock]$Body
+    )
+
+    Assert-NoMutatedProductBinaries -Leg "$Leg (pre-flight)" -Root $Root
+
+    $failure = $null
+    try {
+        & $Body
+    }
+    catch {
+        $failure = $_
+    }
+    finally {
+        # In a finally so a stopped pipeline (Ctrl+C, a -TimeoutMinutes kill) still removes what was planted.
+        Remove-PlantedMutants -Leg $Leg -Root $Root
+    }
+
+    try {
+        Assert-NoMutatedProductBinaries -Leg $Leg -Root $Root
+    }
+    catch {
+        if ($failure) {
+            throw ("mutation leg '$Leg' failed: $($failure.Exception.Message)" + [Environment]::NewLine +
+                   "and its decontamination sweep ALSO failed: $($_.Exception.Message)")
+        }
+        throw
+    }
+
+    if ($failure) {
+        throw $failure
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────

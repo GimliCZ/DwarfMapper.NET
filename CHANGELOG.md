@@ -53,6 +53,21 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF111` (Warning): a `[ProvidesMap]` method that is not registered says so.** When the same
+  `(source, destination)` — or a collection shape — is already registered in the assembly by a generated map (see
+  *Fixed*) or by an earlier `[ProvidesMap]`, the marked method is left out of the ambient registry. That was
+  silent; `DWARF063` reports the same event across assemblies only. It is now reported, naming the method, the
+  pair and what already registers it. Two *generated* maps of one pair are still not reported: mappers that differ
+  only in class-level policy are the ordinary reason for two. **Remedy:** remove the attribute, or all but one of
+  two `[ProvidesMap]` methods.
+
+- **`DWARF110` (Info): a mapper nested out of reach is told it was left out of the aggregates.** A
+  `[DwarfMapper]` class that is `private`, `protected` or `private protected` — or nested in a type that is — is
+  left out of the generated `x.ToDto()` extensions, `AddDwarfMappers()` and the ambient registry, because those
+  top-level classes cannot name it (see *Fixed*). That exclusion was silent; it is now reported at the mapper,
+  naming the type that hides it. **Remedy:** make the mapper and every type it is nested in `internal`,
+  `protected internal` or `public`, or suppress the rule if keeping it private is intended.
+
 - **`DwarfMapper.Testing.LensLaws` fuzzes the two lens laws an update-into endpoint should satisfy, over a
   destination that already holds data.** `RoundTrip.Verify` already checks *PutGet*
   (`Back(Forward(x))` equals `x`); the bidirectional-transformation literature names two more, and both are
@@ -185,6 +200,43 @@ so a version with no section here ships with no notes.
   *sources*, not a converter that hands back null. It is also the more dangerous half: a forgiven *argument*
   still throws inside the callee's own `ArgumentNullException.ThrowIfNull`, while a forgiven *result* is
   silently stored.
+
+- **`DWARF108` (Warning) — `OnCycle = SetNull` reaches a pair whose destination is a value type, and a
+  struct cannot hold `null`.** Found by a coverage sweep, not a bug report: `EmitSetNullGuardedBody`'s
+  on-stack cycle guard breaks a back-edge with an unconditional `return null!;`, which is `CS0037` against a
+  non-nullable struct return — a shape no fixture had ever exercised (a `List<Node>` self-reference mapped
+  onto `struct NodeDto { List<NodeDto> Children; }` under `SetNull` is the minimal repro). The generator now
+  falls back to the plain depth-guarded body for the affected pair instead of emitting code that does not
+  compile: an acyclic source still maps correctly, and a genuinely cyclic source throws
+  `DwarfMappingDepthException` once `MaxDepth` is exceeded rather than terminating early by nulling the
+  back-edge. **Remedy:** make the destination a reference type (a `class` or a `record class`) to get
+  `SetNull`'s early termination, or leave it a value type and accept the depth-limited fallback with
+  `[SuppressMessage("DwarfMapper", "DWARF108:…")]` on the mapper class (the same mechanism `DWARF076` already
+  uses — the generator reads the attribute directly off the class symbol and skips reporting, so it needs no
+  compiler-level suppression pipeline) or `<NoWarn>DWARF108</NoWarn>` project-wide. A `#pragma` does NOT
+  suppress it, or any other DWARF id — proven, not assumed: pragmas are applied by the compiler's diagnostic
+  filtering, which source-generator-reported diagnostics never pass through. Not the same id as `DWARF037`
+  (`OnCycle` losing to the *mapper option* `ReferenceHandling = Preserve`) or `DWARF030` (the identical
+  impossibility under `Preserve`, where a constructor argument rather than a value type is what cannot hold
+  the back-edge)
+  — each has its own, disjoint remedy.
+
+- **`DWARF109` (Error) — an `[AfterMap]` hook taking its target `by ref` matched a pair whose destination
+  is only a base type away, not identical, and the generator emitted `CS1503`.** Found writing `DWARF108`'s
+  own regression test: every `HookCall` construction site (five of them) matches a hook to a pair by
+  implicit conversion — correct for an ordinary by-value parameter, wrong for `ref`, since C# has no `ref`
+  covariance. A `[MapDerivedType]` dispatch hook declared against the dispatch method's own base return
+  type matched a concrete arm's declared pair too (by the same by-value rule), whose local is the arm's
+  DERIVED destination type — `ref DogDto` does not bind to `ref AnimalDto`. The generator now skips the
+  hook for the mismatched pair only (an `Error`, but `ScopedToMethod`: the dispatch method, and any other
+  pair whose destination genuinely is the hook's declared type, are unaffected — the exact "one method's
+  fact should not suppress the whole class" shape `ProjectionNotTranslatable`/item I14 already established).
+  A related, previously-latent bug surfaced alongside it: `EmitDerivedDispatchBody`'s hook-present path
+  assigned the dispatch switch to `var __dwarf_target`, which — with a single arm, or arms whose narrowest
+  common type happens not to be the declared return type — infers the ARM's own type rather than the
+  method's declared return type; invisible for a by-value hook (an implicit upcast papers over it both at
+  the hook call and the final `return`) but exactly what a `ref` hook exposes. Now explicitly typed as the
+  method's own return type, giving it the same target-typed context `return {p} switch` already had.
 
 - **Transfer models as structs — one feature in four parts, documented as one.** `DWARF103` finds a mapped
   collection whose element type could be a `readonly record struct` and prints the size you would get; the
@@ -372,6 +424,68 @@ so a version with no section here ships with no notes.
   is in `Issues/round29/WITHDRAWN-generated-views.md`.
 
 ### Fixed
+
+- **`[MapTo(typeof(Dto<>))]` was refused for the wrong reason.** An open generic target — or `typeof(Outer<>.Dto)`,
+  a class nested in an unbound generic type — was refused as `DWARFR09`, "has no public parameterless
+  constructor", although `Dto<T>` has one and adding another changed nothing. It now reports **`DWARFR14`**,
+  naming the open type. **Remedy:** close the type arguments (`typeof(Dto<int>)`), or map the pair with the
+  `[DwarfMapper]` class model.
+
+- **A `[FlattenGraph]` with `[MapDerivedType]` arms silently dropped a nested-object or collection member of a
+  derived node.** A member such as `Address Addr` or `List<Address> Addrs` on `File : FsNode` was left at the
+  destination's default in every mode, with no diagnostic. The same leaf on a non-derived graph node has been
+  flattened since ISSUE-001, and reported as `DWARF075` under `ReferenceHandling = Preserve`, where it genuinely
+  cannot be emitted; the per-arm helper was never given that fix. It now is: the member is flattened outside
+  Preserve, and reported as `DWARF075` under Preserve.
+
+- **A pair declared both as a generated map and as a `[ProvidesMap]` was registered twice in the ambient
+  registry.** The ambient registration deduplicated generated maps and hand-written `[ProvidesMap]` methods in
+  two separate sets, so the same `(source, destination)` — or a collection shape a generated map already
+  registers, such as `IEnumerable<Src>` → `List<Dst>` — got two `DwarfMapperRegistry.Register` calls and a
+  repeated `[assembly: DwarfProvidesMap]` line. The registry kept the first, but recorded the second as a
+  competing provider, so `DwarfMapperRegistry.IsAmbiguous` reported the assembly's own pair as provided "by more
+  than one assembly". The generated map is now the one registered, whichever mapper comes first: `[ProvidesMap]`
+  exists for shapes the generator cannot express.
+
+- **A pair-scoped `[MapIgnore<T>("Name")]` naming no member of `T` excluded nothing, silently.** `DWARF056` already
+  reported a pair-scoped ignore whose *type argument* matched no mapped pair, and `DWARF095` an unscoped
+  `[MapIgnore("Name")]` whose *name* matched no destination member. The pair-scoped form fell between them: its type
+  matched a pair, its name matched nothing — a typo such as `[MapIgnore<Dto>("Extar")]` — and the member it meant to
+  exclude went on being mapped with no diagnostic. It now reports **`DWARF095`** (Warning), naming the attribute,
+  the mapper and the type it was judged against. **Remedy:** fix the name or remove the attribute.
+
+- **`DWARF012` named the wrong attribute for three of the four conflicts it reports.** A destination member that
+  is `[MapIgnore]`d and also named by `[Reinterpret]`, `[MapShare]` or `[MapDenseEnumKeys]` was reported as
+  "mapped via `[MapProperty]`", sending the reader to look for an attribute that was not there. The message now
+  names the directive that was actually written, and the rule's title is **Conflicting [MapIgnore] and a mapping
+  directive**. Severity and id are unchanged, so existing suppressions keep working.
+
+- **A `[DwarfMapper]` class nested as `private`, `protected` or `private protected` broke the whole assembly's
+  build.** The mapper itself was generated correctly inside its containing type, but the assembly-wide generated
+  classes — the `x.ToDto()` convenience extensions, `AddDwarfMappers()` and the ambient registration — are top-level
+  and hold a `new()` of every mapper, and they cannot name one hidden inside another type: `CS0122` in generated
+  files, with no DwarfMapper diagnostic. Those three now leave such a mapper out, the same way the ambient registry
+  already leaves out a map whose types another assembly cannot name. The mapper is still generated and callable
+  wherever its author can reach it; `internal`, `protected internal` and `public` nested mappers keep all three.
+
+- **`[FlattenGraph]` into a `struct` node DTO generated code that did not compile.** The directive accepts a node
+  DTO that is "a class or struct with a public constructor", but the flat-node helper it synthesizes opened with
+  `return null!;` for a null node, which a value type rejects: `CS0037` in a generated file, with no DwarfMapper
+  diagnostic. A struct node DTO now gets `return default;` there. The traversal never passes that helper a null
+  node, so no mapped value changes, and class node DTOs emit exactly what they did before.
+
+- **`[MapTo]` on a generic source type generated code that did not compile, with no diagnostic.** The registry
+  emits extension methods on the source type, and for `class Src<T>` (or a class nested in a generic type) it wrote
+  `this Src<T> source` with `T` declared nowhere: `CS0246` in a generated file, and nothing in the build naming the
+  cause. It is now refused as the new **`DWARFR13`** (Error), the registry's counterpart of `DWARF054`, and nothing is
+  generated for that type. **Remedy:** put `[MapTo]` on a non-generic source type, or map the closed pair with the
+  `[DwarfMapper]` class model.
+
+- **`[DwarfMapperConstructor]` on a `static` constructor was ignored without a word.** `DWARF098` reports an
+  annotated constructor the selector declines, and "it is a static constructor" was one of its reasons, but the
+  report only looked at instance constructors, so that reason never fired and the directive was silently
+  dropped. It now reports `DWARF098` (Warning). The mapping is unchanged. **Remedy:** move the annotation to an
+  instance constructor.
 
 - **Naming anything in your own code after a C# keyword — `@class`, `@event`, `@record` — produced generated
   code that did not compile, in twenty-seven distinct places.** `@class` is legal C# and people write it,

@@ -209,5 +209,72 @@ namespace DwarfMapper.Generator.Tests
                 d => d.Id == "DWARF088" && d.Severity == DiagnosticSeverity.Error);
             Assert.DoesNotContain("Name = s.Name", generated, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     A null name on the member form. The constructor argument is not a string, so the message falls back
+        ///     to a placeholder rather than printing the word "null" as though it were a member name.
+        /// </summary>
+        [Fact]
+        public void Member_form_MapProperty_with_a_null_name_reports_a_placeholder()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Source { public string Name { get; set; } = ""; }
+                               public class Target { public string Name { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapProperty(null)]
+                                   public partial Target Map(Source s);
+                               }
+                               """;
+            var message = Assert.Single(GeneratorAssert.Reports(src, "DWARF088")).GetMessage(CultureInfo.InvariantCulture);
+            Assert.StartsWith("[MapProperty(\"…\")] on this mapping method", message, StringComparison.Ordinal);
+            Assert.Contains("[MapProperty(\"…\", \"<destination>\")].", message, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Both directives written on MEMBERS of the mapper, each in both of its placements. The mapper's own
+        ///     members belong to no pair, so every one is read by nothing. The message names the attribute and the
+        ///     member, and its remedy depends on the placement. For the member form it says to name the
+        ///     destination and move the directive. For the class/method form it says only to move it.
+        /// </summary>
+        [Fact]
+        public void Directives_on_mapper_members_report_DWARF088_with_a_remedy_per_placement()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Source { public int Id { get; set; } public string Name { get; set; } = ""; }
+                               public class Target { public int Id { get; set; } public string Name { get; set; } = ""; }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   public partial Target Map(Source s);
+                                   [MapIgnore] public int IgnoreMemberForm { get; set; }
+                                   [MapIgnore("Id")] public int IgnoreMethodForm;
+                                   [MapProperty("Name")] public string PropMemberForm { get; set; } = "";
+                                   [MapProperty("Name", "Name")] public string PropMethodForm = "";
+                               }
+                               """;
+            var messages = GeneratorAssert.Reports(src, "DWARF088")
+                .Select(d => d.GetMessage(CultureInfo.InvariantCulture))
+                .ToList();
+
+            Assert.Equal(4, messages.Count);
+            const string memberForm = "This is the MEMBER-placement overload";
+            const string methodForm = "This overload IS the one the mapper reads";
+            Assert.Contains(messages, m => m.StartsWith("[MapIgnore] on 'M.IgnoreMemberForm' is read by nothing.", StringComparison.Ordinal) &&
+                                           m.Contains(memberForm, StringComparison.Ordinal) &&
+                                           m.EndsWith("[MapIgnore(\"<destination>\")].", StringComparison.Ordinal));
+            Assert.Contains(messages, m => m.StartsWith("[MapIgnore] on 'M.IgnoreMethodForm' is read by nothing.", StringComparison.Ordinal) &&
+                                           m.Contains(methodForm, StringComparison.Ordinal));
+            Assert.Contains(messages, m => m.StartsWith("[MapProperty] on 'M.PropMemberForm' is read by nothing.", StringComparison.Ordinal) &&
+                                           m.Contains(memberForm, StringComparison.Ordinal) &&
+                                           m.EndsWith("[MapProperty(\"<source>\", \"<destination>\")].", StringComparison.Ordinal));
+            Assert.Contains(messages, m => m.StartsWith("[MapProperty] on 'M.PropMethodForm' is read by nothing.", StringComparison.Ordinal) &&
+                                           m.Contains(methodForm, StringComparison.Ordinal));
+        }
     }
 }

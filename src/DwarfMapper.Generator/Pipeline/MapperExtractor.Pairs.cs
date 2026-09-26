@@ -13,23 +13,26 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapConstructor || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapConstructor || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length != 1 ||
-                    attr.ConstructorArguments[0].Value is not string method)
+                if (attr.ConstructorArguments.Length != 1)
                 {
                     continue;
                 }
+
+                // A null factory name names no method, exactly as a name matching none does. It is kept, so the pair
+                // reports DWARF059 (or DWARF056 when no pair matches) instead of the directive vanishing silently.
+                var method = attr.ConstructorArguments[0].Value as string ?? string.Empty;
 
                 result.Add(new PairConstructor
                 {
                     Source = ac.TypeArguments[0],
                     Target = ac.TypeArguments[1],
                     Method = method,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
@@ -72,15 +75,20 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapProperty || ac.TypeArguments.Length != 2 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapProperty || ac.TypeArguments.Length != 2 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length != 2 || attr.ConstructorArguments[0].Value is not string src || attr.ConstructorArguments[1].Value is not string tgt)
+                if (attr.ConstructorArguments.Length != 2)
                 {
                     continue;
                 }
+
+                // A null member name names no member, exactly as a name matching none does. It is kept, so the pair
+                // reports DWARF009 / DWARF008 instead of the directive vanishing silently.
+                var src = attr.ConstructorArguments[0].Value as string ?? string.Empty;
+                var tgt = attr.ConstructorArguments[1].Value as string ?? string.Empty;
 
                 string? use = null;
                 var hasNull = false;
@@ -111,7 +119,7 @@ namespace DwarfMapper.Generator.Pipeline
                     HasNullSub = hasNull,
                     NullSub = nullSub,
                     When = when,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
@@ -124,7 +132,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapIgnore || ac.TypeArguments.Length != 1 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapIgnore || ac.TypeArguments.Length != 1 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
@@ -139,7 +147,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     Target = ac.TypeArguments[0],
                     Member = member,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 
@@ -271,23 +279,21 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var attr in classSymbol.GetAttributes())
             {
                 var ac = attr.AttributeClass;
-                if (ac is null || ac.Name != KnownNames.MapValue || ac.TypeArguments.Length != 1 || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                if (ac is null || ac.Name != KnownNames.MapValue || ac.TypeArguments.Length != 1 || !KnownNames.IsNamespace(ac.ContainingNamespace, KnownNames.Ns))
                 {
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length == 0 ||
-                    attr.ConstructorArguments[0].Value is not string target)
+                if (attr.ConstructorArguments.Length == 0)
                 {
                     continue;
                 }
 
-                string? use = null;
-                foreach (var na in attr.NamedArguments)
-                    if (na.Key == "Use" && na.Value.Value is string u)
-                    {
-                        use = u;
-                    }
+                // A null target name names no member, exactly as a name matching none does. It is kept, so the pair
+                // reports DWARF042 instead of the directive vanishing silently.
+                var target = attr.ConstructorArguments[0].Value as string ?? string.Empty;
+
+                var use = TryGetNamedArgument(attr.NamedArguments, "Use", out var u) ? u.Value as string : null;
 
                 // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven (mirrors ReadMapValues).
                 var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
@@ -299,7 +305,7 @@ namespace DwarfMapper.Generator.Pipeline
                     IsConstant = isConstant,
                     Value = value,
                     Use = use,
-                    Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
+                    Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
 

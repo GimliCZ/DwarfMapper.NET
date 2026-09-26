@@ -630,6 +630,112 @@ namespace DwarfMapper.Generator.Tests
             var message = d.GetMessage(CultureInfo.InvariantCulture);
 
             Assert.Contains(named, message, StringComparison.Ordinal);
+            // The message is assembled from three literals, and the modifier name sits in the middle one. The
+            // mutation leg blanked each of the other two without a failure: the opening names the DIRECTIVE
+            // and the MEMBER (which of several dense members this is about), the closing carries the remedy.
+            Assert.Contains("[MapDenseEnumKeys] member 'Counts' also carries a [MapProperty]", message, StringComparison.Ordinal);
+            Assert.Contains("remove one of them", message, StringComparison.Ordinal);
+        }
+
+        // ── Shapes the proof reached only through these fixtures ─────────────────────────────────────────────
+
+        private static string DenseMap(string sourceMember, string destinationMember, string types)
+        {
+            return Shapes + types + "\n" +
+                   "public sealed class A { public " + sourceMember + " Counts { get; set; } }\n" +
+                   "public sealed class B { public " + destinationMember + " Counts { get; set; } }\n" +
+                   "[DwarfMapper] public partial class M { [MapDenseEnumKeys(\"Counts\")] public partial B Map(A a); }\n";
+        }
+
+        /// <summary>A key that is not a named type at all (an array) is not an enum, and is refused as one.</summary>
+        [Fact]
+        public void A_key_that_is_not_a_named_type_is_refused()
+        {
+            var d = Assert.Single(GeneratorAssert.Reports(DenseMap("Dictionary<int[], int>", "Counts3", ""), "DWARF105"));
+
+            Assert.Contains("is keyed by 'int[]', which is not an enum", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A VALUE-type source that yields the key/value pairs is legal, and cannot be null: the helper's parameter
+        ///     carries no <c>?</c> and the fill tests nothing for null.
+        /// </summary>
+        [Fact]
+        public void A_value_type_source_fills_without_a_nullable_parameter()
+        {
+            var gen = GeneratorAssert.CompilesClean(DenseMap("PlatformCounts", "Counts3",
+                "public struct PlatformCounts : IEnumerable<KeyValuePair<Platform, int>> {" +
+                " public IEnumerator<KeyValuePair<Platform, int>> GetEnumerator() { yield break; }" +
+                " System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator(); }"));
+
+            Assert.Contains("(global::Demo.PlatformCounts src)", gen, StringComparison.Ordinal);
+            Assert.DoesNotContain("PlatformCounts? src", gen, StringComparison.Ordinal);
+        }
+
+        /// <summary>Another attribute on the destination struct does not hide its <c>[InlineArray]</c>.</summary>
+        [Fact]
+        public void An_inline_array_with_another_attribute_beside_it_is_still_read()
+        {
+            var gen = GeneratorAssert.CompilesClean(DenseMap("Dictionary<Platform, int>", "Tagged3",
+                "[System.Serializable] [InlineArray(3)] public struct Tagged3 { private int _e0; }"));
+
+            Assert.Contains("__DwarfDense_", gen, StringComparison.Ordinal);
+        }
+
+        /// <summary>A struct with no <c>[InlineArray]</c> declares no slot count, so there is no bound to prove against.</summary>
+        [Fact]
+        public void A_plain_struct_destination_is_refused()
+        {
+            var d = Assert.Single(GeneratorAssert.Reports(DenseMap("Dictionary<Platform, int>", "Plain", "public struct Plain { private int _e0; }"), "DWARF105"));
+
+            Assert.Contains("writes into 'Demo.Plain', which is not an [InlineArray(n)] struct", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     An inline array must declare exactly one instance field (CS9169 in the consumer's own source otherwise).
+        ///     The proof reads the element type off that field, so two fields, or none, give it nothing to read.
+        /// </summary>
+        [Theory]
+        [InlineData("Two3", "[InlineArray(3)] public struct Two3 { private int _e0; private int _e1; }")]
+        [InlineData("None3", "[InlineArray(3)] public struct None3 { public static int S; }")]
+        public void An_inline_array_without_exactly_one_instance_field_is_refused(string destination, string declaration)
+        {
+            var (diagnostics, _) = GeneratorTestHarness.Run(DenseMap("Dictionary<Platform, int>", destination, declaration));
+
+            var d = Assert.Single(diagnostics, x => x.Id == "DWARF105");
+            Assert.Contains($"writes into 'Demo.{destination}', which is not an [InlineArray(n)] struct", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A consumer-declared <c>InlineArrayAttribute</c> that takes no <c>int</c> length, a string or nothing at all,
+        ///     declares no slot count the proof can read.
+        /// </summary>
+        [Theory]
+        [InlineData("string length", "(\"3\")")]
+        [InlineData("", "")]
+        public void A_look_alike_inline_array_attribute_without_an_int_length_is_refused(string parameter, string argument)
+        {
+            var src = $$"""
+                        using DwarfMapper;
+                        using System.Collections.Generic;
+                        namespace Demo
+                        {
+                            public enum Platform { Web = 0, Ios = 1, Android = 2 }
+                            public sealed class A { public Dictionary<Platform, int> Counts { get; set; } }
+                            public sealed class B { public Odd3 Counts { get; set; } }
+                            [DwarfMapper] public partial class M { [MapDenseEnumKeys("Counts")] public partial B Map(A a); }
+                            [System.Runtime.CompilerServices.InlineArray{{argument}}] public struct Odd3 { private int _e0; }
+                        }
+                        namespace System.Runtime.CompilerServices
+                        {
+                            [System.AttributeUsage(System.AttributeTargets.Struct)]
+                            public sealed class InlineArrayAttribute : System.Attribute { public InlineArrayAttribute({{parameter}}) { } }
+                        }
+                        """;
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+
+            var d = Assert.Single(diagnostics, x => x.Id == "DWARF105");
+            Assert.Contains("writes into 'Demo.Odd3', which is not an [InlineArray(n)] struct", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
     }
 }

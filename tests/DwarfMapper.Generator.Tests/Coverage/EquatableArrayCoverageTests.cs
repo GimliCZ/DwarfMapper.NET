@@ -537,5 +537,41 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.True(a != b);
             Assert.False(a == b);
         }
+        /// <summary>
+        ///     The hash is the documented fold, ELEMENT BY ELEMENT: start at 17 and, for each item,
+        ///     <c>hash * 31 + item</c>. Stated as an absolute value because nothing weaker can hold it - two
+        ///     different arrays hashing differently is true of a great many wrong formulas, including one that
+        ///     SUBTRACTS each element, so an inequality test says nothing about the mixing.
+        ///     <para>
+        ///         Element type int on purpose: int.GetHashCode() is the value itself, while string hashing is
+        ///         randomised per process and would make an absolute expectation flaky by design.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void The_hash_folds_each_element_into_the_documented_accumulator()
+        {
+            // 17 -> 17*31 + 1 = 528 -> 528*31 + 2 = 16370
+            Assert.Equal(16370,
+                new EquatableArray<int>(new[]
+                {
+                    1,
+                    2
+                }).GetHashCode());
+
+            // Order is part of the value: the same elements the other way round fold differently.
+            // 17 -> 17*31 + 2 = 529 -> 529*31 + 1 = 16400
+            Assert.Equal(16400,
+                new EquatableArray<int>(new[]
+                {
+                    2,
+                    1
+                }).GetHashCode());
+
+            // The empty fold is the seed, and a default-backed array must agree with it - the equals/hashcode
+            // contract this type had broken once before.
+            Assert.Equal(17, new EquatableArray<int>(Array.Empty<int>()).GetHashCode());
+            Assert.Equal(17, new EquatableArray<int>(null!).GetHashCode());
+        }
+
     }
 }

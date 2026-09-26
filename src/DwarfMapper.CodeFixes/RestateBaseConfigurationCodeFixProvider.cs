@@ -118,19 +118,23 @@ namespace DwarfMapper.CodeFixes
             string derivedTarget)
         {
             var existingByTarget = new Dictionary<string, AttributeSyntax>(StringComparer.Ordinal);
-            var toCopy = new List<AttributeSyntax>();
+            var toCopy = new List<(AttributeSyntax Attribute, GenericNameSyntax Name)>();
 
             foreach (var list in classDecl.AttributeLists)
             foreach (var attribute in list.Attributes)
             {
-                if (!IsPairScoped(attribute, out var typeArgs))
+                // A plain local and a null test, not `is not { } generic`: negating that pattern leaves `generic`
+                // unassigned, and the compile error makes Stryker drop every mutant in this method (Safe Mode).
+                var generic = PairScopedName(attribute);
+                if (generic is null)
                 {
                     continue;
                 }
 
+                var typeArgs = generic.TypeArgumentList.Arguments;
                 if (MatchesPair(typeArgs, derivedSource, derivedTarget))
                 {
-                    var target = TargetMemberOf(attribute);
+                    var target = TargetMemberOf(attribute, generic);
                     if (target is not null)
                     {
                         existingByTarget[target] = attribute;
@@ -138,7 +142,7 @@ namespace DwarfMapper.CodeFixes
                 }
                 else if (MatchesPair(typeArgs, baseSource, baseTarget))
                 {
-                    toCopy.Add(attribute);
+                    toCopy.Add((attribute, generic));
                 }
             }
 
@@ -149,10 +153,10 @@ namespace DwarfMapper.CodeFixes
             var replacements = new Dictionary<AttributeSyntax, AttributeSyntax>();
             var additions = new List<AttributeListSyntax>();
 
-            foreach (var attribute in toCopy)
+            foreach (var (attribute, generic) in toCopy)
             {
-                var rewritten = Retarget(attribute, derivedSource, derivedTarget);
-                var target = TargetMemberOf(attribute);
+                var rewritten = Retarget(attribute, generic, derivedSource, derivedTarget);
+                var target = TargetMemberOf(attribute, generic);
 
                 if (target is not null && existingByTarget.TryGetValue(target, out var current))
                 {
@@ -165,7 +169,7 @@ namespace DwarfMapper.CodeFixes
                 }
 
                 additions.Add(SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(rewritten))
-                    .WithTriviaFrom(classDecl.AttributeLists.LastOrDefault() ?? (SyntaxNode)classDecl));
+                    .WithTriviaFrom(classDecl.AttributeLists[classDecl.AttributeLists.Count - 1]));
             }
 
             if (replacements.Count == 0 && additions.Count == 0)
@@ -238,24 +242,29 @@ namespace DwarfMapper.CodeFixes
             return string.Concat(attribute.ToString().Where(c => !char.IsWhiteSpace(c)));
         }
 
-        private static bool IsPairScoped(AttributeSyntax attribute, out SeparatedSyntaxList<TypeSyntax> typeArgs)
+        /// <summary>
+        ///     The attribute's generic name when it is a pair-scoped attribute with one or two type arguments, or
+        ///     null when it is not.
+        /// </summary>
+        /// <remarks>
+        ///     Returned rather than tested, so the helpers that read it afterwards take the generic name as given
+        ///     and carry no "not generic after all" arm that no caller could reach.
+        /// </remarks>
+        private static GenericNameSyntax? PairScopedName(AttributeSyntax attribute)
         {
-            typeArgs = default;
-
             var name = attribute.Name is QualifiedNameSyntax q ? q.Right : attribute.Name;
             if (name is not GenericNameSyntax generic)
             {
-                return false;
+                return null;
             }
 
             var simple = generic.Identifier.ValueText;
             if (!PairScoped.Contains(simple, StringComparer.Ordinal) && !PairScoped.Contains(simple.Replace("Attribute", string.Empty), StringComparer.Ordinal))
             {
-                return false;
+                return null;
             }
 
-            typeArgs = generic.TypeArgumentList.Arguments;
-            return typeArgs.Count is 1 or 2;
+            return generic.TypeArgumentList.Arguments.Count is 1 or 2 ? generic : null;
         }
 
         /// <summary>
@@ -286,7 +295,7 @@ namespace DwarfMapper.CodeFixes
         }
 
         /// <summary>The destination member an attribute configures, or null when it names none.</summary>
-        private static string? TargetMemberOf(AttributeSyntax attribute)
+        private static string? TargetMemberOf(AttributeSyntax attribute, GenericNameSyntax name)
         {
             var args = attribute.ArgumentList?.Arguments;
             if (args is null || args.Value.Count == 0)
@@ -302,7 +311,7 @@ namespace DwarfMapper.CodeFixes
 
             // [MapProperty<S,T>(source, target)] names the target second; [MapIgnore<T>(target)] and
             // [MapValue<T>(target, …)] name it first.
-            var expression = positional.Count >= 2 && IsMapProperty(attribute) ? positional[1] : positional[0];
+            var expression = positional.Count >= 2 && IsMapProperty(name) ? positional[1] : positional[0];
 
             return expression.Expression switch
             {
@@ -314,21 +323,17 @@ namespace DwarfMapper.CodeFixes
             };
         }
 
-        private static bool IsMapProperty(AttributeSyntax attribute)
+        private static bool IsMapProperty(GenericNameSyntax name)
         {
-            var name = attribute.Name is QualifiedNameSyntax q ? q.Right : attribute.Name;
-            var simple = name is GenericNameSyntax g ? g.Identifier.ValueText : name.ToString();
-            return simple.StartsWith("MapProperty", StringComparison.Ordinal);
+            return name.Identifier.ValueText.StartsWith("MapProperty", StringComparison.Ordinal);
         }
 
-        private static AttributeSyntax Retarget(AttributeSyntax attribute, string derivedSource, string derivedTarget)
+        private static AttributeSyntax Retarget(
+            AttributeSyntax attribute,
+            GenericNameSyntax generic,
+            string derivedSource,
+            string derivedTarget)
         {
-            var name = attribute.Name is QualifiedNameSyntax q ? q.Right : attribute.Name;
-            if (name is not GenericNameSyntax generic)
-            {
-                return attribute;
-            }
-
             var replacements = generic.TypeArgumentList.Arguments.Count == 2
                 ? new[]
                 {

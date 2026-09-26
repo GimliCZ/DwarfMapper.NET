@@ -81,5 +81,25 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
             Assert.DoesNotContain("a!", generated, StringComparison.Ordinal); // custom name NOT used for flags
         }
+
+        [Fact]
+        public void EnumMember_without_a_Value_falls_back_to_the_identifier()
+        {
+            // [EnumMember] with no Value names nothing, so the member serializes as itself.
+            const string source = """
+                                  using System.Runtime.Serialization;
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public enum E { [EnumMember] A, B }
+                                  public class Src { public E V { get; set; } }
+                                  public class Dst { public string V { get; set; } = ""; }
+                                  [DwarfMapper]
+                                  public partial class M { public partial Dst Map(Src s); }
+                                  """;
+
+            var generated = GeneratorAssert.CompilesClean(source);
+
+            Assert.Contains("global::Demo.E.A => \"A\",", generated, StringComparison.Ordinal);
+        }
     }
 }

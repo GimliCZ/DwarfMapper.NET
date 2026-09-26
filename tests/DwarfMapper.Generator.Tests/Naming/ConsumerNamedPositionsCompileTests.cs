@@ -833,5 +833,33 @@ namespace DwarfMapper.Generator.Tests.Naming
                              """;
             GeneratorAssert.CompilesClean(s);
         }
+
+        /// <summary>
+        ///     A span map whose element converter is the consumer's own keyword-named map method.
+        /// </summary>
+        /// <remarks>
+        ///     The async-stream loop wrote its element converter through <c>EmitConverterMethod</c>; the span loop
+        ///     read the raw <c>ConverterMethod</c> through a null-conditional (<c>elem?.ConverterMethod</c>), which
+        ///     is a member BINDING rather than a member access, so <c>EmittedIdentifiersAreEscapedTests</c> never
+        ///     saw the site. Driven here, the call came out as <c>dst[__i] = class(src[__i]);</c>.
+        /// </remarks>
+        [Fact]
+        public void P42_span_map_element_converter_method_name()
+        {
+            const string s = """
+                             using System;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct P { public int X; }
+                             public struct Q { public long X; }
+                             [DwarfMapper]
+                             public partial class M
+                             {
+                                 public partial void Map(ReadOnlySpan<P> src, Span<Q> dst);
+                                 public partial Q @class(P p);
+                             }
+                             """;
+            GeneratorAssert.CompilesClean(s);
+        }
     }
 }

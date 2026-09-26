@@ -32,8 +32,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 42;
-        private const int PinnedTotalOccurrences = 53;
+        // Round 30 (2026-09-21): 56 -> 62 rows and 67 -> 65 mutants, in one correction. Six generator sites
+        // the ledger had never dispositioned were proved and added (+6 rows, +8 mutants), and the
+        // twelve-occurrence IsPrimitive row shrank to two (-10 mutants) because three of its flips join two
+        // types of the SAME width and [Reinterpret] accepts those - they were never equivalent and are now
+        // killed by tests. Rows can grow while mutants shrink; both halves are pinned so neither can move
+        // quietly. Ledger section "Rows re-adjudicated on 2026-09-21".
+        private const int PinnedEntryRows = 62;
+        private const int PinnedTotalOccurrences = 65;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -51,7 +57,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // rows are retired with it: proven 24 -> 16, probably 6 -> 0. The probably category has no
             // generator rows left, and an empty category carries no pin (the count check below requires
             // every pinned category to have rows). Ledger section "Rows retired on 2026-09-01".
-            ["generator|proven-equivalent"] = 16,
+            // Round 30 (2026-09-21) re-adjudicated this leg in both directions, 16 -> 14: the
+            // twelve-occurrence IsPrimitive row shrank to 2 (three of its flips join two types of the
+            // SAME width, which [Reinterpret] accepts, so they were never equivalent and are now killed
+            // by tests), and six sites the ledger had never dispositioned were proved and added - the
+            // two top-level Nullable<T> guards, the near-miss primitive and managed shortcuts, the two
+            // Locations.Any predicates, the single-candidate fast path and LocationInfo's in-source
+            // ternary. Ledger section "Rows re-adjudicated on 2026-09-21".
+            ["generator|proven-equivalent"] = 14,
             // Round-22 P3 grew the doctooling rows by nine, each with its case-analysis proof in the T3
             // ledger's P3 section (same commit): two unreachable-zero IndexOf/FindIndex boundaries, the
             // ambiguous-match ternary evaluated only outside its distinguishing count, a fall-through
@@ -64,8 +77,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // TryGetValue out-contract and Register's ThrowIfNull) and the FormatMessage 'Count: > 1'
             // boundary (probably — divergence needs a 1-element list only an off-contract direct ctor call
             // can supply).
-            ["runtime|proven-equivalent"] = 2,
-            ["runtime|ruled-in-practice"] = 1,
+            // Round 30 (2026-09-14) added the DwarfRefContext upper-clamp row ('>' -> '>=' at AbsoluteMaxDepth), the
+            // mirror of the lower-clamp proof, with its accidental-static-kill evidence (same commit).
+            ["runtime|proven-equivalent"] = 3,
+            // Round 30 (2026-09-14) retired the one ruled-in-practice row, Key.Equals(Key) && -> ||: by owner ruling
+            // DwarfMapperRegistry.Key became a readonly record struct, so its equality is compiler-generated and the
+            // mutant cannot be generated. The 'runtime|ruled-in-practice' pin went with it (a pin is a category that
+            // exists in the rows — see the Count check below). Correction and retirement are in
+            // equivalent-mutants.md, same commit.
             ["runtime|probably-equivalent"] = 1,
             // Round 27 added the code-fixes leg and ran a kill program on it: 52.54 % to 87.01 %, 61 mutants
             // killed. These 23 are what remained, every one dispositioned, with the case analysis in
@@ -78,8 +97,24 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // count guards whose bodies are no-ops when the collection is empty. The one 'probably' is the
             // trivia source for an added attribute list, which Formatter.Annotation has normalised away in
             // every case tried -- evidence, not a proof.
+            // Round 30 (2026-09-15) retired that 'probably' row: the round-30 sweep proved the `?? classDecl`
+            // fallback unreachable (an addition is only made from one of the class's own attribute lists) and
+            // removed it, so the mutant cannot be generated. The 'codefixes|probably-equivalent' pin went with it.
             ["codefixes|proven-equivalent"] = 22,
-            ["codefixes|probably-equivalent"] = 1
+            // Round 30's pipeline kill program (2026-09-11) is the first adjudication for that leg: sixteen
+            // proven rows, case analyses in Issues/ledgers/pipeline-mutation-survivors.md (same commit).
+            // Three shared lemmas carry the skip-null chain and the extras guards (member-name keys never
+            // equal "" or a dotted string; no MemberMap carries both a SourceName and a ValueExpression;
+            // every ExtrasByTarget entry was admitted with When or a NullSubstitute); the rest are an
+            // empty-list guard, a loop whose only effect is idempotent, a snapshot nothing reads outside
+            // its branch, a HandledTargets.Add no later reader can see, and three "" -> "Stryker was here!"
+            // SourceName flips whose every consumer short-circuits or resolves the name against real
+            // members. Three were marked WEAKER (two rest on DWARF078's error-suppresses-emission
+            // invariant, one on both factory-bearing callers passing NameConvention: 0).
+            // 2026-09-13: that NameConvention: 0 row is retired, 16 -> 15. The coverage sweep folded the DWARF080
+            // lookup's Flexible ternary into SourceGroupKey, so the adjudicated mutant no longer exists. Ledger
+            // section "Rows retired on 2026-09-13".
+            ["pipeline|proven-equivalent"] = 15
         };
 
         // ── shared ────────────────────────────────────────────────────────────────
@@ -339,7 +374,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // The floors must still exist, because they are the half of the gate that is absolute. Codecov's
             // `auto` only forbids getting worse; without these, coverage could ratchet down one
             // non-regressing commit at a time and nothing would ever be measured against a fixed line.
-            var floors = QualityBadgeRenderer.ParseCoverageFloors(
+            var floors = CoverageFloorReader.ParseCoverageFloors(
                 File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1")));
             Assert.True(floors.Count > 0,
                 "scripts/housekeeping.ps1 no longer declares coverage floors. Codecov's `auto` targets only " +

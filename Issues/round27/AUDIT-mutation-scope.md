@@ -7,7 +7,7 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**11.1 % of `src/` is inside any leg's `mutate` globs** — 4,785 of 42,976 lines.
+**11.2 % of `src/` is inside any leg's `mutate` globs** — 4,837 of 43,028 lines.
 
 > **Corrected 2026-09-07.** This line said 12.0 % while the table below said 11.5 %, and the two are
 > the same measurement — the headline simply stopped being updated when the table was re-measured
@@ -29,12 +29,24 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
 | `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 44 | 6 | 3,614 | 944 | **26.1 %** | 73.9 % |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,111 | 657 | **59.1 %** | 96.3 % |
+| `DwarfMapper` (runtime) | 44 | 6 | 3,666 | 996 | **27.2 %** | 73.9 %† |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,182 | 657 | **55.6 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **145** | **27** | **43,165** | **5,187** | **12.0 %** | |
+| **all** | **145** | **27** | **43,288** | **5,239** | **12.1 %** | |
+
+Re-measured 2026-09-21 (round-30 sweep, continued): `DwarfMapper.DocTooling` moves 57.3 % -> 55.6 % for the same
+reason again - 35 more lines outside the leg's globs, this time RepoLayout's root walk split into FindRoot and
+ResolveRoot so both its outcomes could be stated. The mutated line count does not move, because the leg's globs
+name neither file.
+
+Re-measured 2026-09-20 (round-30 sweep): `DwarfMapper.DocTooling` moves 59.1 % -> 57.3 %, and the total lines
+with it, WITHOUT any change to the configs. The assembly gained 36 lines outside the leg's globs - the extracted
+`ApiReferenceRenderer.IsRenderableType` predicate and its documentation - so the mutated share of it fell. That is
+the number behaving correctly: the share is of the assembly, so code added outside a leg dilutes it, and the audit
+exists to keep that visible rather than letting a leg's score stand in for the whole. The line-coverage column moves
+96.3 % -> 97.0 % in the same commit, from the DocTooling tests added beside that extraction.
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -263,3 +275,19 @@ was 0 %. Record **12.0 %** wherever the leg scores are quoted, so the numbers ke
 That figure is no longer maintained by hand: `MutationScopeScanTests` recomputes it from the configs on
 disk and fails when this table drifts from them. The 15.3 % this document used to publish was a one-off
 measurement nothing could re-derive, which is exactly how it survived being wrong for so long.
+
+**Re-measured 2026-09-10 (round 30, item F).** The ambient-dispatch allocation fix rewrote
+`src/DwarfMapper/DwarfMapperRegistry.cs` — net +52 lines (61 added, 9 removed): the copy-on-write array
+replacing the `ConcurrentBag`, the swap under a `Lock`, the lazy key enumerator, and the remarks explaining
+why. That file is **inside** the runtime leg's `mutate` glob, so both the numerator and the denominator of
+the runtime row moved together: 944 → 996 lines in a leg, 3,614 → 3,666 total, share 26.1 % → 27.2 %. The
+headline reads 11.2 % where it read 11.1 %, and the `all` row 12.1 % where it read 12.0 %. File counts are
+unchanged — no file was added or removed, which is exactly the drift the file-count pin cannot see and the
+share tolerance can.
+
+† **The runtime leg's 73.9 % mutation score is now UNVERIFIED and is not re-stated here as if it were
+measured.** 52 new lines entered a mutated file, which creates mutants nothing has yet tried to kill; the
+score can only have moved. It is left at its last measured value with this marker rather than adjusted by
+guesswork, because a number nobody measured is worse than a number flagged as stale — the failure this
+document exists to prevent. Re-run `scripts/housekeeping.ps1 -MutationLeg runtime` before quoting it, and
+per R1 that re-measure updates this cell in the same commit.

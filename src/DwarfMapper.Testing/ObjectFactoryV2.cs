@@ -349,23 +349,22 @@ namespace DwarfMapper.Testing
                     return MakeHashSet(args[0], rng, depth);
                 }
 
-                // ── ImmutableArray<T>
+                // ── Queue<T>, Stack<T> → built from a generated List<T> through their IEnumerable<T> constructor.
+                // They used to fall through to the class path, where the parameterless constructor built them EMPTY
+                // for every seed (53 construction calls in Generator.Tests, 2026-09-15 probe).
+                if (gtd == typeof(Queue<>) || gtd == typeof(Stack<>))
+                {
+                    return Activator.CreateInstance(type, MakeList(args[0], rng, depth));
+                }
+
+                // ── ImmutableArray<T>: the list is generated with its real element type, then CONVERTED.
+                // Owner ruling 2026-09-15 (T-Q1): build the collection, then convert it. The conversion used to be
+                // a scan of the factory class's static methods for a CreateRange overload, so it depended on the
+                // order reflection returned them in, and it returned an ImmutableArray<int> - the WRONG element
+                // type, silently - when the scan came up empty.
                 if (gtd == typeof(ImmutableArray<>))
                 {
-                    var elemType = args[0];
-                    var list = (IList)MakeList(elemType, rng, depth);
-                    // ImmutableArray.CreateRange<T>(IEnumerable<T>) — pick the correct single-arg overload
-                    var createRange = FindImmutableCreateRange(typeof(ImmutableArray), elemType);
-                    if (createRange is null)
-                    {
-                        return ImmutableArray<int>.Empty; // fallback (shouldn't happen)
-                    }
-
-                    return createRange.Invoke(null,
-                        new object[]
-                        {
-                            list
-                        });
+                    return ConvertWith(ToImmutableArrayDefinition, args, MakeList(args[0], rng, depth));
                 }
 
                 // ── ImmutableList<T>, IImmutableList<T>
@@ -374,19 +373,7 @@ namespace DwarfMapper.Testing
                      args.Length == 1 &&
                      typeof(IImmutableList<>).MakeGenericType(args[0]).IsAssignableFrom(type)))
                 {
-                    var elemType = args[0];
-                    var list = (IList)MakeList(elemType, rng, depth);
-                    var createRange = FindImmutableCreateRange(typeof(ImmutableList), elemType);
-                    if (createRange is null)
-                    {
-                        return ImmutableList<int>.Empty;
-                    }
-
-                    return createRange.Invoke(null,
-                        new object[]
-                        {
-                            list
-                        });
+                    return ConvertWith(ToImmutableListDefinition, args, MakeList(args[0], rng, depth));
                 }
 
                 // ── ImmutableHashSet<T>, IImmutableSet<T>
@@ -395,19 +382,7 @@ namespace DwarfMapper.Testing
                      args.Length == 1 &&
                      typeof(IImmutableSet<>).MakeGenericType(args[0]).IsAssignableFrom(type)))
                 {
-                    var elemType = args[0];
-                    var list = (IList)MakeList(elemType, rng, depth);
-                    var createRange = FindImmutableCreateRange(typeof(ImmutableHashSet), elemType);
-                    if (createRange is null)
-                    {
-                        return ImmutableHashSet<int>.Empty;
-                    }
-
-                    return createRange.Invoke(null,
-                        new object[]
-                        {
-                            list
-                        });
+                    return ConvertWith(ToImmutableHashSetDefinition, args, MakeList(args[0], rng, depth));
                 }
 
                 // ── Dictionary<K,V>
@@ -430,45 +405,9 @@ namespace DwarfMapper.Testing
                     var iimmutDictType = typeof(IImmutableDictionary<,>).MakeGenericType(args[0], args[1]);
                     if (iimmutDictType.IsAssignableFrom(type) || gtd == typeof(ImmutableDictionary<,>))
                     {
-                        var plainDict = (IDictionary)MakeDictionary(args[0], args[1], rng, depth);
-                        var builderMethod =
-                            typeof(ImmutableDictionary).GetMethods(BindingFlags.Public | BindingFlags.Static);
-                        // Use ImmutableDictionary.CreateRange(IEnumerable<KVP>)
-                        var kvpType = typeof(KeyValuePair<,>).MakeGenericType(args[0], args[1]);
-                        foreach (var m in builderMethod)
-                            if (m.Name == "CreateRange" &&
-                                m.IsGenericMethodDefinition &&
-                                m.GetGenericArguments().Length == 2)
-                            {
-                                try
-                                {
-                                    var concrete = m.MakeGenericMethod(args[0], args[1]);
-                                    // Build a list of KVPs
-                                    var kvpList = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(kvpType))!;
-                                    foreach (DictionaryEntry entry in plainDict)
-                                        kvpList.Add(Activator.CreateInstance(kvpType, entry.Key, entry.Value)!);
-                                    return concrete.Invoke(null,
-                                        new object[]
-                                        {
-                                            kvpList
-                                        });
-                                }
-                                catch (TargetInvocationException)
-                                {
-                                    /* try next overload */
-                                }
-                                catch (ArgumentException)
-                                {
-                                    /* try next overload */
-                                }
-                                catch (InvalidOperationException)
-                                {
-                                    /* try next overload */
-                                }
-                            }
-
-                        // Fallback: return the plain Dictionary
-                        return plainDict;
+                        return ConvertWith(ToImmutableDictionaryDefinition,
+                            args,
+                            MakeDictionary(args[0], args[1], rng, depth));
                     }
                 }
             }
@@ -489,7 +428,8 @@ namespace DwarfMapper.Testing
                     return Create(concrete, rng, depth + 1, allowNull);
                 }
 
-                return type.IsValueType ? Activator.CreateInstance(type) : null;
+                // No value-type arm: an interface or an abstract type is never a value type.
+                return null;
             }
 
             if (depth >= DefaultMaxDepth)
@@ -498,40 +438,76 @@ namespace DwarfMapper.Testing
             }
 
             // ── Class / struct / record ──────────────────────────────────────────
-            var ctor = type.GetConstructor(Type.EmptyTypes);
-            if (ctor is null)
-            {
-                // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection
-                // happened to return first. Reflection member order is not contractually stable, so the
-                // factory's output was not a pure function of the seed, and seed-determinism is the
-                // property the entire fuzz corpus rests on. Order by parameter count, then by signature.
-                var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-                if (ctors.Length == 0)
-                {
-                    return type.IsValueType ? Activator.CreateInstance(type) : null;
-                }
+            // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection happened to return
+            // first. Reflection member order is not contractually stable, so the factory's output was not a pure
+            // function of the seed, and seed-determinism is the property the entire fuzz corpus rests on. Order by
+            // parameter count, then by signature.
+            var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .OrderBy(c => c.GetParameters().Length)
+                .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
+                    StringComparer.Ordinal)
+                .ToArray();
 
-                var pc = ctors
-                    .OrderBy(c => c.GetParameters().Length)
-                    .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
-                        StringComparer.Ordinal)
-                    .First();
-                var parms = pc.GetParameters();
+            // A struct can always be built without arguments. When it declares no parameterless constructor, that
+            // way is its implicit default, which reflection does not list, so it counts as one more choice: the last.
+            var implicitDefault = type.IsValueType && type.GetConstructor(Type.EmptyTypes) is null;
+            var choices = ctors.Length + (implicitDefault ? 1 : 0);
+            if (choices == 0)
+            {
+                // Only a class gets here: every one of its constructors is non-public.
+                return null;
+            }
+
+            // The seed picks the construction shape (owner ruling 2026-09-15); only the parameterless constructor
+            // used to run whenever there was one. The draw happens only when there IS a choice, so a type with a
+            // single construction shape keeps the rng sequence, and so the fixtures, it had before.
+            var pick = choices == 1 ? 0 : rng.Next(choices);
+            object? instance;
+            ParameterInfo[] bound = [];
+            if (pick == ctors.Length)
+            {
+                // The implicit default, populated below. A struct with no declared constructor used to be returned
+                // as this default, all zeros in every fuzz fixture (found 2026-09-15, fixed by owner ruling).
+                instance = Activator.CreateInstance(type);
+            }
+            else
+            {
+                var chosen = ctors[pick];
+                var parms = chosen.GetParameters();
                 var pvals = new object?[parms.Length];
                 for (var i = 0; i < parms.Length; i++)
                     pvals[i] = Create(parms[i].ParameterType, rng, depth + 1);
-                return pc.Invoke(pvals);
+
+                // Falls through to the member loops below. This used to return here, so every member the
+                // constructor does not set stayed at its default for every seed (owner ruling 2026-09-15).
+                try
+                {
+                    instance = chosen.Invoke(pvals);
+                }
+                catch (TargetInvocationException ex)
+                {
+                    // Loud and named, with no retry and no fallback (owner ruling 2026-09-15): a constructor that
+                    // refuses a legal value of its own parameter types is a fixture gap the test author must see.
+                    throw new InvalidOperationException(
+                        "ObjectFactoryV2 cannot build " + type.FullName + ": its constructor (" +
+                        string.Join(", ", parms.Select(x => x.ParameterType.Name)) +
+                        ") threw on the arguments seeded for it. The factory does not retry; build this fixture by hand, or give the type a constructor that accepts any value of its parameter types.",
+                        ex.InnerException);
+                }
+
+                bound = parms;
             }
 
-            var instance = ctor.Invoke(null);
+            // A member named like a constructor parameter was already set from its seeded argument, so it is not
+            // drawn again. That also keeps a positional record's rng sequence, and so its fixtures, unchanged.
             foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                if (p.CanWrite && p.GetSetMethod() is not null && p.GetIndexParameters().Length == 0)
+                if (p.CanWrite && p.GetSetMethod() is not null && p.GetIndexParameters().Length == 0 && !IsBoundByConstructor(bound, p.Name))
                 {
                     p.SetValue(instance, Create(p.PropertyType, rng, depth + 1));
                 }
 
             foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-                if (!f.IsInitOnly)
+                if (!f.IsInitOnly && !IsBoundByConstructor(bound, f.Name))
                 {
                     f.SetValue(instance, Create(f.FieldType, rng, depth + 1));
                 }
@@ -539,12 +515,21 @@ namespace DwarfMapper.Testing
             return instance;
         }
 
+        /// <summary>Whether <paramref name="memberName" /> names one of the chosen constructor's parameters.</summary>
+        private static bool IsBoundByConstructor(ParameterInfo[] parameters, string memberName)
+        {
+            return Array.Exists(parameters, x => string.Equals(x.Name, memberName, StringComparison.OrdinalIgnoreCase));
+        }
+
         /// <summary>Concrete candidates per abstract type, resolved once per process.</summary>
         private static readonly Dictionary<Type, Type[]> ConcreteCandidates = [];
 
         /// <summary>
-        ///     A concrete, parameterless-constructible type assignable to <paramref name="abstractType" />, or
-        ///     <see langword="null" /> when the loaded assemblies offer none.
+        ///     A concrete type assignable to <paramref name="abstractType" /> that the factory can construct, or
+        ///     <see langword="null" /> when the loaded assemblies offer none. Any public constructor qualifies, and
+        ///     so does any struct, which can always be built through its implicit default. This used to demand a
+        ///     parameterless constructor, so an implementation built only through arguments was never substituted
+        ///     (owner ruling 2026-09-15).
         /// </summary>
         /// <remarks>
         ///     Ordered by full name before the draw so the choice is a pure function of the seed — fixtures
@@ -559,7 +544,7 @@ namespace DwarfMapper.Testing
                 {
                     candidates = AppDomain.CurrentDomain.GetAssemblies()
                         .SelectMany(SafeTypes)
-                        .Where(c => !c.IsAbstract && !c.IsInterface && !c.IsGenericTypeDefinition && abstractType.IsAssignableFrom(c) && c.GetConstructor(Type.EmptyTypes) is not null)
+                        .Where(c => !c.IsAbstract && !c.IsInterface && !c.IsGenericTypeDefinition && abstractType.IsAssignableFrom(c) && (c.IsValueType || c.GetConstructors(BindingFlags.Public | BindingFlags.Instance).Length > 0))
                         .OrderBy(c => c.FullName, StringComparer.Ordinal)
                         .ToArray();
                     ConcreteCandidates[abstractType] = candidates;
@@ -731,61 +716,68 @@ namespace DwarfMapper.Testing
                 dict[key] = val;
             }
 
-            // Guarantee at least one entry for non-depth-capped cases
-            if (dict.Count == 0 && depth < DefaultMaxDepth)
-            {
-                var key = Create(keyType, rng, depth + 1, false); // a null dictionary key throws
-                if (key is not null)
-                {
-                    dict[key] = Create(valType, rng, depth + 1);
-                }
-            }
-
             return dict;
         }
 
-        /// <summary>
-        ///     Locate the single-arg <c>CreateRange&lt;T&gt;(IEnumerable&lt;T&gt;)</c> overload on
-        ///     the given immutable factory class (ImmutableArray / ImmutableList / ImmutableHashSet).
-        ///     Returns null if not found.
-        /// </summary>
-        private static MethodInfo? FindImmutableCreateRange(Type factoryType, Type elemType)
+        // ── Immutable conversions ────────────────────────────
+        //
+        // Each converter below is an ordinary generic method, so the C# COMPILER picks the CreateRange overload.
+        // What is left for reflection is only the runtime type arguments, which a factory cannot know statically.
+        // The four definitions come from a METHOD GROUP rather than a lookup by name: the cast is compile-checked
+        // and refactor-safe, the field counts as a use (IDE0051 is an error here), and no lookup can return null
+        // and need a null-forgiving operator.
+        //
+        // This replaced a scan of each factory class's static methods (owner ruling 2026-09-15, T-Q1). That scan
+        // took whichever CreateRange reflection returned first, so its filters, its three swallowing catches and
+        // its fallbacks were unreachable only because of that order - which this file itself says is not a
+        // contract. The fallbacks were also WRONG-TYPED: an ImmutableArray, ImmutableList or ImmutableHashSet of
+        // int whatever the element type was, and a plain Dictionary for an immutable one, so the caller's
+        // SetValue would have thrown far from the cause.
+
+        private static readonly MethodInfo ToImmutableArrayDefinition =
+            ((Func<List<int>, ImmutableArray<int>>)ToImmutableArrayOf).Method.GetGenericMethodDefinition();
+
+        private static readonly MethodInfo ToImmutableListDefinition =
+            ((Func<List<int>, ImmutableList<int>>)ToImmutableListOf).Method.GetGenericMethodDefinition();
+
+        private static readonly MethodInfo ToImmutableHashSetDefinition =
+            ((Func<List<int>, ImmutableHashSet<int>>)ToImmutableHashSetOf).Method.GetGenericMethodDefinition();
+
+        private static readonly MethodInfo ToImmutableDictionaryDefinition =
+            ((Func<Dictionary<int, int>, ImmutableDictionary<int, int>>)ToImmutableDictionaryOf).Method
+            .GetGenericMethodDefinition();
+
+        /// <summary>Closes one converter over the runtime type arguments and runs it on the generated collection.</summary>
+        private static object? ConvertWith(MethodInfo definition, Type[] typeArguments, object source)
         {
-            foreach (var m in factoryType.GetMethods(BindingFlags.Public | BindingFlags.Static))
-            {
-                if (m.Name != "CreateRange" || !m.IsGenericMethodDefinition)
-                {
-                    continue;
-                }
+            return definition.MakeGenericMethod(typeArguments)
+                .Invoke(null,
+                    new[]
+                    {
+                        source
+                    });
+        }
 
-                var gargs = m.GetGenericArguments();
-                if (gargs.Length != 1)
-                {
-                    continue;
-                }
+        private static ImmutableArray<T> ToImmutableArrayOf<T>(List<T> items)
+        {
+            return ImmutableArray.CreateRange(items);
+        }
 
-                var parms = m.GetParameters();
-                if (parms.Length != 1)
-                {
-                    continue;
-                }
+        private static ImmutableList<T> ToImmutableListOf<T>(List<T> items)
+        {
+            return ImmutableList.CreateRange(items);
+        }
 
-                // Verify the single parameter is IEnumerable<T>
-                var paramType = parms[0].ParameterType;
-                if (!paramType.IsGenericType)
-                {
-                    continue;
-                }
+        private static ImmutableHashSet<T> ToImmutableHashSetOf<T>(List<T> items)
+        {
+            return ImmutableHashSet.CreateRange(items);
+        }
 
-                if (paramType.GetGenericTypeDefinition() != typeof(IEnumerable<>))
-                {
-                    continue;
-                }
-
-                return m.MakeGenericMethod(elemType);
-            }
-
-            return null;
+        private static ImmutableDictionary<TKey, TValue> ToImmutableDictionaryOf<TKey, TValue>(
+            Dictionary<TKey, TValue> entries)
+            where TKey : notnull
+        {
+            return ImmutableDictionary.CreateRange(entries);
         }
     }
 }

@@ -116,7 +116,8 @@ namespace DwarfMapper.CodeFixes
                         ? joined!.Split('|')
                         : [];
 
-                if (NamesAGenericType(targetId!) || Array.Exists(nested, NamesAGenericType))
+                if (!IsTypeHandle(targetId!) || !Array.TrueForAll(nested, IsTypeHandle) ||
+                    NamesAGenericType(targetId!) || Array.Exists(nested, NamesAGenericType))
                 {
                     continue;
                 }
@@ -189,6 +190,21 @@ namespace DwarfMapper.CodeFixes
         }
 
         /// <summary>
+        ///     True when a handle is a TYPE <c>DocumentationCommentId</c>, i.e. starts with <c>T:</c> — the only
+        ///     form <see cref="DocumentationCommentId.GetFirstSymbolForDeclarationId" /> resolves to a type.
+        /// </summary>
+        /// <remarks>
+        ///     The generator always writes the prefix, so a handle without one comes from a hand-built or
+        ///     foreign diagnostic. Offering the fix for it would register a lightbulb whose conversion resolves
+        ///     nothing and silently changes nothing; declining it here, off the string, costs no compilation.
+        ///     Owner ruling 2026-09-15 (Issues/ledgers/round30-ledger.md).
+        /// </remarks>
+        private static bool IsTypeHandle(string declarationId)
+        {
+            return declarationId.StartsWith("T:", StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     True when a <c>DocumentationCommentId</c> names a type with a type parameter in scope —
         ///     <c>T:Demo.Box`1</c>, and equally <c>T:Demo.Outer`1.Inner</c>, whose <c>Inner</c> is generic in
         ///     its container's parameter. The fix declines those, and the backtick is the whole test.
@@ -217,11 +233,13 @@ namespace DwarfMapper.CodeFixes
         }
 
         /// <summary>The type name inside a <c>DocumentationCommentId</c>: <c>T:Demo.OrderDto</c> gives <c>OrderDto</c>.</summary>
+        /// <remarks>
+        ///     The prefix is stripped unconditionally: the only caller is <see cref="Title" />, and an action is
+        ///     titled only after <see cref="IsTypeHandle" /> has accepted its handle.
+        /// </remarks>
         private static string Short(string declarationId)
         {
-            var name = declarationId.StartsWith("T:", StringComparison.Ordinal)
-                ? declarationId.Substring(2)
-                : declarationId;
+            var name = declarationId.Substring(2);
 
             var cut = name.LastIndexOf('.');
             return cut < 0 ? name : name.Substring(cut + 1);

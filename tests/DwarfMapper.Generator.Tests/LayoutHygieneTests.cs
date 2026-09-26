@@ -85,6 +85,19 @@ namespace DwarfMapper.Generator.Tests
         // ─── Measure: the numbers ────────────────────────────────────────────────
 
         /// <summary>
+        ///     An optional member is measured through its underlying type, and when THAT width is not the
+        ///     generator's to claim, the refusal carries outward. <c>nint</c> is the platform's width, so a
+        ///     <c>nint?</c> field refuses the whole struct — no layout, never a guessed one.
+        /// </summary>
+        [Fact]
+        public void An_optional_member_whose_underlying_width_is_the_platforms_refuses_the_whole_struct()
+        {
+            Assert.Null(TryMeasureType(
+                "namespace T { public struct S { public long A; public nint? B; public byte C; } }",
+                "S"));
+        }
+
+        /// <summary>
         ///     The plan's headline fixture. Verified against the runtime: <c>Unsafe.SizeOf</c> is 40, and
         ///     <c>Marshal.OffsetOf</c> puts the five fields at 0 / 8 / 16 / 24 / 32.
         ///     <para>
@@ -804,6 +817,24 @@ namespace DwarfMapper.Generator.Tests
                 "Id, Value, Code, Ok, Kind makes it 24 bytes — smaller arrays, and a layout-identical twin " +
                 "can take the blit",
                 one.GetMessage(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>
+        ///     The once-only check reads the diagnostics already collected for the mapper, and those are not all
+        ///     DWARF101. A DWARF038 raised by an earlier member sits in the same list, and it must be stepped over
+        ///     rather than mistaken for the padded struct's earlier report — which would silence the hint.
+        /// </summary>
+        [Fact]
+        public void An_unrelated_earlier_diagnostic_does_not_count_as_the_padded_structs_report()
+        {
+            var source = PaddedPair
+                .Replace("public class C { ", "public class C { public long Big { get; set; } ", StringComparison.Ordinal)
+                .Replace("public class D { ", "public class D { public double Big { get; set; } ", StringComparison.Ordinal);
+
+            var (all, _) = GeneratorTestHarness.Run(source);
+
+            Assert.Contains(all, d => d.Id == "DWARF038");
+            Assert.Single(all, d => d.Id == "DWARF101");
         }
 
         /// <summary>

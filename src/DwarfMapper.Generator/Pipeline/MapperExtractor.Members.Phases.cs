@@ -66,7 +66,7 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    if (srcTypeByName.TryGetValue(m.SourceName, out var st) && (st.IsReferenceType || IsNullableValue(st, out _)))
+                    if (IsNullCapableSourceMember(srcTypeByName, m.SourceName))
                         // The emitter now guards this with `if (src.X is not null) dst.X = …;`, so inside that
                         // guard flow analysis already proves non-null: no CS8601, hence no '!' and no DWARF070.
                         // SkipNullSourceMembers IS the fix DWARF070 would have told them to apply.
@@ -79,6 +79,21 @@ namespace DwarfMapper.Generator.Pipeline
                     }
                 }
             }
+        }
+
+        /// <summary>
+        ///     The key a destination name looks up in <see cref="MemberLookups.SourceGroups" />: normalized under
+        ///     <c>NameConvention.Flexible</c>, as written otherwise, which is how the groups themselves were keyed.
+        /// </summary>
+        /// <remarks>
+        ///     One statement for the three lookups that ask it. Written inline at each, the DWARF080 lookup carried a
+        ///     Flexible arm no input reaches: a factory-owned member exists only on [GenerateMap] and nested pairs,
+        ///     which resolve with NameConvention 0. Asked here, both arms are reached by the lookups that do run
+        ///     under Flexible.
+        /// </remarks>
+        private static string SourceGroupKey(MemberLookups lookups, string name)
+        {
+            return lookups.Flexible ? NormalizeName(name) : name;
         }
 
         /// <summary>
@@ -96,13 +111,13 @@ namespace DwarfMapper.Generator.Pipeline
         /// </remarks>
         private static string? ShadowedSourceMember(MemberRequest req, MemberLookups lookups, string target)
         {
-            if (!lookups.SourceGroups.TryGetValue(lookups.Flexible ? NormalizeName(target) : target, out var group))
+            if (!lookups.SourceGroups.TryGetValue(SourceGroupKey(lookups, target), out var group))
             {
                 return null;
             }
 
             foreach (var (name, _) in group)
-                if (!(req.IgnoredSourceMembers?.Contains(name) ?? false))
+                if (!req.IgnoredSourceMembers.Contains(name))
                 {
                     return name;
                 }
@@ -122,9 +137,7 @@ namespace DwarfMapper.Generator.Pipeline
             MemberRequest req,
             MemberLookups lookups,
             MemberAccumulators acc){
-            foreach (var mv in req.MapValues ??
-                               Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
-                                   string? Use, string? ConstLiteral)>())
+            foreach (var mv in req.MapValues)
             {
                 var mvTgt = mv.Target;
                 if (!TryValidateMapValueTarget(mvTgt,
@@ -142,12 +155,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (mv.IsConstant)
                 {
-                    string literal;
-                    if (mv.ConstLiteral is not null)
-                    {
-                        literal = mv.ConstLiteral;
-                    }
-                    else if (!TryFormatConstant(mv.Value, mvTgtType, req.Compilation, out literal, out var why))
+                    if (!TryRenderMapValueConstant(mv.ConstLiteral, mv.Value, mvTgtType, req.Compilation, out var literal, out var why))
                     {
                         acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, req.Location, why));
                         continue;
@@ -157,7 +165,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else if (mv.Use is not null)
                 {
-                    var provider = (req.ValueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
+                    var provider = req.ValueProviders
                         .FirstOrDefault(p => StringComparer.Ordinal.Equals(p.Name, mv.Use));
                     if (provider.Name is null || !HasImplicitConversion(req.Compilation, provider.ReturnType, mvTgtType))
                     {
@@ -180,6 +188,21 @@ namespace DwarfMapper.Generator.Pipeline
                         $"[MapValue] for '{mvTgt}' provides neither a constant value nor Use="));
                 }
             }
+        }
+
+        /// <summary>
+        ///     Whether the chosen constructor alone assigns <paramref name="target" />, so the object initializer must not
+        ///     assign it again: it is a consumed constructor parameter, and not a <c>required</c> member whose constructor
+        ///     lacks <c>[SetsRequiredMembers]</c> (C# still demands those in the initializer, CS9035).
+        /// </summary>
+        /// <remarks>
+        ///     Callers pass the two sets together: both from a construction, or both null for update-into, which has no
+        ///     construction. So "consumed parameters, but no required-member set" never arrives through a mapper; it is
+        ///     answered here once, where the unit test asks it, for both passes that ask the question.
+        /// </remarks>
+        internal static bool IsAssignedByConstructorOnly(HashSet<string>? consumedCtorParams, HashSet<string>? requiredMustInitialize, string target)
+        {
+            return consumedCtorParams is not null && consumedCtorParams.Contains(target) && (requiredMustInitialize is null || !requiredMustInitialize.Contains(target));
         }
 
         /// <summary>
@@ -214,7 +237,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Unflatten: a dotted TARGET path (e.g. "Address.City") assigns the leaf through a acc.Synthesized
                 // intermediate (single level). The intermediate must be a writable class with a public
                 // parameterless constructor; it is instantiated post-construction by the emitter.
-                if (tgtName.IndexOf('.') >= 0)
+                if (tgtName.IndexOf('.') > 0)
                 {
                     // When / NullSubstitute are not supported on an unflatten (dotted) target — the unflatten
                     // path does not read these extras, so catch the unsupported combination loudly rather than
@@ -259,10 +282,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // If this explicit mapping targets a constructor parameter (already consumed), skip it here
                 // UNLESS the member is `required` and the ctor lacks [SetsRequiredMembers] — in that case
                 // the member must also appear in the object initializer to satisfy CS9035.
-                if (req.ConsumedCtorParams is not null &&
-                    req.ConsumedCtorParams.Contains(tgtName) &&
-                    (req.RequiredMustInitialize is null ||
-                     !req.RequiredMustInitialize.Contains(tgtName)))
+                if (IsAssignedByConstructorOnly(req.ConsumedCtorParams, req.RequiredMustInitialize, tgtName))
                 {
                     continue;
                 }
@@ -270,7 +290,8 @@ namespace DwarfMapper.Generator.Pipeline
                 if (req.Ignores.Contains(tgtName))
                 {
                     // Contradictory: [MapIgnore] and [MapProperty] target the same member.
-                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, req.Location, tgtName));
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, req.Location, tgtName,
+                        MessageArg2: "[MapProperty]"));
                     continue;
                 }
 
@@ -281,7 +302,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 ITypeSymbol? srcMatch;
-                if (srcName.IndexOf('.') >= 0)
+                if (srcName.IndexOf('.') > 0)
                 {
                     // Deep source path, e.g. "Customer.Name" → resolve hop-by-hop (member names never contain
                     // dots, so this is unambiguous). The leaf type drives the conversion; the dotted SourceName
@@ -443,6 +464,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var convNeedsCtx,
+                        out var convParamType,
                         req.Options.AutoNest,
                         req.NestedRegistry,
                         req.Options.NullAsNull,
@@ -566,6 +588,7 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         convNeedsCtx,
                         SourceMayBeNullRef(srcMatch),
+                        ConverterParamTypeFqn: convParamType,
                         NullSubstituteLiteral: nullSubLit,
                         WhenPredicate: whenPred,
                         // NullSubstitute already coalesces the null away (`src.X ?? literal`), so the assignment
@@ -622,10 +645,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // as both ctor params AND init properties — must not double-assign).
                 // EXCEPTION: `required` members whose ctor lacks [SetsRequiredMembers] must also be set in
                 // the object initializer (CS9035), so do NOT skip them.
-                if (req.ConsumedCtorParams is not null &&
-                    req.ConsumedCtorParams.Contains(target.Name) &&
-                    (req.RequiredMustInitialize is null ||
-                     !req.RequiredMustInitialize.Contains(target.Name)))
+                if (IsAssignedByConstructorOnly(req.ConsumedCtorParams, req.RequiredMustInitialize, target.Name))
                 {
                     // Under a [MapConstructor] factory the skip above is not "the constructor assigns it" — it is
                     // "nobody assigns it". The factory owns construction, so an init-only/required member keeps
@@ -639,7 +659,7 @@ namespace DwarfMapper.Generator.Pipeline
                     //
                     // Only reported when a source member actually WOULD have supplied a value — a member nothing
                     // maps to loses nothing, and warning about it would be noise on every record type.
-                    if (req.FactoryExcludedMembers is not null && req.FactoryExcludedMembers.Contains(target.Name, StringComparer.Ordinal) && !req.Ignores.Contains(target.Name) && lookups.SourceGroups.ContainsKey(lookups.Flexible ? NormalizeName(target.Name) : target.Name))
+                    if (req.FactoryExcludedMembers is not null && req.FactoryExcludedMembers.Contains(target.Name, StringComparer.Ordinal) && !req.Ignores.Contains(target.Name) && lookups.SourceGroups.ContainsKey(SourceGroupKey(lookups, target.Name)))
                     {
                         acc.Diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.FactoryDropsMember,
@@ -667,7 +687,13 @@ namespace DwarfMapper.Generator.Pipeline
                     // conversions hit it independently and each reinvented the same workaround, because
                     // AutoMapper's expression trees bypassed the compile-time rule entirely and simply left the
                     // member null. `.Ignore()` on a required member is therefore common in migrating code.
-                    if (!req.RequiredMembersAlreadySatisfied && (req.ConsumedCtorParams is null || !req.ConsumedCtorParams.Contains(target.Name)) && IsRequiredMember(req.TargetType, target.Name))
+                    //
+                    // A constructor that also binds the member does NOT satisfy `required`: without
+                    // [SetsRequiredMembers] C# still demands it in the initializer (ComputeRequiredMustInitialize's
+                    // double-set), so ignoring it is CS9035 exactly as for a member no constructor touches. This
+                    // guard used to exempt ctor-bound members and emitted `new C(X: s.X) { … }` with X omitted and
+                    // no DWARF079 — found as pipeline mutant 11484, whose "is not null" flip reported correctly.
+                    if (!req.RequiredMembersAlreadySatisfied && IsRequiredMember(req.TargetType, target.Name))
                     {
                         acc.Diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.IgnoredRequiredMember,
@@ -710,6 +736,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var epConv,
                             out var epNull,
                             out var epNeedsCtx,
+                            out var epConvParamType,
                             req.Options.AutoNest,
                             req.NestedRegistry,
                             req.Options.NullAsNull,
@@ -733,6 +760,7 @@ namespace DwarfMapper.Generator.Pipeline
                             epNull,
                             false, // !epNeedsCtx is in the guard above: an extra parameter never threads (ctx, depth).
                             SourceMayBeNullRef(ep.Type!),
+                            ConverterParamTypeFqn: epConvParamType,
                             NullRefIntoNonNullable: IsDirectNullRefAssign(epConv, epNull, ep.Type!, target.Type),
                             ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(epConv,
                                 target.Type,
@@ -761,7 +789,7 @@ namespace DwarfMapper.Generator.Pipeline
                     }
                 }
 
-                if (!lookups.SourceGroups.TryGetValue(lookups.Flexible ? NormalizeName(target.Name) : target.Name, out var matches))
+                if (!lookups.SourceGroups.TryGetValue(SourceGroupKey(lookups, target.Name), out var matches))
                 {
                     var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
                     foreach (var fi in lookups.FlattenInfos)
@@ -795,6 +823,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 out var fconv,
                                 out var fnull,
                                 out var fneedsCtx,
+                                out var fconvParamType,
                                 req.Options.AutoNest,
                                 req.NestedRegistry,
                                 req.Options.NullAsNull,
@@ -809,6 +838,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 fnull,
                                 fneedsCtx,
                                 SourceMayBeNullRef(fm.LeafType),
+                                ConverterParamTypeFqn: fconvParamType,
                                 NullRefIntoNonNullable:
                                 IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type),
                                 ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(fconv,
@@ -963,6 +993,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var needsCtx,
+                        out var convParamType,
                         req.Options.AutoNest,
                         req.NestedRegistry,
                         req.Options.NullAsNull,
@@ -986,6 +1017,7 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         needsCtx,
                         SourceMayBeNullRef(source.Type),
+                        ConverterParamTypeFqn: convParamType,
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
                         ConverterReturnIsNullableRef: ForgiveConverterNullableReturn(
                             conv,

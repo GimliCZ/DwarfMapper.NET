@@ -220,5 +220,77 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("internal static global::Demo.OrderView ToOrderView", facade, StringComparison.Ordinal);
             GeneratorAssert.EmitsCompilableCode(s);
         }
+
+        /// <summary>
+        ///     Two ambiguous signatures in one assembly, each reported once and in a stable order (by extension name),
+        ///     so the diagnostics do not reshuffle between builds. The single-collision fixture above never sorted
+        ///     anything.
+        /// </summary>
+        [Fact]
+        public void Two_duplicate_facade_signatures_are_each_reported_in_extension_name_order()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Order { public int Id { get; set; } }
+                             public class OrderDto { public int Id { get; set; } }
+                             public class Item { public int Id { get; set; } }
+                             public class ItemDto { public int Id { get; set; } }
+                             [DwarfMapper] [GenerateMap<Order, OrderDto>] [GenerateMap<Item, ItemDto>] public partial class MapperA { }
+                             [DwarfMapper] [GenerateMap<Order, OrderDto>] [GenerateMap<Item, ItemDto>] public partial class MapperB { }
+                             """;
+
+            var (diags, _) = GeneratorTestHarness.Run(s);
+            var messages = diags.Where(d => d.Id == "DWARF058")
+                .Select(d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture))
+                .ToList();
+
+            Assert.Equal(2, messages.Count);
+            Assert.Contains("'ToItemDto(this global::Demo.Item)'", messages[0], StringComparison.Ordinal);
+            Assert.Contains("'ToOrderDto(this global::Demo.Order)'", messages[1], StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A PRIVATE mapping method gets no extension: the facade class lives outside the mapper and could not call
+        ///     it.
+        /// </summary>
+        [Fact]
+        public void A_private_mapping_method_gets_no_extension()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Order { public int Id { get; set; } }
+                             public class OrderDto { public int Id { get; set; } }
+                             [DwarfMapper]
+                             public partial class M
+                             {
+                                 private partial OrderDto Map(Order o);
+                                 public OrderDto Call(Order o) => Map(o);
+                             }
+                             """;
+
+            Assert.Equal(string.Empty, GeneratorTestHarness.RunAndGetSource(s, FacadeHint));
+            GeneratorAssert.CompilesClean(s);
+        }
+
+        /// <summary>
+        ///     A map FROM <c>object</c> gets no extension. <c>object</c> is written as a keyword, without
+        ///     <c>global::</c>, so it is not a plain named type. An <c>object.ToDst()</c> extension would also
+        ///     attach itself to every value in the consumer's code.
+        /// </summary>
+        [Fact]
+        public void A_map_from_object_gets_no_extension()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Dst { }
+                             [DwarfMapper] public partial class M { public partial Dst Map(object o); }
+                             """;
+
+            Assert.Equal(string.Empty, GeneratorTestHarness.RunAndGetSource(s, FacadeHint));
+            GeneratorAssert.CompilesClean(s);
+        }
     }
 }

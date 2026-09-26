@@ -35,7 +35,7 @@ namespace DwarfMapper.Testing
         public static IReadOnlyList<string> ValueDiff(object? expected, object? actual, string rootPath = "root")
         {
             var diffs = new List<string>();
-            var visited = new Dictionary<(RuntimeId, RuntimeId), bool>(RuntimeIdPairComparer.Instance);
+            var visited = NewVisitedPairs();
             ValueCompare(rootPath, expected, actual, diffs, 0, visited);
             return diffs;
         }
@@ -124,12 +124,12 @@ namespace DwarfMapper.Testing
             var diffs = new List<string>();
             CrossTypeCompare(rootPath,
                 expected,
-                expectedType ?? expected?.GetType(),
+                expectedType,
                 actual,
-                actualType ?? actual?.GetType(),
+                actualType,
                 diffs,
                 0,
-                new Dictionary<(RuntimeId, RuntimeId), bool>(RuntimeIdPairComparer.Instance));
+                NewVisitedPairs());
             return diffs;
         }
 
@@ -364,7 +364,7 @@ namespace DwarfMapper.Testing
             object? actual,
             List<string> diffs,
             int depth,
-            Dictionary<(RuntimeId, RuntimeId), bool> visited)
+            Dictionary<object, HashSet<object>> visited)
         {
             if (depth > MaxValueDepth)
             {
@@ -395,15 +395,9 @@ namespace DwarfMapper.Testing
             }
 
             // Cycle guard for reference types
-            if (!type.IsValueType)
+            if (!type.IsValueType && !FirstVisit(visited, expected, actual))
             {
-                var key = (new RuntimeId(expected), new RuntimeId(actual));
-                if (visited.ContainsKey(key))
-                {
-                    return; // already compared this pair
-                }
-
-                visited[key] = true;
+                return; // already compared this pair
             }
 
             // IEnumerable (including arrays, lists, sets, dicts)
@@ -617,7 +611,7 @@ namespace DwarfMapper.Testing
             Type? actualType,
             List<string> diffs,
             int depth,
-            Dictionary<(RuntimeId, RuntimeId), bool> visited)
+            Dictionary<object, HashSet<object>> visited)
         {
             if (depth > MaxValueDepth)
             {
@@ -647,6 +641,7 @@ namespace DwarfMapper.Testing
                 return;
             }
 
+            // A root call without declared types gets them from its values here; every recursive call passes them.
             expectedType ??= expected.GetType();
             actualType ??= actual.GetType();
 
@@ -685,13 +680,6 @@ namespace DwarfMapper.Testing
                             diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
                         }
                     }
-                    catch (InvalidCastException)
-                    {
-                        if (!ScalarEquals(expected, actual))
-                        {
-                            diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
-                        }
-                    }
                     catch (OverflowException)
                     {
                         if (!ScalarEquals(expected, actual))
@@ -724,15 +712,9 @@ namespace DwarfMapper.Testing
             }
 
             // Cycle guard
-            if (!expectedType.IsValueType)
+            if (!expectedType.IsValueType && !FirstVisit(visited, expected, actual))
             {
-                var key = (new RuntimeId(expected), new RuntimeId(actual));
-                if (visited.ContainsKey(key))
-                {
-                    return;
-                }
-
-                visited[key] = true;
+                return;
             }
 
             // Collections
@@ -962,49 +944,36 @@ namespace DwarfMapper.Testing
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
-        // RuntimeId: wraps an object for reference-identity keying in a Dictionary
+        // The cycle guard's visited set: which EXPECTED reference has already been compared with which
+        // ACTUAL reference. Both levels compare by reference through the BCL's ReferenceEqualityComparer,
+        // so the oracles carry no hand-written equality of their own.
+        //
+        // This replaced a wrapper struct keyed by RuntimeHelpers.GetHashCode plus a comparer over pairs of
+        // it (owner ruling 2026-09-15, T-Q3: "restructurize"). Two of that shape's members could not be
+        // reached by any test: the struct's Equals(object) override, which only analyzer rule CA1067
+        // required and which the pair comparer never called, and the second half of that comparer's `&&`,
+        // which needs two keys sharing one combined hash but differing in their first object - an identity
+        // hash collision no test can construct deterministically.
         // ─────────────────────────────────────────────────────────────────────────────
 
-        private readonly struct RuntimeId : IEquatable<RuntimeId>
+        private static Dictionary<object, HashSet<object>> NewVisitedPairs()
         {
-            private readonly int _hash;
-            private readonly object _obj;
-
-            internal RuntimeId(object obj)
-            {
-                _obj = obj;
-                _hash = RuntimeHelpers.GetHashCode(obj);
-            }
-
-            public bool Equals(RuntimeId other)
-            {
-                return ReferenceEquals(_obj, other._obj);
-            }
-
-            public override bool Equals(object? obj)
-            {
-                return obj is RuntimeId other && Equals(other);
-            }
-
-            public override int GetHashCode()
-            {
-                return _hash;
-            }
+            return new Dictionary<object, HashSet<object>>(ReferenceEqualityComparer.Instance);
         }
 
-        private sealed class RuntimeIdPairComparer : IEqualityComparer<(RuntimeId A, RuntimeId B)>
+        /// <summary>
+        ///     Records that <paramref name="expected" /> is being compared with <paramref name="actual" />, and
+        ///     reports whether that pair of references is new. A repeat is a cycle, and the caller returns.
+        /// </summary>
+        private static bool FirstVisit(Dictionary<object, HashSet<object>> visited, object expected, object actual)
         {
-            internal static readonly RuntimeIdPairComparer Instance = new();
-
-            public bool Equals((RuntimeId A, RuntimeId B) x, (RuntimeId A, RuntimeId B) y)
+            if (!visited.TryGetValue(expected, out var partners))
             {
-                return x.A.Equals(y.A) && x.B.Equals(y.B);
+                partners = new HashSet<object>(ReferenceEqualityComparer.Instance);
+                visited.Add(expected, partners);
             }
 
-            public int GetHashCode((RuntimeId A, RuntimeId B) obj)
-            {
-                return HashCode.Combine(obj.A.GetHashCode(), obj.B.GetHashCode());
-            }
+            return partners.Add(actual);
         }
     }
 }

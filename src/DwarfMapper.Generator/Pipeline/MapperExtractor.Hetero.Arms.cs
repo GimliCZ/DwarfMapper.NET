@@ -81,19 +81,9 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     var memberTypeNoAnnot = nm.Type.WithNullableAnnotation(NullableAnnotation.None);
 
-                    // Single-ref edge: type assignable to nodeBase (includes exact type and subtypes)
+                    // Single-ref edge: type assignable to nodeBase (includes exact type and subtypes). A Nullable<T>
+                    // member lands here too: C# boxes T? implicitly to every interface and base class T converts to.
                     if (HasImplicitConversion(req.Compilation, memberTypeNoAnnot, nav.NodeType))
-                    {
-                        derivedEdgeMembers.Add((nm.Name, false, false));
-                        continue;
-                    }
-
-                    // Nullable<T> where T is assignable to nodeBase
-                    if (nm.Type is INamedTypeSymbol nmNamed &&
-                        nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
-                        HasImplicitConversion(req.Compilation,
-                            nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None),
-                            nav.NodeType))
                     {
                         derivedEdgeMembers.Add((nm.Name, false, false));
                         continue;
@@ -160,7 +150,7 @@ namespace DwarfMapper.Generator.Pipeline
                     sbArm.AppendLine("        {");
 
                     // Leaf members: map with conversion where available.
-                    // MF-D fix: use throw-away synth dict + skip complex acc.Synthesized converters.
+                    // MF-D fix: use a throw-away synth dict; complex converters are skipped only under Preserve.
                     // SF-LEAFDIAG fix: propagate unmappable-leaf errors to real acc.Diagnostics.
                     foreach (var leaf in derivedLeafMembers)
                     {
@@ -186,6 +176,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var leafConv,
                             out var leafNull,
                             out _,
+                            out _,
                             req.AutoNest,
                             req.NestedRegistry);
                         if (!leafResolved)
@@ -194,11 +185,11 @@ namespace DwarfMapper.Generator.Pipeline
                             continue;
                         }
 
-                        // MF-D: skip only COMPLEX helpers (Obj/Coll/Dict) that may become 3-param.
-                        // Numeric/enum/parsable helpers are always single-arg and are safe.
-                        if (GeneratedNames.IsComplexHelper(leafConv))
+                        // MF-D / ISSUE-001: the same decision as the homogeneous loop. This used to skip every
+                        // complex leaf in every mode, silently; now only Preserve skips it, and says so (DWARF075).
+                        if (FlatLeafBlockedUnderPreserve(req, acc, leaf.Name, leaf.Type, leafConv))
                         {
-                            continue; // complex acc.Synthesized helper — skip (topology degradation)
+                            continue;
                         }
 
                         foreach (var kv in leafThrowAwaySynth)
@@ -236,6 +227,44 @@ namespace DwarfMapper.Generator.Pipeline
 
                 heteroArms.Add((derivedSrc, derivedTgt, perTypeHelperName, derivedEdgeMembers, derivedLeafMembers));
             }
+        }
+
+        /// <summary>
+        ///     Whether a flat-node data leaf resolved to <paramref name="leafConv" /> must be left out of the helper —
+        ///     and when it must, reports <c>DWARF075</c> so it is not left out in silence. The ONE decision for both
+        ///     leaf loops: the homogeneous flat-node helper and the helper built for each <c>[MapDerivedType]</c> arm.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A COMPLEX synthesized helper (<c>__DwarfMap_Obj_</c>, <c>_Coll_</c>, <c>_Dict_</c>) may be
+        ///         force-marked recursion-capable (3-param) by the Preserve post-processing, and would then mismatch
+        ///         the one-argument call a flat-node helper emits (MF-D, CS7036). That force-marking is guarded by
+        ///         Preserve, so the hazard exists only there. Numeric, enum and parsable helpers are always single-arg.
+        ///         Outside Preserve the leaf is flattened; the caller's merge registers the helper so the call resolves.
+        ///     </para>
+        ///     <para>
+        ///         3ade4ee (ISSUE-001) made that split in the homogeneous loop and did not touch the derived-arm loop,
+        ///         which went on skipping every complex leaf in every mode with no diagnostic. One helper, so a third
+        ///         leaf loop cannot repeat that.
+        ///     </para>
+        /// </remarks>
+        private static bool FlatLeafBlockedUnderPreserve(
+            FlattenGraphRequest req,
+            FlattenGraphAccumulators acc,
+            string leafName,
+            ITypeSymbol leafType,
+            string? leafConv)
+        {
+            if (!req.IsPreserve || !GeneratedNames.IsComplexHelper(leafConv))
+            {
+                return false;
+            }
+
+            acc.Diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.FlattenGraphLeafNotFlattened,
+                req.Location,
+                $"[FlattenGraph] cannot flatten member '{leafName}' of type " + $"'{leafType.ToDisplayString()}' under ReferenceHandling = Preserve; it is left " + "at the destination's default. Map the member explicitly, or use " + "ReferenceHandling = None for this mapper."));
+            return true;
         }
     }
 }

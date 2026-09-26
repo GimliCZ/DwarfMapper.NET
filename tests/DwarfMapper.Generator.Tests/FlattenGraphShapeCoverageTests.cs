@@ -197,6 +197,67 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        /// <summary>
+        ///     An ARRAY destination wraps the traversal in a ToArray helper whose parameter must match the traversal
+        ///     helper's own: an array navigation hands over <c>TNode[]?</c> and any other collection
+        ///     <c>IEnumerable&lt;TNode&gt;?</c>. Every array-destination fixture navigated from a single reference,
+        ///     so neither collection form of the wrapper was emitted.
+        /// </summary>
+        [Theory]
+        [InlineData("public Node[]? Entry { get; set; }", "(global::Demo.Node[]? entry)")]
+        [InlineData("public List<Node>? Entry { get; set; }", "(global::System.Collections.Generic.IEnumerable<global::Demo.Node>? entry)")]
+        public void An_array_destination_wraps_a_collection_navigation_with_a_matching_parameter(string navigation, string wrapperParameters)
+        {
+            var src = Models
+                      + "public class Root { " + navigation + " }\n"
+                      + "public class RootDto { public NodeDto[] Nodes { get; set; } = System.Array.Empty<NodeDto>(); }\n"
+                      + "[DwarfMapper]\n"
+                      + "public partial class M\n"
+                      + "{\n"
+                      + "    [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]\n"
+                      + "    public partial RootDto Map(Root r);\n"
+                      + "}\n";
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+            Assert.Matches(@"__DwarfMap_FlattenGraphArr_\w+" + System.Text.RegularExpressions.Regex.Escape(wrapperParameters), generated);
+        }
+
+        /// <summary>
+        ///     The node DTO gate refuses a type the flat-node helper cannot <c>new</c>, and it asks two questions: is
+        ///     it a class or struct at all, and is it one of the special types. An interface fails the first; a
+        ///     <c>string</c> is a class that fails the second.
+        /// </summary>
+        [Theory]
+        [InlineData("public interface NodeDto { int Id { get; set; } }", "NodeDto", "List<NodeDto>")]
+        [InlineData("", "String", "List<string>")]
+        public void A_node_dto_that_is_not_a_plain_class_or_struct_reports_DWARF034(string dtoDeclaration, string reportedName, string destination)
+        {
+            var src = """
+                      using DwarfMapper;
+                      using System.Collections.Generic;
+                      namespace Demo;
+                      public class Node { public int Id { get; set; } public Node? Next { get; set; } }
+
+                      """
+                      + dtoDeclaration + "\n"
+                      + "public class Root { public Node? Entry { get; set; } }\n"
+                      + "public class RootDto { public " + destination + " Nodes { get; set; } = new(); }\n"
+                      + "[DwarfMapper]\n"
+                      + "public partial class M\n"
+                      + "{\n"
+                      + "    [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]\n"
+                      + "    public partial RootDto Map(Root r);\n"
+                      + "}\n";
+
+            var (diagnostics, _) = GeneratorTestHarness.Run(src);
+
+            var dwarf034 = Assert.Single(diagnostics, d => d.Id == "DWARF034");
+            Assert.Contains($"node DTO type '{reportedName}' is not constructible",
+                dwarf034.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        }
+
         [Fact]
         public void An_enumerable_navigation_is_traversed_element_by_element()
         {
@@ -211,6 +272,29 @@ namespace DwarfMapper.Generator.Tests
                       + "}\n";
 
             GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        /// <summary>
+        ///     A STRUCT node DTO is constructible — DWARF034 accepts "a class or struct with a public constructor" —
+        ///     so the flat-node helper must compile for it. Its null guard answered <c>return null!;</c>
+        ///     unconditionally, which a value type rejects with CS0037 in a file the consumer did not write.
+        /// </summary>
+        [Fact]
+        public void A_struct_node_dto_emits_a_flat_node_helper_that_compiles()
+        {
+            var src = Models.Replace("public class NodeDto", "public struct NodeDto", StringComparison.Ordinal)
+                      + "public class Root { public Node? Entry { get; set; } }\n"
+                      + "public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }\n"
+                      + "[DwarfMapper]\n"
+                      + "public partial class M\n"
+                      + "{\n"
+                      + "    [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]\n"
+                      + "    public partial RootDto Map(Root r);\n"
+                      + "}\n";
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+            Assert.Contains("if (n is null) return default;", generated, StringComparison.Ordinal);
         }
 
         /// <summary>

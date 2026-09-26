@@ -71,14 +71,49 @@ namespace DwarfMapper.Generator.Registry
                 });
         }
 
+        /// <summary>
+        ///     Whether <paramref name="type" /> is <c>typeof(Dto&lt;&gt;)</c>, or is nested in a type written unbound
+        ///     (<c>typeof(Outer&lt;&gt;.Dto)</c>) — which is not generic itself and is just as open (DWARFR14).
+        /// </summary>
+        private static bool IsOpenGeneric(INamedTypeSymbol type)
+        {
+            for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
+                if (t.IsUnboundGenericType)
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
         private static Model Extract(GeneratorAttributeSyntaxContext ctx)
         {
             var source = (INamedTypeSymbol)ctx.TargetSymbol;
             var compilation = ctx.SemanticModel.Compilation;
-            var location = LocationInfo.From(source.Locations.FirstOrDefault() ?? Location.None);
+            var location = LocationInfo.FromFirst(source.Locations);
             var diags = new List<DiagnosticInfo>();
             var resolver = new Resolver(compilation, diags, location);
             var hasError = false;
+            var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
+
+            // The extension methods below are written ON the source type, and `this Src<T> source` declares no T: a
+            // generic source (or one nested in a generic type) failed as CS0246 in the generated file with nothing
+            // naming the cause. Refused before anything else is read, as the class model refuses a generic mapper
+            // with DWARF054 — nothing is generated for the type.
+            if (source.IsGenericType)
+            {
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.GenericSource, location, source.ToDisplayString()));
+                return new Model(
+                    source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    TypeFacts.CanBeNull(source),
+                    ns,
+                    "__DwarfRegistry_" + source.Name,
+                    false,
+                    new EquatableArray<TargetPlan>(Array.Empty<TargetPlan>()),
+                    new EquatableArray<SynthesizedMethod>(Array.Empty<SynthesizedMethod>()),
+                    new EquatableArray<DiagnosticInfo>(diags.ToArray()),
+                    true);
+            }
 
             // Assembly-level configuration, through the SAME reader the [DwarfMapper] class model resolves its
             // defaults with. [MapTo] takes no options of its own, so the assembly defaults are the whole option
@@ -170,6 +205,16 @@ namespace DwarfMapper.Generator.Registry
             for (var ti = 0; ti < targetCount; ti++)
             {
                 var target = targets[ti];
+
+                // Before every other target check: an unbound type's constructors and members describe no type that
+                // exists, so the parameterless-constructor check below used to answer for it — with the wrong reason.
+                if (IsOpenGeneric(target))
+                {
+                    diags.Add(new DiagnosticInfo(RegistryDiagnostics.OpenGenericTarget, location, target.ToDisplayString()));
+                    hasError = true;
+                    continue;
+                }
+
                 if (!IsMappableTarget(target, source))
                 {
                     diags.Add(new DiagnosticInfo(RegistryDiagnostics.InvalidTarget, location, target.ToDisplayString()));
@@ -322,7 +367,6 @@ namespace DwarfMapper.Generator.Registry
                 hasError = true;
             }
 
-            var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
             var helpers = resolver.Synth.Values.OrderBy(h => h.Name, StringComparer.Ordinal).ToArray();
             // Public extension class only when the assembly OPTED IN with
             // [assembly: DwarfMapperOptions(PublicExtensions = true)] and the source and every target are
@@ -799,8 +843,7 @@ namespace DwarfMapper.Generator.Registry
                 else if (tgtType is INamedTypeSymbol dn &&
                          dn.TypeArguments.Length == 1 &&
                          dn.Name == "List" &&
-                         dn.ContainingNamespace?.ToDisplayString() ==
-                         "System.Collections.Generic")
+                         KnownNames.IsNamespace(dn.ContainingNamespace, "System.Collections.Generic"))
                 {
                     dElem = dn.TypeArguments[0];
                 }

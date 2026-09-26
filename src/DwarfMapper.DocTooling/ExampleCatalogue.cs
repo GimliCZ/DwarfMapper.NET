@@ -25,10 +25,7 @@ namespace DwarfMapper.DocTooling
         /// <summary>Every declared example, ordered by tier and then ordinal — the reading order.</summary>
         public static IReadOnlyList<DocExampleEntry> Scan()
         {
-            var files = Directory
-                .GetFiles(RepoLayout.GalleryRoot, "*.cs", SearchOption.AllDirectories)
-                .Where(IsNotBuildOutput)
-                .ToList();
+            var files = GalleryFiles();
 
             // GetTypes() rather than GetExportedTypes(): a non-public example would otherwise vanish from the
             // catalogue silently, shrinking the index rather than failing.
@@ -39,6 +36,21 @@ namespace DwarfMapper.DocTooling
                 .Select(x => Build(x.Type, x.Attr!, files))
                 .OrderBy(e => (int)Enum.Parse<Tier>(e.Tier))
                 .ThenBy(e => e.Ordinal)
+                .ToList();
+        }
+
+        /// <summary>Every Gallery source file the catalogue reads, build output excluded.</summary>
+        // Internal rather than private, for IsNotBuildOutput's reason: this is the other half of "which files
+        // do we read", and no test through Scan() can tell "*.cs" from a pattern that matches everything.
+        // THE MUTATION THAT BLANKS THE PATTERN DOES NOT NARROW IT - Directory.GetFiles treats an empty
+        // searchPattern as "every file", so it returns MORE (57 against 17 in this assembly's own folder), and
+        // it survived a mutation leg because today's corpus has no non-.cs file whose name starts with an example ordinal. The pattern is a contract, so it is
+        // pinned where a test can reach it.
+        internal static List<string> GalleryFiles()
+        {
+            return Directory
+                .GetFiles(RepoLayout.GalleryRoot, "*.cs", SearchOption.AllDirectories)
+                .Where(IsNotBuildOutput)
                 .ToList();
         }
 

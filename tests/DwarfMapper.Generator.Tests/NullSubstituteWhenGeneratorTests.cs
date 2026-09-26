@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -105,7 +106,13 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
             var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
-            Assert.NotNull(Find(diags, "DWARF049"));
+            var d = Find(diags, "DWARF049");
+            Assert.NotNull(d);
+            // Two refusals share DWARF049 (this combination, and a substitute that does not convert); the
+            // format is a bare "{0}", so the text is the only thing that says which one fired and for whom.
+            Assert.Contains("for 'Code' is not supported together with a converter (Use=)",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         [Theory]
@@ -127,7 +134,13 @@ namespace DwarfMapper.Generator.Tests
                         }
                         """;
             var (diags, _) = GeneratorTestHarness.Run(src);
-            Assert.NotNull(Find(diags, "DWARF050"));
+            var d = Find(diags, "DWARF050");
+            Assert.NotNull(d);
+            // Every row is the same refusal from the caller's side — the predicate they named is not usable —
+            // so every row must say which predicate, which member, and what shape would have been accepted.
+            Assert.Contains("[MapProperty(When = \"Pred\")] for 'Bonus' must name a bool-returning method that takes the source",
+                d.GetMessage(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
         }
 
         /// <summary>

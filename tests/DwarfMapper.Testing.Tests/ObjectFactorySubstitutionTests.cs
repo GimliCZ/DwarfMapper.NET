@@ -41,6 +41,77 @@ namespace DwarfMapper.Testing.Tests
         public string Title { get; set; } = "";
     }
 
+    /// <summary>An abstract type with TWO concrete candidates, so the candidate list is genuinely ordered before the draw.</summary>
+    public abstract class TwoWayBase
+    {
+        public int Id { get; set; }
+    }
+
+    public sealed class TwoWayLeft : TwoWayBase
+    {
+    }
+
+    public sealed class TwoWayRight : TwoWayBase
+    {
+    }
+
+    /// <summary>
+    ///     A two-type-argument interface that is NOT an immutable dictionary, and that nothing implements: the
+    ///     factory's immutable-dictionary branch must let it through to ordinary substitution.
+    /// </summary>
+    public interface IPairLookup<in TKey, out TValue>
+    {
+        TValue Find(TKey key);
+    }
+
+    /// <summary>An interface nothing in the loaded assemblies implements: there is no concrete candidate to draw.</summary>
+    public interface IUnimplemented
+    {
+        int Value { get; set; }
+    }
+
+    /// <summary>An abstract type whose only concrete implementation has no parameterless constructor.</summary>
+    public abstract class PositionalBase
+    {
+        public abstract int Id { get; }
+    }
+
+    /// <summary>The only implementation of <see cref="PositionalBase" />: it can only be built with an argument.</summary>
+    public sealed class PositionalOnly : PositionalBase
+    {
+        public PositionalOnly(int id)
+        {
+            Id = id;
+        }
+
+        public override int Id { get; }
+    }
+
+    /// <summary>An interface implemented only by a struct.</summary>
+    public interface IStructOnly
+    {
+        int Size { get; }
+    }
+
+    /// <summary>The only implementation of <see cref="IStructOnly" />: a positional record struct.</summary>
+    public readonly record struct SizedStruct(int Size) : IStructOnly;
+
+    /// <summary>An interface whose only implementation has no public constructor.</summary>
+    public interface IHiddenOnly
+    {
+        int X { get; }
+    }
+
+    /// <summary>The only implementation of <see cref="IHiddenOnly" />: its constructor is private.</summary>
+    public sealed class HiddenImplementation : IHiddenOnly
+    {
+        private HiddenImplementation()
+        {
+        }
+
+        public int X { get; }
+    }
+
     public class HoldsAbstract
     {
         public ShapeBase Shape { get; set; } = new Square();
@@ -119,6 +190,91 @@ namespace DwarfMapper.Testing.Tests
 
             Assert.Contains(values, v => v is not null);
             Assert.All(values.Where(v => v is not null), v => Assert.IsType<Square>(v));
+        }
+
+        /// <summary>
+        ///     When substitution has nothing to substitute, an abstract or interface position comes back null
+        ///     rather than throwing. That happens in two ways: the loaded assemblies offer no concrete,
+        ///     parameterless-constructible implementation, or the depth cap has been reached, so no candidate is
+        ///     even looked for. Both are asked for with <c>allowNull: false</c>, so the null comes from the
+        ///     fallback and not from the deliberate null draw.
+        /// </summary>
+        [Fact]
+        public void An_abstract_position_with_nothing_to_substitute_comes_back_null()
+        {
+            Assert.Null(ObjectFactoryV2.Create(typeof(IUnimplemented), new Random(21), 0, false));
+
+            // ShapeBase HAS a concrete candidate (Square); at the cap it is not looked for.
+            Assert.Null(ObjectFactoryV2.Create(typeof(ShapeBase), new Random(22), 6, false));
+        }
+
+        /// <summary>
+        ///     With more than one concrete candidate, each of them is drawn across seeds, and nothing else is. The
+        ///     candidates are ordered by full name before the draw, so which one a seed gets does not depend on the
+        ///     order the runtime happens to enumerate assemblies in.
+        /// </summary>
+        [Fact]
+        public void An_abstract_type_with_two_candidates_draws_each_of_them_across_seeds()
+        {
+            var drawn = Enumerable.Range(0, Seeds)
+                .Select(seed => ObjectFactoryV2.Create(typeof(TwoWayBase), new Random(seed), 0, false)!.GetType())
+                .Distinct()
+                .OrderBy(t => t.Name, StringComparer.Ordinal)
+                .ToList();
+
+            Assert.Equal(new[] { typeof(TwoWayLeft), typeof(TwoWayRight) }, drawn);
+        }
+
+        /// <summary>
+        ///     A concrete implementation that can only be built with arguments is still a candidate. Substitution used
+        ///     to demand a parameterless constructor, so an abstract type implemented only by a positional record or a
+        ///     constructor-only class always came back null, and that polymorphic shape was never fuzzed.
+        /// </summary>
+        [Fact]
+        public void An_abstract_type_implemented_only_through_a_parameterized_constructor_is_substituted()
+        {
+            Assert.IsType<PositionalOnly>(ObjectFactoryV2.Create(typeof(PositionalBase), new Random(27), 0, false));
+        }
+
+        /// <summary>
+        ///     A struct is a candidate whatever constructors it declares, because it can always be built through its
+        ///     implicit default. A positional record struct has no parameterless constructor for reflection to
+        ///     find, and used to be skipped.
+        /// </summary>
+        [Fact]
+        public void An_interface_implemented_only_by_a_struct_is_substituted_with_that_struct()
+        {
+            Assert.IsType<SizedStruct>(ObjectFactoryV2.Create(typeof(IStructOnly), new Random(28), 0, false));
+        }
+
+        /// <summary>
+        ///     A class with no public constructor is not a candidate: the factory has no public way to build it, so
+        ///     an interface implemented only by such a class still comes back null.
+        /// </summary>
+        [Fact]
+        public void An_implementation_with_no_public_constructor_is_not_a_candidate()
+        {
+            Assert.Null(ObjectFactoryV2.Create(typeof(IHiddenOnly), new Random(29), 0, false));
+        }
+
+        /// <summary>
+        ///     The immutable-dictionary branch claims exactly the immutable dictionaries. The interface
+        ///     <c>IImmutableDictionary&lt;K,V&gt;</c> and the concrete <c>ImmutableDictionary&lt;K,V&gt;</c> are both
+        ///     built as a real immutable dictionary. A two-argument interface that is neither is let through to
+        ///     ordinary substitution, which here finds no implementation and yields null.
+        /// </summary>
+        [Fact]
+        public void Only_immutable_dictionaries_take_the_immutable_dictionary_branch()
+        {
+            var viaInterface = ObjectFactoryV2.Create(
+                typeof(System.Collections.Immutable.IImmutableDictionary<string, int>), new Random(23), 0, false);
+            Assert.IsAssignableFrom<System.Collections.Immutable.IImmutableDictionary<string, int>>(viaInterface);
+
+            var concrete = ObjectFactoryV2.Create(
+                typeof(System.Collections.Immutable.ImmutableDictionary<string, int>), new Random(24), 0, false);
+            Assert.IsType<System.Collections.Immutable.ImmutableDictionary<string, int>>(concrete);
+
+            Assert.Null(ObjectFactoryV2.Create(typeof(IPairLookup<string, int>), new Random(25), 0, false));
         }
 
         [Fact]

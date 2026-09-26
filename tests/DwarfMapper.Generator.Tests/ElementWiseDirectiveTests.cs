@@ -137,5 +137,30 @@ namespace DwarfMapper.Generator.Tests
                              """;
             GeneratorAssert.Reports(s, "DWARF090");
         }
+
+        /// <summary>
+        ///     A written <c>null</c> constant is echoed as <c>null</c>, in the directive and in its pair-scoped remedy.
+        ///     Every other constant fixture carried a value, so the message's rendering of a null never ran.
+        /// </summary>
+        [Fact]
+        public void Method_level_MapValue_with_a_null_constant_is_echoed_as_null()
+        {
+            const string s = """
+                             using System;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+                             public class Dst { public int Id { get; set; } public string Name { get; set; } = ""; }
+                             [DwarfMapper]
+                             public partial class M
+                             {
+                                 [MapValue("Name", null)]
+                                 public partial void MapSpan(ReadOnlySpan<Src> src, Span<Dst> dst);
+                             }
+                             """;
+            var message = Assert.Single(GeneratorAssert.Reports(s, "DWARF090")).GetMessage(CultureInfo.InvariantCulture);
+            Assert.StartsWith("[MapValue(\"Name\", null)] on this mapping method", message, StringComparison.Ordinal);
+            Assert.Contains("[MapValue<Dst>(\"Name\", null)]", message, StringComparison.Ordinal);
+        }
     }
 }

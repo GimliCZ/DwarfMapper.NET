@@ -31,5 +31,21 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("namespace DwarfMapperTestAsm", di, StringComparison.Ordinal);
             Assert.DoesNotContain("namespace Microsoft.Extensions.DependencyInjection", di, StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void No_mappers_at_all_emits_no_DI_registration_file()
+        {
+            // The test harness always references Microsoft.Extensions.DependencyInjection, so EmitServiceCollection
+            // still runs — with an empty model list, since there is nothing anywhere resembling a [DwarfMapper]
+            // class. Its own `mapperTypes.Count == 0` guard is what must answer null here, not the DI-referenced
+            // check above (already covered) or a missing call.
+            const string s = """
+                             namespace Demo;
+                             public class Plain { public int X { get; set; } }
+                             """;
+
+            var di = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.ServiceCollectionExtensions.g.cs");
+            Assert.Equal(string.Empty, di);
+        }
     }
 }

@@ -72,9 +72,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static bool IsRequiredMember(INamedTypeSymbol targetType, string memberName)
         {
-            for (var current = (ITypeSymbol?)targetType;
-                 current is not null && current.SpecialType != SpecialType.System_Object;
-                 current = current.BaseType)
+            foreach (var current in TypeAndBasesBelowObject(targetType))
                 foreach (var member in current.GetMembers())
                 {
                     if (!StringComparer.OrdinalIgnoreCase.Equals(member.Name, memberName))
@@ -109,15 +107,27 @@ namespace DwarfMapper.Generator.Pipeline
             NullStrategy nullStrategy,
             IReadOnlyList<string> flattenRoots,
             List<string> reinterpretMembers,
-            HashSet<string>? consumedCtorParams = null,
-            HashSet<string>? requiredMustInitialize = null,
-            NestedMappingRegistry? nestedRegistry = null,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>? mapValues = null,
-            IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
+            // REQUIRED, like mapValues below, because every caller has one to pass and always did: as optional
+            // parameters their `null` defaults were never taken, and each carried a null branch no input reached
+            // (ISSUE-044's reason, the other way round — a default nobody uses is a guard nobody tests).
+            IReadOnlyCollection<string> mapperReservedConverters,
+            HashSet<string>? consumedCtorParams,
+            HashSet<string>? requiredMustInitialize,
+            NestedMappingRegistry nestedRegistry,
+            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)> mapValues,
+            // REQUIRED for mapValues' reason: every caller passes the mapper's parameterless providers, never null.
+            IReadOnlyList<(string Name, ITypeSymbol ReturnType)> valueProviders,
+            // SOURCE members the mapper explicitly disowns via [MapIgnoreSource]. Read by exactly one rule:
+            // DWARF064, whose message tells the reader to write [MapIgnoreSource("X")] "if the shadow is
+            // intentional". Until this was threaded through, that remedy did nothing — the check consulted
+            // only whether a same-named source member existed, never whether the mapper had disowned it — so
+            // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
+            // which is the DESTINATION set. REQUIRED and never null, for mapValues' reason: every caller passes
+            // a set (IgnoredSourcesFor or ClassIgnoredSources), empty when nothing is disowned.
+            HashSet<string> ignoredSourceMembers,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
             Dictionary<string, string>? stringFormats = null,
-            IReadOnlyCollection<string>? mapperReservedConverters = null,
             // True when every `required` destination member is already satisfied without the object initializer
             // having to assign it, so omitting one cannot produce CS9035. Two distinct situations qualify:
             //
@@ -134,13 +144,6 @@ namespace DwarfMapper.Generator.Pipeline
             // factory chose and drops the source value silently. Only the second is a data-loss hazard, so only
             // the second raises DWARF080. Null when no factory is in force.
             IReadOnlyCollection<string>? factoryExcludedMembers = null,
-            // SOURCE members the mapper explicitly disowns via [MapIgnoreSource]. Read by exactly one rule:
-            // DWARF064, whose message tells the reader to write [MapIgnoreSource("X")] "if the shadow is
-            // intentional". Until this was threaded through, that remedy did nothing — the check consulted
-            // only whether a same-named source member existed, never whether the mapper had disowned it — so
-            // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
-            // which is the DESTINATION set.
-            HashSet<string>? ignoredSourceMembers = null,
             // Destination members the caller asked to SHARE with [MapShare], read by TryPlanShare. Optional, and
             // an absent list means "the caller forced nothing" rather than "no share at all": the AUTOMATIC share
             // is a property of the TYPES and needs no directive, exactly as the blit needs no [Reinterpret].
@@ -160,11 +163,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
-                if (mapValues is not null)
-                {
-                    foreach (var mv in mapValues)
-                        explicitTargets.Add(mv.Target);
-                }
+                foreach (var mv in mapValues) explicitTargets.Add(mv.Target);
 
                 ignores = new HashSet<string>(ignores, IgnoreNameComparer);
                 foreach (var name in ObsoleteMemberNames(targetType))
@@ -225,23 +224,18 @@ namespace DwarfMapper.Generator.Pipeline
             // this, such a method is silently reused for every member whose types happen to line up.
             // Seeded with the mapper-wide set so a helper dedicated on ANOTHER method is withheld here too,
             // then topped up from this method's own attributes.
-            var reservedConverters = mapperReservedConverters is null
-                ? new HashSet<string>(StringComparer.Ordinal)
-                : new HashSet<string>(mapperReservedConverters, StringComparer.Ordinal);
+            var reservedConverters = new HashSet<string>(mapperReservedConverters, StringComparer.Ordinal);
             foreach (var em in explicitMaps)
                 if (em.Use is not null)
                 {
                     reservedConverters.Add(em.Use);
                 }
 
-            if (mapValues is not null)
-            {
-                foreach (var mv in mapValues)
-                    if (mv.Use is not null)
-                    {
-                        reservedConverters.Add(mv.Use);
-                    }
-            }
+            foreach (var mv in mapValues)
+                if (mv.Use is not null)
+                {
+                    reservedConverters.Add(mv.Use);
+                }
 
             // Where THIS call's diagnostics start. `diagnostics` is the mapper CLASS's list and every method on
             // the class appends to it, so the dense post-pass — which reads the list back to avoid reporting a
@@ -352,7 +346,8 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var rm in reinterpretMembers)
                     if (ignores.Contains(rm))
                     {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, rm));
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, rm,
+                            MessageArg2: "[Reinterpret]"));
                     }
                     else if (!writableNames.Contains(rm))
                     {
@@ -372,10 +367,10 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var sm in shareMembers)
                     if (ignores.Contains(sm))
                     {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm));
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, sm,
+                            MessageArg2: "[MapShare]"));
                     }
-                    else if (mapValues is not null &&
-                             mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
+                    else if (mapValues.Any(v => StringComparer.Ordinal.Equals(v.Target, sm)))
                     {
                         // [MapValue] claims the member before auto-matching ever looks at it, so the share would
                         // never be consulted — and the member IS writable, so the name check below would pass it
@@ -436,7 +431,59 @@ namespace DwarfMapper.Generator.Pipeline
             // has had its chance to fire the directive before it is reported as having done nothing.
             ReportUnappliedDenseEnumDirectives(denseEnumDirectives, result, location, diagnostics, diagnosticsStart);
 
+            // Last, over the finished list, so every member however it was resolved is classified once.
+            MarkInitializerOnlyMembers(result, sourceType, targetType, compilation, options.AllowNonPublic, options.IsPreserve);
+
             return result;
+        }
+
+        /// <summary>
+        ///     Marks every resolved member whose destination is <c>init</c>-only or <c>required</c> — see
+        ///     <see cref="MemberMap.MustInitialize" /> — and, under Preserve from a reference-type source, whether its
+        ///     source member's type can lead back to the source type, the fact DWARF030 reads for a self-map.
+        /// </summary>
+        private static void MarkInitializerOnlyMembers(List<MemberMap> members, ITypeSymbol sourceType, INamedTypeSymbol targetType, Compilation compilation, bool allowNonPublic, bool isPreserve)
+        {
+            for (var i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                // A dotted target is an unflatten leaf, assigned post-construction on the member it names.
+                if (member.TargetName.IndexOf('.') >= 0 || !IsInitializerOnlyMember(targetType, member.TargetName))
+                {
+                    continue;
+                }
+
+                // A member with no source name ([MapValue], an extra parameter) copies nothing out of the source graph.
+                var reaches = isPreserve &&
+                              sourceType.IsReferenceType &&
+                              member.SourceName.Length > 0 &&
+                              TryResolveSourcePath(sourceType, member.SourceName, compilation, allowNonPublic, out var sourceMemberType, out _, out _) &&
+                              SourceMemberReachesType(sourceMemberType!, sourceType, compilation, allowNonPublic);
+                members[i] = member with
+                {
+                    MustInitialize = true,
+                    SourceReachesSourceType = reaches
+                };
+            }
+        }
+
+        /// <summary>
+        ///     Whether C# lets <paramref name="memberName" /> be assigned only inside an object initializer: an
+        ///     <c>init</c> accessor, or a <c>required</c> property or field, declared anywhere in the target's hierarchy.
+        /// </summary>
+        internal static bool IsInitializerOnlyMember(INamedTypeSymbol targetType, string memberName)
+        {
+            for (var current = (ITypeSymbol?)targetType; current is not null; current = current.BaseType)
+                foreach (var member in current.GetMembers(memberName))
+                    switch (member)
+                    {
+                        case IPropertySymbol property:
+                            return property.IsRequired || property.SetMethod is { IsInitOnly: true };
+                        case IFieldSymbol field:
+                            return field.IsRequired;
+                    }
+
+            return false;
         }
 
         /// <summary>
@@ -571,7 +618,7 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, SynthesizedMethod> synthesized,
             NullStrategy nullStrategy,
             bool autoNest,
-            NestedMappingRegistry? nestedRegistry,
+            NestedMappingRegistry nestedRegistry,
             out MemberMap[] ctorArgs,
             out HashSet<string> consumedParams,
             bool nullAsNull = false,
@@ -677,6 +724,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var eConv,
                             out var eNull,
                             out var eNeedsCtx,
+                            out var eConvParamType,
                             autoNest,
                             nestedRegistry,
                             nullAsNull,
@@ -691,6 +739,8 @@ namespace DwarfMapper.Generator.Pipeline
                             eNull,
                             eNeedsCtx,
                             SourceMayBeNullRef(srcType),
+                            ConverterParamTypeFqn: eConvParamType,
+                            SourceReachesSourceType: isPreserve && sourceType.IsReferenceType && SourceMemberReachesType(srcType, sourceType, compilation, allowNonPublic),
                             // Same raw-assign rule as the member path: a nullable reference bound bare to a
                             // non-nullable parameter is null-forgiven by the emitter and reported as DWARF070
                             // below. It used to be set on members only, so `Alias = s.Alias!` and
@@ -773,6 +823,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var needsCtx,
+                        out var convParamType,
                         autoNest,
                         nestedRegistry,
                         nullAsNull,
@@ -786,6 +837,8 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         needsCtx,
                         SourceMayBeNullRef(srcMember.Type),
+                        ConverterParamTypeFqn: convParamType,
+                        SourceReachesSourceType: isPreserve && sourceType.IsReferenceType && SourceMemberReachesType(srcMember.Type, sourceType, compilation, allowNonPublic),
                         NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, srcMember.Type, param.Type),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(conv,
                             srcMember.Type,
@@ -824,6 +877,84 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Can a value of <paramref name="memberType" /> hold a reference that leads back to
+        ///     <paramref name="sourceType" />? Follows readable members, array elements and generic type arguments
+        ///     (which covers <c>Nullable&lt;T&gt;</c>, every collection element and both dictionary halves); stops at
+        ///     special types, enums, delegates and type parameters. DWARF030's oracle for a constructor argument copied
+        ///     by reference in a self-map — see <see cref="MemberMap.SourceReachesSourceType" />.
+        /// </summary>
+        /// <remarks>
+        ///     Members are only descended in types declared in <paramref name="sourceType" />'s own assembly or in the
+        ///     compilation: a type compiled elsewhere can only name this one through a generic argument, which is
+        ///     always followed. Without that bound a member typed <c>CultureInfo</c> would walk half the BCL.
+        ///     A <c>[MapIgnore]</c>d member still counts as an edge — the question is what the copied reference can
+        ///     reach, and an ignored member is still reachable through it.
+        /// </remarks>
+        internal static bool SourceMemberReachesType(ITypeSymbol memberType, ITypeSymbol sourceType, Compilation compilation, bool allowNonPublic)
+        {
+            var sourceAssembly = sourceType.ContainingAssembly;
+            var visited = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+            var pending = new Stack<ITypeSymbol>();
+            pending.Push(memberType);
+            while (pending.Count > 0)
+            {
+                var type = pending.Pop();
+                if (SymbolEqualityComparer.Default.Equals(type, sourceType))
+                {
+                    return true;
+                }
+
+                // The nesting bound is what makes the walk finite: a visited set alone never closes on a type that grows
+                // with every hop (`class Rec<T> { Rec<Rec<T>>? X }` is a new constructed symbol each time), and below
+                // the bound only finitely many types can be built from the program's definitions.
+                if (!visited.Add(type) || GenericNesting(type) > MaxWalkGenericNesting)
+                {
+                    continue;
+                }
+
+                if (type is IArrayTypeSymbol array)
+                {
+                    pending.Push(array.ElementType);
+                    continue;
+                }
+
+                if (type is not INamedTypeSymbol named || named.TypeKind == TypeKind.Delegate)
+                {
+                    continue;
+                }
+
+                foreach (var typeArgument in named.TypeArguments)
+                    pending.Push(typeArgument);
+
+                if (named.SpecialType != SpecialType.None ||
+                    named.TypeKind is not (TypeKind.Class or TypeKind.Struct) ||
+                    !(SymbolEqualityComparer.Default.Equals(named.ContainingAssembly, sourceAssembly) || named.Locations.Any(l => l.IsInSource)))
+                {
+                    continue;
+                }
+
+                foreach (var (_, readableType) in ReadableMembers(named, compilation, allowNonPublic))
+                    pending.Push(readableType);
+            }
+
+            return false;
+        }
+
+        // Deeper than any hand-written member type (`Dictionary<string, List<Node[]>>` is 3) and far short of a runaway.
+        private const int MaxWalkGenericNesting = 8;
+
+        // How deeply generic arguments and array elements nest: `Node` 0, `List<Node>` and `Node[]` 1, `List<Node[]>` 2.
+        private static int GenericNesting(ITypeSymbol type)
+        {
+            return type switch
+            {
+                IArrayTypeSymbol array => 1 + GenericNesting(array.ElementType),
+                INamedTypeSymbol { TypeArguments.Length: > 0 } named => 1 + named.TypeArguments.Max(GenericNesting),
+                _ => 0
+            };
+        }
+
+        /// <summary>
         ///     Reads [MapDerivedType&lt;TSource,TTarget&gt;] (generic) and
         ///     [MapDerivedType(typeof(TSource),typeof(TTarget))] (non-generic) annotations from a method.
         ///     Returns raw pairs of (srcType, tgtType) INamedTypeSymbol — not yet validated.
@@ -840,14 +971,8 @@ namespace DwarfMapper.Generator.Pipeline
             ReadDerivedTypeAttributes(IMethodSymbol method)
         {
             var result = new List<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
-            foreach (var attr in method.GetAttributes())
+            foreach (var (attr, cls) in WithNonNullKey(method.GetAttributes(), a => a.AttributeClass))
             {
-                var cls = attr.AttributeClass;
-                if (cls is null)
-                {
-                    continue;
-                }
-
                 // Generic form: MapDerivedTypeAttribute<TSource, TTarget>
                 if (cls.IsGenericType &&
                     cls.ConstructedFrom.ToDisplayString().StartsWith(
@@ -870,6 +995,25 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return result;
+        }
+
+        /// <summary>
+        ///     Each item paired with its key, skipping items whose key is null — for walks that need a nullable
+        ///     property narrowed before the loop body can use it.
+        /// </summary>
+        /// <remarks>
+        ///     Extracted from ReadDerivedTypeAttributes' <c>if (attr.AttributeClass is null) continue;</c> and tested
+        ///     directly (per-branch rule): Roslyn gives every AttributeData a class, so that skip was a branch no input
+        ///     could take, and an AttributeData without one cannot be constructed to test it.
+        /// </remarks>
+        internal static IEnumerable<(TItem Item, TKey Key)> WithNonNullKey<TItem, TKey>(IEnumerable<TItem> items, Func<TItem, TKey?> key)
+            where TKey : class
+        {
+            foreach (var item in items)
+                if (key(item) is { } k)
+                {
+                    yield return (item, k);
+                }
         }
 
         /// <summary>
