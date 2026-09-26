@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 
 namespace DwarfMapper
 {
@@ -31,7 +30,27 @@ namespace DwarfMapper
     ///     </para>
     ///     <para>
     ///         Allocation-free of reflection and AOT-safe: no <c>GetType()</c>, no <c>MakeGenericType</c>, nothing a
-    ///         trimmer cannot see. The two type tests are ordinary pattern matches the JIT resolves to a cast.
+    ///         trimmer cannot see. The type test is an ordinary pattern match the JIT resolves to a cast.
+    ///     </para>
+    ///     <para>
+    ///         <b>WHY A <c>List</c> SOURCE IS NOT READ THROUGH A SPAN, THOUGH AN ARRAY IS READ BY INDEX.</b> The first
+    ///         version of this helper had a <c>CollectionsMarshal.AsSpan</c> arm for a <c>List</c> source, and it was
+    ///         wrong. The <c>map</c> delegate is a generated mapper: it can run a user <c>BeforeMap</c>/<c>AfterMap</c>
+    ///         hook or a user-declared converter, and either can reach the source list. Mutate it mid-walk and the
+    ///         list swaps backing arrays while the span keeps reading the old one - so the helper returned a silently
+    ///         STALE result where the enumerator it replaced throws <see cref="InvalidOperationException" />. Nothing
+    ///         was memory-unsafe, the old array being a live managed object; a loud failure had simply become a quiet
+    ///         wrong one, which is the trade this library refuses elsewhere on the record (the element null-ternary
+    ///         ruling, <c>b25ae56</c>). An array keeps its indexed walk because an array cannot grow, so it has no
+    ///         backing-array swap to read stale.
+    ///     </para>
+    ///     <para>
+    ///         The safety was PRICED before it was taken, with a job able to resolve it (MediumRun - the coarse
+    ///         <c>invocationCount: 16</c> job in <c>RegistryCollectionBenchmarks</c> reported this comparison with the
+    ///         sign inverted): the version-checked walk is FASTER at every element count measured - 0.83x at 16, 0.74x
+    ///         at 1,024, 0.94x at 65,536 - and allocates the same bytes, because the whole allocation win is the
+    ///         pre-size and <c>TryGetNonEnumeratedCount</c> keeps it for a <c>List</c>. There was no trade to make.
+    ///         See <c>benchmarks/results/2026-09-26-round31-full-matrix.md</c>.
     ///     </para>
     /// </remarks>
     public static class DwarfCollectionMap
@@ -57,8 +76,8 @@ namespace DwarfMapper
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(map);
 
-            // An array and a List are the shapes real callers pass. Both are indexable, so neither needs an
-            // enumerator at all, and the destination is sized once.
+            // An array is indexable and CANNOT grow, so it needs no enumerator and the destination is sized once.
+            // A List deliberately does NOT get this treatment - see the class remarks.
             if (source is TSource[] array)
             {
                 var fromArray = new List<TDestination>(array.Length);
@@ -68,18 +87,6 @@ namespace DwarfMapper
                 }
 
                 return fromArray;
-            }
-
-            if (source is List<TSource> list)
-            {
-                var span = CollectionsMarshal.AsSpan(list);
-                var fromList = new List<TDestination>(span.Length);
-                for (var i = 0; i < span.Length; i++)
-                {
-                    fromList.Add(map(span[i]));
-                }
-
-                return fromList;
             }
 
             var sequence = (IEnumerable<TSource>)source;
@@ -112,18 +119,6 @@ namespace DwarfMapper
                 }
 
                 return fromArray;
-            }
-
-            if (source is List<TSource> list)
-            {
-                var span = CollectionsMarshal.AsSpan(list);
-                var fromList = new TDestination[span.Length];
-                for (var i = 0; i < span.Length; i++)
-                {
-                    fromList[i] = map(span[i]);
-                }
-
-                return fromList;
             }
 
             var sequence = (IEnumerable<TSource>)source;

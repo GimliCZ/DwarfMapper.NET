@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -101,6 +101,66 @@ namespace DwarfMapper.Generator.Tests.Round31
             Assert.Equal([1, 2, 3], DwarfCollectionMap.ToArray<int, int>(new List<int> { 1, 2, 3 }, i => i));
             Assert.Equal([1, 2], DwarfCollectionMap.ToArray<int, int>(new HashSet<int> { 1, 2 }, i => i));
             Assert.Empty(DwarfCollectionMap.ToArray<int, int>(Array.Empty<int>(), i => i));
+        }
+
+        /// <summary>
+        ///     A source collection mutated WHILE it is being mapped must fail loudly, not return a stale result.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The element map is a generated mapper, so it can run a user <c>BeforeMap</c>/<c>AfterMap</c> hook
+        ///         or a user-declared converter, and either can reach the source collection. The first version of
+        ///         this helper read a <c>List</c> source through <c>CollectionsMarshal.AsSpan</c> and called the map
+        ///         inside that loop: when the list grew, it swapped backing arrays and the span kept reading the old
+        ///         one, so the helper returned a silently stale answer where the enumerator it replaced would have
+        ///         thrown. Nothing was memory-unsafe - the old array is still a live managed object - but a loud
+        ///         failure had become a quiet wrong one, which is the trade this library refuses (see the null-ternary
+        ///         ruling, b25ae56).
+        ///     </para>
+        ///     <para>
+        ///         Measured before removing it, so the safety is not paid for blindly: with a job that can resolve the
+        ///         difference (MediumRun, not the coarse invocationCount=16 job this benchmark class ships), the
+        ///         version-checked walk is FASTER at every element count - 0.83x at 16, 0.74x at 1,024, 0.94x at
+        ///         65,536 - and allocates the same bytes, because the whole allocation win was the pre-size and that
+        ///         is kept. See benchmarks/results/2026-09-26-round31-full-matrix.md.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void A_source_list_mutated_during_the_map_throws_instead_of_returning_a_stale_result()
+        {
+            var source = new List<int> { 1, 2, 3 };
+            Assert.Throws<InvalidOperationException>(
+                () => DwarfCollectionMap.ToList<int, int>(source, i =>
+                {
+                    source.Add(99);
+                    return i;
+                }));
+
+            var forArray = new List<int> { 1, 2, 3 };
+            Assert.Throws<InvalidOperationException>(
+                () => DwarfCollectionMap.ToArray<int, int>(forArray, i =>
+                {
+                    forArray.Add(99);
+                    return i;
+                }));
+        }
+
+        /// <summary>
+        ///     An ARRAY source keeps its indexed walk, and that is not an inconsistency: an array cannot grow, so
+        ///     there is no backing-array swap to read stale, and element writes through the source are the caller's
+        ///     own business. Stated as a test so the asymmetry reads as a decision rather than an oversight.
+        /// </summary>
+        [Fact]
+        public void An_array_source_is_still_walked_by_index_and_sees_the_callers_own_writes()
+        {
+            var source = new[] { 1, 2, 3 };
+            var mapped = DwarfCollectionMap.ToList<int, int>(source, i =>
+            {
+                source[2] = 30;
+                return i;
+            });
+
+            Assert.Equal([1, 2, 30], mapped);
         }
 
         [Fact]
