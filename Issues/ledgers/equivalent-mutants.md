@@ -244,7 +244,7 @@ recomputes the ceilings in the same commit.
 | generator | `stryker-config.json` | 415 | 96.62 % (2026-09-23, AT the ceiling; the report's 97.11 % is two static-mutant phantom kills) | 14 | 0 | 0 | 96.62 % |
 | doctooling | `stryker-config.doctooling.json` | 290 | 96.55 % (2026-09-26, AT the ceiling; the search-pattern pair closed) | 10 | 0 | 0 | 96.55 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
-| codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
+| codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (re-verified 2026-09-26, unchanged; AT the ceiling) | 22 | 0 | 0 | 87.64 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.72 % (2026-09-26, AT the ceiling; the two leading-dot rows closed by a source fix) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 100.00 % (2026-09-21, round-30 survivor kill programme) | 0 | 0 | 0 | 100.00 % |
 
@@ -500,12 +500,12 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "config": "stryker-config.codefixes.json",
       "scoreable": 178,
       "measuredRawScore": 87.64,
-      "measuredOn": "2026-09-15",
+      "measuredOn": "2026-09-26",
       "provenEquivalent": 22,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 87.64,
-      "rawCeilingFormula": "(178 - 22) / 178 — denominator re-measured after the probably-equivalent trivia row was retired (StrykerOutput/2026-09-15.18-55-18, 156 killed of 178 scoreable, clean tree at 48213d0; break stays 87). Against the 7f96555 run (156/179) the only change is that retired survivor, gone because the `??` it mutated is gone; Stryker generates no mutant for the indexer that replaced it. The 22 undetected mutants are exactly the 22 proven rows below, so the measured score IS the leg's honest ceiling."
+      "rawCeilingFormula": "(178 - 22) / 178 — the measurement EQUALS the ceiling: 18 survivors plus 4 NoCoverage is 22 undetected against 22 proven rows, so every undetected mutant here is adjudicated. RE-VERIFIED 2026-09-26 (StrykerOutput/2026-09-26.12-14-29) and unchanged at 87.64 %. The re-run was owed on provenance rather than suspicion: the 2026-09-15 measurement predated two commits to this assembly by ninety minutes, one of them a behaviour fix, and a floor measured before a behaviour change describes the wrong code even when the number agrees. It agreed."
     },
     "testing": {
       "config": "stryker-config.testing.json",
