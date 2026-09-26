@@ -30,7 +30,7 @@ else
     // Outside smoke, both classes are reachable: `-- --filter *CollectionSweep*` selects the usage-space
     // sweep, and with no filter the switcher asks. MapperBenchmarks stays FIRST so an unfiltered
     // non-interactive run still names the gated suite first in the menu it prints.
-    BenchmarkSwitcher.FromTypes([typeof(MapperBenchmarks), typeof(CollectionSweepBenchmarks), typeof(NullCheckProbeBenchmarks), typeof(FusionProbeBenchmarks), typeof(RegistryCollectionBenchmarks)]).Run(args);
+    BenchmarkSwitcher.FromTypes([typeof(MapperBenchmarks), typeof(CollectionSweepBenchmarks), typeof(NullCheckProbeBenchmarks), typeof(FusionProbeBenchmarks), typeof(RegistryCollectionBenchmarks), typeof(AmbientFacadeBenchmarks), typeof(CollectionReadProbeBenchmarks)]).Run(args);
 }
 
 /// <summary>
@@ -515,6 +515,10 @@ public sealed class DenseDictDst
 public partial class DwarfM
 {
     public partial FlatDst MapFlat(FlatSrc s); // also used for NestedDst.Inner
+
+    // Round 31 T12: the update-into direction, which nothing here declared - so the ambient registry held no
+    // update map and AmbientFacadeBenchmarks' FacadeUpdate arms had nothing to dispatch to.
+    public partial void UpdateFlat(FlatSrc s, FlatDst d);
     public partial NestedDst MapNested(NestedSrc s);
     public partial ArrayDst MapArray(ArraySrc s);
     public partial SeqDst MapSeq(SeqSrc s); // IEnumerable<T> source → unknown count (ISSUE-019)

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Threading;
 
@@ -39,6 +39,14 @@ namespace DwarfMapper
     ///         pessimistic: a reader can see a registration that lands mid-resolution and stamp it with the older
     ///         version, so the next call resolves once more. Reverse either half and the error becomes optimistic —
     ///         an answer taken before a registration, stamped with the version from after it.
+    ///     </para>
+    ///     <para>
+    ///         <b>What this does NOT promise.</b> A reader is not monotonic: because the version is bumped after the
+    ///         table write, there is a window where the table already holds a pair and the version does not yet say
+    ///         so, and in it a reader that looked before the write can store its "absent" answer over a reader that
+    ///         already found the map — so a caller can see the exact pair and then see the fallback again. Every
+    ///         answer in that window is one the registry legitimately gives, because a registration is not published
+    ///         until the bump. Buying monotonicity would cost a compare-and-swap loop for a property no caller needs.
     ///     </para>
     /// </remarks>
     internal static class ExactPairSlot<TSource, TDestination>

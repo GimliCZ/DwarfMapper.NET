@@ -74,9 +74,26 @@ namespace DwarfMapper.IntegrationTests.Round31
         }
 
         /// <summary>
-        ///     Readers racing a writer may see either answer, but never a WRONG one, and never go backwards from the
-        ///     exact pair to the fallback once they have seen it.
+        ///     Readers racing a writer never get a WRONG answer: every reader sees one of the two legitimately
+        ///     registered maps, and once the writer has joined, the exact pair wins for good.
         /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         It deliberately does NOT assert per-reader monotonicity — that once a reader has seen the exact
+        ///         pair it never sees the fallback again. That property is stronger than the design provides, and
+        ///         asserting it would make this test flaky. The registration is not published until the version is
+        ///         bumped, and the bump happens AFTER the table write, so there is a window where the table already
+        ///         holds the pair and the version does not say so: a reader that looked before the table write can
+        ///         store its (older-but-still-current-version) "absent" answer over a reader that already found the
+        ///         map, and the second reader then legitimately falls back again.
+        ///     </para>
+        ///     <para>
+        ///         Both answers are correct during that window, so the fix is to assert the contract rather than to
+        ///         make the slot monotonic — which would cost a CAS loop to buy a property nothing needs. Writing it
+        ///         down matters for a second reason: a flaky test is how a mutation run manufactures phantom kills,
+        ///         which is the exact contamination that cost round 30 a re-pin.
+        ///     </para>
+        /// </remarks>
         [Fact]
         public async Task Concurrent_register_and_map_never_returns_a_wrong_delegate()
         {
@@ -90,7 +107,6 @@ namespace DwarfMapper.IntegrationTests.Round31
                 readers[r] = Task.Run(() =>
                 {
                     start.Wait();
-                    var sawExact = false;
                     for (var i = 0; i < 2000; i++)
                     {
                         var tag = DwarfMapperFacade.Instance.Map<RaceBase, RaceDst>(new RaceDerived()).Tag;
@@ -98,16 +114,6 @@ namespace DwarfMapper.IntegrationTests.Round31
                             !string.Equals(tag, "base", StringComparison.Ordinal))
                         {
                             lock (failures) { failures.Add("unknown tag: " + tag); }
-                            return;
-                        }
-
-                        if (string.Equals(tag, "base", StringComparison.Ordinal))
-                        {
-                            sawExact = true;
-                        }
-                        else if (sawExact)
-                        {
-                            lock (failures) { failures.Add("went back to the fallback after seeing the exact pair"); }
                             return;
                         }
                     }
@@ -125,6 +131,8 @@ namespace DwarfMapper.IntegrationTests.Round31
             await Task.WhenAll([.. readers, writer]);
 
             Assert.True(failures.Count == 0, string.Join("; ", failures));
+
+            // Once the writer has joined, the registration IS published, so the exact pair must win from here on.
             Assert.Equal("base", DwarfMapperFacade.Instance.Map<RaceBase, RaceDst>(new RaceDerived()).Tag);
         }
 

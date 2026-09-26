@@ -91,6 +91,14 @@ namespace DwarfMapper
         ///         lookup's answer identical and only marks ambiguity, which no slot caches. Bumping there would
         ///         invalidate every slot in the process for a change none of them can observe.
         ///     </para>
+        ///     <para>
+        ///         EVERY future entry point that adds to either table must bump this, and the bump must be its last
+        ///         act. A batch registration (round-31 T11's `RegisterMany`, not yet written) may bump once for the
+        ///         whole batch — one bump after the last table write invalidates the slots exactly as correctly as
+        ///         N bumps, and a slot that re-resolves mid-batch simply resolves again. A write that forgets the
+        ///         bump is silent: every slot that already answered for that pair keeps its stale answer for the
+        ///         life of the process.
+        ///     </para>
         /// </remarks>
         private static int _version;
 
