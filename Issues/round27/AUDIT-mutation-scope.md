@@ -29,12 +29,12 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
 | `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 44 | 6 | 3,666 | 996 | **27.2 %** | 73.9 %† |
+| `DwarfMapper` (runtime) | 45 | 6 | 3,846 | 996 | **25.9 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,182 | 657 | **55.6 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **145** | **27** | **43,288** | **5,239** | **12.1 %** | |
+| **all** | **146** | **27** | **43,468** | **5,239** | **12.1 %** | |
 
 Re-measured 2026-09-21 (round-30 sweep, continued): `DwarfMapper.DocTooling` moves 57.3 % -> 55.6 % for the same
 reason again - 35 more lines outside the leg's globs, this time RepoLayout's root walk split into FindRoot and
@@ -201,6 +201,13 @@ sized to complete, each with its own measured floor, exactly as section 3 below 
 abandoned run's cost curve is what makes that recommendation concrete: ~0.20 tested mutants per line, so an
 area of about a thousand lines is the largest unit that behaves.
 
+
+**Round 31 T09 (2026-09-26).** `DwarfCollectionMap.cs` was added to the runtime: the element walk the ambient
+registry's auto-registered collection shapes use, moved OUT of the emitted registrations and into one generic
+helper. It is not in the runtime leg's `mutate` globs, so the runtime row's file count goes 44 → 45 and its
+share 27.2 % → 25.9 % without any leg's population changing — the denominator grew and the numerator did not.
+Recorded rather than absorbed, per this document's own purpose: a share that drifts silently is how a leg's
+score comes to be read as covering the product.
 ## What is NOT excluded — worth stating, because it is the good news
 
 - **No mutator is disabled anywhere.** No config carries `ignore-mutations` or an excluded-mutator list, and

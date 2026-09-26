@@ -418,14 +418,19 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var r in collectionRegs)
             {
                 var src = CollectionSourceOf(r.Source);
-                var listOf = "global::System.Collections.Generic.List<" + ElementOf(r.Dest) + ">";
+                var elem = ElementOf(r.Dest);
 
+                // The element-by-element walk lives in the RUNTIME (DwarfCollectionMap), not here. These
+                // registrations are keyed on IEnumerable<S>, so a source arrives as an interface and the walk used to
+                // go through a boxed enumerator into an un-sized List - 2.8-3.8x slower than the direct collection
+                // path, which has pre-sized since round 30 (research P1). Inlining the fast paths into each
+                // registration was measured at 70 % growth of the golden snapshot corpus (six registrations per pair,
+                // ~20 lines each); one generic helper gives the same specialised machine code for one emitted line.
                 sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(").Append(src)
-                    .Append("), typeof(").Append(r.Dest).Append("), static __s => { var __r = new ").Append(listOf)
-                    .Append("(); foreach (var __e in (").Append(src).Append(")__s) __r.Add(").Append(r.Field)
-                    .Append('.').Append(r.Method).Append("(__e)")
-                    .Append(RegistryNullGuard(r.Source, ElementOf(r.Dest), r.MayReturnNull)).Append("); return ")
-                    .Append(r.AsArray ? "__r.ToArray()" : "__r").Append("; });").Append('\n');
+                    .Append("), typeof(").Append(r.Dest).Append("), static __s => global::DwarfMapper.DwarfCollectionMap.")
+                    .Append(r.AsArray ? "ToArray<" : "ToList<").Append(r.Source).Append(", ").Append(elem)
+                    .Append(">(__s, static __e => ").Append(r.Field).Append('.').Append(r.Method).Append("(__e)")
+                    .Append(RegistryNullGuard(r.Source, elem, r.MayReturnNull)).Append("));").Append('\n');
             }
 
             if (handWrittenRegs.Count > 0)
