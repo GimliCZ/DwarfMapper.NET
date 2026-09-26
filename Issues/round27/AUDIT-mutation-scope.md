@@ -28,13 +28,28 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 45 | 6 | 3,846 | 996 | **25.9 %** | 73.9 %† |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,182 | 657 | **55.6 %** | 97.4 % |
-| `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
-| `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
+| `DwarfMapper.Generator` | 75 | 7 | 36,126 | 2,593 | **7.2 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 46 | 8 | 3,980 | 1,309 | **32.9 %** | 73.9 %† |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
+| `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
+| `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **146** | **27** | **43,468** | **5,239** | **12.1 %** | |
+| **all** | **147** | **29** | **44,936** | **5,702** | **12.7 %** | |
+
+Re-measured 2026-09-26 (round-31 T12): the runtime assembly moves 25.9 % -> 32.9 %, and this is the one entry in
+this file's history that moved because scope was ADDED rather than because the denominator drifted. Round 31
+shipped two new runtime files, and neither was inside any `mutate` glob: `ExactPairSlot.cs` (T12 — a version-
+stamped cache whose whole correctness argument is an ordering, i.e. precisely the kind of code where a surviving
+mutant is the only honest proof a case is untested) and `DwarfCollectionMap.cs` (T09 — the fast paths every
+auto-registered collection shape now walks). Both are now named in `stryker-config.runtime.json`, so `in a leg`
+goes 6 -> 8 and mutated lines 996 -> 1,309. THE LEG'S FLOOR IS STALE UNTIL IT IS RE-RUN: a bigger denominator of
+never-mutated code can only move the score down first, and the answer to that is to kill the survivors, not to
+lower `break`.
+
+The other four rows drift for the usual reason — code added outside the globs — all within the gate's 1 pp
+tolerance: generator 7.1 % -> 7.2 %, DocTooling 55.6 % -> 56.1 %, CodeFixes 53.2 % -> 52.7 %, Testing
+17.9 % -> 18.2 %, overall 12.1 % -> 12.7 %. The line-coverage column is NOT re-measured here; it comes from the
+coverage runs, not from this scan, and nothing in this commit moved it.
 
 Re-measured 2026-09-21 (round-30 sweep, continued): `DwarfMapper.DocTooling` moves 57.3 % -> 55.6 % for the same
 reason again - 35 more lines outside the leg's globs, this time RepoLayout's root walk split into FindRoot and

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper
 {
@@ -70,7 +70,12 @@ namespace DwarfMapper
             // advertised fast path did not exist, and `Map<Base, Dto>(derived)` silently dispatched on the DERIVED
             // runtime type rather than the requested static one. The exact-pair lookup gives both: no GetType()
             // hop, and the pair the caller actually asked for.
-            if (DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var map) && map is not null)
+            //
+            // The pair is known at JIT time here, so the lookup itself is a constant and lives on the closed generic
+            // type rather than being recomputed per call. Same answer, same fallback; see ExactPairSlot for why only
+            // the EXACT pair may be cached and why its version is read before the lookup.
+            var map = ExactPairSlot<TSource, TDestination>.Get();
+            if (map is not null)
             {
                 return (TDestination)map(source!);
             }
@@ -81,7 +86,20 @@ namespace DwarfMapper
         /// <inheritdoc />
         public void Map<TSource, TDestination>(TSource source, TDestination destination)
         {
-            DwarfMapperRegistry.Update(source!, destination!, typeof(TSource), typeof(TDestination));
+            // The exact pair, cached on the closed generic type; Update resolves on the DECLARED types anyway, so
+            // there is no runtime-type walk to preserve. A miss still goes through Update, which owns the
+            // absent-map throw - and the null guards stay ahead of the delegate so a hit cannot turn an
+            // ArgumentNullException into a NullReferenceException inside generated code.
+            var map = ExactUpdateSlot<TSource, TDestination>.Get();
+            if (map is null)
+            {
+                DwarfMapperRegistry.Update(source!, destination!, typeof(TSource), typeof(TDestination));
+                return;
+            }
+
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(destination);
+            map(source, destination);
         }
     }
 }

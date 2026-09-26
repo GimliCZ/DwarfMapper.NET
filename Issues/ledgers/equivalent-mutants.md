@@ -96,6 +96,25 @@ ceiling is recomputed then, in that commit, as the rule below requires. Three su
 rows have their `lineCurrent` refreshed (28 → 320, 274 → 325, 52 → 409) because the same change added the
 partial-declaration, `Size`, `[InlineArray]` and fixed-buffer comparisons above them.
 
+## Rows retired on 2026-09-26 — the facade's TryGet guard became a real branch
+
+One runtime row — `DwarfMapperFacade.Map<TSource, TDestination>(TSource) (TryGet fast-path guard)` (proven, 1)
+— adjudicated the `&&` in `TryGet(...) && map is not null`. Its proof was that the operands co-vary, so `&&`
+and `||` cannot be driven apart: the null test was there for flow analysis, not as a reachable branch.
+
+Round 31 (T12) replaced that expression with `ExactPairSlot<TSource, TDestination>.Get()`, whose result IS
+nullable for a reachable reason — `null` is how the slot says "no exact pair is registered, use the
+runtime-type fallback". So the guard that used to be unfalsifiable is now the branch the whole design turns
+on, and `ExactPairSlotTests` drives BOTH arms (a pair that is absent, then the same pair once registered).
+The row is **retired, not corrected**: the `original` expression is gone, so it names no mutant Stryker can
+generate — and this is the rare retirement that happens because a proof stopped being true in the good
+direction. An unkillable mutant became a killable one.
+
+Counts move with it: runtime `provenEquivalent` 3 → 2, and `rawCeiling` rises to (126 − 2) / 126 = 98.41 %.
+The **denominator is not re-measured here**, per the rule below: `scoreable` stays at the 2026-09-14 run's
+126, which still counts the retired mutant and does not yet count the ones `ExactPairSlot.cs` and the
+registry's new version counter add. The next authoritative runtime run moves both, in that commit.
+
 ## Rows retired on 2026-09-13 — the DWARF080 lookup no longer carries its own ternary
 
 One pipeline row — `ResolveAutoMatchedMembers (DWARF080 source lookup)` (proven, 1) — adjudicated the
@@ -243,7 +262,7 @@ recomputes the ceilings in the same commit.
 |---|---|---:|---:|---:|---:|---:|---:|
 | generator | `stryker-config.json` | 415 | 96.62 % (2026-09-23, AT the ceiling; the report's 97.11 % is two static-mutant phantom kills) | 14 | 0 | 0 | 96.62 % |
 | doctooling | `stryker-config.doctooling.json` | 290 | 96.55 % (2026-09-26, AT the ceiling; the search-pattern pair closed) | 10 | 0 | 0 | 96.55 % |
-| runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
+| runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling; denominator stale since round-31 T12) | 2 | 0 | 1 | 98.41 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (re-verified 2026-09-26, unchanged; AT the ceiling) | 22 | 0 | 0 | 87.64 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.72 % (2026-09-26, AT the ceiling; the two leading-dot rows closed by a source fix) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 100.00 % (2026-09-21, round-30 survivor kill programme) | 0 | 0 | 0 | 100.00 % |
@@ -490,11 +509,11 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "scoreable": 126,
       "measuredRawScore": 97.62,
       "measuredOn": "2026-09-14",
-      "provenEquivalent": 3,
+      "provenEquivalent": 2,
       "ruledInPractice": 0,
       "probablyEquivalent": 1,
-      "rawCeiling": 97.61,
-      "rawCeilingFormula": "(126 - 3) / 126 — denominator re-measured after the Key record-struct ruling (StrykerOutput/2026-09-14.20-10-34, 123 killed of 126 scoreable, 0 timeouts, clean tree; break stays 97). The Key.Equals(Key) ruled-in-practice row was retired the same day; the DwarfRefContext upper-clamp row was added with its proof. The three undetected mutants are exactly the three proven rows (lower clamp, upper clamp, facade TryGet guard), so the score sits at the leg's honest ceiling."
+      "rawCeiling": 98.41,
+      "rawCeilingFormula": "(126 - 2) / 126 - the facade TryGet-guard row was RETIRED on 2026-09-26 (round-31 T12 turned that guard into a reachable branch; see the retirement section above), which is why the ceiling rose without a run. The denominator is STALE: it still counts the retired mutant and does not count ExactPairSlot.cs or the registry version counter. Re-measure before reading this as a bound on today's code. Previously: (126 - 3) / 126 — denominator re-measured after the Key record-struct ruling (StrykerOutput/2026-09-14.20-10-34, 123 killed of 126 scoreable, 0 timeouts, clean tree; break stays 97). The Key.Equals(Key) ruled-in-practice row was retired the same day; the DwarfRefContext upper-clamp row was added with its proof. The three undetected mutants are exactly the three proven rows (lower clamp, upper clamp, facade TryGet guard), so the score sits at the leg's honest ceiling."
     },
     "codefixes": {
       "config": "stryker-config.codefixes.json",
@@ -852,20 +871,6 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "proven-equivalent",
       "proof": "The two forms differ on exactly one input, maxDepth == AbsoluteMaxDepth, and agree there: the original takes the fall-through arm and yields maxDepth, which IS AbsoluteMaxDepth; the mutant takes the clamp arm and yields the constant AbsoluteMaxDepth. Identical value for every input, so no test can distinguish them — the mirror of the lower-clamp row above. Its 2026-09-07 'kill' was an accidental static kill (static=True, coveredBy=0, killedBy only GeneratedDocsAreCurrentTests.The_api_reference_matches_the_public_surface); it survived honestly in StrykerOutput/2026-09-14.19-15-03 and 2026-09-14.20-10-34.",
       "anchor": "Issues/ledgers/round30-ledger.md § Owner rulings (runtime mutation floor); Issues/ledgers/E3-E1-report.md § the equivalent mutant (DwarfRefContext L77 Equality)"
-    },
-    {
-      "leg": "runtime",
-      "file": "src/DwarfMapper/IDwarfMapper.cs",
-      "member": "DwarfMapperFacade.Map<TSource, TDestination>(TSource) (TryGet fast-path guard)",
-      "lineAtProof": 73,
-      "lineCurrent": 73,
-      "mutator": "Logical",
-      "original": "DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var map) && map is not null",
-      "mutated": "that && -> ||",
-      "occurrences": 1,
-      "category": "proven-equivalent",
-      "proof": "The operands co-vary on every reachable input: ConcurrentDictionary.TryGetValue sets the out value to default (null) exactly when it returns false, and the dictionary can never hold a null delegate because Register ThrowIfNull-guards it before TryAdd. Only (true, true) and (false, false) are reachable, and && and || agree on both; evaluation order is unchanged (TryGet stays the left operand). The 'map is not null' arm exists for nullable flow analysis, not as a reachable branch. (E3-E1 hole 13 re-examined in round-22 P2: the 'independently asserted' framing presumed the operands could be driven apart.)",
-      "anchor": "Issues/ledgers/E3-E1-report.md § Round-22 P2 appendix, proven equivalent (facade TryGet guard)"
     },
     {
       "leg": "runtime",

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
@@ -74,6 +74,29 @@ namespace DwarfMapper
         /// </remarks>
         private static readonly RegistryTable<Action<object, object>> UpdateMaps = new();
 
+        /// <summary>
+        ///     Bumped after every registration that changes what a lookup answers. Read by
+        ///     <see cref="ExactPairSlot{TSource,TDestination}" /> to know whether its cached answer still holds.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A COUNTER rather than a flag, because "has anything changed since I looked" is the question, and a
+        ///         flag cannot answer it without being reset by the reader - which several readers cannot do safely.
+        ///         It is bumped AFTER the table write, never before: a slot reads this value BEFORE its lookup, so
+        ///         that order is what keeps a race pessimistic (re-resolve once) instead of wrong (an answer taken
+        ///         before a registration, stamped with the version from after it).
+        ///     </para>
+        ///     <para>
+        ///         A duplicate registration does NOT bump it. Registration is first-wins, so a duplicate leaves every
+        ///         lookup's answer identical and only marks ambiguity, which no slot caches. Bumping there would
+        ///         invalidate every slot in the process for a change none of them can observe.
+        ///     </para>
+        /// </remarks>
+        private static int _version;
+
+        /// <summary>The registration version; see <see cref="_version" />.</summary>
+        internal static int Version => Volatile.Read(ref _version);
+
         /// <summary>All registered (source, destination) pairs. For diagnostics / validation only.</summary>
         public static IReadOnlyCollection<(Type Source, Type Destination)> Provided
         {
@@ -122,6 +145,9 @@ namespace DwarfMapper
                     _interfaceMaps = grown;
                 }
             }
+
+            // LAST, after every table this registration touches. See `_version`.
+            Interlocked.Increment(ref _version);
         }
 
         /// <summary>True if a map for the exact pair is registered.</summary>
@@ -247,13 +273,25 @@ namespace DwarfMapper
             ArgumentNullException.ThrowIfNull(map);
 
             var key = new Key(source, destination);
-            UpdateMaps.TryRegister(key, map);
+            if (UpdateMaps.TryRegister(key, map))
+            {
+                Interlocked.Increment(ref _version);
+            }
         }
 
         /// <summary>True if an update-into map for the exact pair is registered.</summary>
         public static bool IsUpdateProvided(Type source, Type destination)
         {
             return UpdateMaps.IsProvided(new Key(source, destination));
+        }
+
+        /// <summary>
+        ///     Tries to get the update-into delegate for the exact pair. Internal: see the asymmetry note below for
+        ///     why this is not public surface.
+        /// </summary>
+        internal static bool TryGetUpdate(Type source, Type destination, out Action<object, object>? map)
+        {
+            return UpdateMaps.TryGet(new Key(source, destination), out map);
         }
 
         /// <summary>
@@ -273,9 +311,11 @@ namespace DwarfMapper
         //   * No `UpdateProvided` enumeration. `Provided` exists to feed validation, and validation asks only
         //     whether a create map is reachable — the emitted `DwarfMap.Validate()` calls `IsProvided`, never
         //     `Provided` — so an update-table enumerator would be surface added for no caller.
-        //   * No `TryGetUpdate`. `TryGet` hands out the create delegate for callers that want to invoke it
-        //     themselves; the update delegate is only ever meaningful applied to a destination the caller
-        //     already holds, which is exactly what `Update` does.
+        //   * No PUBLIC `TryGetUpdate`. `TryGet` hands out the create delegate for callers that want to invoke
+        //     it themselves; the update delegate is only ever meaningful applied to a destination the caller
+        //     already holds, which is exactly what `Update` does. Round 31 added an INTERNAL one, whose sole
+        //     caller is `ExactUpdateSlot` on behalf of the facade's update overload - i.e. a caller that does
+        //     hold the destination. The ruling was about surface, and the surface is unchanged.
         //   * No base/interface walk in `Update` — see its remarks below. That one is a SAFETY property, not an
         //     omission, so mirroring the create table here would be a regression.
         //
