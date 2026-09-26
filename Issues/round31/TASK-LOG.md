@@ -132,6 +132,77 @@ looked worth about a nanosecond. Both arms now enter through an interface-typed 
 
 Results: `benchmarks/results/2026-09-26-round31-full-matrix.md`.
 
+## T09 (second pass) — the span read removed · `4a6821f`
+
+A defect I introduced in T09 earlier the same day, found by writing a benchmark for a different question.
+`DwarfCollectionMap.ToList` read a `List` source through `CollectionsMarshal.AsSpan` and called the element map
+inside that loop; the element map is a generated mapper, so it can run a user hook or converter that mutates the
+source list, and the span then keeps reading the old backing array. A loud `InvalidOperationException` had become
+a silently stale result — the same trade `b25ae56` refused on the element null-ternary.
+
+The safety was **free**: priced with a job able to resolve it, the version-checked walk is faster at every element
+count (0.83x / 0.74x / 0.94x) and allocates the same bytes, because the whole allocation win is the pre-size.
+
+**And the benchmark that said otherwise was mine.** `RegistryCollectionBenchmarks` shipped with
+`invocationCount: 16, iterationCount: 5` — fine for the 0.45x-vs-1.00x gap it was built for, and actively
+misleading on a finer question: it reported the span at 31,549 ns against 42,780 at N = 1,024, the opposite
+ordering, with 99.9 % intervals wider than the difference. A config that can flip a sign is worse than no config.
+Job now MediumRun's shape. Allocation was never affected, which is why T09's actual claims (the pre-size, and the
+70 % golden-corpus growth that made a helper preferable to inlining) stand while its time column did not.
+
+## T31 — architecture tests for "the runtime does not re-decide" · `0729198`
+
+Not in the task list; added on the owner's ruling that the principle must hold at every public API and be
+tested. Six tests: a generated mapper body never names the registry (7 feature fixtures); only declared methods
+resolve through it; only declared mutable static state exists (this is what catches a cache); only declared
+runtime type tests exist, counted per type; **every public type declares how it behaves at run time**, driven off
+`PublicAPI.Shipped.txt`/`Unshipped.txt` so new API cannot ship unclassified (48 types, four buckets); and no
+public type outside the ambient entry point resolves at run time.
+
+Sabotage-checked on both sides. Detection side: swapping `Run` for `RunAll` fails 6 of 7 rows of test 1, because
+`RunAll` includes the registration aggregate. Pin side: removing `DwarfMapperFacade` from the resolution list
+fails three tests, deleting a mutable-static row fails one, a wrong type-test count fails one.
+
+Two honest limits recorded in the file: the `span` row of test 1 is insensitive to its sabotage (a span map emits
+no ambient registration, so there is nothing to reveal — the row still guards the property), and the first
+type-test detector was wrong, flagging `candidates is { Count: > 1 }` as a type test. It now counts only patterns
+that name a type.
+
+## T12 (second pass) — the version machinery deleted · `c65c4fe`
+
+The slot's registration version counter, entry object, paired volatile writes, two `Interlocked.Increment` calls
+and written-down ordering argument all existed to invalidate a cached MISS. Registration is add-only and
+first-wins, so a resolved delegate is immutable for the process; not caching the miss deletes all of it, and a
+late registration is still picked up because the next call re-asks.
+
+The simplification bought a **stronger** guarantee than the machinery it replaced: `_map` goes from null to one
+value and never back, so the per-reader non-monotonicity the first version had to disclaim does not exist, and
+`ExactPairSlotTests` now asserts it. The unreachable `return;` in the update overload — the leg's only NoCoverage
+mutant — went with it.
+
+T31's mutable-static test **demanded** the pin change rather than allowing it: it failed until
+`DwarfMapperRegistry._version` was struck and `ExactPairSlot._entry` became `._map`. First real use of the
+ratchet, working in the intended direction.
+
+Re-measured: facade 1.51x / 1.24x / 1.79x against the pre-T12 shape, within one run. Recorded with the caveat
+that the unchanged `_Before` arms moved 18.17 → 21.19 ns between runs, so cross-run ratio comparisons are noise.
+
+## T26 — compile-time binding: proposal, not a plan
+
+`Issues/round31/PROPOSAL-T26-compile-time-binding.md`. Two findings that cut against the idea as first stated:
+C# interceptors are **unsound** for an interface-typed receiver (they would silently shadow a consumer's own
+`IDwarfMapper` decorator or test double — a behaviour change in someone else's DI graph), so a static non-virtual
+entry point is the shape that could be intercepted safely; and whether `InterceptsLocation` is usable on
+`net10.0` without a preview gate is **unverified**, named with three concrete checks.
+
+## Owner rulings this round, recorded because they outlive the tasks
+
+1. **What the compiler decided, the runtime does not re-decide.** Get rid of lookups and caches; resolve at
+   generation time; keep runtime manipulation minimal. Applies at every public API, and is now tested (T31).
+2. **Trust the generator-level tests at the compilation stage** — they cannot be changed after build, and the
+   programmer is compile-time warned when a linkage or type is broken, so emitting a runtime type test to
+   re-check it is duplicated work.
+
 ## Not executed
 
 T08 (contradicts the three-bundle ruling in `ae9c7ea` — needs an owner decision), T10/T13 (projection hoisting
