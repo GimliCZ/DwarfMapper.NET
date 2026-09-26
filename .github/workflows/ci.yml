@@ -370,7 +370,29 @@ jobs:
             --data-binary @"$report")
           cat dashboard-response.json; echo
           if [ "$status" != "200" ] && [ "$status" != "201" ]; then
-            echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status"
+            # This step has never run before this workflow first reaches master, and exactly one thing in it is
+            # unverified: `?module=`. The endpoint and the X-Api-Key header are documented; the module
+            # parameter's SPELLING is not, so a first-contact 4xx most likely means that name is wrong rather
+            # than that anything is broken. Say so here, with the pieces needed to fix it in one edit, instead
+            # of leaving six red legs reporting an opaque status code.
+            echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
+            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/${{ github.ref_name }}?module=$module"
+            echo "Response body is above. On a 4xx, suspect the '?module=' parameter first - it is the one part"
+            echo "of this request the Stryker docs do not spell out. The report itself was already measured and"
+            echo "gated before this step ran, and is attached as an artifact, so nothing is lost by a failed"
+            echo "upload: fix the parameter and the next nightly publishes."
+            exit 1
+          fi
+          # A 2xx is not sufficient on its own. If '?module=' is ignored rather than rejected, every leg writes
+          # the SAME report for this version and the last one wins - six legs collapsing into one score, with no
+          # failure anywhere. The response carries the stored report's href, so the module name has to appear in
+          # it; absent, this is that silent collapse and it fails here rather than showing up as a badge that
+          # quietly describes one leg.
+          if ! grep -q -- "$module" dashboard-response.json; then
+            echo "::error::${{ matrix.leg }}: the dashboard accepted the upload (HTTP $status) but its response"
+            echo "does not mention module '$module'. If the parameter is being IGNORED rather than honoured,"
+            echo "all six legs overwrite one report and the badge shows whichever finished last. Check the"
+            echo "response body above against the dashboard's report list before trusting the badge."
             exit 1
           fi
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
