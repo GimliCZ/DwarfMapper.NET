@@ -130,12 +130,18 @@ function Assert-MutationScoreWithinBand {
     # both were planted permanently in src/ and the whole solution stayed green. Without this branch the
     # band check below reads the same run as "raise the floor to 97", which would gate the leg on accidental
     # kills and turn the next honest run into a reported REGRESSION that never happened.
+    # The ceiling is recomputed HERE, from this report's own denominator and the ledger's proven count,
+    # rather than read from the ledger's `rawCeiling`. That field is TRUNCATED to two decimals while $score
+    # is not, so comparing the two reports an excess that is pure storage artifact: the runtime leg's
+    # 123/126 is 97.619048 % against a stored ceiling of 97.61, and the two are the same number. Measured
+    # across all six legs at the commit that fixes this, runtime was the one that tripped it.
     $legData = Get-LegAdjudication -Leg $Leg
-    if ($null -ne $legData -and $score -gt ($legData.RawCeiling + 0.005)) {
+    $exactCeiling = if ($null -ne $legData) { ($scoreable - $legData.ProvenEquivalent) / $scoreable * 100 } else { 0 }
+    if ($null -ne $legData -and $score -gt ($exactCeiling + 0.0005)) {
         $expectedSurvivors = $legData.ProvenEquivalent - $legData.ReportedPhantomKills
         if ($survived -ne $expectedSurvivors) {
             throw ("mutation ($Leg): RAW score $shown% ($detected/$scoreable) is ABOVE the proven ceiling " +
-                   "$($legData.RawCeiling)%, and $survived mutant(s) survived where the ledger expects " +
+                   "$([math]::Round($exactCeiling, 2))%, and $survived mutant(s) survived where the ledger expects " +
                    "$expectedSurvivors ($($legData.ProvenEquivalent) proven-equivalent less " +
                    "$($legData.ReportedPhantomKills) recorded phantom kill(s)). Either an equivalence proof is " +
                    "WRONG or the phantom count is stale. Do NOT raise the floor on this run: PLANT the mutant " +
@@ -144,12 +150,12 @@ function Assert-MutationScoreWithinBand {
                    "failure as its kill.")
         }
 
-        Write-Host ("   ${Leg}: RAW $shown% exceeds the proven ceiling $($legData.RawCeiling)% by the " +
+        Write-Host ("   ${Leg}: RAW $shown% exceeds the proven ceiling $([math]::Round($exactCeiling, 2))% by the " +
                     "$($legData.ReportedPhantomKills) recorded static-mutant phantom kill(s); $survived " +
                     "survivor(s) match the ledger, so the CEILING is banded against instead of the report.") -ForegroundColor DarkYellow
-        $score = $legData.RawCeiling
+        $score = $exactCeiling
         $scoreFloored = [int][math]::Floor([math]::Round($score, 6))
-        $shown = "$($legData.RawCeiling) (capped at the proven ceiling; the report said $shown)"
+        $shown = "$([math]::Round($exactCeiling, 2)) (capped at the proven ceiling; the report said $shown)"
     }
 
     if ($score -lt $Break) {
