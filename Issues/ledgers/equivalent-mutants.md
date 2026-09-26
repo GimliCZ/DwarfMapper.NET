@@ -242,7 +242,7 @@ recomputes the ceilings in the same commit.
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
 | generator | `stryker-config.json` | 415 | 96.62 % (2026-09-23, AT the ceiling; the report's 97.11 % is two static-mutant phantom kills) | 14 | 0 | 0 | 96.62 % |
-| doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
+| doctooling | `stryker-config.doctooling.json` | 290 | 96.55 % (2026-09-26, AT the ceiling; the search-pattern pair closed) | 10 | 0 | 0 | 96.55 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
 | pipeline | `stryker-config.pipeline.json` | 284 | 94.72 % (2026-09-26, AT the ceiling; the two leading-dot rows closed by a source fix) | 15 | 0 | 0 | 94.71 % |
@@ -476,14 +476,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
-      "scoreable": 289,
-      "measuredRawScore": 95.85,
-      "measuredOn": "2026-08-23",
+      "scoreable": 290,
+      "measuredRawScore": 96.55,
+      "measuredOn": "2026-09-26",
       "provenEquivalent": 10,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 96.53,
-      "rawCeilingFormula": "(289 - 10) / 289"
+      "rawCeiling": 96.55,
+      "rawCeilingFormula": "(290 - 10) / 290 — and on 2026-09-26 the leg REACHED it: 280 killed of 290, 10 survived, and the 10 are the 10 proven rows below, matched one for one. The denominator moved 289 -> 290 because 4fbd936 extracted the two file-listing seams that made the search pattern testable, and the score moved because that pinned this leg's only two undispositioned survivors: the `\"*.cs\"` argument blanked to `\"\"` in ExampleCatalogue and SnippetScanner. They had survived on a fact that reads backwards - a blank searchPattern does not match NOTHING, Directory.GetFiles widens it to EVERY file - so the mutant read too much rather than too little, and no non-.cs file in the corpus happened to carry an example ordinal or a snippet marker. Every undetected mutant in this leg is now adjudicated."
     },
     "runtime": {
       "config": "stryker-config.runtime.json",
@@ -718,7 +718,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "ParseId (malformed-marker guard)",
       "lineAtProof": 121,
-      "lineCurrent": 137,
+      "lineCurrent": 150,
       "mutator": "Equality",
       "original": "close < 0",
       "mutated": "close <= 0",
@@ -746,7 +746,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/ExampleCatalogue.cs",
       "member": "Build (ambiguous-match message ternary)",
       "lineAtProof": 74,
-      "lineCurrent": 75,
+      "lineCurrent": 87,
       "mutator": "Equality",
       "original": "matches.Count > 1",
       "mutated": "matches.Count >= 1",
@@ -760,7 +760,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "ScanFile (close-marker branch)",
       "lineAtProof": 105,
-      "lineCurrent": 105,
+      "lineCurrent": 129,
       "mutator": "Statement",
       "original": "continue;",
       "mutated": ";",
@@ -774,7 +774,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "Dedent (common-prefix loop guard)",
       "lineAtProof": 170,
-      "lineCurrent": 189,
+      "lineCurrent": 202,
       "mutator": "Equality",
       "original": "prefix.Length > 0",
       "mutated": "prefix.Length >= 0",
@@ -788,7 +788,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
       "member": "ExistingProse (header/separator skip)",
       "lineAtProof": 94,
-      "lineCurrent": 94,
+      "lineCurrent": 110,
       "mutator": "String",
       "original": "name is \"Option\" or \"---\" (the \"---\" literal)",
       "mutated": "that \"---\" -> \"\"",
@@ -802,7 +802,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
       "member": "TryCreate (TargetInvocationException catch)",
       "lineAtProof": 109,
-      "lineCurrent": 109,
+      "lineCurrent": 133,
       "mutator": "Block removal",
       "original": "{ return null; }",
       "mutated": "{}",
@@ -816,7 +816,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
       "member": "Format (empty-string arm)",
       "lineAtProof": 118,
-      "lineCurrent": 118,
+      "lineCurrent": 144,
       "mutator": "Conditional (false)",
       "original": "s.Length == 0 ? <empty-quotes literal> : <interpolated quoted s>",
       "mutated": "false ? ... (always the interpolated arm)",
