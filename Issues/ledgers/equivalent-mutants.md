@@ -245,7 +245,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 126 | 97.62 % (2026-09-14, round-30 Key record-struct ruling) | 3 | 0 | 1 | 97.61 % |
 | codefixes | `stryker-config.codefixes.json` | 178 | 87.64 % (2026-09-15, round-30 trivia-row retirement) | 22 | 0 | 0 | 87.64 % |
-| pipeline | `stryker-config.pipeline.json` | 284 | 94.01 % (2026-09-14, round-30 de-silence batch checkpoint) | 15 | 0 | 0 | 94.71 % |
+| pipeline | `stryker-config.pipeline.json` | 284 | 94.72 % (2026-09-26, AT the ceiling; the two leading-dot rows closed by a source fix) | 15 | 0 | 0 | 94.71 % |
 | testing | `stryker-config.testing.json` | 110 | 100.00 % (2026-09-21, round-30 survivor kill programme) | 0 | 0 | 0 | 100.00 % |
 
 **Generator denominator refreshed 2026-09-06** (round-29 Phase 2 gate, task 2.10): 338 → 409 scoreable,
@@ -521,13 +521,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "pipeline": {
       "config": "stryker-config.pipeline.json",
       "scoreable": 284,
-      "measuredRawScore": 94.01,
-      "measuredOn": "2026-09-14",
+      "measuredRawScore": 94.72,
+      "measuredOn": "2026-09-26",
       "provenEquivalent": 15,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
       "rawCeiling": 94.71,
-      "rawCeilingFormula": "(284 - 15) / 284 — denominator re-measured at the round-30 de-silence batch checkpoint (StrykerOutput/2026-09-14.17-59-19, 267 killed of 284 scoreable, 0 timeouts, clean tree; break 93 -> 94 by R2; the one new scoreable mutant is 0d62dd1's MessageArg2 literal, killed by its own test); one of the 16 rows below was retired on 2026-09-13 (section 'Rows retired on 2026-09-13'), the rest are unchanged. The round-30 kill program (2026-09-11) adjudicated 16 of the 57 undetected mutants with case analyses in Issues/ledgers/pipeline-mutation-survivors.md; the rest were killed by tests, or are named there as open (two leading-dot path refusals, one latent DWARF079 defect, one dead-branch question)"
+      "rawCeilingFormula": "(284 - 15) / 284 — and on 2026-09-26 the leg REACHED it: 269 killed of 284, 15 survived, and the 15 are the 15 proven rows below, matched one for one. Every undetected mutant in this leg is adjudicated, so 94.72 % is both the measurement and the most this leg can score without a row being retired. The two that closed were not killed by new tests alone: they were the pair this ledger carried as 'left open, on purpose' (the leading-dot IndexOf tests), where the MUTANT produced the more legible diagnostic and pinning the original would have locked an awkward message in place. 3f51061 adopted the mutant in source instead - DWARF009/DWARF008 naming the string the consumer wrote, rather than DWARF043/DWARF045 blaming an empty member they did not - and both mutants died with the behaviour they described. The denominator did not move (284 before and after), because an equality mutator generates the same variants for `> 0` as for `>= 0`. Note that the THIRD copy of that comparison, the ApplySkipNullSourceMembers row at line 59, remains proven-equivalent and its proof is now STRONGER: it rests on no SourceName beginning with '.', and a leading-dot name is refused even earlier than before."
     }
   },
   "entries": [
@@ -1264,7 +1264,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveMapValues (DWARF040 continue)",
       "lineAtProof": 153,
-      "lineCurrent": 153,
+      "lineCurrent": 161,
       "mutator": "Statement mutation",
       "original": "continue;",
       "mutated": "(the continue after the MapValueTypeMismatch report removed)",
@@ -1278,7 +1278,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveMapValues (DWARF041 continue)",
       "lineAtProof": 167,
-      "lineCurrent": 167,
+      "lineCurrent": 175,
       "mutator": "Statement mutation",
       "original": "continue;",
       "mutated": "(the continue after the MapValueUseInvalid report removed)",
@@ -1292,7 +1292,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveMapValues (constant member SourceName)",
       "lineAtProof": 156,
-      "lineCurrent": 156,
+      "lineCurrent": 164,
       "mutator": "String mutation",
       "original": "new MemberMap(mvTgt, \"\", ValueExpression: literal)",
       "mutated": "new MemberMap(mvTgt, \"Stryker was here!\", ValueExpression: literal)",
@@ -1306,7 +1306,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveMapValues (Use= member SourceName)",
       "lineAtProof": 174,
-      "lineCurrent": 174,
+      "lineCurrent": 182,
       "mutator": "String mutation",
       "original": "new MemberMap(mvTgt, \"\", ValueExpression: Identifiers.Escape(mv.Use) + \"()\")",
       "mutated": "new MemberMap(mvTgt, \"Stryker was here!\", ValueExpression: Identifiers.Escape(mv.Use) + \"()\")",
@@ -1320,7 +1320,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveExplicitMaps (unflatten extras guard)",
       "lineAtProof": 222,
-      "lineCurrent": 222,
+      "lineCurrent": 245,
       "mutator": "Logical mutation",
       "original": "TryGetValue(tgtName, out var uex) && (uex.When is not null || uex.HasNullSub)",
       "mutated": "TryGetValue(tgtName, out var uex) || (uex.When is not null || uex.HasNullSub)",
@@ -1334,7 +1334,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveExplicitMaps (hasExtras)",
       "lineAtProof": 347,
-      "lineCurrent": 347,
+      "lineCurrent": 368,
       "mutator": "Logical mutation",
       "original": "lookups.ExtrasByTarget.TryGetValue(tgtName, out var shareExtras) &&",
       "mutated": "lookups.ExtrasByTarget.TryGetValue(tgtName, out var shareExtras) ||",
@@ -1348,7 +1348,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveExplicitMaps (synthBeforeConversion snapshot)",
       "lineAtProof": 330,
-      "lineCurrent": 330,
+      "lineCurrent": 351,
       "mutator": "Conditional (true) mutation",
       "original": "var synthBeforeConversion = req.StringFormats is not null && req.StringFormats.ContainsKey(tgtName)",
       "mutated": "var synthBeforeConversion = true",
@@ -1362,7 +1362,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveExplicitMaps (When-predicate search)",
       "lineAtProof": 536,
-      "lineCurrent": 536,
+      "lineCurrent": 558,
       "mutator": "Statement mutation",
       "original": "break;",
       "mutated": "(the break after ok = true removed)",
@@ -1376,7 +1376,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveAutoMatchedMembers (extra-parameter HandledTargets)",
       "lineAtProof": 758,
-      "lineCurrent": 758,
+      "lineCurrent": 786,
       "mutator": "Statement mutation",
       "original": "acc.HandledTargets.Add(target.Name);",
       "mutated": "(the HandledTargets.Add in the extra-parameter arm removed)",
@@ -1390,7 +1390,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs",
       "member": "ResolveAutoMatchedMembers (extra-parameter SourceName)",
       "lineAtProof": 731,
-      "lineCurrent": 731,
+      "lineCurrent": 758,
       "mutator": "String mutation",
       "original": "<empty-quotes literal> as the extra-parameter MemberMap's SourceName",
       "mutated": "\"Stryker was here!\" as the extra-parameter MemberMap's SourceName",
