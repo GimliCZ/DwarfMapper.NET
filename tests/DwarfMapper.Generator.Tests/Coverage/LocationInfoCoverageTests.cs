@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
@@ -143,9 +143,15 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var source = "class C{}";
             var (location, _, _) = BuildLocation(source, "Empty.cs", 0, 0);
-            // No exception expected; From() should not crash on a zero-length span.
-            var ex = Record.Exception(() => LocationInfo.From(location));
-            Assert.Null(ex);
+
+            // Not throwing is necessary and was all this asserted, which a From() that returned null - or that
+            // widened the empty span to something non-empty - would also have satisfied. The span survives as an
+            // EMPTY span at the position asked for.
+            var info = LocationInfo.From(location);
+
+            Assert.NotNull(info);
+            Assert.Equal(0, info!.TextSpan.Length);
+            Assert.Equal(0, info.LineSpan.Start.Character);
         }
 
         [Fact]
@@ -153,8 +159,19 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var source = "namespace T { class C { } }";
             var (location, _, _) = BuildLocation(source, "EndOfFile.cs", source.Length - 1, 1);
+
             var info = LocationInfo.From(location);
+
+            // Asserting only NotNull let this pass against any span From() cared to invent - including the
+            // `new TextSpan(0, 0)` a mutation of that line produces, which is the whole failure mode the stale-span
+            // guard above exists for. Every field is pinned instead, including the LINE position, which is the one
+            // From() computes rather than copies.
             Assert.NotNull(info);
+            Assert.Equal("EndOfFile.cs", info!.FilePath);
+            Assert.Equal(source.Length - 1, info.TextSpan.Start);
+            Assert.Equal(source.Length, info.TextSpan.End);
+            Assert.Equal(0, info.LineSpan.Start.Line);
+            Assert.Equal(source.Length - 1, info.LineSpan.Start.Character);
         }
 
         // ─── Defensive: From always safe ──────────────────────────────────────────

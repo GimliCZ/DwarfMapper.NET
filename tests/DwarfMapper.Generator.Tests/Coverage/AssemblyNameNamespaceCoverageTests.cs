@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator;
 using Microsoft.CodeAnalysis;
@@ -17,6 +17,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class AssemblyNameNamespaceCoverageTests
     {
+        // shared-fixture: the minimal one-pair mapper that six framework and golden tests also use. Nothing here
+        // varies the SOURCE - the whole point is to hold it fixed and vary the ASSEMBLY NAME, so a difference in the
+        // generated namespace can only have come from the name. Rewriting it to be textually unique would make that
+        // argument weaker, not stronger.
         private const string Mapper = """
                                       using DwarfMapper;
                                       namespace Demo;
