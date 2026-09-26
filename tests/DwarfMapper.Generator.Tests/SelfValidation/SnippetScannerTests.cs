@@ -223,5 +223,26 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             Assert.Equal(["one", "two"], merged.Keys.OrderBy(k => k, StringComparer.Ordinal));
         }
-    }
+    
+        [Fact]
+        public void SampleFiles_reads_only_cs_files_and_finds_some()
+        {
+            // The SEARCH PATTERN is a contract, and it is unreachable through SnippetScanner's public entry point: with
+            // today's corpus a wrong pattern gives the same answer, which is why a mutation leg carried the
+            // blanked pattern as a survivor. The trap is that blanking it does NOT match nothing -
+            // Directory.GetFiles reads an empty searchPattern as "every file" - so the failure is reading TOO
+            // MUCH. Under it, a `.md` or `.globalconfig` carrying a snippet marker would be scanned, and its ids would collide with the real ones or add regions no sample declares.
+            //
+            // Both halves matter: the emptiness check refuses a pattern matching nothing, the extension check
+            // refuses one matching everything. The live samples tree carries non-.cs files outside bin/obj, so
+            // this can tell those apart.
+            var files = SnippetScanner.SampleFiles();
+
+            Assert.NotEmpty(files);
+            Assert.All(files,
+                f => Assert.True(f.EndsWith(".cs", StringComparison.Ordinal),
+                    $"SampleFiles() returned a non-source file: {f}. A blank search pattern reads every file, and " +
+                    "a snippet marker in a non-.cs file would then be read as though it were a sample."));
+        }
+}
 }
