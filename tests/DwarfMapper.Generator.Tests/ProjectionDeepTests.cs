@@ -593,11 +593,19 @@ namespace DwarfMapper.Generator.Tests
         ///     null through <c>.Project</c>). Both settings are pinned here because pinning one would let the
         ///     other be hard-wired.
         /// </summary>
+        /// <remarks>
+        ///     The expected text carries <c>(object)(…)</c> since round 31 T02: a null guard on a REFERENCE-typed
+        ///     operand is cast so the comparison is plain reference equality. Without it, a source member whose type
+        ///     declares <c>operator ==</c> put a user method call inside the tree, and one declaring several overloads
+        ///     made the generated projection fail to compile (CS0034). A collection member is always reference-typed,
+        ///     so both rows here are affected; the guard's PRESENCE and its null arm, which is what this test is
+        ///     about, are unchanged.
+        /// </remarks>
         [Theory]
         // Default = AsEmpty: the documented "null source collection → AsEmpty (never throws)".
-        [InlineData("", "__s.Items == null ? new global::System.Collections.Generic.List<global::D.ItemDto>() :")]
+        [InlineData("", "(object)(__s.Items) == null ? new global::System.Collections.Generic.List<global::D.ItemDto>() :")]
         // AsNull over a target that CAN hold the null: the old emission, now reached only when asked for.
-        [InlineData("(NullCollections = NullCollectionStrategy.AsNull)", "__s.Items == null ? null :")]
+        [InlineData("(NullCollections = NullCollectionStrategy.AsNull)", "(object)(__s.Items) == null ? null :")]
         public void Projection_nullable_collection_member_gets_source_null_guard(string option, string expected)
         {
             var s = $$"""

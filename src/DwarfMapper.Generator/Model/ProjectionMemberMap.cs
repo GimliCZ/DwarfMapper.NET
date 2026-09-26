@@ -19,7 +19,7 @@ namespace DwarfMapper.Generator.Model
     ///     The complete RHS inline expression, e.g.:
     ///       "__s.Age"
     ///       "(global::D.Status2)__s.Status"
-    ///       "__s.Inner == null ? null : new global::D.InnerDto { A = __s.Inner.A }"
+    ///       "(object)(__s.Inner) == null ? null : new global::D.InnerDto { A = __s.Inner.A }"
     ///       "__s.Items.Select(__i0 => new global::D.ItemDto { V = __i0.V }).ToList()"
     ///       "new global::D.PointDto(x: __s.Point.X, y: __s.Point.Y)"
     ///     Never contains a synthesized helper call (__DwarfMap_*).

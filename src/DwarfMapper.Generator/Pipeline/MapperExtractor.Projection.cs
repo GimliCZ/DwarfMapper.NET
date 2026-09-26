@@ -905,7 +905,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // agreeing in an oblivious (`#nullable disable`) context, where BOTH degrade.
                 if (nullAsNull && IsNullableReferenceType(tgtType))
                 {
-                    return $"{srcExpr} == null ? null : {collectionExpr}";
+                    return $"{NullGuardOperand(srcExpr, srcType)} == null ? null : {collectionExpr}";
                 }
 
                 // AsEmpty — the documented default (docs/options.md, `NullCollections`: "Null source collection
@@ -922,7 +922,7 @@ namespace DwarfMapper.Generator.Pipeline
                     _ =>
                         $"new global::System.Collections.Generic.List<{tgtElemFqn}>()"
                 };
-                return $"{srcExpr} == null ? {emptyExpr} : {collectionExpr}";
+                return $"{NullGuardOperand(srcExpr, srcType)} == null ? {emptyExpr} : {collectionExpr}";
             }
 
             // ── Pre-check: Dictionary targets (always non-translatable in projection) ──
@@ -1232,7 +1232,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // The cast is required here: null and U have no best common type (CS0173).
                 var refTgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                return $"{srcExpr} == null ? null : ({refTgtNullableFqn})({refInnerExpr})";
+                return $"{NullGuardOperand(srcExpr, srcType)} == null ? null : ({refTgtNullableFqn})({refInnerExpr})";
             }
 
             // ── Fallback: no translatable conversion found ────────────────────────
@@ -1493,6 +1493,32 @@ namespace DwarfMapper.Generator.Pipeline
         ///     would assign <c>null</c> to a (possibly non-nullable) target — a false CS8601/CS8603 in strict-
         ///     nullable hosts. This honours the consumer's own nullable annotations instead of guarding blindly.
         /// </summary>
+        /// <summary>
+        ///     Operand for a null guard inside a projection tree. Reference-typed operands are cast to object so the
+        ///     guard is plain reference equality - never a call to a user-defined <c>operator ==</c>. Two distinct
+        ///     failures follow from emitting the bare comparison:
+        ///     <list type="bullet">
+        ///         <item>
+        ///             a record (or any type with one <c>operator ==</c>) compiles to
+        ///             <c>Equal(method: op_Equality)</c> in an expression tree, so the guard becomes a USER METHOD CALL
+        ///             that LINQ-to-objects executes and a SQL provider must recognise or fail to translate. Records
+        ///             are the default shape for DTOs and EF complex types, so this sat in most generated projections;
+        ///         </item>
+        ///         <item>
+        ///             a type declaring SEVERAL <c>operator ==</c> overloads has no unique best candidate against
+        ///             <c>null</c>, and the generated projection then does not compile at all - CS0034, with no
+        ///             DwarfMapper diagnostic to say why. Measured on round 30, pinned by ProjectionNullGuardTests.
+        ///         </item>
+        ///     </list>
+        ///     Value-typed operands (<c>Nullable&lt;T&gt;</c>) keep <c>== null</c>, which is already a HasValue test and
+        ///     has no user operator to bind to. <c>is null</c> is not an option here: pattern matching is illegal in
+        ///     expression trees.
+        /// </summary>
+        private static string NullGuardOperand(string expr, ITypeSymbol type)
+        {
+            return type.IsReferenceType ? "(object)(" + expr + ")" : expr;
+        }
+
         private static bool ProjectionSourceMayBeNull(ITypeSymbol type)
         {
             return type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
@@ -1739,7 +1765,7 @@ namespace DwarfMapper.Generator.Pipeline
                     return null;
                 }
 
-                return $"{srcExpr} == null ? null : {innerBodyExpr}";
+                return $"{NullGuardOperand(srcExpr, srcType)} == null ? null : {innerBodyExpr}";
             }
 
             return innerBodyExpr;

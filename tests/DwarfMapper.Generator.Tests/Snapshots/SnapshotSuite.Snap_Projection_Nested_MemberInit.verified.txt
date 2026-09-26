@@ -12,7 +12,7 @@ public partial class M
         global::System.ArgumentNullException.ThrowIfNull(src);
         return global::System.Linq.Queryable.Select(src, __s => new global::Demo.PersonDto
         {
-            Home = __s.Home == null ? null : new global::Demo.AddrDto { City = __s.Home.City },
+            Home = (object)(__s.Home) == null ? null : new global::Demo.AddrDto { City = __s.Home.City },
             Name = __s.Name,
         });
     }

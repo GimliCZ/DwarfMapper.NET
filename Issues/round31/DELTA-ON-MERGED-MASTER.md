@@ -22,10 +22,10 @@ this file is the evidence Opus needs before assigning it.
 
 ## Anchors that moved
 
-**T02 has FIVE null-guard sites, not four.** `grep -c '== null ?'
-src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs` → **5**. The task says "(4 sites on round 30)".
-Step 4 must be applied to all five, and its STOP condition ("no symbol for the compared expression is in scope")
-evaluated at each.
+**T02's site count: the task is right at four.** An early reading of this file claimed five, from
+`grep -c '== null ?'`; the fifth hit is a COMMENT at `Projection.cs:1204` describing the CS0173 two-arm case, not an
+emission site. Corrected when T02 landed: four emission sites (908, 925, 1235, 1742), all with `srcType` in scope,
+so T02's STOP condition ("no symbol for the compared expression is in scope") did not fire at any of them.
 
 **`python3` does not exist on this machine — only `python`.** `round31-audit.sh` calls `python3` in three places
 (`wide_count`, the T05 duplicate scan, the T20 harden-runner scan). They fail silently: `baseline` wrote `wide=`
