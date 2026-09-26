@@ -377,24 +377,19 @@ jobs:
             # of leaving six red legs reporting an opaque status code.
             echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
             echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/${{ github.ref_name }}?module=$module"
-            echo "Response body is above. On a 4xx, suspect the '?module=' parameter first - it is the one part"
-            echo "of this request the Stryker docs do not spell out. The report itself was already measured and"
-            echo "gated before this step ran, and is attached as an artifact, so nothing is lost by a failed"
-            echo "upload: fix the parameter and the next nightly publishes."
+            echo "Response body is above. The URL SHAPE is documentation-verified - the dashboard's HTTP API"
+            echo "documents exactly '\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx"
+            echo "suspect the API KEY or the project name before the parameter. The report itself was measured"
+            echo "and gated before this step ran and is attached as an artifact, so a failed upload loses no"
+            echo "measurement: fix the credential or the name and the next nightly publishes."
             exit 1
           fi
-          # A 2xx is not sufficient on its own. If '?module=' is ignored rather than rejected, every leg writes
-          # the SAME report for this version and the last one wins - six legs collapsing into one score, with no
-          # failure anywhere. The response carries the stored report's href, so the module name has to appear in
-          # it; absent, this is that silent collapse and it fails here rather than showing up as a badge that
-          # quietly describes one leg.
-          if ! grep -q -- "$module" dashboard-response.json; then
-            echo "::error::${{ matrix.leg }}: the dashboard accepted the upload (HTTP $status) but its response"
-            echo "does not mention module '$module'. If the parameter is being IGNORED rather than honoured,"
-            echo "all six legs overwrite one report and the badge shows whichever finished last. Check the"
-            echo "response body above against the dashboard's report list before trusting the badge."
-            exit 1
-          fi
+          # NOT asserted: anything about the response BODY. The dashboard documents the endpoint and the module
+          # query parameter but says nothing about what a success returns, so a check that the body mentions the
+          # module would be gating on a guess - and would fail all six legs on every run if the API answers with
+          # a bare object. The body is echoed above for a human to read on the first publish; the module landing
+          # correctly is confirmed by the dashboard showing SIX modules for the version, which is a thing to look
+          # at once rather than a thing to assert on every run from undocumented shape.
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
       # only thing that distinguishes a real regression from a re-classification.
       - if: always()
