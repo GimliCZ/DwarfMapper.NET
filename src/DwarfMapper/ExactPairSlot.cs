@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Threading;
 
@@ -10,48 +10,40 @@ namespace DwarfMapper
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         <b>Why a static generic field and not a cache.</b> The two-type overload knows its pair at JIT time,
-    ///         so the lookup it did on every call — hash two <see cref="Type" /> references, probe a
+    ///         <b>Why a static generic field and not a cache object.</b> The two-type overload knows its pair at JIT
+    ///         time, so the lookup it did on every call — hash two <see cref="Type" /> references, probe a
     ///         <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}" /> — recomputed a
     ///         constant. The runtime already gives every closed generic instantiation its own statics, so the answer
-    ///         can live there: the hot path becomes one reference read, one <c>int</c> compare and one field read,
-    ///         with no dictionary and no allocation. No reflection, nothing a trimmer cannot see.
+    ///         lives there: one reference read and one null test, no allocation. No reflection, nothing a trimmer
+    ///         cannot see.
     ///     </para>
     ///     <para>
-    ///         <b>What may be cached, and nothing more.</b> ONLY the EXACT registered pair, or the knowledge that
-    ///         there is none. The facade's fallback resolves through <see cref="DwarfMapperRegistry.Map" />, which
-    ///         dispatches on the source INSTANCE's runtime type: caching that here would key an answer derived from
-    ///         one instance's runtime type against <c>TSource</c>, and hand the next call with a differently derived
-    ///         instance a mapper meant for its sibling. So a miss caches <c>null</c> and re-enters the fallback every
-    ///         time, which is the unchanged path at its unchanged cost.
+    ///         <b>Only a FOUND delegate is stored, and that is what makes this whole type small.</b> Registration is
+    ///         add-only and first-wins — <c>TryAdd</c>, with no unregister — so a delegate that has once been
+    ///         resolved for a pair is immutable for the life of the process, and caching it needs no invalidation at
+    ///         all. A MISS is deliberately not cached: it re-asks on the next call, which is how a pair registered by
+    ///         a module initializer that has not run yet is still picked up, and it costs exactly the dictionary
+    ///         probe the caller would have paid anyway.
     ///     </para>
     ///     <para>
-    ///         <b>Why one <see cref="Entry" /> object rather than two fields.</b> The delegate and the version it was
-    ///         read at must be published TOGETHER. Held as two statics they cannot be: two threads resolving the same
-    ///         pair while a registration lands between them can interleave their four writes so that one thread's
-    ///         delegate ends up stamped with the other's newer version — a stale map that now looks current, and
-    ///         stays current forever. One immutable object behind a single reference write cannot tear, so the pair
-    ///         is either wholly visible or not visible at all.
+    ///         The first version of this type carried a registration version counter, an immutable
+    ///         <c>(delegate, version)</c> entry object, paired volatile writes, and an ordering argument about
+    ///         reading the version before the lookup and bumping it after the table write. All of it existed to
+    ///         invalidate a cached MISS. Not caching the miss deleted the counter, the entry, the ordering argument,
+    ///         and a documented non-monotonicity — a reader could previously see the exact pair and then see the
+    ///         fallback again. It cannot now: <c>_map</c> only ever goes from <c>null</c> to one value.
     ///     </para>
     ///     <para>
-    ///         <b>The ordering, which is the whole correctness argument.</b> A reader takes the registry version
-    ///         BEFORE its lookup; a writer bumps it AFTER its table write. Then the only possible error is
-    ///         pessimistic: a reader can see a registration that lands mid-resolution and stamp it with the older
-    ///         version, so the next call resolves once more. Reverse either half and the error becomes optimistic —
-    ///         an answer taken before a registration, stamped with the version from after it.
-    ///     </para>
-    ///     <para>
-    ///         <b>What this does NOT promise.</b> A reader is not monotonic: because the version is bumped after the
-    ///         table write, there is a window where the table already holds a pair and the version does not yet say
-    ///         so, and in it a reader that looked before the write can store its "absent" answer over a reader that
-    ///         already found the map — so a caller can see the exact pair and then see the fallback again. Every
-    ///         answer in that window is one the registry legitimately gives, because a registration is not published
-    ///         until the bump. Buying monotonicity would cost a compare-and-swap loop for a property no caller needs.
+    ///         <b>What may be cached, and nothing more.</b> ONLY the EXACT registered pair. The facade's fallback
+    ///         resolves through <see cref="DwarfMapperRegistry.Map" />, which dispatches on the source INSTANCE's
+    ///         runtime type: caching that here would key an answer derived from one instance's runtime type against
+    ///         <c>TSource</c>, and hand the next call with a differently derived instance a mapper meant for its
+    ///         sibling.
     ///     </para>
     /// </remarks>
     internal static class ExactPairSlot<TSource, TDestination>
     {
-        private static Entry? _entry;
+        private static Func<object, object>? _map;
 
         /// <summary>
         ///     The delegate registered for exactly <c>(TSource, TDestination)</c>, or <c>null</c> when no such pair is
@@ -59,25 +51,19 @@ namespace DwarfMapper
         /// </summary>
         internal static Func<object, object>? Get()
         {
-            // BEFORE the lookup. See the remarks: this ordering is what makes a race pessimistic instead of wrong.
-            var version = DwarfMapperRegistry.Version;
-
-            var entry = Volatile.Read(ref _entry);
-            if (entry is not null && entry.Version == version)
+            var cached = Volatile.Read(ref _map);
+            if (cached is not null)
             {
-                return entry.Map;
+                return cached;
             }
 
-            var map = DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var found) ? found : null;
-            Volatile.Write(ref _entry, new Entry(version, map));
-            return map;
-        }
+            if (!DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var found) || found is null)
+            {
+                return null;
+            }
 
-        private sealed class Entry(int version, Func<object, object>? map)
-        {
-            internal int Version { get; } = version;
-
-            internal Func<object, object>? Map { get; } = map;
+            Volatile.Write(ref _map, found);
+            return found;
         }
     }
 
@@ -90,35 +76,29 @@ namespace DwarfMapper
     ///     of the two maps does not carry a permanently-null slot for the other. Everything the create slot's remarks
     ///     argue applies unchanged; the update side is in fact the simpler case, because
     ///     <see cref="DwarfMapperRegistry.Update" /> resolves on the DECLARED types and has no runtime-type walk to
-    ///     be wrong about. A miss still routes through <c>Update</c> so the absent-map throw keeps its single source.
+    ///     be wrong about. A miss routes through <c>Update</c> so the absent-map throw keeps its single source.
     /// </remarks>
     internal static class ExactUpdateSlot<TSource, TDestination>
     {
-        private static Entry? _entry;
+        private static Action<object, object>? _map;
 
         /// <summary>The update-into delegate for exactly <c>(TSource, TDestination)</c>, or <c>null</c>.</summary>
         internal static Action<object, object>? Get()
         {
-            var version = DwarfMapperRegistry.Version;
-
-            var entry = Volatile.Read(ref _entry);
-            if (entry is not null && entry.Version == version)
+            var cached = Volatile.Read(ref _map);
+            if (cached is not null)
             {
-                return entry.Map;
+                return cached;
             }
 
-            var map = DwarfMapperRegistry.TryGetUpdate(typeof(TSource), typeof(TDestination), out var found)
-                ? found
-                : null;
-            Volatile.Write(ref _entry, new Entry(version, map));
-            return map;
-        }
+            if (!DwarfMapperRegistry.TryGetUpdate(typeof(TSource), typeof(TDestination), out var found)
+                || found is null)
+            {
+                return null;
+            }
 
-        private sealed class Entry(int version, Action<object, object>? map)
-        {
-            internal int Version { get; } = version;
-
-            internal Action<object, object>? Map { get; } = map;
+            Volatile.Write(ref _map, found);
+            return found;
         }
     }
 }

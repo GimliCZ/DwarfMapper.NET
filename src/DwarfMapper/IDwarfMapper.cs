@@ -87,19 +87,22 @@ namespace DwarfMapper
         public void Map<TSource, TDestination>(TSource source, TDestination destination)
         {
             // The exact pair, cached on the closed generic type; Update resolves on the DECLARED types anyway, so
-            // there is no runtime-type walk to preserve. A miss still goes through Update, which owns the
-            // absent-map throw - and the null guards stay ahead of the delegate so a hit cannot turn an
-            // ArgumentNullException into a NullReferenceException inside generated code.
+            // there is no runtime-type walk to preserve. A miss goes through Update, which owns the absent-map throw
+            // - and the null guards stay ahead of the delegate so a hit cannot turn an ArgumentNullException into a
+            // NullReferenceException inside generated code. if/else rather than an early return: the `return` was
+            // unreachable (a miss always throws from Update, a hit never enters that arm) and sat in the runtime
+            // mutation leg as a NoCoverage mutant.
             var map = ExactUpdateSlot<TSource, TDestination>.Get();
             if (map is null)
             {
                 DwarfMapperRegistry.Update(source!, destination!, typeof(TSource), typeof(TDestination));
-                return;
             }
-
-            ArgumentNullException.ThrowIfNull(source);
-            ArgumentNullException.ThrowIfNull(destination);
-            map(source, destination);
+            else
+            {
+                ArgumentNullException.ThrowIfNull(source);
+                ArgumentNullException.ThrowIfNull(destination);
+                map(source, destination);
+            }
         }
     }
 }

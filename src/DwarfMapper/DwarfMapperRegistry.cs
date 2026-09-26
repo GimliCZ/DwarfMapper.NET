@@ -74,36 +74,6 @@ namespace DwarfMapper
         /// </remarks>
         private static readonly RegistryTable<Action<object, object>> UpdateMaps = new();
 
-        /// <summary>
-        ///     Bumped after every registration that changes what a lookup answers. Read by
-        ///     <see cref="ExactPairSlot{TSource,TDestination}" /> to know whether its cached answer still holds.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         A COUNTER rather than a flag, because "has anything changed since I looked" is the question, and a
-        ///         flag cannot answer it without being reset by the reader - which several readers cannot do safely.
-        ///         It is bumped AFTER the table write, never before: a slot reads this value BEFORE its lookup, so
-        ///         that order is what keeps a race pessimistic (re-resolve once) instead of wrong (an answer taken
-        ///         before a registration, stamped with the version from after it).
-        ///     </para>
-        ///     <para>
-        ///         A duplicate registration does NOT bump it. Registration is first-wins, so a duplicate leaves every
-        ///         lookup's answer identical and only marks ambiguity, which no slot caches. Bumping there would
-        ///         invalidate every slot in the process for a change none of them can observe.
-        ///     </para>
-        ///     <para>
-        ///         EVERY future entry point that adds to either table must bump this, and the bump must be its last
-        ///         act. A batch registration (round-31 T11's `RegisterMany`, not yet written) may bump once for the
-        ///         whole batch — one bump after the last table write invalidates the slots exactly as correctly as
-        ///         N bumps, and a slot that re-resolves mid-batch simply resolves again. A write that forgets the
-        ///         bump is silent: every slot that already answered for that pair keeps its stale answer for the
-        ///         life of the process.
-        ///     </para>
-        /// </remarks>
-        private static int _version;
-
-        /// <summary>The registration version; see <see cref="_version" />.</summary>
-        internal static int Version => Volatile.Read(ref _version);
 
         /// <summary>All registered (source, destination) pairs. For diagnostics / validation only.</summary>
         public static IReadOnlyCollection<(Type Source, Type Destination)> Provided
@@ -153,9 +123,6 @@ namespace DwarfMapper
                     _interfaceMaps = grown;
                 }
             }
-
-            // LAST, after every table this registration touches. See `_version`.
-            Interlocked.Increment(ref _version);
         }
 
         /// <summary>True if a map for the exact pair is registered.</summary>
@@ -281,10 +248,7 @@ namespace DwarfMapper
             ArgumentNullException.ThrowIfNull(map);
 
             var key = new Key(source, destination);
-            if (UpdateMaps.TryRegister(key, map))
-            {
-                Interlocked.Increment(ref _version);
-            }
+            UpdateMaps.TryRegister(key, map);
         }
 
         /// <summary>True if an update-into map for the exact pair is registered.</summary>

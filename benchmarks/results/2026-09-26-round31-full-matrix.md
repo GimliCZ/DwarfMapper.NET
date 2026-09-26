@@ -338,3 +338,24 @@ The array arm is unaffected: an array cannot grow, so indexing it while user cod
 the pre-size was needed. `Fix_ToList_ListSource_Counted` in `RegistryCollectionBenchmarks` prices the
 alternative — exact pre-size from `TryGetNonEnumeratedCount`, then a version-checked walk — so the decision rests
 on what the safety actually costs rather than on which way the argument is phrased.
+
+## Re-measured after the slot simplification (same day, same machine)
+
+The slots were then reduced to caching only a FOUND delegate — the version counter, the entry object and the
+ordering argument all existed to invalidate a cached miss, and a miss does not need caching. Re-measured:
+
+| row | pre-T12 shape | after | ratio |
+|---|---:|---:|---:|
+| `FacadeFlat` | 21.19 ns | **14.06 ns** | 1.51x |
+| `FacadeNested` | 23.60 ns | **19.08 ns** | 1.24x |
+| `FacadeUpdate` | 14.91 ns | **8.34 ns** | 1.79x |
+
+Against the competitors in the same run: Mapster 14.53 / 20.33 / 10.37 ns, AutoMapper 56.53 / 64.64 / 50.28.
+Allocation unchanged — 40 B on flat (the destination, nothing more), 0 B on every update arm.
+
+**Do not read this against the earlier facade table as an improvement.** The `*_Before` arms are unchanged code
+and moved 18.17 → 21.19 ns between the two runs, which is the same ±30 % run-to-run variance `Flat_Hand`
+established above. Comparing 1.33x to 1.51x across runs compares noise. What the two runs jointly support is the
+within-run statement: the ambient facade is 1.2–1.8x faster than the shape it replaced, and the simplification
+did not cost any of it.
+

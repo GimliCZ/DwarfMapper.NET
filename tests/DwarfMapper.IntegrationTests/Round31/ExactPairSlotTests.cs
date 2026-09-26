@@ -21,10 +21,11 @@ namespace DwarfMapper.IntegrationTests.Round31
     ///         absent" and nothing else.
     ///     </para>
     ///     <para>
-    ///         The staleness question is ordering. A reader takes the registry version BEFORE its lookup and stores
-    ///         it with the answer; a writer bumps the version AFTER its table write. Reverse either and a slot can
-    ///         cache an answer taken before a registration and stamp it with the version from after it — wrong
-    ///         forever, silently.
+    ///         The staleness question answers itself once only a FOUND delegate is cached. Registration is add-only
+    ///         and first-wins, so a resolved delegate is immutable for the life of the process; a miss is not cached,
+    ///         so a pair registered later is still picked up on the next call. The first version of the slot carried a
+    ///         registration version counter and an ordering argument (read the version before the lookup, bump it
+    ///         after the table write) that existed solely to invalidate a cached miss.
     ///     </para>
     ///     <para>
     ///         Private marker types per test: the registry is static and add-only for the process, so shared shapes
@@ -45,7 +46,8 @@ namespace DwarfMapper.IntegrationTests.Round31
         }
 
         /// <summary>
-        ///     A pair registered AFTER the slot has already answered "absent" must be picked up.
+        ///     A pair registered AFTER the slot has already answered "absent" must be picked up - which is why a
+        ///     miss is not cached.
         /// </summary>
         /// <remarks>
         ///     The source's runtime type is deliberately NOT <c>TSource</c>. A first draft of this test passed a
@@ -74,24 +76,21 @@ namespace DwarfMapper.IntegrationTests.Round31
         }
 
         /// <summary>
-        ///     Readers racing a writer never get a WRONG answer: every reader sees one of the two legitimately
-        ///     registered maps, and once the writer has joined, the exact pair wins for good.
+        ///     Readers racing a writer never get a WRONG answer, and never go backwards: once a reader has seen the
+        ///     exact pair it cannot see the fallback again.
         /// </summary>
         /// <remarks>
         ///     <para>
-        ///         It deliberately does NOT assert per-reader monotonicity — that once a reader has seen the exact
-        ///         pair it never sees the fallback again. That property is stronger than the design provides, and
-        ///         asserting it would make this test flaky. The registration is not published until the version is
-        ///         bumped, and the bump happens AFTER the table write, so there is a window where the table already
-        ///         holds the pair and the version does not say so: a reader that looked before the table write can
-        ///         store its (older-but-still-current-version) "absent" answer over a reader that already found the
-        ///         map, and the second reader then legitimately falls back again.
+        ///         That second property is asserted here and was NOT asserted against the first version of the slot,
+        ///         which could not provide it: the version was bumped after the table write, so a reader that looked
+        ///         before the write could store its "absent" answer over a reader that had already found the map, and
+        ///         the second reader legitimately fell back again.
         ///     </para>
         ///     <para>
-        ///         Both answers are correct during that window, so the fix is to assert the contract rather than to
-        ///         make the slot monotonic — which would cost a CAS loop to buy a property nothing needs. Writing it
-        ///         down matters for a second reason: a flaky test is how a mutation run manufactures phantom kills,
-        ///         which is the exact contamination that cost round 30 a re-pin.
+        ///         Caching only a found delegate removes that window by construction. <c>_map</c> goes from
+        ///         <c>null</c> to exactly one value and never back, so any reader that has once been handed the exact
+        ///         pair reads it from the field forever. The simplification bought a stronger guarantee than the
+        ///         machinery it replaced, which is the opposite of the usual trade.
         ///     </para>
         /// </remarks>
         [Fact]
@@ -107,6 +106,7 @@ namespace DwarfMapper.IntegrationTests.Round31
                 readers[r] = Task.Run(() =>
                 {
                     start.Wait();
+                    var sawExact = false;
                     for (var i = 0; i < 2000; i++)
                     {
                         var tag = DwarfMapperFacade.Instance.Map<RaceBase, RaceDst>(new RaceDerived()).Tag;
@@ -114,6 +114,16 @@ namespace DwarfMapper.IntegrationTests.Round31
                             !string.Equals(tag, "base", StringComparison.Ordinal))
                         {
                             lock (failures) { failures.Add("unknown tag: " + tag); }
+                            return;
+                        }
+
+                        if (string.Equals(tag, "base", StringComparison.Ordinal))
+                        {
+                            sawExact = true;
+                        }
+                        else if (sawExact)
+                        {
+                            lock (failures) { failures.Add("went back to the fallback after seeing the exact pair"); }
                             return;
                         }
                     }
@@ -131,8 +141,6 @@ namespace DwarfMapper.IntegrationTests.Round31
             await Task.WhenAll([.. readers, writer]);
 
             Assert.True(failures.Count == 0, string.Join("; ", failures));
-
-            // Once the writer has joined, the registration IS published, so the exact pair must win from here on.
             Assert.Equal("base", DwarfMapperFacade.Instance.Map<RaceBase, RaceDst>(new RaceDerived()).Tag);
         }
 

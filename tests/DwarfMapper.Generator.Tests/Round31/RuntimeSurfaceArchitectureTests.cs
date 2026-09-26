@@ -188,10 +188,10 @@ namespace DwarfMapper.Generator.Tests.Round31
             ["DwarfMapperRegistry._interfaceMaps"] =
                 "Copy-on-write array of interface-keyed registrations. Written once per registration from a module "
                 + "initializer, read on the ambient interface path; a ConcurrentBag here allocated 56 KB per call.",
-            ["DwarfMapperRegistry._version"] =
-                "Registration version, read by the slots to invalidate a cached answer.",
-            ["ExactPairSlot._entry"] = "The cached (delegate, version) pair for one closed generic pair.",
-            ["ExactUpdateSlot._entry"] = "The same for the update-into direction."
+            ["ExactPairSlot._map"] =
+                "The resolved delegate for one closed generic pair. No version counter: registration is add-only "
+                + "and first-wins, so a found delegate is immutable for the process, and a MISS is not cached.",
+            ["ExactUpdateSlot._map"] = "The same for the update-into direction."
         };
 
         [Fact]
