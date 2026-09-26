@@ -89,6 +89,20 @@ circular object graph cannot exhaust the stack silently — it throws `DwarfMapp
 generator and the runtime, which compile the same constant from one linked source file.
 *Held by `RecursionBoundTests`.*
 
+The default is `MaxDepth = 64` (`DwarfLimits.DefaultMaxDepth`), so the bound applies whether or not a mapper
+configures one. This is the failure class of **CVE-2026-32933** in AutoMapper 14.0.0
+([GHSA-rvv3-g6hj-g44x](https://github.com/advisories/GHSA-rvv3-g6hj-g44x)): uncontrolled recursion, where roughly
+25,000-30,000 nesting levels exhaust the stack and take the process with them. A stack overflow cannot be caught,
+so there is no application-level mitigation once it happens. The advisory's own recommended fix is a default
+maximum depth, which is what DwarfMapper has shipped from the start — the deep graph throws
+`DwarfMappingDepthException`, the caller catches it, the process lives.
+
+Pinned at the advisory's own depth: 30,000 levels through a self-reference, through a `List<T>` and through a
+`Dictionary<string,T>`, under both `ReferenceHandling.None` and `.Preserve` — six shapes, each mapped on a thread
+with a 1 MB stack, the size a request thread gets. A stack overflow in any of them would kill the test host, which
+is what makes the test meaningful rather than decorative.
+*Held by `DeepRecursionPocTests`.*
+
 ### `[Reinterpret]` is the one place you can override a proof
 
 It tells the generator to treat two element types as byte-compatible without the name-level proof. It does

@@ -39,6 +39,20 @@ compile-time generator with attribute-only config. Anything requiring runtime re
 resolvers, ambient `ResolutionContext`, or a fluent runtime builder is a deliberate non-goal — and usually
 has a static, compile-checked replacement.
 
+### 1.0 Why teams are moving, and the one guarantee to check first
+
+AutoMapper went commercial with v15 (2025-07-02); 14.0.0 is the last MIT release, and it carries
+**CVE-2026-32933** ([GHSA-rvv3-g6hj-g44x](https://github.com/advisories/GHSA-rvv3-g6hj-g44x)) with no patch on that
+line: uncontrolled recursion, where a deeply nested or self-referential graph exhausts the stack and kills the
+process. A `StackOverflowException` cannot be caught in .NET, so no `try`/`catch` in your code is a mitigation.
+
+DwarfMapper bounds it by default. `MaxDepth` is 64 unless you set it, the limit is enforced by the generator and
+the runtime from one shared constant, and exceeding it throws `DwarfMappingDepthException` — an ordinary,
+catchable exception. This is pinned at the advisory's own proof-of-concept depth (30,000 levels) for
+self-referential, list-routed and dictionary-routed recursion in both reference-handling modes, each on a 1 MB
+stack; see `DeepRecursionPocTests`. If depth safety is why you are reading this page, that is the whole answer,
+and you do not have to configure anything to get it.
+
 ### 1.1 Configuration & registration
 
 | AutoMapper 14 | DwarfMapper | Before → after |
