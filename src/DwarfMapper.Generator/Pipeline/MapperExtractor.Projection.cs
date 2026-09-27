@@ -85,7 +85,23 @@ namespace DwarfMapper.Generator.Pipeline
                 DiagnosticDescriptors.UnmappedMember);
         }
 
-        private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
+/// <summary>
+        ///     The read-only half of a projection method's resolution: what ResolveProjectionExpr and its nested-object and
+        ///     constructor siblings used to take as seven loose parameters at every one of their eleven call sites, all of
+        ///     them pure pass-through (round 31 T08). A REQUEST, in the lifetime-and-direction split ae9c7ea chose over a
+        ///     single context object: facts computed once per projection method and never written. The diagnostics list
+        ///     stays a separate parameter because it is a SINK, exactly as MemberResolutionContext keeps it out.
+        /// </summary>
+        private sealed record ProjectionRequest(
+            Compilation Compilation,
+            LocationInfo? Location,
+            EnumPolicy EnumPolicy,
+            StringComparer Comparer,
+            bool AutoNest,
+            bool NullAsNull,
+            bool ImplicitConversions);
+
+                private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
         {
             element = type;
             if (type is INamedTypeSymbol n && n.Name == "IQueryable" && n.TypeArguments.Length == 1 && KnownNames.IsNamespace(n.ContainingNamespace, "System.Linq"))
@@ -313,6 +329,15 @@ namespace DwarfMapper.Generator.Pipeline
                     : StringComparer.Ordinal;
             var sources = BuildProjectionSourceLookup(sourceType, comparer, compilation, location, diagnostics);
 
+            // Round 31 T08: the read-only facts every recursive projection resolver below takes, built once here.
+            var req = new ProjectionRequest(compilation,
+                location,
+                enumPolicy,
+                comparer,
+                options.AutoNest,
+                options.NullAsNull,
+                options.ImplicitConversions);
+
             // [Flatten] roots, through the SAME walk the runtime resolver uses — one refusal of an invalid root
             // rather than two that can disagree. PUBLIC ONLY (ProjectionPublicOnly) because a leaf the provider
             // cannot read is not a leaf this endpoint can pull up, and warnNullableHop: false because DWARF044
@@ -464,15 +489,9 @@ namespace DwarfMapper.Generator.Pipeline
                     tgtType,
                     srcExprForExplicit,
                     0,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    tgtName,
-                    enumPolicy,
-                    comparer,
-                    options.AutoNest,
-                    options.NullAsNull,
-                    options.ImplicitConversions);
+                    tgtName);
                 if (inlineExpr is null)
                 {
                     continue;
@@ -574,15 +593,9 @@ namespace DwarfMapper.Generator.Pipeline
                     sourceType,
                     paramExpr,
                     0,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
                     targetType,
-                    enumPolicy,
-                    comparer,
-                    options.AutoNest,
-                    options.NullAsNull,
-                    options.ImplicitConversions,
                     ctorArgExprs,
                     ctorArgTargets);
                 if (ctorExpr is null)
@@ -661,15 +674,9 @@ namespace DwarfMapper.Generator.Pipeline
                             target.Type,
                             paramExpr + "." + Identifiers.EscapePath(fm.Root + "." + fm.Leaf),
                             0,
-                            compilation,
-                            location,
+                            req,
                             diagnostics,
-                            target.Name,
-                            enumPolicy,
-                            comparer,
-                            options.AutoNest,
-                            options.NullAsNull,
-                            options.ImplicitConversions);
+                            target.Name);
                         if (flatExpr is not null)
                         {
                             result.Add(new ProjectionMemberMap(target.Name, flatExpr));
@@ -724,15 +731,9 @@ namespace DwarfMapper.Generator.Pipeline
                     target.Type,
                     srcAccessExpr,
                     0,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    target.Name,
-                    enumPolicy,
-                    comparer,
-                    options.AutoNest,
-                    options.NullAsNull,
-                    options.ImplicitConversions);
+                    target.Name);
                 if (inlineExpr is not null)
                 {
                     result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
@@ -812,21 +813,15 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol tgtType,
             string srcExpr,
             int depth,
-            Compilation compilation,
-            LocationInfo? location,
+            ProjectionRequest req,
             List<DiagnosticInfo> diagnostics,
-            string targetMemberName,
-            EnumPolicy enumPolicy,
-            StringComparer comparer,
-            bool autoNest,
-            bool nullAsNull,
-            bool implicitConversions)
+            string targetMemberName)
         {
             // ── Depth guard ───────────────────────────────────────────────────────
             if (depth > ProjectionMaxDepth)
             {
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     $"projection nesting depth exceeded {ProjectionMaxDepth}; split into a runtime mapper");
                 return null;
@@ -835,7 +830,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── DWARF113: a union on either side of a differing pair, before any path treats it as a struct ──
             if (UnionRefusal(srcType, tgtType, targetMemberName) is { } unionMessage)
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, location, unionMessage));
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, req.Location, unionMessage));
                 return null;
             }
 
@@ -853,7 +848,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     var tgtTypeName = tgtType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
                     EmitDwarf028(diagnostics,
-                        location,
+                        req.Location,
                         targetMemberName,
                         $"collection type '{tgtTypeName}' is not translatable in projection (HashSet/ISet/immutable/Dictionary targets are not supported by EF Core)");
                     return null;
@@ -867,15 +862,9 @@ namespace DwarfMapper.Generator.Pipeline
                     tgtElem,
                     elemParam,
                     depth + 1,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    targetMemberName,
-                    enumPolicy,
-                    comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    targetMemberName);
                 if (elemExpr is null)
                 {
                     return null; // DWARF028 already emitted
@@ -910,7 +899,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // the target member can HOLD it, and degrades to AsEmpty when it cannot. Reading the option
                 // here is what makes the two endpoints agree; computing it the same way is what keeps them
                 // agreeing in an oblivious (`#nullable disable`) context, where BOTH degrade.
-                if (nullAsNull && IsNullableReferenceType(tgtType))
+                if (req.NullAsNull && IsNullableReferenceType(tgtType))
                 {
                     return $"{NullGuardOperand(srcExpr, srcType)} == null ? null : {collectionExpr}";
                 }
@@ -944,14 +933,14 @@ namespace DwarfMapper.Generator.Pipeline
                     out _))
             {
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "Dictionary targets are not translatable in projection; map at runtime");
                 return null;
             }
 
             // ── 1. Direct-assignable (implicit — covers widening numeric, same-type, etc.) ──
-            if (HasImplicitConversion(compilation, srcType, tgtType))
+            if (HasImplicitConversion(req.Compilation, srcType, tgtType))
             {
                 // ...but "C# will assign it" is not "the product has no opinion about it". Cross-category numeric
                 // (long → double, int → float) is implicit in C# and LOSSY, and it is the one lossy kind that
@@ -975,12 +964,12 @@ namespace DwarfMapper.Generator.Pipeline
                 if (NumericConverter.IsCrossCategoryLossy(srcType, tgtType))
                 {
                     EmitImplicitConversionDiag(diagnostics,
-                        location,
+                        req.Location,
                         targetMemberName,
                         srcType,
                         tgtType,
                         "cross-category numeric",
-                        implicitConversions,
+                        req.ImplicitConversions,
                         true);
                 }
 
@@ -991,7 +980,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // generated file, in an expression tree the consumer can edit even less than a method body.
                     // Null-forgiven here, and DWARF070 carries the signal against the DTO — once per source
                     // member per method, whichever binding (initializer or constructor) reached it first.
-                    ReportProjectionNullRefIntoNonNullable(diagnostics, location, srcExpr);
+                    ReportProjectionNullRefIntoNonNullable(diagnostics, req.Location, srcExpr);
                     return srcExpr + "!";
                 }
 
@@ -1022,7 +1011,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
-            if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum && enumPolicy.Strategy == EnumStrategy.ByValue)
+            if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum && req.EnumPolicy.Strategy == EnumStrategy.ByValue)
             {
                 var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"({tgtFqn}){srcExpr}";
@@ -1045,7 +1034,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Narrowing / lossy (e.g. enum:long→int, or unsigned-underlying enum:uint→int) — the source
                 // underlying does not fit the target range and a projection can't do a checked cast.
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "enum→integral conversion is narrowing (the enum's underlying type does not fit the target integral type) and cannot be range-checked in a projection; map it at runtime");
                 return null;
@@ -1063,17 +1052,17 @@ namespace DwarfMapper.Generator.Pipeline
                 // Narrowing / lossy (e.g. long→enum:int, or int→enum:uint sign change) — the source does not
                 // fit the enum's underlying range and a projection can't do a checked cast.
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "integral→enum conversion is narrowing (the source does not fit the enum's underlying type) and cannot be range-checked in a projection; map it at runtime");
                 return null;
             }
 
             // ── UNSAFE: enum by-name (enumPolicy == ByName, different enum types) ──
-            if ((srcType.TypeKind == TypeKind.Enum || tgtType.TypeKind == TypeKind.Enum) && enumPolicy.Strategy == EnumStrategy.ByName)
+            if ((srcType.TypeKind == TypeKind.Enum || tgtType.TypeKind == TypeKind.Enum) && req.EnumPolicy.Strategy == EnumStrategy.ByName)
             {
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "enum by-name mapping is not translatable in projection; use EnumStrategy.ByValue or map at runtime");
                 return null;
@@ -1083,35 +1072,35 @@ namespace DwarfMapper.Generator.Pipeline
             if (TypeInterfaces.IsIntegral(srcType) && TypeInterfaces.IsIntegral(tgtType))
             {
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "narrowing numeric conversion is not SQL-translatable (would need CreateChecked); map at runtime or use a widening target type");
                 return null;
             }
 
             // ── UNSAFE: string↔T parsable (ParsableConverter would fire) ─────────
-            if ((srcType.SpecialType == SpecialType.System_String && tgtType.TypeKind != TypeKind.Enum && TypeInterfaces.ImplementsIParsable(compilation, tgtType)) ||
+            if ((srcType.SpecialType == SpecialType.System_String && tgtType.TypeKind != TypeKind.Enum && TypeInterfaces.ImplementsIParsable(req.Compilation, tgtType)) ||
                 (tgtType.SpecialType == SpecialType.System_String && srcType.SpecialType != SpecialType.System_String && srcType.TypeKind != TypeKind.Enum && IsStringFormattable(srcType)))
             {
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "string parse/format is not translatable in projection (IParsable/IFormattable); map at runtime");
                 return null;
             }
 
             // ── 3. Nested named object (recursive) ───────────────────────────────
-            if (srcType is INamedTypeSymbol namedSrc && tgtType is INamedTypeSymbol namedTgt && IsMappableObjectPair(compilation, srcType, namedTgt))
+            if (srcType is INamedTypeSymbol namedSrc && tgtType is INamedTypeSymbol namedTgt && IsMappableObjectPair(req.Compilation, srcType, namedTgt))
             {
                 // [DwarfMapper(AutoNest = false)] means "do not synthesize nested pairs I did not ask for". The
                 // runtime resolver refuses with DWARF005; projection auto-nested regardless, so the two endpoints
                 // disagreed about whether a nested member was mapped at all. Report the same diagnostic the
                 // runtime reports, so turning auto-nesting off means the same thing everywhere.
-                if (!autoNest)
+                if (!req.AutoNest)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.NoImplicitConversion,
-                        location,
+                        req.Location,
                         targetMemberName));
                     return null;
                 }
@@ -1122,15 +1111,9 @@ namespace DwarfMapper.Generator.Pipeline
                     namedTgt,
                     srcExpr,
                     depth,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    targetMemberName,
-                    enumPolicy,
-                    comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    targetMemberName);
             }
 
             // ── Nullable-value source T? → a target that CAN hold null, or one that cannot ───────────────────────
@@ -1152,15 +1135,9 @@ namespace DwarfMapper.Generator.Pipeline
                         tgtUnderlying,
                         srcExpr + ".Value",
                         depth,
-                        compilation,
-                        location,
+                        req,
                         diagnostics,
-                        targetMemberName,
-                        enumPolicy,
-                        comparer,
-                        autoNest,
-                        nullAsNull,
-                        implicitConversions);
+                        targetMemberName);
                     if (innerExpr is null)
                     {
                         return null;
@@ -1191,7 +1168,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // null, so the documented NullStrategy contract keeps governing it — and NullStrategy is the
                 // one thing this endpoint cannot express.
                 EmitDwarf028(diagnostics,
-                    location,
+                    req.Location,
                     targetMemberName,
                     "a nullable source mapped to a target that cannot hold null needs a null decision, and " + "NullStrategy is not translatable in projection; make the target nullable, or map this " + "member at runtime");
                 return null;
@@ -1215,15 +1192,9 @@ namespace DwarfMapper.Generator.Pipeline
                     refTgtUnderlying,
                     srcExpr,
                     depth,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    targetMemberName,
-                    enumPolicy,
-                    comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    targetMemberName);
                 if (refInnerExpr is null)
                 {
                     return null;
@@ -1244,7 +1215,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // ── Fallback: no translatable conversion found ────────────────────────
             EmitDwarf028(diagnostics,
-                location,
+                req.Location,
                 targetMemberName,
                 "no translatable conversion found; map at runtime instead");
             return null;
@@ -1592,20 +1563,14 @@ namespace DwarfMapper.Generator.Pipeline
             INamedTypeSymbol tgtType,
             string srcExpr,
             int depth,
-            Compilation compilation,
-            LocationInfo? location,
+            ProjectionRequest req,
             List<DiagnosticInfo> diagnostics,
-            string targetMemberName,
-            EnumPolicy enumPolicy,
-            StringComparer comparer,
-            bool autoNest,
-            bool nullAsNull,
-            bool implicitConversions)
+            string targetMemberName)
         {
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
-            var srcReadable = BuildProjectionSourceLookup(srcType, comparer, compilation, location, diagnostics);
+            var srcReadable = BuildProjectionSourceLookup(srcType, req.Comparer, req.Compilation, req.Location, diagnostics);
 
             // Build member-init or ctor expression for the nested object, through the SAME decision the
             // top-level projection makes. This used to be a hand-written mirror of it — a second
@@ -1613,7 +1578,7 @@ namespace DwarfMapper.Generator.Pipeline
             // reader to keep the two in step — and it did not mirror the one thing that mattered: neither copy
             // asked ConstructorSelector, so [DwarfMapperConstructor] on a NESTED projection target was as silent
             // as on the top-level one. One function, two call sites; a third nesting level inherits it.
-            var writableTargetMembers = WritableMembers(tgtType, compilation, ProjectionPublicOnly)
+            var writableTargetMembers = WritableMembers(tgtType, req.Compilation, ProjectionPublicOnly)
                 .OrderBy(m => m.Name, StringComparer.Ordinal)
                 .ToList();
 
@@ -1625,8 +1590,8 @@ namespace DwarfMapper.Generator.Pipeline
                 tgtType,
                 srcType,
                 writableTargetMembers.Count,
-                compilation,
-                location,
+                req.Compilation,
+                req.Location,
                 diagnostics,
                 null);
             if (!ctorDecided)
@@ -1648,7 +1613,7 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.UnmappedMember,
-                            location,
+                            req.Location,
                             targetMemberName + "." + tgtMember.Name));
                         failed = true;
                         continue;
@@ -1661,15 +1626,9 @@ namespace DwarfMapper.Generator.Pipeline
                         tgtMember.Type,
                         memberSrcExpr,
                         depth + 1,
-                        compilation,
-                        location,
+                        req,
                         diagnostics,
-                        targetMemberName + "." + tgtMember.Name,
-                        enumPolicy,
-                        comparer,
-                        autoNest,
-                        nullAsNull,
-                        implicitConversions);
+                        targetMemberName + "." + tgtMember.Name);
 
                     if (memberInlineExpr is null)
                     {
@@ -1692,7 +1651,7 @@ namespace DwarfMapper.Generator.Pipeline
                 if (bestCtor is null)
                 {
                     EmitDwarf028(diagnostics,
-                        location,
+                        req.Location,
                         targetMemberName,
                         $"nested type '{tgtFqn}' has no writable members and no usable constructor");
                     return null;
@@ -1708,15 +1667,9 @@ namespace DwarfMapper.Generator.Pipeline
                     srcType,
                     srcExpr,
                     depth,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    tgtType,
-                    enumPolicy,
-                    comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    tgtType);
                 if (ctorExpr is null)
                 {
                     return null;
@@ -1726,7 +1679,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // exactly as at the top level — `new InnerDto(__s.Inner.Start)` with InnerDto.Extra never
                 // assigned, while .Map assigned it. It becomes an object initializer on the constructor call.
                 var leftover = MemberParts(writableTargetMembers
-                    .Where(m => !ConstructorFeedsMember(bestCtor, m.Name, comparer)));
+                    .Where(m => !ConstructorFeedsMember(bestCtor, m.Name, req.Comparer)));
                 if (leftover is null)
                 {
                     return null;
@@ -1766,7 +1719,7 @@ namespace DwarfMapper.Generator.Pipeline
                 if (tgtType.IsValueType)
                 {
                     EmitDwarf028(diagnostics,
-                        location,
+                        req.Location,
                         targetMemberName,
                         $"a nullable source mapped to the value-type target '{tgtFqn}' needs a null decision, and " + "NullStrategy is not translatable in projection; make the target nullable, or map this " + "member at runtime");
                     return null;
@@ -1844,20 +1797,14 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol srcType,
             string srcExpr,
             int depth,
-            Compilation compilation,
-            LocationInfo? location,
+            ProjectionRequest req,
             List<DiagnosticInfo> diagnostics,
             INamedTypeSymbol tgtType,
-            EnumPolicy enumPolicy,
-            StringComparer comparer,
-            bool autoNest,
-            bool nullAsNull,
-            bool implicitConversions,
             Dictionary<string, string>? explicitArgExprs = null,
             HashSet<string>? explicitArgTargets = null)
         {
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var srcReadable = BuildProjectionSourceLookup(srcType, comparer, compilation, location, diagnostics);
+            var srcReadable = BuildProjectionSourceLookup(srcType, req.Comparer, req.Compilation, req.Location, diagnostics);
 
             var argParts = new List<string>();
             var anyFailed = false;
@@ -1881,7 +1828,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (!TryBindProjectionCtorParam(param.Name,
                         srcReadable,
-                        location,
+                        req.Location,
                         diagnostics,
                         out var srcMember))
                 {
@@ -1896,15 +1843,9 @@ namespace DwarfMapper.Generator.Pipeline
                     param.Type,
                     paramSrcExpr,
                     depth + 1,
-                    compilation,
-                    location,
+                    req,
                     diagnostics,
-                    param.Name,
-                    enumPolicy,
-                    comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    param.Name);
 
                 if (paramInlineExpr is null)
                 {

@@ -145,7 +145,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             ("targetMemberName + \".\" + tgtMember.Name));",
                 "A projection DIAGNOSTIC's path label (DWARF's untranslatable-member message), not an expression."),
 
-            ("targetMemberName + \".\" + tgtMember.Name,",
+            ("targetMemberName + \".\" + tgtMember.Name);",
                 "The same label, passed to the same diagnostic on the sibling branch."),
 
             ("var emitClassName = separateEmit ? classSymbol.Name + \"Mapper\" : classSymbol.Name;",

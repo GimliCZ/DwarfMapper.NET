@@ -89,7 +89,7 @@ MUTANTS=(
 "M19|src/DwarfMapper.Generator/Pipeline/EnumConverter.cs|s/ArgumentOutOfRangeException/InvalidOperationException/g|EnumStringTests|string->enum failing with the wrong exception type"
 "M20|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/needs a null decision/is fine actually/g|BacklogCTests|the nullable-to-non-nullable projection refusal losing its reason"
 "M22|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.ExplicitOnly)/if (!options.ExplicitOnly)/|OptionContractTests|the mass-assignment trust boundary (AutoMatchMembers=false) not applying at projection"
-"M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!autoNest)/if (autoNest)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
+"M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!req.AutoNest)/if (req.AutoNest)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
 "M24|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.IgnoreObsolete)/if (!options.IgnoreObsolete)/|OptionContractTests|IgnoreObsoleteMembers silently dropped by projection"
 "M25|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (explicitOnly)/if (!explicitOnly)/|OptionEndpointParityTests|the explicit-only trust boundary silently not applying to span/async element pairs"
 "M27|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Phases.cs|/Source-side completeness for projection/,+3 s/policy.RequiredMapping == 1/policy.RequiredMapping != 1/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at projection"
