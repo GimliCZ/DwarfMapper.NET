@@ -36,7 +36,18 @@ namespace DwarfMapper.Generator.Pipeline
             // inside a flattened graph. See FlattenGraphLeafConversionTests.
             bool ImplicitConversions,
             bool AllowNonPublic,
-            IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> RawDerivedPairs);
+            IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> RawDerivedPairs)
+        {
+            /// <summary>
+            ///     What a flat-node LEAF is resolved under (round 31 T08): this request's auto-nest and implicit-conversion
+            ///     settings, with NullAsNull, Preserve and SetNull off - a leaf is resolved into a throw-away helper set
+            ///     and a complex helper is refused under Preserve separately (FlatLeafBlockedUnderPreserve).
+            /// </summary>
+            public ResolutionSettings LeafSettings => new(Compilation,
+                EnumPolicy,
+                NullStrategy,
+                default(MapperOptions) with { AutoNest = AutoNest, ImplicitConversions = ImplicitConversions });
+        }
 
 
         /// <summary>

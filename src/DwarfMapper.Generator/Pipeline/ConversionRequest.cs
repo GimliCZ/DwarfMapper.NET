@@ -48,6 +48,24 @@ namespace DwarfMapper.Generator.Pipeline
             bool AllowInterfaceSrc,
             bool IsSetNull,
             bool ImplicitConversions,
-            IReadOnlyCollection<string>? ReservedConverters);
+            IReadOnlyCollection<string>? ReservedConverters)
+        {
+            /// <summary>
+            ///     The conversion-relevant settings this request carries, for the recursive arms (round 31 T08). Only the
+            ///     eight values TryResolveConversion reads are populated; the member-matching flags stay at their defaults
+            ///     because nothing on this path consults them.
+            /// </summary>
+            public ResolutionSettings Settings => new(Compilation,
+                EnumPolicy,
+                NullStrategy,
+                default(MapperOptions) with
+                {
+                    AutoNest = AutoNest,
+                    NullAsNull = NullAsNull,
+                    IsPreserve = IsPreserve,
+                    IsSetNull = IsSetNull,
+                    ImplicitConversions = ImplicitConversions,
+                });
+        }
     }
 }

@@ -1487,7 +1487,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // are acc.Synthesized correctly. The DWARF033 guard is suppressed here because the
                     // user explicitly opted in via the attribute.
                     var resolved = TryResolveConversion(
-                        ctx.SemanticModel.Compilation,
+                        PolicySettings(policy, ctx.SemanticModel.Compilation, methodAutoNest),
                         derivedSrc,
                         derivedTgt,
                         null,
@@ -1504,9 +1504,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // Excluded, the arm synthesizes a real AliasCommand -> CommandOverviewDto mapper,
                         // which is what "map this derived type differently" asked for.
                         ExcludingMethod(decls.MapperMethods, method.Name, sourceType, targetType),
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         methodLocation,
                         srcFqn,
                         acc.Diagnostics,
@@ -1514,15 +1512,10 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out var armNeedsCtx,
                         out var armParamType,
-                        methodAutoNest,
                         acc.NestedRegistry,
-                        policy.NullCollections == NullCollectionsBehavior.AsNull,
-                        policy.IsPreserveMode,
-                        true,
-                        policy.IsSetNullMode,
-                        policy.ImplicitConversions,
+                        allowInterfaceSrc: true,
                         // An arm is not an invitation to reuse a converter dedicated to some other pair.
-                        decls.MapperReservedConverters);
+                        reservedConverters: decls.MapperReservedConverters);
 
                     if (!resolved || armConverter is null)
                     {
@@ -1683,7 +1676,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var tlResolved = TryResolveConversion(
-                    ctx.SemanticModel.Compilation,
+                    PolicySettings(policy, ctx.SemanticModel.Compilation, methodAutoNest),
                     sourceType,
                     targetType,
                     null,
@@ -1695,9 +1688,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // This pair is resolved as a WHOLE, so the method must not be a candidate for its own
                     // conversion — the same self-exclusion the [GenerateMap] collection path needs.
                     ExcludingPair(decls.MapperMethods, sourceType, targetType),
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     methodLocation,
                     method.Name,
                     acc.Diagnostics,
@@ -1705,12 +1696,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out _,
                     out var tlNeedsCtx,
                     out _,
-                    methodAutoNest,
                     acc.NestedRegistry,
-                    policy.NullCollections == NullCollectionsBehavior.AsNull,
-                    policy.IsPreserveMode,
-                    isSetNull: policy.IsSetNullMode,
-                    implicitConversions: policy.ImplicitConversions,
                     // WITHOUT this the ELEMENT conversion adopts a method dedicated to one pair. Found in a
                     // real consumer: `[MapConstructor<DbCommand, UserCommand>(nameof(CreateUserCommand))]`
                     // plus `partial ICollection<UserCommand> ToUserCommands(List<DbCommand>)` emitted
@@ -1946,25 +1932,16 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 if (!ResolveConstructorArguments(ctor,
                         sourceType,
-                        ctx.SemanticModel.Compilation,
+                        PolicySettings(policy, ctx.SemanticModel.Compilation, methodAutoNest),
                         methodLocation,
                         acc.Diagnostics,
-                        policy.CaseInsensitive,
-                        policy.AllowNonPublic,
                         explicitMaps,
                         decls.AllMethods,
                         decls.MapperMethods,
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
-                        methodAutoNest,
                         acc.NestedRegistry,
                         out ctorArgs,
-                        out consumedParams,
-                        policy.NullCollections == NullCollectionsBehavior.AsNull,
-                        policy.IsPreserveMode,
-                        policy.IsSetNullMode,
-                        policy.ImplicitConversions))
+                        out consumedParams))
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                 {
                     return;
@@ -2093,15 +2070,13 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
-                if (!TryResolveConversion(asComp,
+                if (!TryResolveConversion(PolicySettings(policy, asComp, asAutoNest).WithCallSiteDefaults(),
                         asSrcElem,
                         asDstElem,
                         null,
                         decls.AllMethods,
                         decls.MapperMethods,
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         methodLocation,
                         method.Name,
                         acc.Diagnostics,
@@ -2109,7 +2084,6 @@ namespace DwarfMapper.Generator.Pipeline
                         out var asNull,
                         out var asNeedsCtx,
                         out _,
-                        asAutoNest,
                         acc.NestedRegistry,
                         reservedConverters: decls.MapperReservedConverters))
                 {
@@ -2917,15 +2891,13 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
-                if (!TryResolveConversion(spanComp,
+                if (!TryResolveConversion(PolicySettings(policy, spanComp, spanAutoNest).WithCallSiteDefaults(),
                         spanSrcElem,
                         spanDstElem,
                         null,
                         decls.AllMethods,
                         decls.MapperMethods,
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         methodLocation,
                         method.Name,
                         acc.Diagnostics,
@@ -2933,7 +2905,6 @@ namespace DwarfMapper.Generator.Pipeline
                         out var spanNull,
                         out var spanNeedsCtx,
                         out _,
-                        spanAutoNest,
                         acc.NestedRegistry,
                         // Reservation is mapper-wide: a converter dedicated by Use=, or a [MapConstructor]
                         // factory, must not be adopted as this element's converter either.
@@ -3318,16 +3289,14 @@ namespace DwarfMapper.Generator.Pipeline
                 if (genIsColl || genIsDict || genIsValueLike)
                 {
                     var gResolved = TryResolveConversion(
-                        genComp,
+                        PolicySettings(policy, genComp, policy.ClassAutoNest),
                         genSrc,
                         genTgt,
                         null,
                         decls.AllMethods,
                         // This pair is resolved as a WHOLE, so it must not be a candidate for its own conversion.
                         ExcludingPair(decls.MapperMethods, genSrc, genTgt),
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         genLoc,
                         "Map",
                         acc.Diagnostics,
@@ -3335,12 +3304,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out var gNeedsCtx,
                         out _,
-                        policy.ClassAutoNest,
                         acc.NestedRegistry,
-                        policy.NullCollections == NullCollectionsBehavior.AsNull,
-                        policy.IsPreserveMode,
-                        isSetNull: policy.IsSetNullMode,
-                        implicitConversions: policy.ImplicitConversions,
                         // Without this the ELEMENT conversion for a collection pair can adopt a method
                         // dedicated to one pair — a [MapConstructor] factory over the same types matches by
                         // signature and wins, so the loop constructs each element and assigns nothing.
@@ -3468,25 +3432,16 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     if (!ResolveConstructorArguments(genCtor,
                             genSrc,
-                            genComp,
+                            PolicySettings(policy, genComp, policy.ClassAutoNest),
                             genLoc,
                             acc.Diagnostics,
-                            policy.CaseInsensitive,
-                            policy.AllowNonPublic,
                             genExplicit,
                             decls.AllMethods,
                             decls.MapperMethods,
-                            policy.EnumPolicy,
                             acc.Synthesized,
-                            policy.NullStrategy,
-                            policy.ClassAutoNest,
                             acc.NestedRegistry,
                             out genCtorArgs,
-                            out genConsumed,
-                            policy.NullCollections == NullCollectionsBehavior.AsNull,
-                            policy.IsPreserveMode,
-                            policy.IsSetNullMode,
-                            policy.ImplicitConversions))
+                            out genConsumed))
                     {
                         continue;
                     }
@@ -3746,25 +3701,16 @@ namespace DwarfMapper.Generator.Pipeline
                     // C1: use the per-pair autoNest value (pairAutoNest), NOT policy.ClassAutoNest.
                     if (!ResolveConstructorArguments(nestedCtor!,
                             nestedSrc,
-                            ctx.SemanticModel.Compilation,
+                            PolicySettings(policy, ctx.SemanticModel.Compilation, pairAutoNest),
                             nestedLocation,
                             acc.Diagnostics,
-                            policy.CaseInsensitive,
-                            policy.AllowNonPublic,
                             nestedExplicit,
                             decls.AllMethods,
                             decls.MapperMethods,
-                            policy.EnumPolicy,
                             acc.Synthesized,
-                            policy.NullStrategy,
-                            pairAutoNest,
                             acc.NestedRegistry,
                             out nestedCtorArgs,
-                            out nestedConsumed,
-                            policy.NullCollections == NullCollectionsBehavior.AsNull,
-                            policy.IsPreserveMode,
-                            policy.IsSetNullMode,
-                            policy.ImplicitConversions))
+                            out nestedConsumed))
                     {
                         acc.NestedRegistry.ClearCurrentPair();
                         continue;

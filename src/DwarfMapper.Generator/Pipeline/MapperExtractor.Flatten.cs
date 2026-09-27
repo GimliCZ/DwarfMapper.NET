@@ -173,7 +173,7 @@ namespace DwarfMapper.Generator.Pipeline
             string srcName,
             string tgtName,
             string? useMethod,
-            Compilation compilation,
+            ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
             HashSet<string> handledTargets,
@@ -181,18 +181,20 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, ITypeSymbol> writableByName,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
-            bool autoNest,
             NestedMappingRegistry nestedRegistry,
-            bool nullAsNull,
-            bool isPreserve,
-            bool isSetNull,
-            bool implicitConversions,
-            bool allowNonPublic,
             List<MemberMap> result)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var autoNest = settings.Options.AutoNest;
+            var nullAsNull = settings.Options.NullAsNull;
+            var isPreserve = settings.Options.IsPreserve;
+            var isSetNull = settings.Options.IsSetNull;
+            var implicitConversions = settings.Options.ImplicitConversions;
+            var allowNonPublic = settings.Options.AllowNonPublic;
             // Resolve the source (simple or dotted) to its leaf type.
             ITypeSymbol? uSrc;
             if (srcName.IndexOf('.') >= 0)
@@ -278,15 +280,13 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            if (TryResolveConversion(compilation,
+            if (TryResolveConversion(settings,
                     uSrc!,
                     leafType,
                     useMethod,
                     allMethods,
                     autoCandidates,
-                    enumPolicy,
                     synthesized,
-                    nullStrategy,
                     location,
                     tgtName,
                     diagnostics,
@@ -294,12 +294,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var uNullH,
                     out var uNeedsCtx,
                     out var uConvParamType,
-                    autoNest,
-                    nestedRegistry,
-                    nullAsNull,
-                    isPreserve,
-                    isSetNull: isSetNull,
-                    implicitConversions: implicitConversions))
+                    nestedRegistry))
             {
                 var rootFqn = rootType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 result.Add(new MemberMap(tgtName,

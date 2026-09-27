@@ -51,15 +51,13 @@ namespace DwarfMapper.Generator.Pipeline
         private static readonly ConditionalWeakTable<Compilation, HashSet<ISymbol>> BaseTypesByCompilation = new();
 
         private static bool TryResolveConversion(
-            Compilation compilation,
+            ResolutionSettings settings,
             ITypeSymbol srcType,
             ITypeSymbol tgtType,
             string? useMethod,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
             LocationInfo? location,
             string targetName,
             List<DiagnosticInfo> diagnostics,
@@ -67,15 +65,19 @@ namespace DwarfMapper.Generator.Pipeline
             out NullHandling nullHandling,
             out bool converterNeedsCtx,
             out string? converterParamTypeFqn,
-            bool autoNest,
             NestedMappingRegistry nestedRegistry,
-            bool nullAsNull = false,
-            bool isPreserve = false,
             bool allowInterfaceSrc = false,
-            bool isSetNull = false,
-            bool implicitConversions = true,
             IReadOnlyCollection<string>? reservedConverters = null)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var autoNest = settings.Options.AutoNest;
+            var nullAsNull = settings.Options.NullAsNull;
+            var isPreserve = settings.Options.IsPreserve;
+            var isSetNull = settings.Options.IsSetNull;
+            var implicitConversions = settings.Options.ImplicitConversions;
             converterMethod = null;
             nullHandling = NullHandling.None;
             converterNeedsCtx = false;

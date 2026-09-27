@@ -28,13 +28,17 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 77 | 7 | 36,715 | 2,593 | **7.1 %** | 95.7 % |
+| `DwarfMapper.Generator` | 78 | 7 | 36,587 | 2,561 | **7.0 %** | 95.7 % |
 | `DwarfMapper` (runtime) | 46 | 8 | 4,050 | 1,379 | **34.0 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **149** | **29** | **45,595** | **5,772** | **12.7 %** | |
+| **all** | **150** | **29** | **45,467** | **5,740** | **12.6 %** | |
+
+Re-measured 2026-09-27 (round-31 T08, ResolutionSettings): one more generator file (`ResolutionSettings.cs`, outside
+every glob) and 32 fewer mutated lines - `MapperExtractor.Members.Phases.cs`, in the pipeline leg, passes `req.Settings`
+where it passed eight arguments at four call sites. The pipeline leg was re-run for that change (see TASK-LOG).
 
 Re-measured 2026-09-27 (round-31 T17): one more generator file, `EfAotProjectionCheck.cs` (DWARF115), outside every
 `mutate` glob - files 76 -> 77, share 7.1 %.

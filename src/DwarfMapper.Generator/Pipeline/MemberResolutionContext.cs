@@ -83,7 +83,11 @@ namespace DwarfMapper.Generator.Pipeline
             bool RequiredMembersAlreadySatisfied,
             IReadOnlyCollection<string>? FactoryExcludedMembers,
             // Source members disowned by [MapIgnoreSource]; read only by the DWARF064 shadow rule. Empty, never null.
-            HashSet<string> IgnoredSourceMembers);
+            HashSet<string> IgnoredSourceMembers)
+        {
+            /// <summary>This resolution's policy half, for the conversion resolvers (round 31 T08).</summary>
+            public ResolutionSettings Settings => new(Compilation, EnumPolicy, NullStrategy, Options);
+        }
 
         /// <summary>
         ///     The name lookups the prologue derives from a <see cref="MemberRequest" /> and every pass then reads.
