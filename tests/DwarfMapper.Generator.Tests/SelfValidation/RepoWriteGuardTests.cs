@@ -130,7 +130,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoLayoutTests.cs"] =
                     (1, "InTempTree helper: a fake repository root in a temp directory, for the root walk"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoWriteGuardTests.cs"] =
-                    (2, "this file's temp-directory fixtures (backup marker, pre-existing target)")
+                    (2, "this file's temp-directory fixtures (backup marker, pre-existing target)"),
+                ["DwarfMapper.Generator.Tests/Round31/AuditSuppressionScanTests.cs"] =
+                    (1, "WriteTemp helper: fake project files under a temp root, incl. a nested .claude/ checkout")
             };
 
             string[] rawWriteApis =

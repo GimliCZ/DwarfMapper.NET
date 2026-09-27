@@ -35,21 +35,27 @@ namespace DwarfMapper.Generator.Tests.Round31
             try
             {
                 const string noWarn = "<Project><PropertyGroup><NoWarn>$(NoWarn);NU1903</NoWarn></PropertyGroup></Project>";
-                Directory.CreateDirectory(Path.Combine(root, ".claude", "worktrees", "agent", "src"));
-                File.WriteAllText(Path.Combine(root, ".claude", "worktrees", "agent", "src", "Old.csproj"), noWarn);
-                Directory.CreateDirectory(Path.Combine(root, ".git", "modules"));
-                File.WriteAllText(Path.Combine(root, ".git", "modules", "Sub.csproj"), noWarn);
-                File.WriteAllText(Path.Combine(root, "Clean.csproj"), "<Project />");
+                WriteTemp(root, Path.Combine(".claude", "worktrees", "agent", "src", "Old.csproj"), noWarn);
+                WriteTemp(root, Path.Combine(".git", "modules", "Sub.csproj"), noWarn);
+                WriteTemp(root, "Clean.csproj", "<Project />");
 
                 Assert.Empty(Offenders(root));
 
-                File.WriteAllText(Path.Combine(root, "Real.csproj"), noWarn);
+                WriteTemp(root, "Real.csproj", noWarn);
                 Assert.Equal(["Real.csproj"], Offenders(root));
             }
             finally
             {
                 Directory.Delete(root, recursive: true);
             }
+        }
+
+        /// <summary>The one raw write in this file: fixtures in a temp directory only (RepoWriteGuardTests registers it).</summary>
+        private static void WriteTemp(string root, string relative, string text)
+        {
+            var path = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text);
         }
 
         private static List<string> Offenders(string root)
