@@ -299,8 +299,21 @@ architecture); recommended an explicit per-assembly opt-out — a new public opt
 ## T08 — ProjectionRequest · `cd7a09e`
 
 Per the ruling: a read-only request bundle for the recursive projection resolvers (15/13/13 → 9/7/7 parameters), built
-once; `diagnostics` stays a sink parameter. Byte-identical golden. More families remain in the ratchet (ResolveMembers 29,
-TryResolveConversion 24, …); each is a separate paydown commit, not done this round.
+once; `diagnostics` stays a sink parameter. Byte-identical golden. The remaining families are paid down below.
+
+## T08 — ResolutionSettings and the rest of the paydown · `8a4d075`, `4ea22db`, `7fad162`, `45c8ccc`
+
+`ResolutionSettings(Compilation, EnumPolicy, NullStrategy, MapperOptions)` is the policy half the ruling asked for: a
+value type, with `WithoutReferenceTracking()` / `ForElementEndpoint()` naming each deliberate deviation instead of an
+omitted optional argument taking its default. That is how the span-map and async-stream element sites came to ignore
+`ImplicitConversions = false` — found by the refactor, fixed in `4ea22db` with `ElementEndpointStrictConversionTests`.
+TryResolveConversion 24 → 17, ResolveUnflattenTarget 23 → 15, ResolveConstructorArguments 21 → 12, ResolveMembers
+29 → 26, ResolveProjectionMembers 15 → 13; each ResolveMembers site keeps its own inline `MapperOptions` because they
+differ on purpose (scoped null-skip, nested `ExplicitOnly = false`, projection's Preserve/SetNull off). The three
+coverage/element-wise emitters took two policy bools either side of the compilation; all eight call sites passed
+`policy.X` verbatim, so they take `MapperPolicy`. Mutation-battery M25 re-anchored on `if (policy.ExplicitOnly)`.
+Golden byte-identical at every step. Remainder (22 parameters, 16 methods) classified as leaf consumers — see the
+checklist row.
 
 ## T28 / T29 — subagents · `a9c91c1`, `f36991f`
 

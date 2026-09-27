@@ -24,7 +24,7 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
 
 ## Tier 2 — structural and performance
 
-- [~] **T08** Extend the bundles [B1] (owner ruling: not one ExtractionContext) — `cd7a09e` ProjectionRequest (15/13/13 → 9/7/7), `f678f2f` FlattenGraphRequest built by the caller (17 → 5, row deleted; it also fixed a silent `ImplicitConversions` gap). Ratchet 54 → 52 rows. **Remainder:** 62 context parameters in 21 methods (ResolveMembers, TryResolveConversion, …) — each a separate paydown; the ratchet forbids growth meanwhile.
+- [x] **T08** Extend the bundles [B1] (owner ruling: not one ExtractionContext) — `cd7a09e` ProjectionRequest (15/13/13 → 9/7/7), `f678f2f` FlattenGraphRequest built by the caller (17 → 5, row deleted; fixed a silent `ImplicitConversions` gap), `8a4d075` new `ResolutionSettings` for the conversion family (TryResolveConversion 24 → 17, ResolveUnflattenTarget 23 → 15, ResolveConstructorArguments 21 → 12), `4ea22db` (span/async-stream element strict-mode fix it exposed), `7fad162` ResolveMembers 29 → 26 / ResolveProjectionMembers 15 → 13, `45c8ccc` the coverage/element-wise emitters take `MapperPolicy` (no adjacent policy bools left) and dense-enum validation takes the settings. Ratchet 54 → 52 rows, every remaining row lowered where touched. **Left loose on purpose:** 22 context parameters in 16 methods, each a leaf CONSUMER of one `(Compilation, bool)` pair or of one flag (converters, `TryMeasureMember`, `ConstructorSelector.Select`, `MemberFacts.TryResolvePath`, `JudgeUnscopedIgnores`, …) — no same-typed pair to transpose, and several callers hold no settings; recorded in `45c8ccc`.
 - [x] **T09** Registry collection pre-size [P1] — `0af2f2e`, `4a6821f` (helper, not inlining; span read removed).
 - [x] **T10** Hoist projection trees [P5a] — `d23184d`. Measured 8.5x / −89 % allocation (`8a4a5ac`).
 - [x] **T11** `RegisterMany` [P6] — `ac93420`. Note (`8a4a5ac`): after T14 single `Register` no longer copies the whole list either, so generated startup costs the same both ways.
@@ -69,10 +69,13 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
    unobservable (contract pinned in `5585dc8`), and the 2 depth-clamp boundaries already adjudicated in round 30.
    The decision `PROPOSAL-T26-compile-time-binding.md` already named: **adjudicate them as proven-equivalent and re-pin
    `break` from the measured score** (the floor moves down), **or delete the slots** (the facade returns to the
-   registry lookup, 1.25–1.8x slower). The generator, pipeline, DocTooling, CodeFixes and Testing legs mutate no file
-   this round changed. Coverage floors: all five pass after `59edd01`.
+   registry lookup, 1.25–1.8x slower). The generator, DocTooling, CodeFixes and Testing legs mutate no file this round
+   changed. **The pipeline leg is owed:** T08 (`8a4d075`) touched `MemberResolutionContext.cs` and
+   `MapperExtractor.Members.Phases.cs`, which it mutates; its run on 2026-09-27 was stopped by the host for low
+   memory during the baseline (all baseline suites green), so run `housekeeping.ps1 -MutationLeg pipeline` on a
+   machine with headroom. Coverage floors: all five pass after `59edd01`.
 1. Validate against FusedChat (not done here: it repins eight `.csproj` in your other repo — see TASK-LOG "Gates before handing over").
 2. Push `feat/round31` with a workflow-scoped token (T19/T20/T21/T22 touch `.github/workflows`).
 3. T21 [H]: nuget.org policy, `release` environment with reviewers, `NUGET_USER`, then `NUGET_TRUSTED_PUBLISHING=true`.
-4. Decide: T18's ambient-registration opt-out option; T26's static entry point; further T08 paydown families.
+4. Decide: T18's ambient-registration opt-out option; T26's static entry point. (T08 is closed; the 16 leaf consumers left loose are listed on its row, should you want them bundled anyway.)
 5. Round-32 candidates from measurement: pre-sized Preserve identity map (2.3x); the generated `int[] → List<long>` widening losing to LINQ (1.6x).
