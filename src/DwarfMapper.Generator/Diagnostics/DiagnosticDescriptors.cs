@@ -2228,5 +2228,19 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Error,
             true,
             helpLinkUri: HelpBase + "dwarf114");
+
+        /// <summary>
+        ///     <c>DWARF115</c> (Warning) — a projection method in a project that publishes NativeAOT and references EF
+        ///     Core, where EF cannot precompile a query built inside the generated method. See
+        ///     <c>EfAotProjectionCheck</c> for the measurement and the gate. Args: {0} = the whole message.
+        /// </summary>
+        public static readonly DiagnosticDescriptor ProjectionNotPrecompilable = new(
+            "DWARF115",
+            "EF Core cannot precompile a query built by a projection method",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf115");
     }
 }

@@ -2581,6 +2581,23 @@ the API that reports `closed` needs a newer Roslyn than DwarfMapper's floor.
 
 **Fix:** add a `[MapDerivedType<Derived, DerivedDto>]` arm for each descendant the message names.
 
+## dwarf115
+**EF Core cannot precompile a query built by a projection method** · Warning
+
+Reported on each projection method (`IQueryable<D> Project(IQueryable<S> q)`) when the project **publishes
+NativeAOT** (`PublishAot=true`) **and references EF Core**. Measured on EF Core 10: EF's query precompiler only
+analyses a query whose whole operator chain is written at the call site, so a call to a generated
+`mapper.Project(db.Orders)` is reported as a dynamic query and is **not** precompiled — and under NativeAOT a query
+that was not precompiled fails when it first runs. The same tree composed at the call site **is** precompiled.
+
+The project property reaches the generator through the package's `build/DwarfMapper.props`
+(`CompilerVisibleProperty`). Nothing is reported without both conditions: another query provider, or a JIT app,
+is unaffected.
+
+**Fix:** compose the exposed tree at the call site —
+`db.Orders.Where(...).OrderBy(...).Select(OrderMapper.ProjectExpression)` (see [`DWARF112`](#dwarf112) for the
+property) — and keep `Project()` for code that is not precompiled.
+
 ---
 
 ## Runtime exceptions

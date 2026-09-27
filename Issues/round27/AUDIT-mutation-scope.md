@@ -28,13 +28,16 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 76 | 7 | 36,585 | 2,593 | **7.1 %** | 95.7 % |
+| `DwarfMapper.Generator` | 77 | 7 | 36,715 | 2,593 | **7.1 %** | 95.7 % |
 | `DwarfMapper` (runtime) | 46 | 8 | 4,050 | 1,379 | **34.0 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **148** | **29** | **45,465** | **5,772** | **12.7 %** | |
+| **all** | **149** | **29** | **45,595** | **5,772** | **12.7 %** | |
+
+Re-measured 2026-09-27 (round-31 T17): one more generator file, `EfAotProjectionCheck.cs` (DWARF115), outside every
+`mutate` glob - files 76 -> 77, share 7.1 %.
 
 Re-measured 2026-09-27 (round-31 T24 + T25): the generator gains one file, `MapperExtractor.ClosedHierarchy.cs`
 (DWARF114), outside every `mutate` glob like the rest of the extractor partials it sits beside - files 75 -> 76, share

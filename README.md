@@ -646,6 +646,14 @@ inlined into the expression tree. Only members needing a runtime conversion — 
 custom `Use=`, a non-translatable collection/dictionary target (`HashSet`/`ISet`/immutable/`Dictionary`), or reference
 handling — are rejected as `DWARF028` (with a reason); do those with a runtime mapper instead.
 
+The tree is built once per process, and every projection also exposes it as a static `{Method}Expression`
+(`OrderMapper.ProjectExpression`), so you can compose it into your own query:
+`db.Orders.Where(o => o.Open).OrderBy(o => o.Id).Select(OrderMapper.ProjectExpression)`. **For EF Core with
+NativeAOT, that composed shape is the one to use:** EF's query precompiler only sees a query whose whole chain is
+written at the call site, so `mapper.Project(db.Orders)` is not precompiled (measured on EF Core 10), while
+`.Select(OrderMapper.ProjectExpression)` is. A project that sets `PublishAot` and references EF Core gets `DWARF115`
+on each projection method as the reminder. A `list.AsQueryable()` source skips the tree and runs a compiled delegate.
+
 ### Blittable fast-path (SIMD)
 
 When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing and

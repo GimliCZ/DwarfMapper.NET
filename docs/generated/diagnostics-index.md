@@ -117,5 +117,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF112` | Info | Projection expression property was not generated |
 | `DWARF113` | Error | Union types are not mapped yet |
 | `DWARF114` | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm |
+| `DWARF115` | Warning | EF Core cannot precompile a query built by a projection method |
 
-109 diagnostics.
+110 diagnostics.

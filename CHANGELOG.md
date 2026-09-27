@@ -64,6 +64,12 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF115` (Warning): a projection method in a NativeAOT project that references EF Core.** Measured on EF
+  Core 10: `mapper.Project(db.Orders)` is not precompiled by `dotnet ef dbcontext optimize --precompile-queries`
+  ("Dynamic LINQ queries are not supported"), while `db.Orders.Select(OrderMapper.ProjectExpression)` is — and
+  under NativeAOT an un-precompiled query fails on first run. The warning names the precompilable shape. The
+  package now ships `build/DwarfMapper.props` (and `buildTransitive/`), whose only content makes `PublishAot`
+  visible to the generator. (Round 31 T17.)
 - **`DWARF114` (Error): a `[MapDerivedType]` dispatch over a C# 15 `closed` type must cover every direct
   descendant.** A closed class's direct descendants are a complete set, so a missing arm — which used to throw at
   run time for that instance — is now a build error naming it. Coverage counts an arm for the descendant or an

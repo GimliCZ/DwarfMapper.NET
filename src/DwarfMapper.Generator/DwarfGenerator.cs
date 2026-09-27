@@ -49,10 +49,14 @@ namespace DwarfMapper.Generator
         /// <summary>Tracking name for the DWARF086 scan over hand-written manifest attributes.</summary>
         internal const string HandWrittenManifestStepName = "DwarfMapperHandWrittenManifest";
 
+        /// <summary>Tracking name for the DWARF115 check (projection methods under EF Core + NativeAOT).</summary>
+        internal const string EfAotProjectionStepName = "DwarfMapperEfAotProjection";
+
         /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
         internal static readonly string[] AllStepNames =
         {
-            ExtractStepName, CoLocatedExtractStepName, AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName, HandWrittenManifestStepName
+            ExtractStepName, CoLocatedExtractStepName, AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName, HandWrittenManifestStepName,
+            EfAotProjectionStepName
         };
 
         /// <inheritdoc />
@@ -125,6 +129,19 @@ namespace DwarfMapper.Generator
                             LocationInfo.ToLocationOrNone(entry.Location),
                             entry.AttributeName));
                 });
+
+            // DWARF115 (round 31 T17): a projection method in a project that publishes NativeAOT and references EF Core.
+            // Both halves are value-equatable (a bool; an array of records), so the node caches like the ones above.
+            var efAot = context.CompilationProvider.Combine(context.AnalyzerConfigOptionsProvider)
+                .Select(static (pair, _) => EfAotProjectionCheck.IsEfAot(pair.Left, pair.Right.GlobalOptions));
+            var projectionSites = context.SyntaxProvider.ForAttributeWithMetadataName(
+                MarkerAttributeFullName,
+                static (node, _) => node is ClassDeclarationSyntax,
+                static (ctx, _) => EfAotProjectionCheck.ProjectionsOf(ctx));
+            // Collected first: the compile-cost battery anchors its per-mapper claims on the ONE tracked step that
+            // outputs one model per mapper (the extraction), and this check has no per-mapper work worth tracking.
+            context.RegisterSourceOutput(projectionSites.Collect().Combine(efAot).WithTrackingName(EfAotProjectionStepName),
+                static (spc, pair) => EfAotProjectionCheck.Report(spc, pair.Left, pair.Right));
 
             // Ambient REQUIRES manifest: the cross-assembly maps this assembly consumes through IDwarfMapper —
             // auto-detected from Map<TDest>(src) call sites + declared via [UsesMap] — emitted as

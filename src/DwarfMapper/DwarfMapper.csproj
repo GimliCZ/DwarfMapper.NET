@@ -77,6 +77,10 @@
               Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
         <None Include="..\DwarfMapper.CodeFixes\bin\$(Configuration)\netstandard2.0\DwarfMapper.CodeFixes.dll"
               Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+        <!-- Round 31 T17: exposes PublishAot to the generator (DWARF115). buildTransitive too, so a consumer that gets
+             DwarfMapper through another package is covered the same way. -->
+        <None Include="build\DwarfMapper.props" Pack="true" PackagePath="build/DwarfMapper.props"/>
+        <None Include="build\DwarfMapper.props" Pack="true" PackagePath="buildTransitive/DwarfMapper.props"/>
     </ItemGroup>
     <ItemGroup>
         <!-- The recursion bounds, declared once. The generator is netstandard2.0 and cannot
