@@ -15,6 +15,12 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Ambient collection dispatch no longer slows down as an application adds maps.** A collection handed to
+  `IDwarfMapper.Map<TDestination>(object)` (or `DwarfMapperRegistry.Map`) never hits an exact key, and the interface
+  lookup tested every interface-keyed entry in the process — six per mapped pair. Measured on the shipped registry:
+  272 ns with no extra pairs, 6.3 µs with 1,000. Entries are now bucketed by destination, so only the entries that
+  could answer are tested: 109–114 ns flat across the same sweep (55× at 1,000 pairs). Resolution rules, first-wins
+  and ambiguity are unchanged. (Round 31 T14, research P4.)
 - **Projection methods build their expression tree once, and a list-backed `IQueryable` skips it.** The tree is a
   static readonly field instead of a new tree per call (research P5a: 15.0 µs / 5,400 B → 1.0 µs / 424 B per call),
   and an `EnumerableQuery` — `list.AsQueryable()` — is mapped through a delegate compiled from the same lambda text

@@ -31,3 +31,32 @@ pairs (six IEnumerable<S>-keyed shapes each) are registered on top of the benchm
 - Allocation is identical in every row (440 B = the result list): the cost is pure scan time, not garbage.
 - Reach: FusedChat, the one non-self-authored consumer, has no `Map<TDestination>(object)` call site (its four ambient calls
   are the two-type form T12 serves). The defect is real for any consumer that does take this path.
+
+## After: interface entries bucketed by destination (round 31 T14)
+
+Same machine, same job, same benchmark, re-run on the bucketed registry.
+
+| Method                          | Pairs | Mean      | Error      | StdDev   | Ratio | RatioSD | Gen0   | Allocated | Alloc Ratio |
+|-------------------------------- |------ |----------:|-----------:|---------:|------:|--------:|-------:|----------:|------------:|
+| Collection_Direct               | 0     |  72.71 ns |  47.109 ns | 2.582 ns |  1.00 |    0.04 | 0.0262 |     440 B |        1.00 |
+| Collection_AmbientByRuntimeType | 0     | 108.96 ns | 147.143 ns | 8.065 ns |  1.50 |    0.11 | 0.0262 |     440 B |        1.00 |
+| Single_AmbientByRuntimeType     | 0     |  19.38 ns |   3.015 ns | 0.165 ns |  0.27 |    0.01 | 0.0024 |      40 B |        0.09 |
+|                                 |       |           |            |          |       |         |        |           |             |
+| Collection_Direct               | 100   |  70.86 ns |   6.215 ns | 0.341 ns |  1.00 |    0.01 | 0.0262 |     440 B |        1.00 |
+| Collection_AmbientByRuntimeType | 100   | 109.95 ns |  49.619 ns | 2.720 ns |  1.55 |    0.03 | 0.0262 |     440 B |        1.00 |
+| Single_AmbientByRuntimeType     | 100   |  18.51 ns |   3.317 ns | 0.182 ns |  0.26 |    0.00 | 0.0024 |      40 B |        0.09 |
+|                                 |       |           |            |          |       |         |        |           |             |
+| Collection_Direct               | 500   |  70.70 ns |  25.947 ns | 1.422 ns |  1.00 |    0.02 | 0.0262 |     440 B |        1.00 |
+| Collection_AmbientByRuntimeType | 500   | 109.77 ns | 100.851 ns | 5.528 ns |  1.55 |    0.07 | 0.0262 |     440 B |        1.00 |
+| Single_AmbientByRuntimeType     | 500   |  19.77 ns |   9.063 ns | 0.497 ns |  0.28 |    0.01 | 0.0024 |      40 B |        0.09 |
+|                                 |       |           |            |          |       |         |        |           |             |
+| Collection_Direct               | 1000  |  71.14 ns |  27.666 ns | 1.516 ns |  1.00 |    0.03 | 0.0262 |     440 B |        1.00 |
+| Collection_AmbientByRuntimeType | 1000  | 113.57 ns |  92.444 ns | 5.067 ns |  1.60 |    0.07 | 0.0262 |     440 B |        1.00 |
+| Single_AmbientByRuntimeType     | 1000  |  20.14 ns |  16.497 ns | 0.904 ns |  0.28 |    0.01 | 0.0024 |      40 B |        0.09 |
+
+- **Flat.** 109 → 114 ns from 0 to 1,000 extra pairs, where it was 272 ns → 6.3 µs. At 1,000 pairs that is **55×**; even
+  at 0 extra pairs it is 2.5×, because the benchmark assembly's own ~190 entries are no longer scanned either.
+- Remaining overhead over the direct loop: ~38 ns (1.5×) — the exact miss, the base-type walk and one bucket probe.
+  A root-generated per-destination switch (T14 as specified) could only chase that residue, at the cost of a new public
+  slot type and a second cache over this one; it was not built.
+- Single-object control unchanged (18–20 ns); allocation unchanged (440 B, the result list).

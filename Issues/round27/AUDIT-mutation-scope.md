@@ -28,13 +28,18 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 75 | 7 | 36,126 | 2,593 | **7.2 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 46 | 8 | 3,980 | 1,309 | **32.9 %** | 73.9 %† |
+| `DwarfMapper.Generator` | 75 | 7 | 36,334 | 2,593 | **7.1 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 46 | 8 | 4,050 | 1,379 | **34.0 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **147** | **29** | **44,936** | **5,702** | **12.7 %** | |
+| **all** | **147** | **29** | **45,214** | **5,772** | **12.8 %** | |
+
+Re-measured 2026-09-27 (round-31 T11 + T14): runtime 32.9 % -> 34.0 %, both halves of the ratio inside the ONE
+file that moved, `DwarfMapperRegistry.cs` (+70 lines, already in the runtime leg): `RegisterMany` and the per-destination
+interface buckets. No file entered or left a leg. The generator's lines grew with T10/T13/T16/T23 emission and
+extraction code, none of it in a `mutate` glob, so its share drifted 7.2 % -> 7.1 % the usual way — by denominator.
 
 Re-measured 2026-09-26 (round-31 T12): the runtime assembly moves 25.9 % -> 32.9 %, and this is the one entry in
 this file's history that moved because scope was ADDED rather than because the denominator drifted. Round 31

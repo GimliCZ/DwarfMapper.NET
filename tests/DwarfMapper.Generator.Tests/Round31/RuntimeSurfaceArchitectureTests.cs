@@ -185,9 +185,10 @@ namespace DwarfMapper.Generator.Tests.Round31
         /// </summary>
         private static readonly Dictionary<string, string> DeclaredMutableStatics = new(System.StringComparer.Ordinal)
         {
-            ["DwarfMapperRegistry._interfaceMaps"] =
-                "Copy-on-write array of interface-keyed registrations. Written once per registration from a module "
-                + "initializer, read on the ambient interface path; a ConcurrentBag here allocated 56 KB per call.",
+            // DwarfMapperRegistry._interfaceMaps was declared here until round 31: the flat copy-on-write list became
+            // a static READONLY table of per-destination buckets (the exact table Maps' shape), so it is no longer a
+            // reassignable static and this scan, which pins reassignable statics, correctly no longer finds it. The
+            // growth now happens in InterfaceBucket.Entries, an instance field, published under the registry gate.
             ["ExactPairSlot._map"] =
                 "The resolved delegate for one closed generic pair. No version counter: registration is add-only "
                 + "and first-wins, so a found delegate is immutable for the process, and a MISS is not cached.",
