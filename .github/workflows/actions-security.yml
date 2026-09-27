@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Static analysis of THIS repository's GitHub Actions workflows (round 31 T20, research A5).
+#
+# SHA pinning — already enforced everywhere — stopped the tj-actions class (CVE-2025-30066), but not the classes that
+# live in a workflow's own text: template injection from untrusted event fields, pull_request_target misuse, over-broad
+# permissions, credential persistence in checkout. zizmor finds those statically. Its SARIF lands in the repository's
+# code-scanning view next to CodeQL's.
+#
+# REPORTING MODE, deliberately: findings do not fail the job. The first run's findings are triaged by the owner (the
+# baseline), and only then does this become blocking — flipping it earlier would turn a first measurement into a wall,
+# the mistake preview-sdk-canary and roslyn-forward-compat both document. What DOES fail the job is the tool not
+# producing a report at all: "no SARIF" must never read as "no findings".
+#
+# Actions are pinned to full commit SHAs; the trailing `# vN` is the human-readable version. Bump BOTH together.
+name: actions-security
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload the SARIF to code scanning
+    timeout-minutes: 10
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      # Pinned by version, like every tool whose output feeds a gate here. `|| true` is the reporting mode: zizmor
+      # exits non-zero WHEN IT HAS FINDINGS, which is not a failure of this job. The next step is what fails.
+      - name: Run zizmor
+        run: pipx run zizmor==1.30.1 --format sarif . > zizmor.sarif || true
+      - name: Assert zizmor produced a report
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF'
+          import json
+          with open("zizmor.sarif", encoding="utf-8") as fh:
+              report = json.load(fh)
+          runs = report.get("runs") or []
+          if not runs:
+              raise SystemExit("zizmor.sarif has no runs: the tool did not analyse anything, so no finding count means anything")
+          print("zizmor findings:", sum(len(r.get("results") or []) for r in runs))
+          PYEOF
+      - uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
