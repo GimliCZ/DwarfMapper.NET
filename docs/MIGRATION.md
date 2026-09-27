@@ -146,6 +146,7 @@ and you do not have to configure anything to get it.
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology (shared/diamond/cycle) reconstructed |
 | *(no first-class equivalent)* | `[DwarfMapper(OnCycle=SetNull)]` | **DwarfMapper-only**: cycle→null ≡ `System.Text.Json` `IgnoreCycles` |
 | `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S>)` | **provably translatable**: direct members, renames, `[MapIgnore]`, enum→int casts, nested objects, collections, dotted-path flattening, and constructor targets (a positional record's parameter binds from `[MapProperty]` or by name, and members outside the parameter list become an initializer on the call); only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict/reference-handling) → `DWARF028` |
+| `db.Orders.Where(…).ProjectTo<Dto>(cfg)` composed into a larger query | `.Select(OrderMapper.ProjectExpression)` | every projection also exposes its tree as a static `{Method}Expression` (same instance the method uses), so the EF-native `Where(…).OrderBy(…).Select(…)` composes; name taken → `DWARF112` (Info) |
 | `.ExplicitExpansion()` / projection params | **non-goal** | define a narrower DTO/`Project` method; parameterize the source query |
 | `AssertConfigurationIsValid()` | **build error `DWARF001`** (always on) | `MemberList.Source` ≡ `RequiredMapping=Both`; `MemberList.None` ≡ has no analogue (use `[MapIgnore]`) |
 | naming conventions (`SourceMemberNamingConvention` …) | `[DwarfMapper(NameConvention=Flexible)]` | Pascal/camel/snake/UPPER interchangeable; collision → `DWARF048` |
@@ -153,6 +154,29 @@ and you do not have to configure anything to get it.
 | `ShouldMapProperty/Field` predicate | **non-goal** | fixed rule (public instance fields+props); exclude via `[MapIgnore]` |
 | case-insensitive matching | `[DwarfMapper(CaseInsensitive=true)]` | ambiguity → `DWARF010` |
 | `ResolutionContext.Items`/`State` | **non-goal** | extra typed method parameter |
+
+### 1.10 Where DwarfMapper refuses and AutoMapper did not
+
+The largest behavioural difference is not a feature — it is what happens when a mapping is incomplete or unsafe.
+AutoMapper resolves at run time and fills what it can; unless `AssertConfigurationIsValid()` is called (and kept
+up to date), a gap becomes a default value in production. DwarfMapper resolves at build time and **refuses** —
+a diagnostic against your own source, naming the fix — so the gap never ships. Two examples, each pinned as a
+NegativeCases row in this repository:
+
+- **A destination member nothing fills** (`tests/DwarfMapper.NegativeCases/Cases/DWARF001_UnmappedDestinationMember.cs`).
+  AutoMapper leaves `Nickname` at its default and says nothing unless validated. DwarfMapper reports **`DWARF001`**
+  naming `'Nickname'`, and the build fails until you either map it (`[MapProperty]`) or say it is intentional
+  (`[MapIgnore(nameof(Dst.Nickname))]`). There is no "forgot to validate" state.
+- **A value that may be null flowing into a member that may not hold one**
+  (`tests/DwarfMapper.NegativeCases/Cases/DWARF070_MaybeNullSourceMember.cs`). AutoMapper copies the null. DwarfMapper
+  reads the same nullability the compiler reads — `string?`, and also `[MaybeNull]` / `[DisallowNull]` — and
+  reports **`DWARF070`** with the remedies (`NullSubstitute`, `SkipNullSourceMembers`, a nullable destination), while
+  keeping the generated code free of the compiler's own warning.
+
+The same stance runs through the tables above: lossy numeric conversions are `DWARF038` rather than silent
+truncation, a missing by-name enum member is `DWARF015`, and an untranslatable projection member is `DWARF028`
+instead of a runtime query failure. Expect the first build after a conversion to report things AutoMapper was
+quietly deciding for you; each one is a decision you now make once, in code.
 
 ---
 
