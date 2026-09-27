@@ -28,7 +28,7 @@ decision or access first.
 - [x] **T11** Batch registration `RegisterMany` [P6] — `ac93420`. 3,000 interface entries: 280 MB (loop) → < 1 MB. 1,004 golden cases, 14 snapshots mechanically verified.
 - [x] **T12** Exact-pair slot for the facade [P2a, P4 update] — `ed69922` + `c65c4fe`. **Deviation (owner ruling):** only a FOUND delegate is cached and the version machinery is deleted. `ExactUpdateSlot` is present. *The audit's TODO is stale: it looks for `_version`.*
 - [x] **T13** In-memory projection route + parity [P5 Case 2] — `761a69a`. Enum parity row uses one enum (enum→enum is a projection refusal).
-- [ ] **T14** Static per-destination dispatch at the validation root [P2b] — needs an Opus spec first. Must now also satisfy the "runtime does not re-decide" ruling and T31's tests.
+- [x] **T14** Collection dispatch flat in app size [P2b/P4] — `f0dca83`. Measured first (`ea57e5e`): 272 ns → 6.3 µs at 1,000 pairs. **Deviation:** registry buckets interface entries by destination (109–114 ns flat, 55×) instead of root-generated dispatchers, which would only chase a ~38 ns residue at the cost of a public slot type + a second cache. Reasons in the commit and TASK-LOG.
 - [ ] **T15** Case 2 nested selects → general mapping [P5] — depends on T13.
 - [x] **T16** Expose `{Method}Expression` [P5d] — `e76a231`. DWARF112 (Info) on name collision / overloads; method's accessibility.
   - [ ] EF/SQLite composition rows: wait on T17's rig.
@@ -36,15 +36,16 @@ decision or access first.
 - [ ] **T18** NativeAOT size experiment [P7] — O/H.
 - [~] **T19** Perf lane and benchmarks [P2/P4/P5/P6/P8] — `d177479`, `924f237`; results in `benchmarks/results/2026-09-26-round31-full-matrix.md`.
   - [x] Facade `Map<TS,TD>` A/B (`AmbientFacadeBenchmarks`) and T09 A/B (`RegistryCollectionBenchmarks`, `CollectionReadProbe`)
-  - [ ] `ci.yml` default filter `Category!=Perf` plus a nightly Perf job. **BLOCKED:** the token cannot push `.github/workflows`.
-  - [ ] Facade collection source at 10/100/500 pairs; `Project()` inline vs hoisted; routed vs tree; startup `__Register()` at 100/500/1,000; P8 A/B pairs
+  - [x] `ci.yml` default filter `Category!=Perf` plus a nightly `perf-tests` job with a vacuity guard — `6747ed9` (committed, not pushed: workflow scope).
+  - [x] Facade collection source at 0/100/500/1,000 pairs — `ea57e5e` + after-column in `f0dca83`.
+  - [ ] `Project()` inline vs hoisted; routed vs tree; startup `__Register()` at 100/500/1,000; P8 A/B pairs
   - [ ] P3: the A1 benchmark row (user-operator guard cost in in-memory projections)
 
 ## Tier 3 — CI, release, platform
 
-- [ ] **T20** zizmor + Harden-Runner [A5] — **BLOCKED** on the workflow-scope token. Audit: 15 jobs without harden-runner as step 1.
-- [ ] **T21** NuGet Trusted Publishing [A4] — the human part on nuget.org and GitHub comes first.
-- [ ] **T22** .NET 11 SDK leg [C1] — workflow change, so same wall as T20.
+- [x] **T20** zizmor + Harden-Runner [A5] — `0047b49`. zizmor 1.30.1 found 19 (3 high template-injection, 16 artipacked); all fixed → 0. Harden-runner step 1 in all 17 jobs. Committed, not pushed.
+- [~] **T21** NuGet Trusted Publishing [A4] — [S] done `a6ba0c9`: `publish` job gated on `vars.NUGET_TRUSTED_PUBLISHING`. **[H] owner:** 5 setup steps in `docs/RELEASING.md`. [O] review before first tag.
+- [x] **T22** .NET 11 SDK leg [C1] — `afe8d2f`. The leg already existed (`preview-sdk-canary`); aligned it (locked mode + TWAE off, diagnostics reported). First run: on the owner's push.
 - [x] **T23** Nullability-attribute probe [A6] — **A6 confirmed, and worse:** `[MaybeNull]`/`[DisallowNull]` leaked CS8601 into the .g.cs with no DWARF070. Fixed in `30ac793` (MemberFacts funnel). `[NotNull]`/`[AllowNull]` deliberately not read (would silence reports).
 - [ ] **T24** C# 15 unions refused loudly [C3] — **deadline 2026-11-10**. Needs the Opus metadata check first.
 - [ ] **T25** C# 15 closed hierarchies [C2] — O; needs the Roslyn packaging decision.
@@ -55,7 +56,7 @@ decision or access first.
 
 - [ ] **T28** Normalize `__` locals in assertions [D3, optional] — audit: 60 raw-local assertions left.
 - [ ] **T29** `// Covers:` provenance headers [D4] — audit: 118 files without a header.
-- [ ] **T30** "Coming from AutoMapper" guide [C5] — not started. T03 did add a short MIGRATION.md paragraph.
+- [x] **T30** "Coming from AutoMapper" guide [C5] — `5938bb0`. Extended MIGRATION.md §1 in place (it already was that guide) with §1.10 refusals + the composable projection row.
 
 ## Added this round (not in the task list)
 
