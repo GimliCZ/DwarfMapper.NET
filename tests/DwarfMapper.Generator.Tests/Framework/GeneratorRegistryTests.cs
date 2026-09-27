@@ -25,7 +25,8 @@ namespace DwarfMapper.Generator.Tests.Framework
         {
             // Also includes a co-located [GenerateMap<>] host (CoLoc) so DwarfGenerator's co-located extraction
             // step actually runs: ForAttributeWithMetadataName's fast path never tracks a step at all — not even
-            // with zero outputs — when the compilation has no syntax node bearing that attribute anywhere.
+            // with zero outputs — when the compilation has no syntax node bearing that attribute anywhere. The
+            // Dwarf.Map call does the same for the call-site scan (round 31 T26): no invocation, no tracked step.
             const string src = """
                                using DwarfMapper;
                                namespace Demo;
@@ -34,6 +35,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                [DwarfMapper] public partial class M { public partial B Map(A a); }
                                [MapTo(typeof(B))] public class Src { public int X { get; set; } }
                                [GenerateMap<A, CoLoc>] public sealed class CoLoc { public int X { get; set; } }
+                               public static class Calls { public static B Use(A a) => Dwarf.Map<A, B>(a); }
                                """;
 
             foreach (var g in GeneratorRegistry.All)

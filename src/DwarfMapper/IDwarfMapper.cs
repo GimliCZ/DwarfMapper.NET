@@ -62,47 +62,22 @@ namespace DwarfMapper
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        ///     The same resolution as <see cref="Dwarf.Map{TSource,TDestination}(TSource)" />: the exact
+        ///     <c>(TSource, TDestination)</c> pair first, so <c>Map&lt;Base, Dto&gt;(derived)</c> uses the map the caller
+        ///     asked for rather than dispatching on the derived runtime type, then the runtime-type walk. Through this
+        ///     interface the call is never bound at compile time - that would bypass an injected implementation - so
+        ///     it always looks the pair up.
+        /// </remarks>
         public TDestination Map<TSource, TDestination>(TSource source)
         {
-            // Actually use TSource. This overload documents itself as "uses the static source type — avoids the
-            // GetType() hop", but its body was byte-identical to the one-parameter overload: it called
-            // DwarfMapperRegistry.Map, which resolves via source.GetType() and then walks base types. So the
-            // advertised fast path did not exist, and `Map<Base, Dto>(derived)` silently dispatched on the DERIVED
-            // runtime type rather than the requested static one. The exact-pair lookup gives both: no GetType()
-            // hop, and the pair the caller actually asked for.
-            //
-            // The pair is known at JIT time here, so the lookup itself is a constant and lives on the closed generic
-            // type rather than being recomputed per call. Same answer, same fallback; see ExactPairSlot for why only
-            // the EXACT pair may be cached and why its version is read before the lookup.
-            var map = ExactPairSlot<TSource, TDestination>.Get();
-            if (map is not null)
-            {
-                return (TDestination)map(source!);
-            }
-
-            return (TDestination)DwarfMapperRegistry.Map(source!, typeof(TDestination));
+            return Dwarf.Map<TSource, TDestination>(source);
         }
 
         /// <inheritdoc />
         public void Map<TSource, TDestination>(TSource source, TDestination destination)
         {
-            // The exact pair, cached on the closed generic type; Update resolves on the DECLARED types anyway, so
-            // there is no runtime-type walk to preserve. A miss goes through Update, which owns the absent-map throw
-            // - and the null guards stay ahead of the delegate so a hit cannot turn an ArgumentNullException into a
-            // NullReferenceException inside generated code. if/else rather than an early return: the `return` was
-            // unreachable (a miss always throws from Update, a hit never enters that arm) and sat in the runtime
-            // mutation leg as a NoCoverage mutant.
-            var map = ExactUpdateSlot<TSource, TDestination>.Get();
-            if (map is null)
-            {
-                DwarfMapperRegistry.Update(source!, destination!, typeof(TSource), typeof(TDestination));
-            }
-            else
-            {
-                ArgumentNullException.ThrowIfNull(source);
-                ArgumentNullException.ThrowIfNull(destination);
-                map(source, destination);
-            }
+            Dwarf.Map(source, destination);
         }
     }
 }

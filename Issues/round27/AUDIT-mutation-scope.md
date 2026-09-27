@@ -28,13 +28,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 78 | 7 | 36,587 | 2,561 | **7.0 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 46 | 8 | 4,050 | 1,379 | **34.0 %** | 73.9 %† |
+| `DwarfMapper.Generator` | 79 | 7 | 36,958 | 2,561 | **6.9 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 46 | 8 | 3,972 | 1,301 | **32.8 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **150** | **29** | **45,467** | **5,740** | **12.6 %** | |
+| **all** | **151** | **29** | **45,760** | **5,662** | **12.4 %** | |
 
 Re-measured 2026-09-27 (round-31 T08, ResolutionSettings): one more generator file (`ResolutionSettings.cs`, outside
 every glob) and 32 fewer mutated lines - `MapperExtractor.Members.Phases.cs`, in the pipeline leg, passes `req.Settings`
@@ -46,6 +46,12 @@ Re-measured 2026-09-27 (round-31 T17): one more generator file, `EfAotProjection
 Re-measured 2026-09-27 (round-31 T24 + T25): the generator gains one file, `MapperExtractor.ClosedHierarchy.cs`
 (DWARF114), outside every `mutate` glob like the rest of the extractor partials it sits beside - files 75 -> 76, share
 unchanged at 7.1 %.
+
+Re-measured 2026-09-27 (round-31 T26): runtime 34.0 % -> 32.8 %, generator 7.0 % -> 6.9 %. `ExactPairSlot.cs` was
+DELETED (Dwarf.Map calls whose pair the calling assembly registers are now bound to the generated mapper at compile
+time, so the cache had nothing left to do) and `Dwarf.cs`, the statically-bound entry point's run-time fallback, takes
+its place in the runtime `mutate` list, so `in a leg` stays 8 and mutated lines fall 1,379 -> 1,301. The generator gains
+`Pipeline/DwarfCallSites.cs` (79 files), outside any glob like the rest of the emission code.
 
 Re-measured 2026-09-27 (round-31 T11 + T14): runtime 32.9 % -> 34.0 %, both halves of the ratio inside the ONE
 file that moved, `DwarfMapperRegistry.cs` (+70 lines, already in the runtime leg): `RegisterMany` and the per-destination

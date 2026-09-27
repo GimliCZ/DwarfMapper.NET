@@ -82,8 +82,9 @@ PY
   mark T09 "$(has src/DwarfMapper/DwarfCollectionMap.cs 'TryGetNonEnumeratedCount' && has src/DwarfMapper.Generator/Pipeline/AggregateEmitter.cs 'DwarfCollectionMap\.'; echo $?)" "registry collection shapes pre-size through DwarfCollectionMap"
   mark T10 "$(has src/DwarfMapper.Generator/Pipeline/MapEmitter.cs '__dwarf_proj_'; echo $?)" "projection trees hoisted into static fields"
   mark T11 "$(has src/DwarfMapper/DwarfMapperRegistry.cs 'RegisterMany' && has src/DwarfMapper.Generator/Pipeline/AggregateEmitter.cs 'RegisterMany' && has src/DwarfMapper/PublicAPI.Unshipped.txt 'RegisterMany'; echo $?)" "batch registration (runtime + emission + PublicAPI)"
-  # c65c4fe: only a FOUND delegate is cached, so the registry version counter is gone - and must stay gone.
-  mark T12 "$([ -f src/DwarfMapper/ExactPairSlot.cs ] && has src/DwarfMapper/IDwarfMapper.cs 'ExactPairSlot<' && ! has src/DwarfMapper/DwarfMapperRegistry.cs '_version'; echo $?)" "exact-pair slot, no version counter"
+  # c65c4fe removed the registry version counter; T26 then removed the slots themselves - both must stay gone.
+  mark T12 "$([ ! -f src/DwarfMapper/ExactPairSlot.cs ] && ! has src/DwarfMapper/DwarfMapperRegistry.cs '_version'; echo $?)" "superseded by T26: no cache slot, no version counter"
+  mark T26 "$(has src/DwarfMapper/Dwarf.cs 'public static class Dwarf' && has src/DwarfMapper.Generator/Pipeline/DwarfCallSites.cs 'InterceptsLocation' && has src/DwarfMapper/build/DwarfMapper.props 'InterceptorsNamespaces'; echo $?)" "Dwarf.Map bound at compile time (interceptors, package-enabled)"
   mark T13 "$(has src/DwarfMapper.Generator/Pipeline/MapEmitter.cs 'EnumerableQuery<' && [ -f tests/DwarfMapper.Generator.Tests/Round31/TreeOnlyQueryable.cs ]; echo $?)" "in-memory projection route + parity oracle"
   mark T14 "$(has src/DwarfMapper/DwarfMapperRegistry.cs 'InterfaceMapsByDestination' && [ -f tests/DwarfMapper.IntegrationTests/Round31/InterfaceBucketTests.cs ]; echo $?)" "collection dispatch flat in app size (destination buckets)"
   mark T16 "$(has src/DwarfMapper.Generator/Pipeline/MapEmitter.cs 'ProjectionExpressionName' && [ -f tests/DwarfMapper.NegativeCases/Cases/DWARF112_ProjectionExpressionNameTaken.cs ]; echo $?)" "projection expression exposed (+ DWARF112)"
@@ -115,7 +116,7 @@ PY
   nocov=$(for f in tests/DwarfMapper.Generator.Tests/Coverage/*.cs; do head -15 "$f" | grep -q '^// Covers:' || echo "$f"; done | wc -l | tr -d ' ')
   mark T29 "$([ "$nocov" -eq 0 ]; echo $?)" "coverage files without // Covers: header: $nocov"
   mark T30 "$(grep -q '1.10 Where DwarfMapper refuses and AutoMapper did not' docs/MIGRATION.md; echo $?)" "AutoMapper migration guide (MIGRATION.md section 1, extended in place)"
-  echo "(T15, T21[H], T26, T27 are decisions — recorded in Issues/round31/TASK-LOG.md, not grepped)" ;;
+  echo "(T15, T21[H], T27 are decisions — recorded in Issues/round31/TASK-LOG.md, not grepped)" ;;
 
 tests)
   export PATH="$HOME/dotnet:$PATH"

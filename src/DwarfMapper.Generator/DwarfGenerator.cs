@@ -52,11 +52,17 @@ namespace DwarfMapper.Generator
         /// <summary>Tracking name for the DWARF115 check (projection methods under EF Core + NativeAOT).</summary>
         internal const string EfAotProjectionStepName = "DwarfMapperEfAotProjection";
 
+        /// <summary>Tracking name for the <c>Dwarf.Map</c> call-site scan (round 31 T26).</summary>
+        internal const string DwarfCallSiteStepName = "DwarfMapperDwarfCallSites";
+
+        /// <summary>Tracking name for the compile-time binding of those call sites (round 31 T26).</summary>
+        internal const string InterceptorStepName = "DwarfMapperInterceptors";
+
         /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
         internal static readonly string[] AllStepNames =
         {
             ExtractStepName, CoLocatedExtractStepName, AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName, HandWrittenManifestStepName,
-            EfAotProjectionStepName
+            EfAotProjectionStepName, DwarfCallSiteStepName, InterceptorStepName
         };
 
         /// <inheritdoc />
@@ -201,6 +207,47 @@ namespace DwarfMapper.Generator
                         .Where(static m => !m.HasBlockingError && m.IsNameableFromAssembly)
                         .ToList();
                     return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
+                });
+
+            // Round 31 T26: Dwarf.Map calls whose pair this assembly registers are bound at compile time to the
+            // registration's own expression. Kept apart from the aggregate output: an interceptor location carries a
+            // checksum of its file, so every edit to a calling file changes it, and that must not re-emit the mappers.
+            var dwarfCalls = context.SyntaxProvider
+                .CreateSyntaxProvider(DwarfCallSites.IsCandidate, DwarfCallSites.Extract)
+                .Where(static c => c is not null)
+                .Select(static (c, _) => c!.Value)
+                .WithTrackingName(DwarfCallSiteStepName)
+                .Collect();
+
+            var interceptTargets = mappers.Collect().Combine(coLocated.Collect())
+                .Select(static (pair, _) =>
+                {
+                    // Same filter as the registration itself (EmitAggregates / ownProvided), so a target always names a
+                    // mapper instance the registration declares.
+                    var usable = pair.Left.AddRange(pair.Right)
+                        .Where(static m => !m.HasBlockingError && m.IsNameableFromAssembly)
+                        .ToList();
+                    return EquatableArray.From(AggregateEmitter.InterceptTargets(usable));
+                });
+
+            // What referenced assemblies provide, read only when there is a call to bind: the scan walks every
+            // reference's attributes, and a CompilationProvider node re-runs on every keystroke.
+            var noProviders = EquatableArray.From(Array.Empty<(string, string, string)>());
+            var referencedProvided = dwarfCalls.Combine(context.CompilationProvider)
+                .Select((data, _) => data.Left.IsEmpty
+                    ? noProviders
+                    : EquatableArray.From(AmbientValidator.ReadReferenced(data.Right).Provided));
+
+            context.RegisterSourceOutput(
+                dwarfCalls.Combine(interceptTargets).Combine(referencedProvided).WithTrackingName(InterceptorStepName),
+                static (spc, data) =>
+                {
+                    var ((calls, targets), provided) = data;
+                    var source = DwarfCallSites.EmitInterceptors(calls, targets, provided);
+                    if (source is not null)
+                    {
+                        spc.AddNormalizedSource("DwarfMapper.Interceptors.g.cs", source);
+                    }
                 });
 
             // Root-only whole-graph view: is this the validation root (+ its AutoValidate/DI settings), and the

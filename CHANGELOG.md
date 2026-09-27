@@ -15,12 +15,12 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
-- **Ambient collection shapes are pre-sized, and `Map<TSource, TDestination>` skips the dictionary on a hit.** The six
-  collection shapes every mapped pair registers now fill through one runtime helper that pre-sizes from the source's
-  count (research P1: 1.07-1.95x, and 17-29 % less allocation on the array target), reading a `List<T>` source with a
-  version-checked walk so a hook that mutates the list still fails loudly. The facade's two-type overload caches the
-  exact registered delegate per closed generic pair — only a FOUND delegate, so a pair registered later is still picked
-  up — for 1.25-1.8x on the ambient path. (Round 31 T09, T12.)
+- **Ambient collection shapes are pre-sized.** The six collection shapes every mapped pair registers now fill through
+  one runtime helper that pre-sizes from the source's count (research P1: 1.07-1.95x, and 17-29 % less allocation on
+  the array target), reading a `List<T>` source with a version-checked walk so a hook that mutates the list still fails
+  loudly. (Round 31 T09.) An interim per-pair delegate cache on the facade (T12) was replaced before release by
+  `Dwarf.Map` (see Added): `IDwarfMapper.Map<TSource, TDestination>` resolves with one dictionary probe per call, as it
+  did before round 31, and the runtime has no mutable static state.
 - **Ambient collection dispatch no longer slows down as an application adds maps.** A collection handed to
   `IDwarfMapper.Map<TDestination>(object)` (or `DwarfMapperRegistry.Map`) never hits an exact key, and the interface
   lookup tested every interface-keyed entry in the process — six per mapped pair. Measured on the shipped registry:
@@ -70,6 +70,15 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`Dwarf.Map` — the ambient call, bound at compile time when the pair is local.** `Dwarf.Map<Order, OrderDto>(order)`
+  and `Dwarf.Map(patch, existing)` resolve exactly like `IDwarfMapper.Map`, but they are static: when the calling
+  project itself registers the pair, the generator binds the call to the generated mapper with a C# interceptor — a
+  direct call on the same mapper instance the ambient registration uses, running the same expression, with no
+  registry lookup. A pair from another assembly, a pair a referenced assembly also provides, and a call whose types
+  are type parameters fall back to the registry at run time, so no call changes meaning. `IDwarfMapper` is never
+  bound (that could bypass an injected decorator or test double). The package enables interceptors for the
+  `DwarfMapper.Generated` namespace only, through its `build/DwarfMapper.props`; nothing needs to be set in the
+  consuming project. Verified through a package reference and under NativeAOT. (Round 31 T26.)
 - **The CVE-2026-32933 guarantee is a pinned claim.** AutoMapper 14's unpatched uncontrolled recursion kills the process
   at ~30,000 nesting levels. DwarfMapper's default `MaxDepth` (64) ends the same graphs in a catchable
   `DwarfMappingDepthException`, now pinned at the advisory's own depth for self-referential, list- and dictionary-routed

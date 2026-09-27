@@ -27,7 +27,7 @@ built (reason recorded).
 - [x] **T09** Registry collection pre-size [P1] — `0af2f2e`, `4a6821f` (helper, not inlining; span read removed).
 - [x] **T10** Hoist projection trees [P5a] — `d23184d`. Measured 8.5x / −89 % allocation (`8a4a5ac`).
 - [x] **T11** `RegisterMany` [P6] — `ac93420`. Note (`8a4a5ac`): after T14 single `Register` no longer copies the whole list either, so generated startup costs the same both ways.
-- [x] **T12** Exact-pair slot [P2a] — `ed69922`, `c65c4fe` (found-only cache, no version counter).
+- [x] **T12** Exact-pair slot [P2a] — `ed69922`, `c65c4fe` (found-only cache, no version counter). **Superseded by T26:** the slots are deleted; the fast path is now a compile-time binding.
 - [x] **T13** In-memory projection route [P5 Case 2] — `761a69a`. Measured ~2,200x at 10 rows, 40x at 1,000.
 - [x] **T14** Collection dispatch flat in app size [P2b/P4] — measured `ea57e5e`, fixed `f0dca83` (destination buckets, 55x at 1,000 pairs). Root-generated dispatchers deliberately not built.
 - [d] **T15** Case 2 nested selects → general mapping — measured `8a4a5ac`: 1.14x on DTO lists (under threshold), SLOWER on widening. Not built. The widening loss is a round-32 finding.
@@ -44,7 +44,7 @@ built (reason recorded).
 - [x] **T23** Nullability attributes [A6] — `30ac793`: A6 confirmed (CS8601 leaked into .g.cs), fixed.
 - [x] **T24** C# 15 unions refused [C3] — `1628bda` DWARF113 (before the 2026-11-10 deadline).
 - [x] **T25** C# 15 closed hierarchies [C2] — `2c6ecfa` DWARF114; no packaging change needed (`IsClosedTypeAttribute`). Same-compilation `closed` classes need a newer Roslyn.
-- [d] **T26** Interceptors — gate not met this round: the remaining facade gap is ~8.6 ns; a safe form needs a new public static entry point (owner decision). `PROPOSAL-T26-compile-time-binding.md` question (1) is partly answered: a package props file can set `InterceptorsNamespaces`.
+- [x] **T26** Interceptors — **owner-approved 2026-09-27; built.** `Dwarf.Map<S,D>(src)` / `Dwarf.Map(src, dst)` (static, owner-named): a call whose pair the calling assembly registers, and no referenced assembly also provides, is bound by a generated interceptor to the registration's own expression on the registration's own mapper instance; everything else falls back to the registry. `IDwarfMapper` is never bound. `ExactPairSlot.cs`, both slots and the internal `TryGetUpdate` are deleted; `TryGet` declares `[NotNullWhen(true)]`. The proposal's three questions, answered empirically: (1) SDK 10.0.101 refuses an interceptor without an opt-in (CS9137) and the package's `build/DwarfMapper.props` supplies it, with nothing set by the consumer; (2) project reference (IntegrationTests, 5 bound sites), package reference (FusedChat copy on `1.1.0-r31val.2`, bound, all 1,606 tests green) and no reference (registry fallback) all work; (3) PublicAPI tracked, and NativeAOT publish of `DwarfMapper.AotSample` passes with a bound-vs-looked-up check. Tests: `DwarfMapInterceptionTests` (10), `DwarfStaticMapTests` (5).
 - [d] **T27** CS8795 stubs — owner ruling: keep suppression.
 
 ## Tier 4 — test-suite tidy-up and docs
@@ -70,10 +70,11 @@ built (reason recorded).
    is re-resolved), 2 `ThrowIfNull(source)` guards CA1062 requires but the enumerable path makes unobservable
    (contract pinned in `5585dc8`), and the 2 depth-clamp boundaries adjudicated in round 30. **Honest ceiling now:
    165/178 = 92.7 %**, so 97 is unreachable while the slots exist. Round 30's precedent was to remove mutable source
-   rather than lower the floor (`e01ff23`); here that means the choice the T26 proposal names: **delete the slots**
-   (the facade goes back to the registry lookup, 1.25-1.8x slower on the two-type overloads), **replace them with
-   T26's compile-time binding**, or **rule the 13 equivalent and re-pin `break` from a fresh measurement**. Not
-   re-measured here: the host was reaping background runs for memory.
+   rather than lower the floor (`e01ff23`). **Owner ruling 2026-09-27: build T26 and delete the slots — DONE** (see the
+   T26 row): the nine cache mutants' source is gone, and `TryGet`'s `[NotNullWhen(true)]` keeps the facade guard's old
+   equivalent mutant from coming back. What remains undetected by construction is the 2 depth clamps and the 2
+   CA1062 guards. **The runtime leg must be re-measured** (`-MutationLeg runtime`) before `break` is judged; the
+   denominator changed, so no ceiling is claimed here without that run.
    **The pipeline leg is owed a clean run.** T08 (`8a4d075`) touched `MemberResolutionContext.cs` and
    `MapperExtractor.Members.Phases.cs`. It ran TWICE on 2026-09-27 (`StrykerOutput/2026-09-27.13-23-40` and
    `.14-17-54`), and both "100.00 %" results are void: 266 and 263 of the 284 tested mutants were TIMEOUTS, which
@@ -98,7 +99,7 @@ built (reason recorded).
    are unchanged) and `BuildDocumentId` reads it; the test arm pins 2026-09-02, the day the snapshots were
    recorded. All 897 mapping tests pass on rc13 and on the round-31 package with the golden files UNCHANGED.
 2. ~~Push~~ done by the owner. ~~T21 setup~~ ruled out (manual nuget push). ~~T18 opt-out~~ ruled out.
-3. **T26: approved 2026-09-27** — build the compile-time binding and delete the slots (option (a) above).
-   The pipeline leg reruns after the owner's parallel testing ends; ask before starting it.
+3. ~~T26~~ **approved and built 2026-09-27** (see its row). **Owed: the runtime AND pipeline mutation legs**, after the
+   owner's parallel testing ends — ask before starting them (each needs the machine to itself; see action 0).
 4. (T08 is closed; the 16 leaf consumers left loose are listed on its row, should you want them bundled anyway.)
 5. Round-32 candidates from measurement: pre-sized Preserve identity map (2.3x); the generated `int[] → List<long>` widening losing to LINQ (1.6x).

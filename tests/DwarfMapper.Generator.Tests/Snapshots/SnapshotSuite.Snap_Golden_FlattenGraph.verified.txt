@@ -70,7 +70,7 @@ namespace DwarfMapper.Generated;
 /// <summary>Self-registers this assembly's stateless, public-typed create-maps into the ambient
 /// <c>DwarfMapperRegistry</c> at module load (zero reflection, AOT-safe), so any assembly can resolve
 /// them through <c>IDwarfMapper</c> without referencing this one.</summary>
-internal static class __DwarfMapperAmbientRegistration
+internal static partial class __DwarfMapperAmbientRegistration
 {
     private static readonly global::Demo.M __Demo_M_56f0a3bf = new();
 

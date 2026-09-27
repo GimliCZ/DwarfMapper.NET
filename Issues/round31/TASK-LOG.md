@@ -315,6 +315,24 @@ coverage/element-wise emitters took two policy bools either side of the compilat
 Golden byte-identical at every step. Remainder (22 parameters, 16 methods) classified as leaf consumers — see the
 checklist row.
 
+## T26 — `Dwarf.Map`, bound at compile time (owner-approved 2026-09-27)
+
+The owner chose compile-time binding over lowering the runtime leg's floor, and named the entry point `Dwarf.Map`.
+The design constraint that decided everything: a bound call must be indistinguishable from a looked-up one. So the
+generator binds only a pair the CALLING assembly registers (and no referenced manifest also provides - load order
+would decide between the two), and the interceptor runs the registration's own expression on the registration's own
+private mapper field. `AggregateEmitter` was split into `PlanAmbientRegistration` + render so both outputs come from
+one plan, and the registration class became `partial` (the only golden change: 1,005 cases, one word each, checked
+against the readable snapshots). `IDwarfMapper` is never bound - an interface call may reach an injected decorator.
+The call-site scan and the interceptor output are their own incremental nodes, because an interceptor location
+carries its file's checksum; the referenced-manifest scan runs only when there is a call to bind.
+
+Verified by delivery path, not only in-process: `DwarfMapInterceptionTests` (the interceptor compiles, uses the
+registered field, skips the six cases it must, with a control row), `DwarfStaticMapTests` (bound vs registry path,
+including null `ParamName`s and the static-type rule), a package reference (FusedChat copy: interceptor emitted with
+nothing set in the consumer, all tests green), and NativeAOT (`DwarfMapper.AotSample`, bound vs looked-up). Owed: the
+runtime and pipeline Stryker legs, on a quiet machine.
+
 ## T28 / T29 — subagents · `a9c91c1`, `f36991f`
 
 T28: 41 assertion sites normalized, 19 left deliberately (they pin a helper family's NAME, e.g. Disp/Obj/Depth routing,

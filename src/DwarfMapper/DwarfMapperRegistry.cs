@@ -247,7 +247,7 @@ namespace DwarfMapper
         }
 
         /// <summary>Tries to get the map delegate for the exact pair (no base-type walk).</summary>
-        public static bool TryGet(Type source, Type destination, out Func<object, object>? map)
+        public static bool TryGet(Type source, Type destination, [NotNullWhen(true)] out Func<object, object>? map)
         {
             return Maps.TryGet(new Key(source, destination), out map);
         }
@@ -370,15 +370,6 @@ namespace DwarfMapper
         }
 
         /// <summary>
-        ///     Tries to get the update-into delegate for the exact pair. Internal: see the asymmetry note below for
-        ///     why this is not public surface.
-        /// </summary>
-        internal static bool TryGetUpdate(Type source, Type destination, out Action<object, object>? map)
-        {
-            return UpdateMaps.TryGet(new Key(source, destination), out map);
-        }
-
-        /// <summary>
         ///     True if more than one update-into map was registered for the exact pair. Mirrors
         ///     <see cref="IsAmbiguous" /> on the create table: a duplicate is first-wins and MARKED, and the two
         ///     tables are marked independently, so neither accessor reports the other's duplicates.
@@ -395,11 +386,10 @@ namespace DwarfMapper
         //   * No `UpdateProvided` enumeration. `Provided` exists to feed validation, and validation asks only
         //     whether a create map is reachable — the emitted `DwarfMap.Validate()` calls `IsProvided`, never
         //     `Provided` — so an update-table enumerator would be surface added for no caller.
-        //   * No PUBLIC `TryGetUpdate`. `TryGet` hands out the create delegate for callers that want to invoke
-        //     it themselves; the update delegate is only ever meaningful applied to a destination the caller
-        //     already holds, which is exactly what `Update` does. Round 31 added an INTERNAL one, whose sole
-        //     caller is `ExactUpdateSlot` on behalf of the facade's update overload - i.e. a caller that does
-        //     hold the destination. The ruling was about surface, and the surface is unchanged.
+        //   * No `TryGetUpdate`. `TryGet` hands out the create delegate for callers that want to invoke it
+        //     themselves; the update delegate is only ever meaningful applied to a destination the caller already
+        //     holds, which is exactly what `Update` does. (Round 31 T12 had an internal one for the facade's cache
+        //     slot; T26 deleted the slot, and it went with it.)
         //   * No base/interface walk in `Update` — see its remarks below. That one is a SAFETY property, not an
         //     omission, so mirroring the create table here would be a regression.
         //

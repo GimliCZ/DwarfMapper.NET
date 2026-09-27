@@ -6,7 +6,7 @@
     "additional-timeout": 120000,
     "mutate": [
       "**/DwarfMapperRegistry.cs",
-    "**/ExactPairSlot.cs",
+      "**/Dwarf.cs",
     "**/DwarfCollectionMap.cs",
       "**/IDwarfMapper.cs",
       "**/MapConfig.cs",

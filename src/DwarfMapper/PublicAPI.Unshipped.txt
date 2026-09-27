@@ -1,4 +1,5 @@
 #nullable enable
+DwarfMapper.Dwarf
 DwarfMapper.DwarfCollectionMap
 DwarfMapper.MapDenseEnumKeysAttribute
 DwarfMapper.MapDenseEnumKeysAttribute.MapDenseEnumKeysAttribute(string! member) -> void
@@ -8,6 +9,8 @@ DwarfMapper.MapDenseEnumKeysAttribute.Offset.set -> void
 DwarfMapper.MapShareAttribute
 DwarfMapper.MapShareAttribute.MapShareAttribute(string! member) -> void
 DwarfMapper.MapShareAttribute.Member.get -> string!
+static DwarfMapper.Dwarf.Map<TSource, TDestination>(TSource source) -> TDestination
+static DwarfMapper.Dwarf.Map<TSource, TDestination>(TSource source, TDestination destination) -> void
 static DwarfMapper.DwarfCollectionMap.ToArray<TSource, TDestination>(object! source, System.Func<TSource, TDestination>! map) -> TDestination[]!
 static DwarfMapper.DwarfCollectionMap.ToList<TSource, TDestination>(object! source, System.Func<TSource, TDestination>! map) -> System.Collections.Generic.List<TDestination>!
 static DwarfMapper.DwarfMapperRegistry.RegisterMany(System.ReadOnlySpan<(System.Type! Source, System.Type! Destination, System.Func<object!, object!>! Map)> maps) -> void

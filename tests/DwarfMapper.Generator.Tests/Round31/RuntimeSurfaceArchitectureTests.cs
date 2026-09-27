@@ -52,7 +52,6 @@ namespace DwarfMapper.Generator.Tests.Round31
         [
             "DwarfMapperRegistry.Map(",
             "DwarfMapperRegistry.TryGet(",
-            "DwarfMapperRegistry.TryGetUpdate(",
             "DwarfMapperRegistry.Update("
         ];
 
@@ -138,11 +137,13 @@ namespace DwarfMapper.Generator.Tests.Round31
         private static readonly Dictionary<string, string> DeclaredResolvers = new(System.StringComparer.Ordinal)
         {
             ["DwarfMapperFacade.Map"] =
-                "The ambient entry point, all three overloads. The one-type overload is irreducibly runtime "
-                + "(its source type arrives with the instance); the two-type overloads resolve the exact declared "
-                + "pair and fall back to it.",
-            ["ExactPairSlot.Get"] = "Caches the exact-pair answer for a closed generic pair; see its remarks.",
-            ["ExactUpdateSlot.Get"] = "The same for the update-into direction."
+                "The ambient entry point's one-type overload: irreducibly runtime, its source type arrives with the "
+                + "instance. The two-type overloads forward to Dwarf.Map.",
+            ["Dwarf.Map"] =
+                "The run-time body of the statically-bound entry point: it runs only where the generator could NOT bind "
+                + "the call (a pair from another assembly, a type-parameter call site), and resolves the exact declared "
+                + "pair first. Round 31 T26 replaced the ExactPairSlot/ExactUpdateSlot caches with that compile-time "
+                + "binding."
         };
 
         [Fact]
@@ -189,10 +190,9 @@ namespace DwarfMapper.Generator.Tests.Round31
             // a static READONLY table of per-destination buckets (the exact table Maps' shape), so it is no longer a
             // reassignable static and this scan, which pins reassignable statics, correctly no longer finds it. The
             // growth now happens in InterfaceBucket.Entries, an instance field, published under the registry gate.
-            ["ExactPairSlot._map"] =
-                "The resolved delegate for one closed generic pair. No version counter: registration is add-only "
-                + "and first-wins, so a found delegate is immutable for the process, and a MISS is not cached.",
-            ["ExactUpdateSlot._map"] = "The same for the update-into direction."
+            // ExactPairSlot._map and ExactUpdateSlot._map were declared here until round 31 T26: the facade's cache
+            // slots were deleted when Dwarf.Map calls started being bound at compile time, and the runtime has no
+            // reassignable static left.
         };
 
         [Fact]
@@ -325,6 +325,15 @@ namespace DwarfMapper.Generator.Tests.Round31
             "DwarfMapperRegistry", "DwarfMapperFacade", "IDwarfMapper"
         ];
 
+        private static readonly string[] CompileTimeBoundTypes =
+        [
+            // Round 31 T26, the fifth class: a call the generator can decide is bound to the generated mapper at
+            // compile time and never reaches the method body; the body is the runtime fallback for the calls it
+            // cannot decide. Static on purpose - binding a call through IDwarfMapper would bypass an injected
+            // implementation, and a static call has no receiver to bypass.
+            "Dwarf"
+        ];
+
         private static readonly string[] GeneratedCodeSupportTypes =
         [
             // Called BY generated code, with every type already decided by the generator. They may test a type only
@@ -364,6 +373,7 @@ namespace DwarfMapper.Generator.Tests.Round31
             foreach (var (bucket, names) in new (string Bucket, string[] Names)[]
                      {
                          ("runtime-resolution", RuntimeResolutionTypes),
+                         ("compile-time bound, runtime fallback", CompileTimeBoundTypes),
                          ("generated-code support", GeneratedCodeSupportTypes),
                          ("diagnostic", DiagnosticTypes),
                          ("compile-time directive", CompileTimeDirectiveTypes)
@@ -391,6 +401,7 @@ namespace DwarfMapper.Generator.Tests.Round31
 
             // The pin that matters: the set allowed to resolve at run time does not grow quietly.
             Assert.Equal(3, RuntimeResolutionTypes.Length);
+            Assert.Single(CompileTimeBoundTypes);
         }
 
         [Fact]
@@ -410,7 +421,7 @@ namespace DwarfMapper.Generator.Tests.Round31
                     var owner = invocation.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text
                                 ?? Path.GetFileNameWithoutExtension(file);
                     var allowed = RuntimeResolutionTypes.Contains(owner, System.StringComparer.Ordinal)
-                                  || owner.StartsWith("Exact", System.StringComparison.Ordinal);
+                                  || CompileTimeBoundTypes.Contains(owner, System.StringComparer.Ordinal);
                     if (!allowed)
                     {
                         offenders.Add(owner + " (" + file + ")");

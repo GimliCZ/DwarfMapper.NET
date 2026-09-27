@@ -96,6 +96,23 @@ ceiling is recomputed then, in that commit, as the rule below requires. Three su
 rows have their `lineCurrent` refreshed (28 → 320, 274 → 325, 52 → 409) because the same change added the
 partial-declaration, `Size`, `[InlineArray]` and fixed-buffer comparisons above them.
 
+## 2026-09-27 — round 31 T26 deletes the cache instead of adjudicating it (no rows added)
+
+The 2026-09-27 runtime run (`StrykerOutput/2026-09-27.11-54-09`, 90.45 %) left thirteen undetected mutants that
+no honest test reaches. Nine were `ExactPairSlot`/`ExactUpdateSlot` cache machinery: skip the cache, or skip
+storing into it, and the same answer is re-resolved. They were **not** added here as proven rows. The owner
+ruling was to remove the source rather than adjudicate it, as round 30 did with `Key` (`e01ff23`):
+`Dwarf.Map` calls whose pair the calling assembly registers are now bound to the generated mapper at compile
+time, and `ExactPairSlot.cs` is deleted along with the internal `TryGetUpdate` only it called. The facade's
+two-type overloads forward to `Dwarf.Map`'s run-time body, which tests `TryGet(...)` alone:
+`DwarfMapperRegistry.TryGet` now declares `[NotNullWhen(true)]` on its delegate, so the `&& map is not null`
+half that the retired 2026-09-26 row adjudicated is not written at all, and that mutant cannot come back.
+
+What is left undetected is the two depth-clamp rows below and the two `ThrowIfNull(source)` guards in
+`DwarfCollectionMap`, whose contract `5585dc8` pins. `scoreable`, the ceiling and `break` move only with the
+next authoritative `-MutationLeg runtime` run, per the rule below. That run is owed: the leg has not been
+measured since T26 landed.
+
 ## Rows retired on 2026-09-26 — the facade's TryGet guard became a real branch
 
 One runtime row — `DwarfMapperFacade.Map<TSource, TDestination>(TSource) (TryGet fast-path guard)` (proven, 1)

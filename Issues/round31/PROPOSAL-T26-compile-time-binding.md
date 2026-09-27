@@ -1,6 +1,10 @@
 # T26 — binding the ambient call site at compile time (and why interceptors are not a straight answer)
 
-Status: **proposal, not a plan.** One load-bearing question is unverified and named below; the recommendation
+Status: **built, 2026-09-27** (owner-approved; the entry point is `Dwarf.Map`, because `DwarfMap` is already the
+generated validation-root type). The unverified question below was answered empirically, and the answers are in
+`ROUND31-CHECKLIST.md`'s T26 row. The text below is the proposal as written, kept for its reasoning.
+
+Original status: **proposal, not a plan.** One load-bearing question is unverified and named below; the recommendation
 depends on it.
 
 ## The problem, stated without the solution in it

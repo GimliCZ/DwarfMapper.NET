@@ -34,6 +34,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
                                                  public class Src3 { public int Id { get; set; } }
                                                  [GenerateMap<Src3, Dst3>] public sealed class Dst3 { public int Id { get; set; } }
+                                                 public static class Calls { public static B Use(A a) => Dwarf.Map<A, B>(a); }
                                                  """;
 
         [Fact]

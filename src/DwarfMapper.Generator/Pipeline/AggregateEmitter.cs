@@ -193,8 +193,13 @@ namespace DwarfMapper.Generator.Pipeline
         ///     no parameterless constructor (reported as DWARF062 — they cannot self-register without DI), and the
         ///     DWARF111 message for every provider dropped because this assembly already registers its pair.
         /// </summary>
-        public static (string? Source, IReadOnlyList<string> Unregisterable, IReadOnlyList<string> Shadowed) EmitAmbientRegistration(
-            IReadOnlyList<MapperClassModel> models)
+        /// <summary>
+        ///     What the ambient registration of <paramref name="models" /> registers, decided once: the
+        ///     registration source (<see cref="EmitAmbientRegistration" />) and the compile-time bindings of
+        ///     <c>Dwarf.Map</c> call sites (<see cref="InterceptTargets" />) are both rendered from it, so a bound call
+        ///     can never name a pair, a mapper instance or an expression the registration does not.
+        /// </summary>
+        private static AmbientRegistrationPlan PlanAmbientRegistration(IReadOnlyList<MapperClassModel> models)
         {
             var regs = new List<(string Source, string Dest, string Field, string Method, bool MayReturnNull)>();
             var updateRegs = new List<(string Source, string Dest, string Field, string Method)>();
@@ -345,6 +350,110 @@ namespace DwarfMapper.Generator.Pipeline
                 }
             }
 
+            return new AmbientRegistrationPlan(regs, updateRegs, handWrittenRegs, collectionRegs, fields, unregisterable,
+                shadowed);
+        }
+
+        /// <summary>The registrations <see cref="PlanAmbientRegistration" /> decided on, in emission order.</summary>
+        private sealed class AmbientRegistrationPlan(
+            List<(string Source, string Dest, string Field, string Method, bool MayReturnNull)> regs,
+            List<(string Source, string Dest, string Field, string Method)> updateRegs,
+            List<(string Source, string Dest, string Invoker, string Method)> handWrittenRegs,
+            List<(string Source, string Dest, string Field, string Method, bool AsArray, bool MayReturnNull)> collectionRegs,
+            SortedSet<string> fields,
+            List<string> unregisterable,
+            List<string> shadowed)
+        {
+            public List<(string Source, string Dest, string Field, string Method, bool MayReturnNull)> Regs { get; } = regs;
+
+            public List<(string Source, string Dest, string Field, string Method)> UpdateRegs { get; } = updateRegs;
+
+            public List<(string Source, string Dest, string Invoker, string Method)> HandWrittenRegs { get; } =
+                handWrittenRegs;
+
+            public List<(string Source, string Dest, string Field, string Method, bool AsArray, bool MayReturnNull)>
+                CollectionRegs { get; } = collectionRegs;
+
+            public SortedSet<string> Fields { get; } = fields;
+
+            public List<string> Unregisterable { get; } = unregisterable;
+
+            public List<string> Shadowed { get; } = shadowed;
+        }
+
+        /// <summary>
+        ///     Every pair the ambient registration of <paramref name="models" /> registers, with the expression the
+        ///     registration runs for it written over the parameters <c>source</c> (and <c>destination</c> for an
+        ///     update-into map). A <c>Dwarf.Map</c> call for one of these pairs is bound at compile time to exactly
+        ///     that expression, on the same mapper instance - which is why a bound call and a looked-up one cannot
+        ///     differ. Round 31 T26.
+        /// </summary>
+        public static IReadOnlyList<InterceptTarget> InterceptTargets(IReadOnlyList<MapperClassModel> models)
+        {
+            var plan = PlanAmbientRegistration(models);
+            var targets = new List<InterceptTarget>();
+            foreach (var r in plan.Regs)
+                targets.Add(new InterceptTarget(r.Source, r.Dest, false,
+                    GeneratedCreateCall(r.Field, r.Method, r.Source, r.Dest, r.MayReturnNull, "source")));
+
+            foreach (var r in plan.CollectionRegs)
+                targets.Add(new InterceptTarget(CollectionSourceOf(r.Source), r.Dest, false,
+                    CollectionCreateCall(r, "source")));
+
+            foreach (var r in plan.HandWrittenRegs)
+                targets.Add(new InterceptTarget(r.Source, r.Dest, false,
+                    HandWrittenCreateCall(r.Invoker, r.Method, r.Source, "source")));
+
+            foreach (var r in plan.UpdateRegs)
+                targets.Add(new InterceptTarget(r.Source, r.Dest, true,
+                    UpdateCall(r.Field, r.Method, r.Source, r.Dest, "source", "destination")));
+
+            return targets;
+        }
+
+        /// <summary>The registration expression of a generated create-map over <paramref name="arg" />.</summary>
+        private static string GeneratedCreateCall(string field, string method, string source, string dest,
+            bool mayReturnNull, string arg)
+        {
+            return field + "." + method + "((" + source + ")" + arg + ")" + RegistryNullGuard(source, dest, mayReturnNull);
+        }
+
+        /// <summary>The registration expression of a collection shape over its element map.</summary>
+        private static string CollectionCreateCall(
+            (string Source, string Dest, string Field, string Method, bool AsArray, bool MayReturnNull) r,
+            string arg)
+        {
+            var elem = ElementOf(r.Dest);
+            return "global::DwarfMapper.DwarfCollectionMap." + (r.AsArray ? "ToArray<" : "ToList<") + r.Source + ", " +
+                   elem + ">(" + arg + ", static __e => " + r.Field + "." + r.Method + "(__e)" +
+                   RegistryNullGuard(r.Source, elem, r.MayReturnNull) + ")";
+        }
+
+        /// <summary>The registration expression of a hand-written <c>[ProvidesMap]</c> method.</summary>
+        private static string HandWrittenCreateCall(string invoker, string method, string source, string arg)
+        {
+            return invoker + "." + method + "((" + source + ")" + arg + ")";
+        }
+
+        /// <summary>The registration expression of an update-into map.</summary>
+        private static string UpdateCall(string field, string method, string source, string dest, string sourceArg,
+            string destinationArg)
+        {
+            return field + "." + method + "((" + source + ")" + sourceArg + ", (" + dest + ")" + destinationArg + ")";
+        }
+
+        public static (string? Source, IReadOnlyList<string> Unregisterable, IReadOnlyList<string> Shadowed) EmitAmbientRegistration(
+            IReadOnlyList<MapperClassModel> models)
+        {
+            var plan = PlanAmbientRegistration(models);
+            var regs = plan.Regs;
+            var updateRegs = plan.UpdateRegs;
+            var handWrittenRegs = plan.HandWrittenRegs;
+            var collectionRegs = plan.CollectionRegs;
+            var fields = plan.Fields;
+            var unregisterable = plan.Unregisterable;
+            var shadowed = plan.Shadowed;
+
             if (regs.Count == 0 && updateRegs.Count == 0 && handWrittenRegs.Count == 0)
             {
                 return (null, unregisterable, shadowed);
@@ -377,7 +486,9 @@ namespace DwarfMapper.Generator.Pipeline
             sb.AppendLine(
                 "/// <c>DwarfMapperRegistry</c> at module load (zero reflection, AOT-safe), so any assembly can resolve");
             sb.AppendLine("/// them through <c>IDwarfMapper</c> without referencing this one.</summary>");
-            sb.AppendLine("internal static class __DwarfMapperAmbientRegistration");
+            // Partial: a Dwarf.Map call site bound at compile time is emitted into this class (round 31 T26), so it
+            // reaches the SAME private mapper instances the registrations below use.
+            sb.AppendLine("internal static partial class __DwarfMapperAmbientRegistration");
             sb.AppendLine("{");
             foreach (var field in fields)
                 sb.Append("    private static readonly ").Append(field).Append(' ')
@@ -407,13 +518,12 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var r in regs)
                 sb.Append("            (typeof(")
                     .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
-                    .Append(r.Field).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s)")
                     // The registry's delegate type is the SHIPPED Func<object, object>, so a map the user declared
                     // to return a nullable reference cannot satisfy it. Coalescing to a loud exception keeps the
                     // registration (dropping it would silently delete a working consumer's ambient map) and names
                     // the pair at the point of violation, instead of handing a null to a non-nullable delegate and
                     // letting it surface as an NRE somewhere downstream. Round 29 task 2.8.
-                    .Append(RegistryNullGuard(r.Source, r.Dest, r.MayReturnNull)).Append("),")
+                    .Append(GeneratedCreateCall(r.Field, r.Method, r.Source, r.Dest, r.MayReturnNull, "__s")).Append("),")
                     .Append('\n');
 
             if (collectionRegs.Count > 0)
@@ -429,7 +539,6 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var r in collectionRegs)
             {
                 var src = CollectionSourceOf(r.Source);
-                var elem = ElementOf(r.Dest);
 
                 // The element-by-element walk lives in the RUNTIME (DwarfCollectionMap), not here. These
                 // registrations are keyed on IEnumerable<S>, so a source arrives as an interface and the walk used to
@@ -438,10 +547,9 @@ namespace DwarfMapper.Generator.Pipeline
                 // registration was measured at 70 % growth of the golden snapshot corpus (six registrations per pair,
                 // ~20 lines each); one generic helper gives the same specialised machine code for one emitted line.
                 sb.Append("            (typeof(").Append(src)
-                    .Append("), typeof(").Append(r.Dest).Append("), static __s => global::DwarfMapper.DwarfCollectionMap.")
-                    .Append(r.AsArray ? "ToArray<" : "ToList<").Append(r.Source).Append(", ").Append(elem)
-                    .Append(">(__s, static __e => ").Append(r.Field).Append('.').Append(r.Method).Append("(__e)")
-                    .Append(RegistryNullGuard(r.Source, elem, r.MayReturnNull)).Append(")),").Append('\n');
+                    .Append("), typeof(").Append(r.Dest).Append("), static __s => ")
+                    .Append(CollectionCreateCall(r, "__s"))
+                    .Append("),").Append('\n');
             }
 
             if (handWrittenRegs.Count > 0)
@@ -455,7 +563,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var r in handWrittenRegs)
                 sb.Append("            (typeof(")
                     .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
-                    .Append(r.Invoker).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s)),")
+                    .Append(HandWrittenCreateCall(r.Invoker, r.Method, r.Source, "__s")).Append("),")
                     .Append('\n');
 
             if (createRegistrations > 0)
@@ -473,9 +581,8 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var r in updateRegs)
                 sb.Append("        global::DwarfMapper.DwarfMapperRegistry.RegisterUpdate(typeof(")
                     .Append(r.Source).Append("), typeof(").Append(r.Dest)
-                    .Append("), static (__s, __d) => ").Append(r.Field).Append('.').Append(r.Method)
-                    .Append("((").Append(r.Source).Append(")__s, (").Append(r.Dest).Append(")__d));")
-                    .Append('\n');
+                    .Append("), static (__s, __d) => ").Append(UpdateCall(r.Field, r.Method, r.Source, r.Dest, "__s", "__d"))
+                    .Append(");").Append('\n');
 
             sb.AppendLine("    }");
             sb.AppendLine("}");
