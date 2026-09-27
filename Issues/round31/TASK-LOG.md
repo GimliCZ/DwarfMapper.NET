@@ -195,6 +195,60 @@ C# interceptors are **unsound** for an interface-typed receiver (they would sile
 entry point is the shape that could be intercepted safely; and whether `InterceptsLocation` is usable on
 `net10.0` without a preview gate is **unverified**, named with three concrete checks.
 
+## T23 — nullability attributes · `30ac793`
+
+**A6 confirmed, and worse than the research predicted.** The probe's two rows (`[MaybeNull] string` source into
+`string`; `string?` into `[DisallowNull] string?`) reported nothing, AND the compiler raised CS8601 inside the
+`.g.cs`, where the consumer cannot suppress it. A control row (`string?` into `string`) proved the harness would
+have seen DWARF070. Fixed at the one funnel every resolver reads members through (`MemberFacts.Readable/Writable`),
+so flatten leaves, dotted paths and interface members are covered too. **Deviation:** `[NotNull]`/`[AllowNull]` are
+deliberately NOT read — both make a member less nullable, so reading them would turn existing reports into silence,
+which invariant 1 forbids as a side effect. Pinned in docs and two NegativeCases rows.
+
+## T10 — projection trees hoisted · `d23184d`
+
+**The earlier session's STOP was wrong.** It recorded "the lambda is written across many `sb` sites"; re-read, the
+lambda is written in one ~50-line block with no helper receiving `sb`. It is now `AppendProjectionLambdaBody`.
+**Deviation:** no inline fallback for methods with extra parameters — a projection is only claimed when it has
+exactly one parameter, so that branch would be unreachable, and the full-coverage ruling removes unreachable
+branches. Field names use the RAW method name (an `@` mid-identifier would not compile) plus the method ordinal.
+Nine `tests/*/bin` trees carried stale `DwarfMapper.dll.stryker-unchanged` markers, which blocked the golden write-back;
+cleared and rebuilt, and the whole default lane re-run green on clean assemblies.
+
+## T13 — in-memory projection route · `761a69a`
+
+Done as specified: the delegate is compiled from the same lambda text as the tree (not a call into `Map`).
+**Deviation:** the enum parity row maps one enum to itself, because enum-to-enum conversion in a projection is a
+deliberate refusal (the method is not generated), so a cross-enum row would test the refusal, not the route.
+`ProjectionNullGuardTests.ProjectionTrees` now uses `TreeOnlyQueryable`, since a list-backed queryable no longer
+carries a tree.
+
+## T16 — `{Method}Expression` · `e76a231`
+
+Opus decisions the task left open: name `{Method}Expression`; accessibility = the method's (a public property over an
+internal source type would be CS0053); **DWARF112 at Info, not Warning** — the property is a new convenience, and a
+mapper that already owns the name, or overloads a projection, must not start failing a warnings-as-errors build.
+Collision cases: a member of that name on the mapper or any base, or two projections of one name. The EF/SQLite
+composition rows wait on T17's rig.
+
+## T11 — `RegisterMany` · `ac93420`
+
+**Two spec steps were moot on the current tree.** "Bump `_version` after the write": `_version` was deleted by T12's
+second pass. "Apply ambiguity logic against `_interfaceMaps` plus the batch's accepted entries": `Maps.TryRegister`
+already decides first-wins and ambiguity per entry and returns false for a duplicate, so a duplicate — in one batch
+or across two — never reaches the interface list. `RegisterMany` publishes that list in a `finally`, so a throw
+mid-batch leaves exactly the sequential state. A loop over `Register` allocated 280 MB for 3,000 entries; the batch
+stays under 1 MB (the cost-contract scan now names that row as `RegisterMany`'s contract). The OPUS-REVIEW of the
+1,004 changed golden cases was done mechanically over the 14 changed snapshots: each old snapshot, rewritten by
+rule, equals the new one exactly.
+
+## T08 / T27 — owner rulings, 2026-09-27
+
+**T08:** extend the three bundles `ae9c7ea` established (and finish R27-02's `MapperOptions` migration) rather than
+build one `ExtractionContext`; `ae9c7ea` stands. **T27:** keep generation suppression; no throwing stubs, and the
+"refusal ⇒ genLen 0" invariant stands. Workflow changes (T19 CI lane, T20, T21, T22) are committed on `feat/round31`
+for a workflow-scoped push by the owner.
+
 ## Owner rulings this round, recorded because they outlive the tasks
 
 1. **What the compiler decided, the runtime does not re-decide.** Get rid of lookups and caches; resolve at
