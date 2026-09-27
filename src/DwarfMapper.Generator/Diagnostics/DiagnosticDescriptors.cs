@@ -2214,5 +2214,19 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Error,
             true,
             helpLinkUri: HelpBase + "dwarf113");
+
+        /// <summary>
+        ///     <c>DWARF114</c> (Error) — a <c>[MapDerivedType]</c> dispatch over a C# 15 <c>closed</c> source type leaves a
+        ///     direct descendant without an arm. See <c>MapperExtractor.ReportMissingClosedHierarchyArms</c> for the
+        ///     coverage rule and the one case detection does not reach yet. Args: {0} = the whole message.
+        /// </summary>
+        public static readonly DiagnosticDescriptor ClosedHierarchyArmMissing = new(
+            "DWARF114",
+            "A closed hierarchy has a direct descendant with no [MapDerivedType] arm",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf114");
     }
 }

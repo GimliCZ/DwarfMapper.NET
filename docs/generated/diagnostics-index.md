@@ -116,5 +116,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF111` | Warning | [ProvidesMap] method is not registered because its pair is already provided |
 | `DWARF112` | Info | Projection expression property was not generated |
 | `DWARF113` | Error | Union types are not mapped yet |
+| `DWARF114` | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm |
 
-108 diagnostics.
+109 diagnostics.

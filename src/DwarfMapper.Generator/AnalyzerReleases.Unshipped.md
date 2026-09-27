@@ -118,6 +118,7 @@ DWARF110 | DwarfMapper | Info | Mapper nested out of reach is left out of the ge
 DWARF111 | DwarfMapper | Warning | [ProvidesMap] method is not registered because its pair is already provided
 DWARF112 | DwarfMapper | Info | Projection expression property was not generated
 DWARF113 | DwarfMapper | Error | Union types are not mapped yet
+DWARF114 | DwarfMapper | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

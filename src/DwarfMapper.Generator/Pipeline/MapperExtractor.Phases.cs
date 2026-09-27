@@ -1548,6 +1548,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // one runtime type, so at most one arm can match at runtime.
                 DetectAmbiguousInterfaceArms(sortedArms, ctx.SemanticModel.Compilation, methodLocation, acc.Diagnostics);
 
+                // DWARF114: over a C# 15 closed source type, the arm set can be checked for completeness.
+                ReportMissingClosedHierarchyArms(sourceType,
+                    rawDerivedPairs.Select(p => p.Item1).ToList(),
+                    method.Name,
+                    methodLocation,
+                    acc.Diagnostics);
+
                 var armModels = sortedArms
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),

@@ -2565,6 +2565,22 @@ explicit converter.
 **Fix:** convert it yourself — `[MapProperty(nameof(Src.Pet), nameof(Dst.Pet), Use = nameof(ToDto))]` with a
 `PetDto ToDto(Pet p)` that switches over the cases — or keep the same union type on both sides.
 
+## dwarf114
+**A closed hierarchy has a direct descendant with no [MapDerivedType] arm** · Error
+
+A C# 15 `closed` class can only be derived from inside its own assembly, so its direct descendants are a known,
+complete set. When a `[MapDerivedType]` dispatch maps a closed source type, DwarfMapper checks that every direct
+descendant has an arm — its own, or one for an ancestor below the base (an arm matches every subtype of its
+source), or, for a descendant that is itself `closed`, arms covering all of *its* direct descendants. A missing
+one used to reach the dispatch's run-time fallback and throw for that instance; now it is a build error naming it.
+
+The check reads the `IsClosedTypeAttribute` the C# 15 compiler writes on every closed class, so it applies to closed
+hierarchies from **referenced assemblies** (a domain model in its own project). A closed class declared in the same
+project as the mapper is not checked yet: the compiler does not expose that attribute on source declarations, and
+the API that reports `closed` needs a newer Roslyn than DwarfMapper's floor.
+
+**Fix:** add a `[MapDerivedType<Derived, DerivedDto>]` arm for each descendant the message names.
+
 ---
 
 ## Runtime exceptions

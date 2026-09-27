@@ -64,6 +64,13 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF114` (Error): a `[MapDerivedType]` dispatch over a C# 15 `closed` type must cover every direct
+  descendant.** A closed class's direct descendants are a complete set, so a missing arm — which used to throw at
+  run time for that instance — is now a build error naming it. Coverage counts an arm for the descendant or an
+  ancestor, and descends into a descendant that is itself closed. Read from the `IsClosedTypeAttribute` the C# 15
+  compiler emits, which works on the current Roslyn floor for closed hierarchies in referenced assemblies; one
+  declared in the mapper's own project is not checked yet (it needs a newer Roslyn). Arms are not inferred.
+  (Round 31 T25, research C2.)
 - **`DWARF113` (Error): C# 15 union types are refused until DwarfMapper has a policy for them.** .NET 11 ships
   unions on 2026-11-10. Without this, a union was mapped as an ordinary struct — into `object` it boxed the union
   wrapper instead of its case value, silently, and into another union it was refused as `DWARF025` "ambiguous
