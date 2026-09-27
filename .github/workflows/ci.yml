@@ -1001,12 +1001,31 @@ jobs:
                  "Check whether the 11.0 preview channel still publishes, or bump dotnet-version." >&2
             exit 1
           fi
-      # Locked-mode note, inherited from roslyn-forward-compat verbatim in spirit: this leg runs an
-      # UNPINNED, newer-MAJOR SDK, whose package-prune data can change the resolved graph. If it reds with
-      # NU1004 while build-test stays green, that IS the diagnosis — SDK-driven graph drift, not a
-      # lock-file defect — and it is information this leg exists to surface, not noise to exempt.
+      # Round 31 T22: aligned with roslyn-forward-compat, which learned this first. The earlier note here
+      # predicted this leg would red with NU1004 (an unpinned SDK resolves the implicit AOT/trim packages at its
+      # own patch, not the lock file's) and on every analyzer rule the next major adds (TreatWarningsAsErrors
+      # with AnalysisLevel=latest-all) — and called both "information". They are, but they arrive as a failed
+      # RESTORE or BUILD, so the leg never reached the one question it exists to ask: does the generator load
+      # and emit under the next major? roslyn-forward-compat hit exactly that and was dead for weeks
+      # (Issues/round26/FINDING-forward-compat-lockmode.md). So, for THIS leg only: locked mode off, warnings
+      # not errors, and the new diagnostics REPORTED in the next step, counted per id — the forward-compat
+      # signal, delivered as a signal instead of as a wall. Every pinned job keeps both switches on.
       - name: Build the whole solution on the preview SDK
-        run: dotnet build DwarfMapper.NET.sln -c Release
+        run: |
+          set -euo pipefail
+          dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false -p:TreatWarningsAsErrors=false -v n 2>&1 | tee preview-build.log
+
+      - name: Report what the preview SDK newly objects to
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          echo "SDK under test: $(dotnet --version)"
+          if grep -oE 'warning [A-Z]+[0-9]+' preview-build.log | sort | uniq -c | sort -rn > preview-warnings.txt && [ -s preview-warnings.txt ]; then
+            echo "::notice::the preview SDK produces $(wc -l < preview-warnings.txt) distinct diagnostic(s) the pinned SDK does not"
+            cat preview-warnings.txt
+          else
+            echo "no new diagnostics: the preview compiler agrees with the pinned one"
+          fi
       # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
       # still LOADS and EMITS under the next major, and the matrix has its own job.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
