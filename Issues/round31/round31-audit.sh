@@ -122,7 +122,7 @@ tests)
   for proj in tests/DwarfMapper.Generator.Tests tests/DwarfMapper.IntegrationTests; do
     [ -d "$proj/Round31" ] || { echo "$proj: no Round31 tests yet"; continue; }
     echo "== $proj =="
-    dotnet test "$proj" -c Release --no-build --nologo --filter "FullyQualifiedName~.Round31." 2>&1 | grep -E "Passed!|Failed!|\[FAIL\]"
+    dotnet test "$proj" -c Release --no-build --nologo --filter "FullyQualifiedName~.Round31." 2>&1 | grep -E "Passed!|Failed!|Úspěšné!|Neúspěšné!|\[FAIL\]"
   done ;;
 
 *) echo "usage: $0 baseline|static|tests"; exit 2 ;;

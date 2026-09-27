@@ -15,6 +15,12 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Ambient collection shapes are pre-sized, and `Map<TSource, TDestination>` skips the dictionary on a hit.** The six
+  collection shapes every mapped pair registers now fill through one runtime helper that pre-sizes from the source's
+  count (research P1: 1.07-1.95x, and 17-29 % less allocation on the array target), reading a `List<T>` source with a
+  version-checked walk so a hook that mutates the list still fails loudly. The facade's two-type overload caches the
+  exact registered delegate per closed generic pair — only a FOUND delegate, so a pair registered later is still picked
+  up — for 1.25-1.8x on the ambient path. (Round 31 T09, T12.)
 - **Ambient collection dispatch no longer slows down as an application adds maps.** A collection handed to
   `IDwarfMapper.Map<TDestination>(object)` (or `DwarfMapperRegistry.Map`) never hits an exact key, and the interface
   lookup tested every interface-keyed entry in the process — six per mapped pair. Measured on the shipped registry:
@@ -64,6 +70,11 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **The CVE-2026-32933 guarantee is a pinned claim.** AutoMapper 14's unpatched uncontrolled recursion kills the process
+  at ~30,000 nesting levels. DwarfMapper's default `MaxDepth` (64) ends the same graphs in a catchable
+  `DwarfMappingDepthException`, now pinned at the advisory's own depth for self-referential, list- and dictionary-routed
+  recursion in both reference modes, and recorded in `SECURITY.md`'s claim register. `docs/MIGRATION.md` gained a
+  "where DwarfMapper refuses and AutoMapper did not" section. (Round 31 T03, T30.)
 - **`DWARF115` (Warning): a projection method in a NativeAOT project that references EF Core.** Measured on EF
   Core 10: `mapper.Project(db.Orders)` is not precompiled by `dotnet ef dbcontext optimize --precompile-queries`
   ("Dynamic LINQ queries are not supported"), while `db.Orders.Select(OrderMapper.ProjectExpression)` is — and
@@ -471,6 +482,11 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Projection null guards no longer call a user `operator ==`, and a type with two of them no longer breaks the
+  build.** A nested member's null guard was written `x == null`, which in an expression tree calls a record's (or any
+  type's) `op_Equality` — user code inside every generated projection — and for a type declaring two `==` overloads
+  produced `CS0034` (ambiguous operator) in the generated file, with no DWARF diagnostic. Reference-typed operands are now
+  compared as `(object)x == null`, plain reference equality that EF Core 10 translates to `IS NULL`. (Round 31 T02.)
 - **`[FlattenGraph]` leaves ignored `ImplicitConversions = false`, and dropped their `DWARF038` suggestion.** A leaf
   member of a flattened node was resolved without the mapper's `ImplicitConversions` setting, and a leaf that
   resolved had its diagnostics discarded. So a lossy leaf (`long` → `double`) that a plain map refuses as `DWARF038`
