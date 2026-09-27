@@ -2528,6 +2528,27 @@ order.
 
 **Fix:** remove the `[ProvidesMap]` attribute — or, for two `[ProvidesMap]` methods, all but one.
 
+## dwarf112
+**Projection expression property was not generated** · Info
+
+Every projection method (`IQueryable<D> Project(IQueryable<S> q)`) also exposes the expression tree it applies,
+as a static property named after the method — `ProjectExpression` here — so you can compose it into a query of
+your own — `db.Orders.Where(o => o.Open).OrderBy(o => o.Id).Select(OrderMapper.ProjectExpression)`.
+
+It is the same instance the method uses, built once per process. It is left out, and this is reported, when the
+name is already taken:
+
+- **the mapper or one of its base types declares a member of that name** — emitting it would duplicate or hide
+  that member;
+- **two projections share the method name** (overloads on different source types) — both would claim the one
+  property.
+
+Info, not Warning: the projection itself is generated and works, and a mapper that happened to own the name before
+the property existed must not start failing a warnings-as-errors build.
+
+**Fix:** rename the member, or give the projection a name of its own. To keep things as they are, suppress this in
+`.editorconfig` (`dotnet_diagnostic.DWARF112.severity = none`).
+
 ---
 
 ## Runtime exceptions

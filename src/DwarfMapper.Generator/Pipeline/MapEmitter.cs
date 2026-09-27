@@ -239,6 +239,19 @@ namespace DwarfMapper.Generator.Pipeline
                 // Round 31 T13 (research P5 Case 2): the SAME lambda text compiled as a delegate, for a queryable that
                 // is only a list in disguise. Same text, not a call into Map: projection and map semantics may differ
                 // by design (OptionGaps), and the in-memory answer must be the one the tree would have given.
+                // Round 31 T16 (research P5d): the same tree, exposed, so a consumer can write the EF-native
+                // `db.Orders.Where(...).Select(OrderMapper.ProjectExpression)` and compose freely. Same accessibility as
+                // the method, which already names both element types at that accessibility. Absent under DWARF112.
+                if (method.ProjectionExpressionName is not null)
+                {
+                    sb.Append(indent).Append("/// <summary>The expression tree <c>").Append(method.EmitMethodName)
+                        .AppendLine("</c> applies, for composing into a query of your own. One instance for the process.</summary>");
+                    sb.Append(indent).Append(method.Accessibility).Append(" static global::System.Linq.Expressions.Expression<global::System.Func<")
+                        .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
+                        .Append(">> ").Append(method.ProjectionExpressionName).Append(" => ").Append(projectionField).AppendLine(";");
+                    sb.AppendLine();
+                }
+
                 sb.Append(indent).Append("private static readonly global::System.Func<")
                     .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
                     .Append("> ").Append(ProjectionDelegateField(projectionField)).Append(" = __s => ");

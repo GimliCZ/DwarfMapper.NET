@@ -12,6 +12,9 @@ public partial class M
             Name = __s.Name,
         };
 
+    /// <summary>The expression tree <c>Project</c> applies, for composing into a query of your own. One instance for the process.</summary>
+    public static global::System.Linq.Expressions.Expression<global::System.Func<global::Demo.Person, global::Demo.PersonDto>> ProjectExpression => __dwarf_proj_Project_0;
+
     private static readonly global::System.Func<global::Demo.Person, global::Demo.PersonDto> __dwarf_projfn_Project_0 = __s => new global::Demo.PersonDto
         {
             Age = __s.Age,

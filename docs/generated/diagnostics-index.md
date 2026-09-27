@@ -114,5 +114,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF109` | Error | [AfterMap] by-ref target type does not exactly match this pair's destination |
 | `DWARF110` | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry |
 | `DWARF111` | Warning | [ProvidesMap] method is not registered because its pair is already provided |
+| `DWARF112` | Info | Projection expression property was not generated |
 
-106 diagnostics.
+107 diagnostics.

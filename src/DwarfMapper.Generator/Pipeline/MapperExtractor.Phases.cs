@@ -2388,11 +2388,54 @@ namespace DwarfMapper.Generator.Pipeline
                     ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     ReturnTypeSignature: DeclaredReturnSignature(method),
                     ReturnIsNullableRef: DeclaresNullableRefReturn(method),
-                    ProjectionSourceElementFullName: projSource.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                    ProjectionSourceElementFullName: projSource.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ProjectionExpressionName: ProjectionExpressionNameFor(method, methodLocation, acc.Diagnostics)));
                 return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        ///     The <c>{Method}Expression</c> property name for a projection, or <see langword="null" /> with DWARF112 when
+        ///     it cannot be emitted: two projections of one name would claim the same property (CS0102), and a member of
+        ///     that name on the mapper or a base would be duplicated or hidden (CS0102 / CS0108 in the .g.cs). The RAW
+        ///     method name, as for the tree field: the suffix makes an escaped name like <c>@class</c> a plain identifier.
+        /// </summary>
+        private static string? ProjectionExpressionNameFor(IMethodSymbol method, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+        {
+            var name = method.Name + "Expression";
+            string? reason = null;
+            var projectionsOfThisName = 0;
+            foreach (var m in method.ContainingType.GetMembers(method.Name))
+                if (m is IMethodSymbol candidate && candidate.Parameters.Length == 1 &&
+                    IsQueryable(candidate.ReturnType, out _) && IsQueryable(candidate.Parameters[0].Type, out _))
+                {
+                    projectionsOfThisName++;
+                }
+
+            if (projectionsOfThisName > 1)
+            {
+                reason = $"{projectionsOfThisName.ToString(System.Globalization.CultureInfo.InvariantCulture)} projections are named '{method.Name}', and each would claim it";
+            }
+            else
+            {
+                for (ITypeSymbol? t = method.ContainingType; t is not null && reason is null; t = t.BaseType)
+                    if (!t.GetMembers(name).IsEmpty)
+                    {
+                        reason = $"'{t.Name}' already declares a member of that name";
+                    }
+            }
+
+            if (reason is null)
+            {
+                return name;
+            }
+
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ProjectionExpressionNotExposed,
+                location,
+                $"The expression property '{name}' was not generated for projection '{method.Name}': {reason}. Rename the member or the method to get it"));
+            return null;
         }
 
         // ── Update-into-existing: void/T Map(S src, T dest) ─────────────────────

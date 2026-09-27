@@ -2159,5 +2159,31 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Warning,
             true,
             helpLinkUri: HelpBase + "dwarf111");
+
+        /// <summary>
+        ///     <c>DWARF112</c> (Info) — a projection's <c>{Method}Expression</c> property was not generated, because the
+        ///     name is already taken by a member of the mapper (declared or inherited), or because two projections share
+        ///     the method name and would claim the same property.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 31 T16 (research P5d) exposes each projection's tree as a static
+        ///         <c>Expression&lt;Func&lt;S, D&gt;&gt; {Method}Expression</c>, so a consumer can compose it into a query of
+        ///         their own. The property is a convenience; its absence breaks nothing that worked before. Info rather
+        ///         than Warning for exactly that reason: an existing mapper that happens to declare the name, or
+        ///         overloads a projection, must not fail a warnings-as-errors build because a new convenience could not
+        ///         be added. It is reported at all so that the missing member is explained where the reader looks for
+        ///         it, not discovered as CS0117 at a call site. Args: {0} = the whole message, built by
+        ///         <c>MapperExtractor.ProjectionExpressionNameFor</c>.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ProjectionExpressionNotExposed = new(
+            "DWARF112",
+            "Projection expression property was not generated",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            helpLinkUri: HelpBase + "dwarf112");
     }
 }

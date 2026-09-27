@@ -15,6 +15,11 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Projection methods build their expression tree once, and a list-backed `IQueryable` skips it.** The tree is a
+  static readonly field instead of a new tree per call (research P5a: 15.0 µs / 5,400 B → 1.0 µs / 424 B per call),
+  and an `EnumerableQuery` — `list.AsQueryable()` — is mapped through a delegate compiled from the same lambda text
+  instead of having LINQ compile the tree on every enumeration (P5b: 10 rows 985 µs → 1.3 µs). Results are equal
+  row for row; a real query provider still receives the tree. (Round 31 T10, T13.)
 - **Two sources that used to build now report an error, both because the array/list block copy stopped
   overriding the resolver (see *Fixed*).** Neither is a silent behaviour change — each replaces a silent WRONG
   mapping with a diagnostic that names the fix:
@@ -53,6 +58,14 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF112` (Info) and a `{Method}Expression` property on every projection.** A projection method
+  (`IQueryable<D> Project(IQueryable<S> q)`) now also exposes the tree it applies as a static
+  `Expression<Func<S, D>>` named after the method, so a query can be composed the EF-native way —
+  `db.Orders.Where(…).OrderBy(…).Select(OrderMapper.ProjectExpression)` — instead of handing the whole query to
+  `Project()`. Same instance the method uses, same accessibility as the method. When the name is taken by a member
+  of the mapper or a base type, or two projections share the method name, the property is left out and
+  **`DWARF112`** says why. Info, so a mapper that already owns the name keeps building under warnings-as-errors.
+  **Remedy:** rename the member or the method. (Round 31 T16.)
 - **`DWARF111` (Warning): a `[ProvidesMap]` method that is not registered says so.** When the same
   `(source, destination)` — or a collection shape — is already registered in the assembly by a generated map (see
   *Fixed*) or by an earlier `[ProvidesMap]`, the marked method is left out of the ambient registry. That was
@@ -425,6 +438,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MaybeNull]` and `[DisallowNull]` leaked `CS8601` into generated code, with no `DWARF070`.** Nullability was
+  read from the type's annotation alone, so a `[MaybeNull] string` source mapped into a `string`, or a `string?`
+  into a `[DisallowNull] string?`, reported nothing — while the compiler, which does read those attributes,
+  raised `CS8601` inside the `.g.cs`, where it cannot be suppressed. Both now take the ordinary `DWARF070` path
+  (with its null-forgiving `!`), on members declared in referenced assemblies as well. `[NotNull]` and
+  `[AllowNull]` are not read yet, so nothing that reported before goes quiet. (Round 31 T23, research A6.)
 - **`[MapTo(typeof(Dto<>))]` was refused for the wrong reason.** An open generic target — or `typeof(Outer<>.Dto)`,
   a class nested in an unbound generic type — was refused as `DWARFR09`, "has no public parameterless
   constructor", although `Dto<T>` has one and adding another changed nothing. It now reports **`DWARFR14`**,
