@@ -1,7 +1,7 @@
 # Round 31 — checklist and completion audit
 
 Source: `ROUND31-TASKS.md` (the full steps live there) and `POST-ROUND30-IMPROVEMENT-RESEARCH.md` (the research
-ids in brackets). Audited 2026-09-27 on `feat/round31` @ `82f3203` against the commits, `TASK-LOG.md` and
+ids in brackets). Audited 2026-09-27 on `feat/round31` @ `82f3203`; updated as tasks land against the commits, `TASK-LOG.md` and
 `round31-audit.sh static` (run with `python3` shimmed to `python` and `PYTHONUTF8=1`). Round-31 tests were **not**
 re-run for this audit.
 
@@ -22,15 +22,16 @@ decision or access first.
 
 ## Tier 2 — structural and performance
 
-- [ ] **T08** ExtractionContext [B1] — **BLOCKED:** conflicts with the three-bundle ruling in `ae9c7ea`, so the owner has to decide. Audit: 40 methods with more than 6 parameters.
+- [ ] **T08** ExtractionContext [B1] — **owner ruling 2026-09-27:** extend the existing bundles (+ finish MapperOptions / R27-02); `ae9c7ea` stands. Audit: 40 methods with more than 6 parameters.
 - [~] **T09** Registry collection pre-size [P1] — `0af2f2e` + `4a6821f`. **Deviation:** one runtime helper `DwarfCollectionMap` instead of inline emission, because inlining grew the golden corpus by 70 %. The `CollectionsMarshal.AsSpan` fast path was removed again because it read stale data when a hook mutated the list. *The audit's TODO here is stale: it greps for the inline shape that was rejected.*
-- [ ] **T10** Hoist projection trees [P5a] — **STOP fired:** the lambda is written across many `sb` sites. Handed to Opus.
-- [ ] **T11** Batch registration `RegisterMany` [P6] — not started.
+- [x] **T10** Hoist projection trees [P5a] — `d23184d`. The earlier STOP was wrong (one writer, no `sb` fan-out). No inline fallback: projections take exactly one parameter.
+- [x] **T11** Batch registration `RegisterMany` [P6] — `ac93420`. 3,000 interface entries: 280 MB (loop) → < 1 MB. 1,004 golden cases, 14 snapshots mechanically verified.
 - [x] **T12** Exact-pair slot for the facade [P2a, P4 update] — `ed69922` + `c65c4fe`. **Deviation (owner ruling):** only a FOUND delegate is cached and the version machinery is deleted. `ExactUpdateSlot` is present. *The audit's TODO is stale: it looks for `_version`.*
-- [ ] **T13** In-memory projection route + parity [P5 Case 2] — depends on T10.
+- [x] **T13** In-memory projection route + parity [P5 Case 2] — `761a69a`. Enum parity row uses one enum (enum→enum is a projection refusal).
 - [ ] **T14** Static per-destination dispatch at the validation root [P2b] — needs an Opus spec first. Must now also satisfy the "runtime does not re-decide" ruling and T31's tests.
 - [ ] **T15** Case 2 nested selects → general mapping [P5] — depends on T13.
-- [ ] **T16** Expose `{Method}Expression` [P5d] — needs Opus to pick the name and allocate a DWARF id. Depends on T10.
+- [x] **T16** Expose `{Method}Expression` [P5d] — `e76a231`. DWARF112 (Info) on name collision / overloads; method's accessibility.
+  - [ ] EF/SQLite composition rows: wait on T17's rig.
 - [ ] **T17** EF precompiled-query experiment [P5c] — O/H.
 - [ ] **T18** NativeAOT size experiment [P7] — O/H.
 - [~] **T19** Perf lane and benchmarks [P2/P4/P5/P6/P8] — `d177479`, `924f237`; results in `benchmarks/results/2026-09-26-round31-full-matrix.md`.
@@ -44,11 +45,11 @@ decision or access first.
 - [ ] **T20** zizmor + Harden-Runner [A5] — **BLOCKED** on the workflow-scope token. Audit: 15 jobs without harden-runner as step 1.
 - [ ] **T21** NuGet Trusted Publishing [A4] — the human part on nuget.org and GitHub comes first.
 - [ ] **T22** .NET 11 SDK leg [C1] — workflow change, so same wall as T20.
-- [ ] **T23** Nullability-attribute probe [A6] — not started. Cheap, and it decides whether A6 is real.
+- [x] **T23** Nullability-attribute probe [A6] — **A6 confirmed, and worse:** `[MaybeNull]`/`[DisallowNull]` leaked CS8601 into the .g.cs with no DWARF070. Fixed in `30ac793` (MemberFacts funnel). `[NotNull]`/`[AllowNull]` deliberately not read (would silence reports).
 - [ ] **T24** C# 15 unions refused loudly [C3] — **deadline 2026-11-10**. Needs the Opus metadata check first.
 - [ ] **T25** C# 15 closed hierarchies [C2] — O; needs the Roslyn packaging decision.
 - [~] **T26** Interceptors [C4] — a proposal only (`PROPOSAL-T26-compile-time-binding.md`). It finds interceptors unsound on an interface receiver, and `InterceptsLocation` on net10 is unverified. The task gates any prototype on T14 + T19.
-- [ ] **T27** CS8795 stubs vs suppression [B2] — O decision.
+- [x] **T27** CS8795 stubs vs suppression [B2] — **owner ruling 2026-09-27: keep suppression.** No stubs; the `genLen == 0` invariant stands.
 
 ## Tier 4 — test-suite tidy-up and docs
 
