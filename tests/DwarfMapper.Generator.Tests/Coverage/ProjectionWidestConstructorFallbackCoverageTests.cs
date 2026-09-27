@@ -33,7 +33,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
 
-            Assert.Contains("__s => new global::Demo.D(__s.A, __s.B));", generated, StringComparison.Ordinal);
+            // One ')' fewer since round 31 T10: the lambda initialises a static tree field instead of being an argument.
+            Assert.Contains("__s => new global::Demo.D(__s.A, __s.B);", generated, StringComparison.Ordinal);
         }
     }
 }

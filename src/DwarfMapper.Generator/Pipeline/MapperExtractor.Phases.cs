@@ -2387,7 +2387,8 @@ namespace DwarfMapper.Generator.Pipeline
                     ProjectionMembers: EquatableArray.From(projMembers.ToArray()),
                     ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     ReturnTypeSignature: DeclaredReturnSignature(method),
-                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method),
+                    ProjectionSourceElementFullName: projSource.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
                 return true;
             }
 
