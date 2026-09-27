@@ -1,77 +1,67 @@
 # Round 31 — checklist and completion audit
 
-Source: `ROUND31-TASKS.md` (the full steps live there) and `POST-ROUND30-IMPROVEMENT-RESEARCH.md` (the research
-ids in brackets). Audited 2026-09-27 on `feat/round31` @ `82f3203`; updated as tasks land against the commits, `TASK-LOG.md` and
-`round31-audit.sh static` (run with `python3` shimmed to `python` and `PYTHONUTF8=1`). Round-31 tests were **not**
-re-run for this audit.
+Source: `ROUND31-TASKS.md` (the full steps live there) and `POST-ROUND30-IMPROVEMENT-RESEARCH.md` (the research ids in
+brackets). Final state 2026-09-27 on `feat/round31`; `./round31-audit.sh static` reports **30 DONE, 0 TODO**, the
+default lane is green in all nine test assemblies, and the golden corpus passes without `DWARF_GOLDEN_UPDATE`. Every
+deviation from a task's literal steps is recorded in `TASK-LOG.md` with its reason.
 
-Legend: `[x]` done · `[~]` partly done / done with a recorded deviation · `[ ]` not started · **BLOCKED** needs a
-decision or access first.
+Legend: `[x]` done · `[~]` done with an open owner step or an explicit remainder · `[d]` decided, deliberately not
+built (reason recorded).
+
+**Not pushed.** The branch holds commits touching `.github/workflows` (T19, T20, T21, T22), which this token cannot push;
+per the owner's ruling they are committed on `feat/round31` for a workflow-scoped push.
 
 ## Tier 1 — hardening
 
-- [x] **T00** Baseline — baseline recorded at `b688bb9` (merged round 30, PR #5).
-- [x] **T01** Advisory-scoped audit suppression [A2] — `e9e09d4`. Audit DONE: 0 NU190x NoWarn.
-- [x] **T02** Projection null guards cast to `object` [A1] — `0938e21`. Found the CS0034 defect as well. 4 sites, not 5.
-  - [ ] EF/SQLite translatability row: waits on T17's rig.
-- [x] **T03** CVE-2026-32933 PoC pinned [A3] — `ca831d8`. Guard green 6/6; SECURITY.md row and MIGRATION.md paragraph present.
-- [x] **T04** Strengthen two `LocationInfo` tests [D1] — `031c39a`, with the sabotage check.
-- [x] **T05** Duplicated coverage sources [D2] — `031c39a`. 1 deleted, 2 marked `shared-fixture`. Audit: 0 unmarked.
-- [x] **T06** Byte-identity lock confirmed [B1] — 1,014 golden cases (≥ 1,000).
-- [~] **T07** Parameter-ceiling ratchet [B1] — `031c39a`. **Deviation:** the table comes from the Roslyn walk (54 rows), not the task's regex (40). The regex would leave the ratchet red on an untouched tree.
+- [x] **T00** Baseline — recorded at `b688bb9`.
+- [x] **T01** Advisory-scoped audit suppression [A2] — `e9e09d4`; scan hardened against nested checkouts `3548b70`, `850d821`.
+- [x] **T02** Projection null guards via `(object)` [A1] — `0938e21` (+ CS0034 fix). EF/SQLite row answered in T17's finding: translates to `IS NULL`.
+- [x] **T03** CVE-2026-32933 PoC pinned [A3] — `ca831d8`.
+- [x] **T04** `LocationInfo` tests strengthened [D1] — `031c39a`.
+- [x] **T05** Duplicated coverage sources [D2] — `031c39a`.
+- [x] **T06** Byte-identity lock confirmed [B1] — 1,014 golden cases.
+- [x] **T07** Parameter-ceiling ratchet [B1] — `031c39a` (Roslyn-walk table, 54 rows).
 
 ## Tier 2 — structural and performance
 
-- [ ] **T08** ExtractionContext [B1] — **owner ruling 2026-09-27:** extend the existing bundles (+ finish MapperOptions / R27-02); `ae9c7ea` stands. Audit: 40 methods with more than 6 parameters.
-- [~] **T09** Registry collection pre-size [P1] — `0af2f2e` + `4a6821f`. **Deviation:** one runtime helper `DwarfCollectionMap` instead of inline emission, because inlining grew the golden corpus by 70 %. The `CollectionsMarshal.AsSpan` fast path was removed again because it read stale data when a hook mutated the list. *The audit's TODO here is stale: it greps for the inline shape that was rejected.*
-- [x] **T10** Hoist projection trees [P5a] — `d23184d`. The earlier STOP was wrong (one writer, no `sb` fan-out). No inline fallback: projections take exactly one parameter.
-- [x] **T11** Batch registration `RegisterMany` [P6] — `ac93420`. 3,000 interface entries: 280 MB (loop) → < 1 MB. 1,004 golden cases, 14 snapshots mechanically verified.
-- [x] **T12** Exact-pair slot for the facade [P2a, P4 update] — `ed69922` + `c65c4fe`. **Deviation (owner ruling):** only a FOUND delegate is cached and the version machinery is deleted. `ExactUpdateSlot` is present. *The audit's TODO is stale: it looks for `_version`.*
-- [x] **T13** In-memory projection route + parity [P5 Case 2] — `761a69a`. Enum parity row uses one enum (enum→enum is a projection refusal).
-- [x] **T14** Collection dispatch flat in app size [P2b/P4] — `f0dca83`. Measured first (`ea57e5e`): 272 ns → 6.3 µs at 1,000 pairs. **Deviation:** registry buckets interface entries by destination (109–114 ns flat, 55×) instead of root-generated dispatchers, which would only chase a ~38 ns residue at the cost of a public slot type + a second cache. Reasons in the commit and TASK-LOG.
-- [ ] **T15** Case 2 nested selects → general mapping [P5] — depends on T13.
-- [x] **T16** Expose `{Method}Expression` [P5d] — `e76a231`. DWARF112 (Info) on name collision / overloads; method's accessibility.
-  - [ ] EF/SQLite composition rows: wait on T17's rig.
-- [ ] **T17** EF precompiled-query experiment [P5c] — O/H.
-- [ ] **T18** NativeAOT size experiment [P7] — O/H.
-- [~] **T19** Perf lane and benchmarks [P2/P4/P5/P6/P8] — `d177479`, `924f237`; results in `benchmarks/results/2026-09-26-round31-full-matrix.md`.
-  - [x] Facade `Map<TS,TD>` A/B (`AmbientFacadeBenchmarks`) and T09 A/B (`RegistryCollectionBenchmarks`, `CollectionReadProbe`)
-  - [x] `ci.yml` default filter `Category!=Perf` plus a nightly `perf-tests` job with a vacuity guard — `6747ed9` (committed, not pushed: workflow scope).
-  - [x] Facade collection source at 0/100/500/1,000 pairs — `ea57e5e` + after-column in `f0dca83`.
-  - [ ] `Project()` inline vs hoisted; routed vs tree; startup `__Register()` at 100/500/1,000; P8 A/B pairs
-  - [ ] P3: the A1 benchmark row (user-operator guard cost in in-memory projections)
+- [~] **T08** Extend the bundles [B1] (owner ruling: not one ExtractionContext) — `cd7a09e` ProjectionRequest (15/13/13 → 9/7/7), `f678f2f` FlattenGraphRequest built by the caller (17 → 5, row deleted; it also fixed a silent `ImplicitConversions` gap). Ratchet 54 → 52 rows. **Remainder:** 62 context parameters in 21 methods (ResolveMembers, TryResolveConversion, …) — each a separate paydown; the ratchet forbids growth meanwhile.
+- [x] **T09** Registry collection pre-size [P1] — `0af2f2e`, `4a6821f` (helper, not inlining; span read removed).
+- [x] **T10** Hoist projection trees [P5a] — `d23184d`. Measured 8.5x / −89 % allocation (`8a4a5ac`).
+- [x] **T11** `RegisterMany` [P6] — `ac93420`. Note (`8a4a5ac`): after T14 single `Register` no longer copies the whole list either, so generated startup costs the same both ways.
+- [x] **T12** Exact-pair slot [P2a] — `ed69922`, `c65c4fe` (found-only cache, no version counter).
+- [x] **T13** In-memory projection route [P5 Case 2] — `761a69a`. Measured ~2,200x at 10 rows, 40x at 1,000.
+- [x] **T14** Collection dispatch flat in app size [P2b/P4] — measured `ea57e5e`, fixed `f0dca83` (destination buckets, 55x at 1,000 pairs). Root-generated dispatchers deliberately not built.
+- [d] **T15** Case 2 nested selects → general mapping — measured `8a4a5ac`: 1.14x on DTO lists (under threshold), SLOWER on widening. Not built. The widening loss is a round-32 finding.
+- [x] **T16** `{Method}Expression` + DWARF112 [P5d] — `e76a231`. EF composition answered in T17's finding.
+- [x] **T17** EF precompiled queries [P5c] — `3c342d6`: `Project(q)` never precompiled, `.Select(Expression)` is; DWARF115 + package `build/DwarfMapper.props`.
+- [x] **T18** NativeAOT size [P7] — `1f29025`: ambient registration = 10 % of the AOT sample. Recommended opt-out option left for the owner (new public API).
+- [x] **T19** Perf lane + benchmarks — CI lane `6747ed9`; benchmarks `d177479`, `924f237`, `ea57e5e`, `8a4a5ac`. P8: inlining no gain; pre-sized Preserve map 2.3x → round-32 candidate; SkipLocalsInit excluded by policy.
 
 ## Tier 3 — CI, release, platform
 
-- [x] **T20** zizmor + Harden-Runner [A5] — `0047b49`. zizmor 1.30.1 found 19 (3 high template-injection, 16 artipacked); all fixed → 0. Harden-runner step 1 in all 17 jobs. Committed, not pushed.
-- [~] **T21** NuGet Trusted Publishing [A4] — [S] done `a6ba0c9`: `publish` job gated on `vars.NUGET_TRUSTED_PUBLISHING`. **[H] owner:** 5 setup steps in `docs/RELEASING.md`. [O] review before first tag.
-- [x] **T22** .NET 11 SDK leg [C1] — `afe8d2f`. The leg already existed (`preview-sdk-canary`); aligned it (locked mode + TWAE off, diagnostics reported). First run: on the owner's push.
-- [x] **T23** Nullability-attribute probe [A6] — **A6 confirmed, and worse:** `[MaybeNull]`/`[DisallowNull]` leaked CS8601 into the .g.cs with no DWARF070. Fixed in `30ac793` (MemberFacts funnel). `[NotNull]`/`[AllowNull]` deliberately not read (would silence reports).
-- [ ] **T24** C# 15 unions refused loudly [C3] — **deadline 2026-11-10**. Needs the Opus metadata check first.
-- [ ] **T25** C# 15 closed hierarchies [C2] — O; needs the Roslyn packaging decision.
-- [~] **T26** Interceptors [C4] — a proposal only (`PROPOSAL-T26-compile-time-binding.md`). It finds interceptors unsound on an interface receiver, and `InterceptsLocation` on net10 is unverified. The task gates any prototype on T14 + T19.
-- [x] **T27** CS8795 stubs vs suppression [B2] — **owner ruling 2026-09-27: keep suppression.** No stubs; the `genLen == 0` invariant stands.
+- [x] **T20** zizmor + Harden-Runner [A5] — `0047b49`: 19 findings fixed → 0; harden-runner step 1 in all 17 jobs. (Committed, not pushed.)
+- [~] **T21** NuGet Trusted Publishing [A4] — `a6ba0c9`, gated on `vars.NUGET_TRUSTED_PUBLISHING`. **Owner:** the five [H] steps in `docs/RELEASING.md`, then [O] review before the first tag.
+- [x] **T22** .NET 11 SDK leg [C1] — `afe8d2f` (existing `preview-sdk-canary` aligned). First run happens on the owner's push.
+- [x] **T23** Nullability attributes [A6] — `30ac793`: A6 confirmed (CS8601 leaked into .g.cs), fixed.
+- [x] **T24** C# 15 unions refused [C3] — `1628bda` DWARF113 (before the 2026-11-10 deadline).
+- [x] **T25** C# 15 closed hierarchies [C2] — `2c6ecfa` DWARF114; no packaging change needed (`IsClosedTypeAttribute`). Same-compilation `closed` classes need a newer Roslyn.
+- [d] **T26** Interceptors — gate not met this round: the remaining facade gap is ~8.6 ns; a safe form needs a new public static entry point (owner decision). `PROPOSAL-T26-compile-time-binding.md` question (1) is partly answered: a package props file can set `InterceptorsNamespaces`.
+- [d] **T27** CS8795 stubs — owner ruling: keep suppression.
 
 ## Tier 4 — test-suite tidy-up and docs
 
-- [ ] **T28** Normalize `__` locals in assertions [D3, optional] — audit: 60 raw-local assertions left.
-- [ ] **T29** `// Covers:` provenance headers [D4] — audit: 118 files without a header.
-- [x] **T30** "Coming from AutoMapper" guide [C5] — `5938bb0`. Extended MIGRATION.md §1 in place (it already was that guide) with §1.10 refusals + the composable projection row.
-
-## Added this round (not in the task list)
-
-- [x] **T31** Architecture tests: "the runtime does not re-decide what the compiler decided" — `0729198` (`RuntimeSurfaceArchitectureTests`, 6 tests, sabotage-checked).
+- [x] **T28** Normalize `__` locals [D3] — `a9c91c1`: 41 sites; 19 kept on purpose (they pin a helper family's name).
+- [x] **T29** `// Covers:` headers [D4] — `f36991f`: 118/118, 0 TODO(opus).
+- [x] **T30** AutoMapper guide [C5] — `5938bb0` (MIGRATION.md §1 extended in place).
+- [x] **T31** (added) Runtime-surface architecture tests — `0729198`.
 
 ## Final gate
 
-- [ ] **T99** — not reached. Open items:
-  - [ ] `round31-audit.sh static` all DONE. T09/T12 need the audit script updated to the accepted shapes.
-  - [ ] Full build + default-filter test run; `round31-audit.sh tests`
-  - [ ] Golden green without `DWARF_GOLDEN_UPDATE`
-  - [ ] CHANGELOG `[Unreleased]` lines. None added for round 31 yet.
+- [x] **T99** — audit 30/30 DONE (`8b763e4`); full solution build + default lane green; round-31 tests 85 + 12 green; golden green without update; CHANGELOG lines for every user-visible task (`e069a20`).
 
-## Audit-tool defects found while auditing
+## Owner actions still open
 
-- `round31-audit.sh` calls `python3`, which does not exist on this Windows machine. Its heredoc scripts also fail
-  under cp1250 unless `PYTHONUTF8=1` is set. Without both, T05 and T08 report a false TODO.
-- The T09 and T12 checks encode the pre-deviation designs, so they report TODO for work that landed.
+1. Push `feat/round31` with a workflow-scoped token (T19/T20/T21/T22 touch `.github/workflows`).
+2. T21 [H]: nuget.org policy, `release` environment with reviewers, `NUGET_USER`, then `NUGET_TRUSTED_PUBLISHING=true`.
+3. Decide: T18's ambient-registration opt-out option; T26's static entry point; further T08 paydown families.
+4. Round-32 candidates from measurement: pre-sized Preserve identity map (2.3x); the generated `int[] → List<long>` widening losing to LINQ (1.6x).
