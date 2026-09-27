@@ -242,12 +242,10 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol sourceType,
             INamedTypeSymbol targetType,
             HashSet<string> ignores,
-            Compilation compilation,
+            ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
-            EnumPolicy enumPolicy,
             string paramExpr,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
                 mapPropertyExtras,
@@ -270,6 +268,11 @@ namespace DwarfMapper.Generator.Pipeline
             // shape. Empty means "none declared".
             HashSet<string> ignoredSourceMembers)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var options = settings.Options;
+
             // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
             // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
             // obsolete member that IS explicitly targeted stays out of the set — opting a retired member back

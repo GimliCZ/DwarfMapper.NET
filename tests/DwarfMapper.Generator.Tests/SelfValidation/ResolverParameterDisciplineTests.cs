@@ -124,17 +124,18 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             // 56 rows. Round 31 T08 deleted ResolveFlattenGraphDirectives (17 -> 5: its caller now builds the
             // FlattenGraphRequest) and lowered the three recursive projection resolvers (15/13/13 -> 9/7/7) by moving
-            // their seven pass-through parameters into ProjectionRequest. Was 64 when this scan was written: CollectionConverter's seven collection emitters were
+            // their seven pass-through parameters into ProjectionRequest; ResolveMembers (29 -> 26) and ResolveProjectionMembers (15 -> 13)
+            // now take ResolutionSettings in place of the compilation, the enum and null policies and MapperOptions. Was 64 when this scan was written: CollectionConverter's seven collection emitters were
             // paid off in the commit that added CollectionEmit, and this list shrank by exactly the seven rows
             // the shrink-only test named. That is the ratchet doing its job - the debt is deleted, not edited.
-            "MapperExtractor.Members.cs::ResolveMembers = 29",
+            "MapperExtractor.Members.cs::ResolveMembers = 26",
             "MapperExtractor.Conversions.cs::TryResolveConversion = 17",
             "MapperExtractor.Flatten.cs::ResolveUnflattenTarget = 15",
             "MapperExtractor.Members.cs::ResolveConstructorArguments = 12",
             "DictionaryConverter.cs::Synthesize = 18",
             "DictionaryConverter.cs::SynthesizeInPlace = 18",
             "MapperExtractor.Projection.cs::ResolveProjectionCtorExpr = 9",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers = 15",
+            "MapperExtractor.Projection.cs::ResolveProjectionMembers = 13",
             "CollectionConverter.cs::EmitBody = 14",
             "MapperExtractor.Phases.cs::ReportSourceMemberCoverage = 13",
             "MapperExtractor.Projection.cs::ResolveProjectionExpr = 7",

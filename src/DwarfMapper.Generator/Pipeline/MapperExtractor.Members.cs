@@ -95,16 +95,13 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol sourceType,
             INamedTypeSymbol targetType,
             HashSet<string> ignores,
-            Compilation compilation,
+            ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
             IReadOnlyList<string> flattenRoots,
             List<string> reinterpretMembers,
             // REQUIRED, like mapValues below, because every caller has one to pass and always did: as optional
@@ -154,6 +151,12 @@ namespace DwarfMapper.Generator.Pipeline
             // array is a declaration the consumer writes, not a fact the generator can prove.
             List<(string Member, int Offset)>? denseEnumMembers = null)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var options = settings.Options;
+
             // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
             // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
             // honours `ignores`, so this one addition covers them all. An obsolete member that IS explicitly

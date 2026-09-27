@@ -1956,10 +1956,7 @@ namespace DwarfMapper.Generator.Pipeline
                 sourceType,
                 namedTargetType,
                 ignores,
-                ctx.SemanticModel.Compilation,
-                methodLocation,
-                acc.Diagnostics,
-                new MapperOptions(
+                new ResolutionSettings(ctx.SemanticModel.Compilation, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                     CaseInsensitive: policy.CaseInsensitive,
                     AutoNest: methodAutoNest,
                     NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -1970,13 +1967,13 @@ namespace DwarfMapper.Generator.Pipeline
                     SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, method, sourceType, targetType, policy.SkipNullSrc),
                     AllowNonPublic: policy.AllowNonPublic,
                     ExplicitOnly: policy.ExplicitOnly,
-                    IgnoreObsolete: policy.IgnoreObsolete),
+                    IgnoreObsolete: policy.IgnoreObsolete)),
+                methodLocation,
+                acc.Diagnostics,
                 explicitMaps,
                 decls.AllMethods,
                 decls.MapperMethods,
-                policy.EnumPolicy,
                 acc.Synthesized,
-                policy.NullStrategy,
                 flattenRoots,
                 reinterpretMembers,
                 decls.MapperReservedConverters,
@@ -2273,10 +2270,7 @@ namespace DwarfMapper.Generator.Pipeline
                     projSource,
                     projTargetNamed,
                     projIgnores,
-                    ctx.SemanticModel.Compilation,
-                    methodLocation,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(ctx.SemanticModel.Compilation, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: projAutoNest,
                         // I19: the FIFTH reader of NullCollections, and the endpoint that never read it.
@@ -2313,9 +2307,10 @@ namespace DwarfMapper.Generator.Pipeline
                         SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, method, projSource, projTargetNamed, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         ExplicitOnly: policy.ExplicitOnly,
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    methodLocation,
+                    acc.Diagnostics,
                     projExplicitMaps,
-                    policy.EnumPolicy,
                     "__s",
                     ReadMapPropertyExtras(method),
                     projConsumedSources,
@@ -2486,10 +2481,7 @@ namespace DwarfMapper.Generator.Pipeline
                     updSrc,
                     updTgt,
                     updIgnores,
-                    comp,
-                    methodLocation,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(comp, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: updAutoNest,
                         // These were hardcoded `false` while the other ResolveMembers call sites passed the
@@ -2508,13 +2500,13 @@ namespace DwarfMapper.Generator.Pipeline
                         SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, method, updSrc, updTgt, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         ExplicitOnly: policy.ExplicitOnly,
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    methodLocation,
+                    acc.Diagnostics,
                     updExplicit,
                     decls.AllMethods,
                     decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     updFlatten,
                     updReinterpret,
                     decls.MapperReservedConverters,
@@ -3454,10 +3446,7 @@ namespace DwarfMapper.Generator.Pipeline
                     genSrc,
                     genTgtNamed,
                     genIgnores,
-                    genComp,
-                    genLoc,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(genComp, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: policy.ClassAutoNest,
                         NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -3470,13 +3459,13 @@ namespace DwarfMapper.Generator.Pipeline
                         SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, null, genSrc, genTgt, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         ExplicitOnly: policy.ExplicitOnly,
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    genLoc,
+                    acc.Diagnostics,
                     genExplicit,
                     decls.AllMethods,
                     decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     Array.Empty<string>(),
                     new List<string>(),
                     decls.MapperReservedConverters,
@@ -3724,10 +3713,7 @@ namespace DwarfMapper.Generator.Pipeline
                     nestedSrc,
                     nestedTgt,
                     nestedIgnores, // pair-scoped [MapIgnore<T>] (empty when none declared)
-                    ctx.SemanticModel.Compilation,
-                    nestedLocation,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(ctx.SemanticModel.Compilation, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: pairAutoNest,
                         NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -3752,13 +3738,13 @@ namespace DwarfMapper.Generator.Pipeline
                         // IgnoreObsolete DOES propagate, unlike ExplicitOnly: skipping an obsolete nested
                         // member just leaves it at its default — safe and consistent, with no "unmappable"
                         // hazard.
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    nestedLocation,
+                    acc.Diagnostics,
                     nestedExplicit, // pair-scoped [MapProperty<S,T>] (empty when none declared)
                     decls.AllMethods,
                     decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     new List<string>(),
                     new List<string>(), // no flatten/reinterpret
                     // A synthesized nested mapper must not adopt a dedicated converter either — the author never wrote
