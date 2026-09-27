@@ -8,8 +8,7 @@ deviation from a task's literal steps is recorded in `TASK-LOG.md` with its reas
 Legend: `[x]` done · `[~]` done with an open owner step or an explicit remainder · `[d]` decided, deliberately not
 built (reason recorded).
 
-**Not pushed.** The branch holds commits touching `.github/workflows` (T19, T20, T21, T22), which this token cannot push;
-per the owner's ruling they are committed on `feat/round31` for a workflow-scoped push.
+**Pushed** by the owner on 2026-09-27 (`1288253` is on `origin/feat/round31`).
 
 ## Tier 1 — hardening
 
@@ -34,13 +33,13 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
 - [d] **T15** Case 2 nested selects → general mapping — measured `8a4a5ac`: 1.14x on DTO lists (under threshold), SLOWER on widening. Not built. The widening loss is a round-32 finding.
 - [x] **T16** `{Method}Expression` + DWARF112 [P5d] — `e76a231`. EF composition answered in T17's finding.
 - [x] **T17** EF precompiled queries [P5c] — `3c342d6`: `Project(q)` never precompiled, `.Select(Expression)` is; DWARF115 + package `build/DwarfMapper.props`.
-- [x] **T18** NativeAOT size [P7] — `1f29025`: ambient registration = 10 % of the AOT sample. Recommended opt-out option left for the owner (new public API).
+- [x] **T18** NativeAOT size [P7] — `1f29025`: ambient registration = 10 % of the AOT sample. **Owner ruling 2026-09-27: no opt-out** — ambient registration is what resolves maps between projects, and it stays on everywhere for consistency.
 - [x] **T19** Perf lane + benchmarks — CI lane `6747ed9`; benchmarks `d177479`, `924f237`, `ea57e5e`, `8a4a5ac`. P8: inlining no gain; pre-sized Preserve map 2.3x → round-32 candidate; SkipLocalsInit excluded by policy.
 
 ## Tier 3 — CI, release, platform
 
 - [x] **T20** zizmor + Harden-Runner [A5] — `0047b49`: 19 findings fixed → 0; harden-runner step 1 in all 17 jobs. (Committed, not pushed.)
-- [~] **T21** NuGet Trusted Publishing [A4] — `a6ba0c9`, gated on `vars.NUGET_TRUSTED_PUBLISHING`. **Owner:** the five [H] steps in `docs/RELEASING.md`, then [O] review before the first tag.
+- [x] **T21** NuGet Trusted Publishing [A4] — `a6ba0c9`, gated on `vars.NUGET_TRUSTED_PUBLISHING`. **Owner ruling 2026-09-27: packages are pushed to nuget.org by hand.** The publish job stays in the workflow DORMANT (the variable is unset, so it never runs); do not "finish" its [H] steps.
 - [x] **T22** .NET 11 SDK leg [C1] — `afe8d2f` (existing `preview-sdk-canary` aligned). First run happens on the owner's push.
 - [x] **T23** Nullability attributes [A6] — `30ac793`: A6 confirmed (CS8601 leaked into .g.cs), fixed.
 - [x] **T24** C# 15 unions refused [C3] — `1628bda` DWARF113 (before the 2026-11-10 deadline).
@@ -94,7 +93,12 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
    dependency in the app, not a mapping change. The other 894 mapping tests pass, the golden-snapshot cases among them
    matching byte for byte - the value-level A/B earlier validations lacked. Worth fixing on the FusedChat side: inject
    the clock into `BuildDocumentId`.
-2. Push `feat/round31` with a workflow-scoped token (T19/T20/T21/T22 touch `.github/workflows`).
-3. T21 [H]: nuget.org policy, `release` environment with reviewers, `NUGET_USER`, then `NUGET_TRUSTED_PUBLISHING=true`.
-4. Decide: T18's ambient-registration opt-out option; T26's static entry point. (T08 is closed; the 16 leaf consumers left loose are listed on its row, should you want them bundled anyway.)
+   **FusedChat fixed (2026-09-27, for the owner to check, left UNCOMMITTED in the owner's tree):** `RepositoriesMaps`
+   takes an optional `TimeProvider` (parameterless constructor = `TimeProvider.System`, so DI and the ambient path
+   are unchanged) and `BuildDocumentId` reads it; the test arm pins 2026-09-02, the day the snapshots were
+   recorded. All 897 mapping tests pass on rc13 and on the round-31 package with the golden files UNCHANGED.
+2. ~~Push~~ done by the owner. ~~T21 setup~~ ruled out (manual nuget push). ~~T18 opt-out~~ ruled out.
+3. **T26: approved 2026-09-27** — build the compile-time binding and delete the slots (option (a) above).
+   The pipeline leg reruns after the owner's parallel testing ends; ask before starting it.
+4. (T08 is closed; the 16 leaf consumers left loose are listed on its row, should you want them bundled anyway.)
 5. Round-32 candidates from measurement: pre-sized Preserve identity map (2.3x); the generated `int[] → List<long>` widening losing to LINQ (1.6x).
