@@ -35,7 +35,8 @@ jobs:
 
       - run: dotnet restore DwarfMapper.NET.sln
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore -p:Version=$VERSION -p:ContinuousIntegrationBuild=true
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build
+      # Category!=Perf: wall-clock ratio tests run in CI's nightly perf-tests job, never on a release runner.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf"
       - run: dotnet pack DwarfMapper.NET.sln -c Release --no-build -o artifacts -p:Version=$VERSION -p:ContinuousIntegrationBuild=true
 
       # ── SBOM (CycloneDX, machine-readable — CRA Annex I) ─────────────────────

@@ -81,6 +81,10 @@ jobs:
       # of the default leg. It is excluded for isolation, not for speed — it is the one leg whose red is
       # expected to be a list of findings rather than a regression, so mixing it into the ordinary run would
       # make every build look broken.
+      # Category!=Perf (round 31 T19) keeps the wall-clock ratio tests out of every per-push leg: a timing
+      # oracle on a shared runner is nondeterministic (invariant R4), so those run in their own nightly job,
+      # perf-tests, below. Applied to every plain `dotnet test` step here, so no leg can go red on a noisy
+      # neighbour.
       # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
       # testhost is dumped and killed with the offending test NAMED, instead of the job idling until its
       # timeout eats the evidence. Applied to every plain `dotnet test` step in this workflow; the Stryker
@@ -90,7 +94,7 @@ jobs:
       # reads JUnit XML only. Without it the upload below finds nothing and reports success.
       # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
       # show which tests fail and how often, which is precisely the run you must not skip.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
         continue-on-error: true
         id: tests
 
@@ -463,6 +467,41 @@ jobs:
           name: bench-smoke-results
           path: BenchmarkDotNet.Artifacts/results/
 
+  # ── Wall-clock ratio tests (round 31 T19) ──────────────────────────────────────────────────────────────
+  # Tests tagged [Trait("Category", "Perf")] assert a RATIO measured inside one process — "collection dispatch
+  # after 6,000 unrelated registrations costs at most 1.5x what it did before" — which is far steadier than an
+  # absolute time, but still a timing oracle, so it never runs per push (every other leg excludes the category).
+  # Nightly, dispatch, or a `full-ci` PR, like the rest of the expensive tier.
+  #
+  # The vacuity guard is the second step: a filter that matches nothing makes `dotnet test` exit 0, and a Perf
+  # lane that ran no test must read as broken, not as green.
+  perf-tests:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement — never run on a hosted runner. Restore + build ~4 min; the Perf tests are
+    # seconds. 20 leaves room for a cold cache.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
+      - name: Assert the Perf lane ran at least one test
+        run: |
+          set -euo pipefail
+          ran=$(grep -ho '<UnitTestResult ' PerfResults/*.trx 2>/dev/null | wc -l || true)
+          echo "Perf tests executed: $ran"
+          if [ "$ran" -lt 1 ]; then
+            echo "::error::the Category=Perf filter matched no test, so this lane proved nothing." >&2
+            exit 1
+          fi
+
   aot-trim-gate:
     strategy:
       matrix:
@@ -617,7 +656,7 @@ jobs:
       # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
       # stays loud; every job that can reach it gets the tool.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   codeql:
     runs-on: ubuntu-latest
@@ -897,7 +936,8 @@ jobs:
       # --blame-hang: the H7-f runner-level backstop, same rationale as in build-test. It matters more
       # here, not less: a hang that only happens on one OS is exactly the kind of finding this leg is for,
       # and without the dump it would present as an anonymous 20-minute timeout.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --blame-hang --blame-hang-timeout 5m
+      # Category!=Perf only: this leg still runs the whole population otherwise, SurfaceMatrix included.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   # ── .NET preview-SDK canary (round-23 S5) ─────────────────────────────────────────────────────────────
   # A source generator's worst consumer-facing failure is "the new SDK refuses to load it". roslyn-forward-
@@ -976,7 +1016,7 @@ jobs:
       # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
       # stays loud; every job that can reach it gets the tool.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
   # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
