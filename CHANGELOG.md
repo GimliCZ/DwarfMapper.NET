@@ -487,6 +487,11 @@ so a version with no section here ships with no notes.
   type's) `op_Equality` — user code inside every generated projection — and for a type declaring two `==` overloads
   produced `CS0034` (ambiguous operator) in the generated file, with no DWARF diagnostic. Reference-typed operands are now
   compared as `(object)x == null`, plain reference equality that EF Core 10 translates to `IS NULL`. (Round 31 T02.)
+- **Span-map and async-stream element conversions ignored `ImplicitConversions = false`.** Their element conversion
+  was resolved with the option at its default, so under `[DwarfMapper(ImplicitConversions = false)]` a lossy element
+  (`ReadOnlySpan<long>` → `Span<double>`, `IAsyncEnumerable<long>` → `IAsyncEnumerable<double>`) produced a `DWARF038`
+  Warning where a member produces the Error strict mode promises. It is now the same refusal. (Round 31, found by
+  the T08 refactor that made the defaulted flags visible.)
 - **`[FlattenGraph]` leaves ignored `ImplicitConversions = false`, and dropped their `DWARF038` suggestion.** A leaf
   member of a flattened node was resolved without the mapper's `ImplicitConversions` setting, and a leaf that
   resolved had its diagnostics discarded. So a lossy leaf (`long` → `double`) that a plain map refuses as `DWARF038`

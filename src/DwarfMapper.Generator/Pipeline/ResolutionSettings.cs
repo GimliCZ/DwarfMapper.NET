@@ -16,7 +16,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         /// <remarks>
         ///     A value type: building one per call costs nothing, and <c>with</c> expresses a deliberate deviation at the
-        ///     call site (<see cref="WithoutReferenceTracking" />, <see cref="WithCallSiteDefaults" />) instead of an
+        ///     call site (<see cref="WithoutReferenceTracking" />, <see cref="ForElementEndpoint" />) instead of an
         ///     omitted optional argument silently taking its default — which is how two sites came to ignore
         ///     <c>ImplicitConversions</c> unnoticed.
         /// </remarks>
@@ -33,12 +33,15 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             /// <summary>
-            ///     The values the span and async-stream element resolutions have always passed: every optional flag at
-            ///     its parameter default. Named so the deviation is visible; see the round-31 gap test.
+            ///     An ELEMENT resolution at the span-map or async-stream endpoint: the mapper's ImplicitConversions (and
+            ///     auto-nest) apply, while NullAsNull, Preserve and SetNull stay off - those loops thread no reference
+            ///     context and build no nested collection of their own. Until round 31 these call sites passed every
+            ///     optional flag at its DEFAULT, so ImplicitConversions was always true there and a lossy element went
+            ///     through strict mode silently (ElementEndpointStrictConversionTests).
             /// </summary>
-            public ResolutionSettings WithCallSiteDefaults()
+            public ResolutionSettings ForElementEndpoint()
             {
-                return this with { Options = Options with { NullAsNull = false, IsPreserve = false, IsSetNull = false, ImplicitConversions = true } };
+                return this with { Options = Options with { NullAsNull = false, IsPreserve = false, IsSetNull = false } };
             }
         }
 

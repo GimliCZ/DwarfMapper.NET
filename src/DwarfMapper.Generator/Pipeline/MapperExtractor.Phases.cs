@@ -2070,7 +2070,7 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
-                if (!TryResolveConversion(PolicySettings(policy, asComp, asAutoNest).WithCallSiteDefaults(),
+                if (!TryResolveConversion(PolicySettings(policy, asComp, asAutoNest).ForElementEndpoint(),
                         asSrcElem,
                         asDstElem,
                         null,
@@ -2891,7 +2891,7 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
-                if (!TryResolveConversion(PolicySettings(policy, spanComp, spanAutoNest).WithCallSiteDefaults(),
+                if (!TryResolveConversion(PolicySettings(policy, spanComp, spanAutoNest).ForElementEndpoint(),
                         spanSrcElem,
                         spanDstElem,
                         null,
