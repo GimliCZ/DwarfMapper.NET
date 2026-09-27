@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text;
 using DwarfMapper.Generator.Diagnostics;
@@ -251,8 +251,7 @@ namespace DwarfMapper.Generator.Pipeline
             // one member are all refusals that must not wait for a member match that will never happen.
             var denseEnumDirectives = ValidateDenseEnumDirectives(denseEnumMembers ?? [],
                 targetType,
-                compilation,
-                options.AllowNonPublic,
+                settings,
                 ignores,
                 mapValues,
                 location,

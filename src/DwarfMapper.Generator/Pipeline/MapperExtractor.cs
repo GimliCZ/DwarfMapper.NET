@@ -904,15 +904,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The element pair's target type. Named in the remedy, and — for the CLASS site — the type whose
         ///     writable members decide whether there is anything here to report at all.
         /// </param>
-        /// <param name="explicitOnly"><c>[DwarfMapper(AutoMatchMembers = false)]</c> is in force.</param>
+        /// <param name="policy">
+        ///     The mapper's policy: <c>ExplicitOnly</c> (<c>[DwarfMapper(AutoMatchMembers = false)]</c> is in force)
+        ///     and <c>AllowNonPublic</c> (<c>[DwarfMapper(AllowNonPublic = true)]</c>, widening the enumeration below —
+        ///     so a class-scoped <c>[MapIgnore]</c> naming a non-public destination member is still recognised as one
+        ///     this gate has something to say about). One argument rather than two adjacent bools a transposed call
+        ///     would compile clean with (round 31 T08).
+        /// </param>
         /// <param name="compilation">
         ///     The compilation the element target's writable members are enumerated against, for the class-site
         ///     filter described above.
-        /// </param>
-        /// <param name="allowNonPublic">
-        ///     <c>[DwarfMapper(AllowNonPublic = true)]</c>, widening that same enumeration — so a class-scoped
-        ///     <c>[MapIgnore]</c> naming a non-public destination member is still recognised as one this gate has
-        ///     something to say about.
         /// </param>
         /// <param name="location">The declaration site every report made here is anchored to.</param>
         /// <param name="diagnostics">Diagnostic sink; one entry per directive that cannot reach the element pair.</param>
@@ -927,13 +928,12 @@ namespace DwarfMapper.Generator.Pipeline
             INamedTypeSymbol classSymbol,
             ITypeSymbol srcElement,
             ITypeSymbol tgtElement,
-            bool explicitOnly,
+            MapperPolicy policy,
             Compilation compilation,
-            bool allowNonPublic,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics)
         {
-            if (explicitOnly)
+            if (policy.ExplicitOnly)
             {
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.ExplicitOnlyNotElementWise,
@@ -976,7 +976,7 @@ namespace DwarfMapper.Generator.Pipeline
                     if (isClassSite)
                     {
                         elementTargetMembers ??= new HashSet<string>(
-                            MemberFacts.Writable(tgtElement, compilation, allowNonPublic).Select(m => m.Name),
+                            MemberFacts.Writable(tgtElement, compilation, policy.AllowNonPublic).Select(m => m.Name),
                             IgnoreNameComparer);
                         if (!elementTargetMembers.Contains(ignored))
                         {
@@ -1881,9 +1881,8 @@ namespace DwarfMapper.Generator.Pipeline
             IEnumerable<MemberMap>? ctorArgs,
             IEnumerable<string> classIgnoreSources,
             IEnumerable<string> methodIgnoreSources,
-            bool ignoreObsolete,
+            MapperPolicy policy,
             Compilation compilation,
-            bool allowNonPublic,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics)
         {
@@ -1892,7 +1891,7 @@ namespace DwarfMapper.Generator.Pipeline
                 ignoreSources.Add(s);
             // IgnoreObsoleteMembers, source side: an obsolete source member need not be consumed — you are
             // retiring it, not required to keep reading it — so it does not surface DWARF039.
-            if (ignoreObsolete)
+            if (policy.IgnoreObsolete)
             {
                 foreach (var s in ObsoleteMemberNames(sourceType))
                     ignoreSources.Add(s);
@@ -1907,7 +1906,7 @@ namespace DwarfMapper.Generator.Pipeline
                     AddConsumed(consumed, m.SourceName);
             }
 
-            ReportUnconsumed(sourceType, consumed, ignoreSources, compilation, allowNonPublic, location, diagnostics);
+            ReportUnconsumed(sourceType, consumed, ignoreSources, compilation, policy.AllowNonPublic, location, diagnostics);
         }
 
         /// <summary>
@@ -1919,22 +1918,21 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string> consumed,
             IEnumerable<string> classIgnoreSources,
             IEnumerable<string> methodIgnoreSources,
-            bool ignoreObsolete,
+            MapperPolicy policy,
             Compilation compilation,
-            bool allowNonPublic,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics)
         {
             var ignoreSources = new HashSet<string>(classIgnoreSources, StringComparer.Ordinal);
             foreach (var s in methodIgnoreSources)
                 ignoreSources.Add(s);
-            if (ignoreObsolete)
+            if (policy.IgnoreObsolete)
             {
                 foreach (var s in ObsoleteMemberNames(sourceType))
                     ignoreSources.Add(s);
             }
 
-            ReportUnconsumed(sourceType, consumed, ignoreSources, compilation, allowNonPublic, location, diagnostics);
+            ReportUnconsumed(sourceType, consumed, ignoreSources, compilation, policy.AllowNonPublic, location, diagnostics);
         }
 
         private static void ReportUnconsumed(

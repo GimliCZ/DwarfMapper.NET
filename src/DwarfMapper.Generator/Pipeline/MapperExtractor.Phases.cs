@@ -2058,9 +2058,8 @@ namespace DwarfMapper.Generator.Pipeline
                         decls.ClassSymbol,
                         asSrcElem,
                         asDstElem,
-                        policy.ExplicitOnly,
+                        policy,
                         asComp,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics))
                 {
@@ -2339,9 +2338,8 @@ namespace DwarfMapper.Generator.Pipeline
                         projConsumedSources,
                         decls.ClassIgnoreSources,
                         ReadIgnoreSources(method),
-                        policy.IgnoreObsolete,
+                        policy,
                         ctx.SemanticModel.Compilation,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics);
                 }
@@ -2538,9 +2536,8 @@ namespace DwarfMapper.Generator.Pipeline
                         null,
                         decls.ClassIgnoreSources,
                         ReadIgnoreSources(method),
-                        policy.IgnoreObsolete,
+                        policy,
                         comp,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics);
                 }
@@ -2874,9 +2871,8 @@ namespace DwarfMapper.Generator.Pipeline
                         decls.ClassSymbol,
                         spanSrcElem,
                         spanDstElem,
-                        policy.ExplicitOnly,
+                        policy,
                         spanComp,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics))
                 {
@@ -3095,9 +3091,8 @@ namespace DwarfMapper.Generator.Pipeline
                     ctorArgs,
                     decls.ClassIgnoreSources,
                     ReadIgnoreSources(method),
-                    policy.IgnoreObsolete,
+                    policy,
                     ctx.SemanticModel.Compilation,
-                    policy.AllowNonPublic,
                     methodLocation,
                     acc.Diagnostics);
             }
@@ -3772,9 +3767,8 @@ namespace DwarfMapper.Generator.Pipeline
                             null,
                             decls.ClassIgnoreSources,
                             owed.IgnoreSources,
-                            policy.IgnoreObsolete,
+                            policy,
                             ctx.SemanticModel.Compilation,
-                            policy.AllowNonPublic,
                             owed.Loc,
                             acc.Diagnostics);
                         break;

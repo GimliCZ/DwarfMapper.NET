@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
@@ -38,8 +38,10 @@ namespace DwarfMapper.Generator.Pipeline
         /// </remarks>
         /// <param name="directives">Every application, in source order, from <c>ReadDenseEnumKeys</c>.</param>
         /// <param name="targetType">The destination type whose writable members the names are checked against.</param>
-        /// <param name="compilation">The compilation, for the writable-member walk.</param>
-        /// <param name="allowNonPublic">Whether non-public destination members count as writable.</param>
+        /// <param name="settings">
+        ///     The resolution's settings: the compilation for the writable-member walk, and AllowNonPublic for whether
+        ///     non-public destination members count as writable.
+        /// </param>
         /// <param name="ignores">The effective <c>[MapIgnore]</c> set.</param>
         /// <param name="mapValues">The <c>[MapValue]</c> directives, which claim a member outright.</param>
         /// <param name="location">Where every refusal is reported.</param>
@@ -48,8 +50,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static Dictionary<string, int> ValidateDenseEnumDirectives(
             List<(string Member, int Offset)> directives,
             INamedTypeSymbol targetType,
-            Compilation compilation,
-            bool allowNonPublic,
+            ResolutionSettings settings,
             HashSet<string> ignores,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
                 mapValues,
@@ -63,7 +64,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var writableNames = new HashSet<string>(
-                WritableMembers(targetType, compilation, allowNonPublic).Select(m => m.Name),
+                WritableMembers(targetType, settings.Compilation, settings.Options.AllowNonPublic).Select(m => m.Name),
                 StringComparer.Ordinal);
 
             foreach (var (member, offset) in directives)
