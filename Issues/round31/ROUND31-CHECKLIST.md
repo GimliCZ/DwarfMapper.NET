@@ -76,10 +76,14 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
    T26's compile-time binding**, or **rule the 13 equivalent and re-pin `break` from a fresh measurement**. Not
    re-measured here: the host was reaping background runs for memory.
    **The pipeline leg is owed a clean run.** T08 (`8a4d075`) touched `MemberResolutionContext.cs` and
-   `MapperExtractor.Members.Phases.cs`. Its 2026-09-27 run did finish (report `StrykerOutput/2026-09-27.13-23-40`,
-   "100.00 %"), but 266 of its 284 tested mutants were TIMEOUTS under memory pressure. Stryker counts a timeout as
-   detected, so that score measures nothing, and the post-leg proofs never ran because the host shell died on a console
-   error. Run `housekeeping.ps1 -MutationLeg pipeline` on a quiet machine. The generator, DocTooling, CodeFixes and
+   `MapperExtractor.Members.Phases.cs`. It ran TWICE on 2026-09-27 (`StrykerOutput/2026-09-27.13-23-40` and
+   `.14-17-54`), and both "100.00 %" results are void: 266 and 263 of the 284 tested mutants were TIMEOUTS, which
+   Stryker counts as detected. The last good run (`2026-09-26.10-11-27`) had 0 timeouts on the same 284. The cause is
+   the machine, not the suite. Both runs overlapped host memory pressure (the host reaped their shells), and a
+   timed-out mutant planted by hand (`Members.Phases.cs:59`, `||` -> `&&`) is killed by one failing test in a normal
+   1 m 21 s run. Both runs' post-leg decontamination also died on a console-handle error, so every `tests/**/bin` was
+   cleared and rebuilt afterwards (all nine suites green). Run `housekeeping.ps1 -MutationLeg pipeline` with Rider
+   closed, or on CI. The generator, DocTooling, CodeFixes and
    Testing legs mutate no file this round changed. Coverage floors: all five pass after `59edd01`.
 1. ~~Validate against FusedChat~~ **Done 2026-09-27, in a scratch copy** (your tree, which carries uncommitted rc13
    repins, was not touched): packed `1.1.0-r31val.1` from `ce993f4` with package validation on against 1.0.2-rc.1,
