@@ -242,6 +242,79 @@ stays under 1 MB (the cost-contract scan now names that row as `RegisterMany`'s 
 1,004 changed golden cases was done mechanically over the 14 changed snapshots: each old snapshot, rewritten by
 rule, equals the new one exactly.
 
+## T14 — collection dispatch flat in app size · `ea57e5e` (measurement), `f0dca83`
+
+Measured before building (advisor-reviewed): `Map<List<D>>(object)` on the shipped registry went 272 ns → 1.1 µs →
+3.2 µs → 6.3 µs at 0/100/500/1,000 extra pairs — research P4 confirmed in-repo. Reach: FusedChat has no
+`Map<TDestination>(object)` call site. **Deviation from the spec, deliberate:** the registry buckets interface-keyed
+entries by destination (109–114 ns flat, 55× at 1,000 pairs) instead of root-generated per-destination dispatchers.
+The dispatchers would chase a ~38 ns residue, serve only apps with a validation root, add a public slot type and be a
+second cache on top of this one. (e) is DWARF063 already; (f) `Map(object, Type)` is the registry itself.
+
+## T19 — CI lane · `6747ed9`; benchmarks
+
+`Category!=Perf` in every plain test step (ci.yml + release.yml), a nightly `perf-tests` job with a vacuity guard (fails
+if the filter ran zero tests). Its first real test is T14's bucket ratio row. Scans updated (`CiGateScanTests`,
+`CiToolPrerequisiteScanTests` — a positive `Category=Perf` filter cannot reach the ILVerify tests).
+
+## T20 / T21 / T22 — workflows · `0047b49`, `a6ba0c9`, `afe8d2f` (committed, not pushed)
+
+zizmor 1.30.1 locally: 19 findings (3 high template-injection in the Stryker-dashboard step, 16 artipacked) — all fixed,
+now 0. Harden-runner (audit) is step 1 of all 17 jobs. T21's `publish` job is gated on
+`vars.NUGET_TRUSTED_PUBLISHING == 'true'` because GitHub auto-creates a missing environment WITHOUT reviewers.
+T22: the .NET 11 leg already existed (`preview-sdk-canary`); it was aligned with `roslyn-forward-compat`'s fix
+(locked mode + warnings-as-errors off for that leg only, new diagnostics reported).
+
+## T30 — AutoMapper guide · `5938bb0`
+
+`docs/MIGRATION.md` §1 already was the guide; a second file would duplicate it. Extended in place: §1.10 refusals
+(DWARF001, DWARF070 from NegativeCases) and the composable-projection row.
+
+## T24 — C# 15 unions · `1628bda`
+
+Metadata confirmed from the feature spec: `System.Runtime.CompilerServices.UnionAttribute` (+ `IUnion`, `object? Value`).
+Probe first: `Pet` → `object` silently boxed the wrapper; `Pet` → `PetDto` was DWARF025 (wrong problem). DWARF113
+(Error) at the member resolver, the create-map endpoint and the projection resolver (the first cut missed the last;
+its test caught it). Same union on both sides and `Use=` converters are untouched.
+
+## T25 — C# 15 closed hierarchies · `2c6ecfa`
+
+Metadata: `IsClosedTypeAttribute` — readable on the Roslyn floor, so **no packaging change**. DWARF114 (Error): a
+`[MapDerivedType]` dispatch over a closed type must cover every direct descendant. Reach stated: closed hierarchies from
+REFERENCED assemblies; a same-compilation `closed` class needs a newer Roslyn. Arms are not inferred (no pairing rule).
+
+## T17 — EF precompilation · `3c342d6`, `Issues/round31/FINDING-T17-ef-precompile.md`
+
+Rig outside the repo (EF SQLite pulls a High advisory the repo's audit would fail). `Project(db.Orders)` is never
+precompiled; `.Select(M.ProjectExpression)` is. DWARF115 (Warning) under `PublishAot` + EF Core, via a new package
+`build/DwarfMapper.props` (`CompilerVisibleProperty`); verified end to end with the packed build. NegativeCases gained
+`BUILD-PROPERTY:` / `REFERENCES-ASSEMBLY:` headers instead of a new exemption category. T02's and T16's EF/SQLite rows are
+answered in the finding (both translate).
+
+## T18 — NativeAOT size · `1f29025`, `Issues/round31/FINDING-T18-aot-size.md`
+
+Ambient registration is 10.0 % (179,712 B) of the AOT sample. Material; root-decided pruning rejected (inverts the
+architecture); recommended an explicit per-assembly opt-out — a new public option, so left for the owner.
+
+## T08 — ProjectionRequest · `cd7a09e`
+
+Per the ruling: a read-only request bundle for the recursive projection resolvers (15/13/13 → 9/7/7 parameters), built
+once; `diagnostics` stays a sink parameter. Byte-identical golden. More families remain in the ratchet (ResolveMembers 29,
+TryResolveConversion 24, …); each is a separate paydown commit, not done this round.
+
+## T28 / T29 — subagents · `a9c91c1`, `f36991f`
+
+T28: 41 assertion sites normalized, 19 left deliberately (they pin a helper family's NAME, e.g. Disp/Obj/Depth routing,
+where normalizing would make a wrong route pass). T29: all 118 Coverage files carry `// Covers:` on line 3 (line 2 trips
+IDE0073's file-header template), 0 TODO(opus). Both agents worked in worktrees nested under `.claude/worktrees/`; one was
+cut from pre-round-31 master, and a nested checkout doubles `.globalconfig` (MultipleGlobalAnalyzerKeys) — see memory.
+
+## Fixes found along the way
+
+- `3548b70` + `850d821`: `AuditSuppressionScanTests` walked nested checkouts; excluded `.claude/`/`.git/`, and its temp
+  writes are registered with the write guard (the first commit left `RepoWriteGuardTests` red — caught at the next full run).
+- Stale `DwarfMapper.dll.stryker-unchanged` markers in nine `tests/*/bin` trees (see T10 above).
+
 ## T08 / T27 — owner rulings, 2026-09-27
 
 **T08:** extend the three bundles `ae9c7ea` established (and finish R27-02's `MapperOptions` migration) rather than
@@ -257,9 +330,6 @@ for a workflow-scoped push by the owner.
    programmer is compile-time warned when a linkage or type is broken, so emitting a runtime type test to
    re-check it is duplicated work.
 
-## Not executed
+## Not executed (first pass — superseded by the entries above)
 
-T08 (contradicts the three-bundle ruling in `ae9c7ea` — needs an owner decision), T10/T13 (projection hoisting
-and its in-memory route; T10's stop condition fires because the lambda is written across many `sb` sites), T11,
-T14 (needs an Opus spec first), T15–T18, T20 (touches `.github/workflows`, which this session's token cannot
-push), T21–T30. `round31-audit.sh` needs `python3` on PATH; `python` is what resolves on this machine.
+The first pass left T08, T10/T13, T11, T14, T15–T18, T20–T30 open; the second pass (2026-09-27) is recorded above. `round31-audit.sh` needs `python3` on PATH; `python` is what resolves on this machine.
