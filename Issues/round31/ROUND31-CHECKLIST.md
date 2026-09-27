@@ -61,7 +61,18 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
 
 ## Owner actions still open
 
-1. Push `feat/round31` with a workflow-scoped token (T19/T20/T21/T22 touch `.github/workflows`).
-2. T21 [H]: nuget.org policy, `release` environment with reviewers, `NUGET_USER`, then `NUGET_TRUSTED_PUBLISHING=true`.
-3. Decide: T18's ambient-registration opt-out option; T26's static entry point; further T08 paydown families.
-4. Round-32 candidates from measurement: pre-sized Preserve identity map (2.3x); the generated `int[] → List<long>` widening losing to LINQ (1.6x).
+0. **The runtime mutation leg is red: 90.45 % against `break` 97** (housekeeping `-MutationLeg runtime`, 2026-09-27).
+   It has been red since T12's first pass (the T26 proposal records 93.13 %), and this round's new registry code
+   (`RegisterMany`, the destination buckets) has **zero** survivors. All 17 survivors are equivalent by construction:
+   13 in `ExactPairSlot`/`ExactUpdateSlot` + the `TryGetUpdate` block (a cache has no observable behaviour — skipping
+   it re-resolves the same answer), 2 `ThrowIfNull(source)` guards CA1062 requires but the enumerable path makes
+   unobservable (contract pinned in `5585dc8`), and the 2 depth-clamp boundaries already adjudicated in round 30.
+   The decision `PROPOSAL-T26-compile-time-binding.md` already named: **adjudicate them as proven-equivalent and re-pin
+   `break` from the measured score** (the floor moves down), **or delete the slots** (the facade returns to the
+   registry lookup, 1.25–1.8x slower). The generator, pipeline, DocTooling, CodeFixes and Testing legs mutate no file
+   this round changed. Coverage floors: all five pass after `59edd01`.
+1. Validate against FusedChat (not done here: it repins eight `.csproj` in your other repo — see TASK-LOG "Gates before handing over").
+2. Push `feat/round31` with a workflow-scoped token (T19/T20/T21/T22 touch `.github/workflows`).
+3. T21 [H]: nuget.org policy, `release` environment with reviewers, `NUGET_USER`, then `NUGET_TRUSTED_PUBLISHING=true`.
+4. Decide: T18's ambient-registration opt-out option; T26's static entry point; further T08 paydown families.
+5. Round-32 candidates from measurement: pre-sized Preserve identity map (2.3x); the generated `int[] → List<long>` widening losing to LINQ (1.6x).

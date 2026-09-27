@@ -315,6 +315,21 @@ cut from pre-round-31 master, and a nested checkout doubles `.globalconfig` (Mul
   writes are registered with the write guard (the first commit left `RepoWriteGuardTests` red — caught at the next full run).
 - Stale `DwarfMapper.dll.stryker-unchanged` markers in nine `tests/*/bin` trees (see T10 above).
 
+## Gates before handing over (2026-09-27)
+
+- **Coverage** (`housekeeping -Coverage`): Generator 99.9 % against its 100 % floor — one unreachable guard in
+  `EfAotProjectionCheck` (a non-class target the pipeline predicate cannot produce), removed in `59edd01`; then all five
+  floors pass, none moved by >= 1.0 pp, nothing re-pinned.
+- **Runtime mutation leg** (`housekeeping -MutationLeg runtime`): 90.45 % vs `break` 97, red since T12's first pass;
+  every survivor equivalent by construction (see the checklist's owner action 0). Needs the owner ruling the T26
+  proposal named. Two survivors turned out to be CA1062-forced guards; removing one was tried and refused by the
+  analyzer, so the contract is pinned by a test instead (`5585dc8`).
+- **harden-runner on Windows/macOS jobs**: the action's README lists GitHub-hosted Windows and macOS as supported in
+  AUDIT mode, which every inserted step uses — no `if:` guard needed.
+- **FusedChat** (the non-self-authored consumer): not run — it means repinning eight `.csproj` in the owner's other
+  repository. Procedure in memory `fusedchat-is-the-consumer-project`; pack WITH package validation on (RegisterMany is
+  new public API against the 1.0.2-rc.1 baseline), and treat any new DWARF070/113/114/115 there as a finding.
+
 ## T08 / T27 — owner rulings, 2026-09-27
 
 **T08:** extend the three bundles `ae9c7ea` established (and finish R27-02's `MapperOptions` migration) rather than
