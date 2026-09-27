@@ -2185,5 +2185,34 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Info,
             true,
             helpLinkUri: HelpBase + "dwarf112");
+
+        /// <summary>
+        ///     <c>DWARF113</c> (Error) — a mapping between two DIFFERENT types where at least one is a C# 15 union type
+        ///     (a class or struct carrying <c>System.Runtime.CompilerServices.UnionAttribute</c>).
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 31 T24, research C3: .NET 11 / C# 15 ships unions on 2026-11-10, and DwarfMapper has no mapping
+        ///         policy for them yet. Measured before this id existed: a union member fell into ordinary struct
+        ///         handling — <c>Pet</c> into <c>object</c> boxed the union WRAPPER rather than its case value, silently,
+        ///         and <c>Pet</c> into <c>PetDto</c> was refused as DWARF025 "ambiguous constructor", which names the
+        ///         wrong problem (one constructor per case type is the union's shape, not an ambiguity). Refusing by name
+        ///         before any of that runs is the loud answer until a policy exists.
+        ///     </para>
+        ///     <para>
+        ///         Not refused: the SAME union type on both sides (a struct copy, which is exactly right), and an explicit
+        ///         <c>[MapProperty(Use = ...)]</c> converter, which is the remedy this message offers. Detected by the
+        ///         attribute's full name, which needs nothing newer than the Roslyn floor and also recognises a union
+        ///         declared by hand. Args: {0} = the whole message, built by <c>MapperExtractor.UnionRefusal</c>.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor UnionTypeNotMapped = new(
+            "DWARF113",
+            "Union types are not mapped yet",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf113");
     }
 }

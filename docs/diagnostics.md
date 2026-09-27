@@ -2549,6 +2549,22 @@ the property existed must not start failing a warnings-as-errors build.
 **Fix:** rename the member, or give the projection a name of its own. To keep things as they are, suppress this in
 `.editorconfig` (`dotnet_diagnostic.DWARF112.severity = none`).
 
+## dwarf113
+**Union types are not mapped yet** · Error
+
+C# 15 (.NET 11) adds union types — `union Pet(Cat, Dog)`, lowered to a struct marked
+`System.Runtime.CompilerServices.UnionAttribute` with one constructor per case type and an `object? Value`.
+DwarfMapper has no mapping policy for them yet, so a mapping between two **different** types where either one is
+a union is refused: a member (`Pet` → `PetDto`, `Pet` → `object`, `Cat` → `Pet`), a mapping method's own
+endpoints (`partial PetDto Map(Pet p)`), and a projection member. Before this refusal a union was handled as an
+ordinary struct — mapped into `object` it boxed the union **wrapper** rather than its case value, silently.
+
+Not refused: the **same** union type on both sides (a struct copy, which is exactly right), and a member with an
+explicit converter.
+
+**Fix:** convert it yourself — `[MapProperty(nameof(Src.Pet), nameof(Dst.Pet), Use = nameof(ToDto))]` with a
+`PetDto ToDto(Pet p)` that switches over the cases — or keep the same union type on both sides.
+
 ---
 
 ## Runtime exceptions

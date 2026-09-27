@@ -832,6 +832,13 @@ namespace DwarfMapper.Generator.Pipeline
                 return null;
             }
 
+            // ── DWARF113: a union on either side of a differing pair, before any path treats it as a struct ──
+            if (UnionRefusal(srcType, tgtType, targetMemberName) is { } unionMessage)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, location, unionMessage));
+                return null;
+            }
+
             // ── Pre-check: collection/dictionary targets BEFORE implicit-conversion ──
             // EF Core cannot translate HashSet/Dictionary/immutable collection projections even
             // when source==target (same type is directly assignable but NOT SQL-translatable).

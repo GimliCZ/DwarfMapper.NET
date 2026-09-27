@@ -64,6 +64,13 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF113` (Error): C# 15 union types are refused until DwarfMapper has a policy for them.** .NET 11 ships
+  unions on 2026-11-10. Without this, a union was mapped as an ordinary struct — into `object` it boxed the union
+  wrapper instead of its case value, silently, and into another union it was refused as `DWARF025` "ambiguous
+  constructor", which names the wrong problem. A mapping between two different types where either is a union
+  (member, method endpoint or projection member) now reports `DWARF113`. The same union on both sides is still
+  copied, and an explicit `[MapProperty(Use = …)]` converter is honoured. Detected by the attribute's name, so it
+  works on the current Roslyn floor. (Round 31 T24, research C3.)
 - **`DwarfMapperRegistry.RegisterMany`, and generated module initializers register through it.** Every mapped pair
   registers six collection shapes keyed on `IEnumerable<S>`, and each one grew the registry's lock-free interface
   list by copying it — startup allocation quadratic in the application's map count (research P6: 412 MB at 1,000

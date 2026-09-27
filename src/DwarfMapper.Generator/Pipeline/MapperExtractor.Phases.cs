@@ -1378,6 +1378,14 @@ namespace DwarfMapper.Generator.Pipeline
 
             var sourceType = method.Parameters[0].Type;
 
+            // DWARF113 at the endpoint itself: `partial PetDto Map(Pet p)` would otherwise be resolved member by
+            // member as an ordinary struct pair (and refused as DWARF025, which names the wrong problem).
+            if (UnionRefusal(sourceType, targetType, method.Name) is { } unionMessage)
+            {
+                acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, methodLocation, unionMessage));
+                return;
+            }
+
             // The FIFTH call site of the one gate, and the reason it is not named after the create map any
             // more. Every branch above this one is some other endpoint, so this is the create map — and a
             // directive whose home is the UPDATE-INTO ([MapCollectionKey], finding D14) is discarded HERE
