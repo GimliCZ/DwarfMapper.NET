@@ -605,7 +605,10 @@ The same destination member is configured more than once — by both an attribut
 Something that may be null is being written into a destination slot whose type says it cannot hold one. That
 something is one of four things, and the message says which:
 
-* **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`).
+* **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`). The
+  nullability is the one the compiler uses, attributes included: a `[MaybeNull] string` source counts as nullable,
+  and a `[DisallowNull] string?` destination counts as non-nullable (round 31, T23). `[NotNull]` and `[AllowNull]`
+  are not read yet, so they cannot silence this warning.
 * **`Mapping parameter 'x'`** — an extra parameter on the map method
   (`partial Dst Map(Src s, Child? inner)`), matched to the destination member by name.
 * **`The source element mapped into 'Items'`** — a nullable reference *element* of a mapped collection, array,
