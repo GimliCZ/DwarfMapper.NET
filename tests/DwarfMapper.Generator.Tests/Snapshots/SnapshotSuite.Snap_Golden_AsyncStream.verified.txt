@@ -44,7 +44,10 @@ internal static class __DwarfMapperAmbientRegistration
     internal static void __Register()
     {
         if (global::System.Threading.Interlocked.Exchange(ref __registered, 1) != 0) return;
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IAsyncEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IAsyncEnumerable<global::Demo.B>), static __s => __Demo_M_56f0a3bf.Map((global::System.Collections.Generic.IAsyncEnumerable<global::Demo.A>)__s));
+        global::DwarfMapper.DwarfMapperRegistry.RegisterMany(new (global::System.Type, global::System.Type, global::System.Func<object, object>)[]
+        {
+            (typeof(global::System.Collections.Generic.IAsyncEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IAsyncEnumerable<global::Demo.B>), static __s => __Demo_M_56f0a3bf.Map((global::System.Collections.Generic.IAsyncEnumerable<global::Demo.A>)__s)),
+        });
     }
 }
 // ==== DwarfMapper.ServiceCollectionExtensions.g.cs ====

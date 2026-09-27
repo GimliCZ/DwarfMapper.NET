@@ -58,6 +58,13 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DwarfMapperRegistry.RegisterMany`, and generated module initializers register through it.** Every mapped pair
+  registers six collection shapes keyed on `IEnumerable<S>`, and each one grew the registry's lock-free interface
+  list by copying it — startup allocation quadratic in the application's map count (research P6: 412 MB at 1,000
+  pairs, mostly on the Large Object Heap). A module initializer now registers its whole assembly in one batch, and
+  the list is copied once. `RegisterMany` is defined as exactly the sequence of `Register` calls it replaces —
+  first wins, a second provider of a pair (in the same batch or another) is ambiguous — and 3,000 interface
+  entries now allocate under 1 MB where a loop over `Register` allocated 280 MB. (Round 31 T11.)
 - **`DWARF112` (Info) and a `{Method}Expression` property on every projection.** A projection method
   (`IQueryable<D> Project(IQueryable<S> q)`) now also exposes the tree it applies as a static
   `Expression<Func<S, D>>` named after the method, so a query can be composed the EF-native way —

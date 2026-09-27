@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace DwarfMapper
 {
@@ -111,17 +112,63 @@ namespace DwarfMapper
             // duplicate registration does not double-count and read as ambiguous at lookup time.
             if (source.IsInterface)
             {
-                lock (InterfaceMapsGate)
-                {
-                    var current = _interfaceMaps;
-                    var grown = new (Type, Type, Func<object, object>)[current.Length + 1];
-                    Array.Copy(current, grown, current.Length);
-                    grown[current.Length] = (source, destination, map);
+                PublishInterfaceMaps([(source, destination, map)]);
+            }
+        }
 
-                    // Publish the fully built array in one volatile write: a reader either sees the old array
-                    // or the complete new one, never a half-filled one.
-                    _interfaceMaps = grown;
+        /// <summary>
+        ///     Registers many maps at once, with exactly the semantics of calling <see cref="Register" /> for each entry
+        ///     in order — first wins, and a second distinct provider of a pair (in this batch or an earlier one) marks it
+        ///     ambiguous. Generated module initializers use it so an assembly's interface-keyed entries grow the lock-free
+        ///     lookup snapshot once, instead of once per entry.
+        /// </summary>
+        /// <remarks>
+        ///     Each pair auto-registers six collection shapes keyed on <c>IEnumerable&lt;S&gt;</c>, and growing the
+        ///     copy-on-write interface list by one per entry made startup allocation QUADRATIC in the application's map
+        ///     count — measured 412 MB at 1,000 pairs, every copy past 85 KB on the Large Object Heap (research P6). The
+        ///     exact-pair table is written entry by entry, as before; only the interface list is deferred, and it is
+        ///     published in a <see langword="finally" /> so an argument that throws mid-batch leaves exactly the state the
+        ///     equivalent sequence of <see cref="Register" /> calls would have left.
+        /// </remarks>
+        public static void RegisterMany(ReadOnlySpan<(Type Source, Type Destination, Func<object, object> Map)> maps)
+        {
+            List<(Type, Type, Func<object, object>)>? accepted = null;
+            try
+            {
+                foreach (var (source, destination, map) in maps)
+                {
+                    ArgumentNullException.ThrowIfNull(source, nameof(maps));
+                    ArgumentNullException.ThrowIfNull(destination, nameof(maps));
+                    ArgumentNullException.ThrowIfNull(map, nameof(maps));
+
+                    if (Maps.TryRegister(new Key(source, destination), map) && source.IsInterface)
+                    {
+                        (accepted ??= new List<(Type, Type, Func<object, object>)>(maps.Length)).Add((source, destination, map));
+                    }
                 }
+            }
+            finally
+            {
+                if (accepted is not null)
+                {
+                    PublishInterfaceMaps(CollectionsMarshal.AsSpan(accepted));
+                }
+            }
+        }
+
+        /// <summary>Appends to the interface list: one copy, one volatile publish, under the gate.</summary>
+        private static void PublishInterfaceMaps(ReadOnlySpan<(Type, Type, Func<object, object>)> added)
+        {
+            lock (InterfaceMapsGate)
+            {
+                var current = _interfaceMaps;
+                var grown = new (Type, Type, Func<object, object>)[current.Length + added.Length];
+                Array.Copy(current, grown, current.Length);
+                added.CopyTo(grown.AsSpan(current.Length));
+
+                // Publish the fully built array in one volatile write: a reader either sees the old array
+                // or the complete new one, never a half-filled one.
+                _interfaceMaps = grown;
             }
         }
 

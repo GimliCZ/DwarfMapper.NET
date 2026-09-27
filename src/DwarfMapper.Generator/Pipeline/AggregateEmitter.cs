@@ -393,8 +393,19 @@ namespace DwarfMapper.Generator.Pipeline
             sb.AppendLine("    internal static void __Register()");
             sb.AppendLine("    {");
             sb.AppendLine("        if (global::System.Threading.Interlocked.Exchange(ref __registered, 1) != 0) return;");
+            // Round 31 T11 (research P6): every create-registration of this assembly goes in ONE RegisterMany call,
+            // in the order the separate Register calls used to run, so the registry grows its lock-free interface
+            // list once per assembly instead of once per entry (which was quadratic in the application's map count).
+            // RegisterMany is defined as exactly that sequence of Register calls. Update-into maps keep their own path.
+            var createRegistrations = regs.Count + collectionRegs.Count + handWrittenRegs.Count;
+            if (createRegistrations > 0)
+            {
+                sb.AppendLine("        global::DwarfMapper.DwarfMapperRegistry.RegisterMany(new (global::System.Type, global::System.Type, global::System.Func<object, object>)[]");
+                sb.AppendLine("        {");
+            }
+
             foreach (var r in regs)
-                sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(")
+                sb.Append("            (typeof(")
                     .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
                     .Append(r.Field).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s)")
                     // The registry's delegate type is the SHIPPED Func<object, object>, so a map the user declared
@@ -402,17 +413,17 @@ namespace DwarfMapper.Generator.Pipeline
                     // registration (dropping it would silently delete a working consumer's ambient map) and names
                     // the pair at the point of violation, instead of handing a null to a non-nullable delegate and
                     // letting it surface as an NRE somewhere downstream. Round 29 task 2.8.
-                    .Append(RegistryNullGuard(r.Source, r.Dest, r.MayReturnNull)).Append(");")
+                    .Append(RegistryNullGuard(r.Source, r.Dest, r.MayReturnNull)).Append("),")
                     .Append('\n');
 
             if (collectionRegs.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("        // Collection shapes over the element maps above. AutoMapper derived these");
-                sb.AppendLine("        // implicitly; this registry resolves an EXACT pair, so they are registered");
-                sb.AppendLine("        // explicitly at COMPILE time - no reflection, no runtime synthesis.");
-                sb.AppendLine("        // Keyed on IEnumerable<TSource>: the registry's interface lookup then serves");
-                sb.AppendLine("        // a List, an array, a HashSet and a lazy LINQ iterator from this one entry.");
+                sb.AppendLine("            // Collection shapes over the element maps above. AutoMapper derived these");
+                sb.AppendLine("            // implicitly; this registry resolves an EXACT pair, so they are registered");
+                sb.AppendLine("            // explicitly at COMPILE time - no reflection, no runtime synthesis.");
+                sb.AppendLine("            // Keyed on IEnumerable<TSource>: the registry's interface lookup then serves");
+                sb.AppendLine("            // a List, an array, a HashSet and a lazy LINQ iterator from this one entry.");
             }
 
             foreach (var r in collectionRegs)
@@ -426,26 +437,31 @@ namespace DwarfMapper.Generator.Pipeline
                 // path, which has pre-sized since round 30 (research P1). Inlining the fast paths into each
                 // registration was measured at 70 % growth of the golden snapshot corpus (six registrations per pair,
                 // ~20 lines each); one generic helper gives the same specialised machine code for one emitted line.
-                sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(").Append(src)
+                sb.Append("            (typeof(").Append(src)
                     .Append("), typeof(").Append(r.Dest).Append("), static __s => global::DwarfMapper.DwarfCollectionMap.")
                     .Append(r.AsArray ? "ToArray<" : "ToList<").Append(r.Source).Append(", ").Append(elem)
                     .Append(">(__s, static __e => ").Append(r.Field).Append('.').Append(r.Method).Append("(__e)")
-                    .Append(RegistryNullGuard(r.Source, elem, r.MayReturnNull)).Append("));").Append('\n');
+                    .Append(RegistryNullGuard(r.Source, elem, r.MayReturnNull)).Append(")),").Append('\n');
             }
 
             if (handWrittenRegs.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("        // Hand-written [ProvidesMap] methods: shapes the generator cannot express");
-                sb.AppendLine("        // (an object that HOLDS a collection mapped to the collection, say),");
-                sb.AppendLine("        // registered by declaration rather than by reflection.");
+                sb.AppendLine("            // Hand-written [ProvidesMap] methods: shapes the generator cannot express");
+                sb.AppendLine("            // (an object that HOLDS a collection mapped to the collection, say),");
+                sb.AppendLine("            // registered by declaration rather than by reflection.");
             }
 
             foreach (var r in handWrittenRegs)
-                sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(")
+                sb.Append("            (typeof(")
                     .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
-                    .Append(r.Invoker).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s));")
+                    .Append(r.Invoker).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s)),")
                     .Append('\n');
+
+            if (createRegistrations > 0)
+            {
+                sb.AppendLine("        });");
+            }
 
             if (updateRegs.Count > 0)
             {

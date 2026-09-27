@@ -103,7 +103,7 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF110");
             Assert.Contains("AddSingleton<global::Demo.Outer.M>", generated, StringComparison.Ordinal);
-            Assert.Contains("global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::Demo.Src), typeof(global::Demo.Dst)", generated, StringComparison.Ordinal);
+            Assert.Contains("(typeof(global::Demo.Src), typeof(global::Demo.Dst), static __s =>", generated, StringComparison.Ordinal);
         }
     }
 }

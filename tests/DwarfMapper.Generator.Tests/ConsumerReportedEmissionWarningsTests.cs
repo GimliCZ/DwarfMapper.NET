@@ -948,7 +948,7 @@ namespace DwarfMapper.Generator.Tests
             // existing registration moves. Without this, "coalesce every registration" would pass the suite too.
             var all = GeneratorTestHarness.RunAll(NullableSourceParameter, NullableContextOptions.Enable).GeneratedSource;
 
-            Assert.Contains("global::DwarfMapper.DwarfMapperRegistry.Register(", all, StringComparison.Ordinal);
+            Assert.Contains("global::DwarfMapper.DwarfMapperRegistry.RegisterMany(", all, StringComparison.Ordinal);
             Assert.DoesNotContain("?? throw", all, StringComparison.Ordinal);
         }
 

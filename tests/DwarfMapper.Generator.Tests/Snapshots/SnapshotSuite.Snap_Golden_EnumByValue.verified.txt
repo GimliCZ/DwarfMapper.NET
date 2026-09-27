@@ -50,19 +50,22 @@ internal static class __DwarfMapperAmbientRegistration
     internal static void __Register()
     {
         if (global::System.Threading.Interlocked.Exchange(ref __registered, 1) != 0) return;
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::Demo.Src), typeof(global::Demo.Dst), static __s => __Demo_M_56f0a3bf.Map((global::Demo.Src)__s));
+        global::DwarfMapper.DwarfMapperRegistry.RegisterMany(new (global::System.Type, global::System.Type, global::System.Func<object, object>)[]
+        {
+            (typeof(global::Demo.Src), typeof(global::Demo.Dst), static __s => __Demo_M_56f0a3bf.Map((global::Demo.Src)__s)),
 
-        // Collection shapes over the element maps above. AutoMapper derived these
-        // implicitly; this registry resolves an EXACT pair, so they are registered
-        // explicitly at COMPILE time - no reflection, no runtime synthesis.
-        // Keyed on IEnumerable<TSource>: the registry's interface lookup then serves
-        // a List, an array, a HashSet and a lazy LINQ iterator from this one entry.
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.List<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e)));
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.ICollection<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e)));
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e)));
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.IReadOnlyList<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e)));
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.IReadOnlyCollection<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e)));
-        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::Demo.Dst[]), static __s => global::DwarfMapper.DwarfCollectionMap.ToArray<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e)));
+            // Collection shapes over the element maps above. AutoMapper derived these
+            // implicitly; this registry resolves an EXACT pair, so they are registered
+            // explicitly at COMPILE time - no reflection, no runtime synthesis.
+            // Keyed on IEnumerable<TSource>: the registry's interface lookup then serves
+            // a List, an array, a HashSet and a lazy LINQ iterator from this one entry.
+            (typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.List<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e))),
+            (typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.ICollection<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e))),
+            (typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e))),
+            (typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.IReadOnlyList<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e))),
+            (typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.IReadOnlyCollection<global::Demo.Dst>), static __s => global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e))),
+            (typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::Demo.Dst[]), static __s => global::DwarfMapper.DwarfCollectionMap.ToArray<global::Demo.Src, global::Demo.Dst>(__s, static __e => __Demo_M_56f0a3bf.Map(__e))),
+        });
     }
 }
 // ==== DwarfMapper.Extensions.g.cs ====

@@ -10,3 +10,4 @@ DwarfMapper.MapShareAttribute.MapShareAttribute(string! member) -> void
 DwarfMapper.MapShareAttribute.Member.get -> string!
 static DwarfMapper.DwarfCollectionMap.ToArray<TSource, TDestination>(object! source, System.Func<TSource, TDestination>! map) -> TDestination[]!
 static DwarfMapper.DwarfCollectionMap.ToList<TSource, TDestination>(object! source, System.Func<TSource, TDestination>! map) -> System.Collections.Generic.List<TDestination>!
+static DwarfMapper.DwarfMapperRegistry.RegisterMany(System.ReadOnlySpan<(System.Type! Source, System.Type! Destination, System.Func<object!, object!>! Map)> maps) -> void
