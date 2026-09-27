@@ -84,6 +84,15 @@ namespace DwarfMapper.Generator.Tests.Round31
             Assert.Equal(source.Count, mapped.Capacity);
         }
 
+        [Fact] // GUARD: the null-source contract. The explicit ThrowIfNull(source) CA1062 requires is unobservable (the
+               // enumerable path throws the same exception, same parameter name) - an equivalent mutant, pinned here.
+        public void A_null_source_is_an_ArgumentNullException_naming_source()
+        {
+            Assert.Equal("source", Assert.Throws<ArgumentNullException>(() => DwarfCollectionMap.ToList<int, int>(null!, i => i)).ParamName);
+            Assert.Equal("source", Assert.Throws<ArgumentNullException>(() => DwarfCollectionMap.ToArray<int, int>(null!, i => i)).ParamName);
+            Assert.Equal("map", Assert.Throws<ArgumentNullException>(() => DwarfCollectionMap.ToList<int, int>(new[] { 1 }, null!)).ParamName);
+        }
+
         [Fact]
         public void An_uncounted_source_still_maps_completely()
         {
