@@ -104,7 +104,12 @@ namespace DwarfMapper.IntegrationTests.Round31
 
             // A loop over Register copies the whole interface list once per entry: ~108 MB for 3,000 entries on an
             // empty list, more on top of this assembly's own registrations. One copy is a few hundred KB.
-            Assert.True(allocated < 1024 * 1024, $"RegisterMany allocated {allocated:N0} bytes for 3,000 interface entries");
+            // The bound was 1 MB and failed at random: measured 2026-09-27 over nine runs, the batch allocates either
+            // ~0.81-0.83 MB or ~1.40-1.47 MB, depending on whether the exact table's ConcurrentDictionary happens to
+            // resize during these 3,000 inserts - which turns on how many entries earlier tests already registered in
+            // this process, not on RegisterMany. 4 MB sits 2.7x above the high mode and 27x below the quadratic
+            // failure this test exists to catch.
+            Assert.True(allocated < 4 * 1024 * 1024, $"RegisterMany allocated {allocated:N0} bytes for 3,000 interface entries");
         }
 
         private sealed class BatchA;
