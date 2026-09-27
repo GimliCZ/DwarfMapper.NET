@@ -61,20 +61,35 @@ per the owner's ruling they are committed on `feat/round31` for a workflow-scope
 
 ## Owner actions still open
 
-0. **The runtime mutation leg is red: 90.45 % against `break` 97** (housekeeping `-MutationLeg runtime`, 2026-09-27).
-   It has been red since T12's first pass (the T26 proposal records 93.13 %), and this round's new registry code
-   (`RegisterMany`, the destination buckets) has **zero** survivors. All 17 survivors are equivalent by construction:
-   13 in `ExactPairSlot`/`ExactUpdateSlot` + the `TryGetUpdate` block (a cache has no observable behaviour — skipping
-   it re-resolves the same answer), 2 `ThrowIfNull(source)` guards CA1062 requires but the enumerable path makes
-   unobservable (contract pinned in `5585dc8`), and the 2 depth-clamp boundaries already adjudicated in round 30.
-   The decision `PROPOSAL-T26-compile-time-binding.md` already named: **adjudicate them as proven-equivalent and re-pin
-   `break` from the measured score** (the floor moves down), **or delete the slots** (the facade returns to the
-   registry lookup, 1.25–1.8x slower). The generator, DocTooling, CodeFixes and Testing legs mutate no file this round
-   changed. **The pipeline leg is owed:** T08 (`8a4d075`) touched `MemberResolutionContext.cs` and
-   `MapperExtractor.Members.Phases.cs`, which it mutates; its run on 2026-09-27 was stopped by the host for low
-   memory during the baseline (all baseline suites green), so run `housekeeping.ps1 -MutationLeg pipeline` on a
-   machine with headroom. Coverage floors: all five pass after `59edd01`.
-1. Validate against FusedChat (not done here: it repins eight `.csproj` in your other repo — see TASK-LOG "Gates before handing over").
+0. **The runtime mutation leg is red: 90.45 % against `break` 97** (housekeeping `-MutationLeg runtime`, 2026-09-27),
+   red since T12's first pass (the T26 proposal records 93.13 %). This round's new registry code (`RegisterMany`, the
+   destination buckets) has **zero** survivors. Of the 17 survivors, **4 (at 3 sites) were real holes and are killed** by
+   `17fe673` (planted RED -> GREEN): through the facade the update slot is invisible, because a miss falls back to
+   `Update` on the same declared pair, so gutting `TryGetUpdate` or inverting the slot's found test passed every
+   behavioural test. **The other 13 are equivalent by construction** and no honest test reaches them: 9 cache
+   fast-path mutants in `ExactPairSlot`/`ExactUpdateSlot` (skip the cache, or skip storing into it, and the same answer
+   is re-resolved), 2 `ThrowIfNull(source)` guards CA1062 requires but the enumerable path makes unobservable
+   (contract pinned in `5585dc8`), and the 2 depth-clamp boundaries adjudicated in round 30. **Honest ceiling now:
+   165/178 = 92.7 %**, so 97 is unreachable while the slots exist. Round 30's precedent was to remove mutable source
+   rather than lower the floor (`e01ff23`); here that means the choice the T26 proposal names: **delete the slots**
+   (the facade goes back to the registry lookup, 1.25-1.8x slower on the two-type overloads), **replace them with
+   T26's compile-time binding**, or **rule the 13 equivalent and re-pin `break` from a fresh measurement**. Not
+   re-measured here: the host was reaping background runs for memory.
+   **The pipeline leg is owed a clean run.** T08 (`8a4d075`) touched `MemberResolutionContext.cs` and
+   `MapperExtractor.Members.Phases.cs`. Its 2026-09-27 run did finish (report `StrykerOutput/2026-09-27.13-23-40`,
+   "100.00 %"), but 266 of its 284 tested mutants were TIMEOUTS under memory pressure. Stryker counts a timeout as
+   detected, so that score measures nothing, and the post-leg proofs never ran because the host shell died on a console
+   error. Run `housekeeping.ps1 -MutationLeg pipeline` on a quiet machine. The generator, DocTooling, CodeFixes and
+   Testing legs mutate no file this round changed. Coverage floors: all five pass after `59edd01`.
+1. ~~Validate against FusedChat~~ **Done 2026-09-27, in a scratch copy** (your tree, which carries uncommitted rc13
+   repins, was not touched): packed `1.1.0-r31val.1` from `ce993f4` with package validation on against 1.0.2-rc.1,
+   clean; FusedChat restores and builds with 0 errors and no DWARF diagnostic, and none of its 81 warnings is in
+   DwarfMapper-generated code (the generated-file ones are all Razor). Tests: 1,603 pass, 3 fail, 4 skipped, and
+   **the 3 fail identically on rc13**: `MapDonationToPremiumDocument [Typical/Sparse/Dense]` golden snapshots
+   embed the run date via FusedChat's own `BuildDocumentId` (`20260927_…` vs the recorded `20260902_…`), a clock
+   dependency in the app, not a mapping change. The other 894 mapping tests pass, the golden-snapshot cases among them
+   matching byte for byte - the value-level A/B earlier validations lacked. Worth fixing on the FusedChat side: inject
+   the clock into `BuildDocumentId`.
 2. Push `feat/round31` with a workflow-scoped token (T19/T20/T21/T22 touch `.github/workflows`).
 3. T21 [H]: nuget.org policy, `release` environment with reviewers, `NUGET_USER`, then `NUGET_TRUSTED_PUBLISHING=true`.
 4. Decide: T18's ambient-registration opt-out option; T26's static entry point. (T08 is closed; the 16 leaf consumers left loose are listed on its row, should you want them bundled anyway.)
