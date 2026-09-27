@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.TryResolveConversion — collection element conversion failure (DWARF005) at declared and [GenerateMap] endpoints (+3 more)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Phases.cs arms that only a refusal or a gate reaches:

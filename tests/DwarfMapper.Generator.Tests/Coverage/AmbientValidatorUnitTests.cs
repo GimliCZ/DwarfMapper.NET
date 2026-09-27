@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: AmbientValidator.IsHandWritten — a generated-file syntax reference is not hand-written (+2 more)
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

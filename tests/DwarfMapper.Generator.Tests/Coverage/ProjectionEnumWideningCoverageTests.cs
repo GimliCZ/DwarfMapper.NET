@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.IsWideningOrSameWidth — byte/sbyte/ushort/ulong enum-by-value widening arms and the signed→unsigned refusal
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Projection.cs's IsWideningOrSameWidth and the reference-to-Nullable<struct>

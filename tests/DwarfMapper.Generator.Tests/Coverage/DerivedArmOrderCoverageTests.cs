@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.SortArmsMostDerivedFirst — inheritance-depth tiebreak for unrelated dispatch arms
 // Coverage for MapperExtractor.SortArmsMostDerivedFirst's depth tiebreak. Arms are ordered most-derived first so a switch
 // never tests a base type before a subtype. When neither arm's source is assignable to the other, pairwise assignability
 // cannot order them and the inheritance depth decides. That tiebreak had never executed in the full suite: every

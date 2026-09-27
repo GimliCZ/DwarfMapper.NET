@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.TryFindBasePair — two equally-close base pairs are refused as ambiguous (DWARF084)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.RestatesBase.cs's TryFindBasePair tie. The base pair is the declared pair

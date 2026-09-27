@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.AllTypesIn — DWARF071's derived-type walk finds a hierarchy nested inside a holder class, not just top-level ones
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

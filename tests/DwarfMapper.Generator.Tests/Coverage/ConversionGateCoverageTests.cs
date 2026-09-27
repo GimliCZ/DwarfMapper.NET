@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.CollectHooks — BeforeMap/AfterMap arity refusal (DWARF018) (+2 more)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Conversions.cs guards that only a malformed declaration reaches:

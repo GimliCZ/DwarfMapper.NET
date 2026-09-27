@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: ConstructorSelector.UnusableReason — fallback reason when no specific refusal applies (+1 more)
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

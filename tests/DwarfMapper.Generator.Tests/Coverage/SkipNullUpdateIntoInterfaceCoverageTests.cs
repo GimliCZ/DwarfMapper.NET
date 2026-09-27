@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ApplySkipNullSourceMembers — interface target's base-type walk ends on null, not object
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Members.Phases.cs's ApplySkipNullSourceMembers on an INTERFACE destination. The

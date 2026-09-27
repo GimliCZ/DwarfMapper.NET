@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadDenseEnumKeys — mistyped Offset named-argument value falls back to 0
 // ReadDenseEnumKeys reads [MapDenseEnumKeys("Member", Offset = n)]. It matches the named argument by key and then by the
 // value's type (`named.Key == "Offset" && named.Value.Value is int`), and the type half had never been false: every
 // fixture passed an int. A mistyped Offset is what a consumer has on screen mid-edit — CS0029 is already in the

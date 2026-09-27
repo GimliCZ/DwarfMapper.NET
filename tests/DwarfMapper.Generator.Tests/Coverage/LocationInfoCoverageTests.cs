@@ -1,5 +1,6 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: LocationInfo.From — Location.None/null/real-location arms, plus the stale-span guard (+1 more)
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

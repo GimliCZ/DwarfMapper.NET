@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadPairConstructors — a null factory name reports DWARF059/DWARF056, not silence
 using System.Globalization;
 
 // Regression tests for a silently ignored directive: [MapConstructor<S,T>(null)] names no factory, yet the pair was

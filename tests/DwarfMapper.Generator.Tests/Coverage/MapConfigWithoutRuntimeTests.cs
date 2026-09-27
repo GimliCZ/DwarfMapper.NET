@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadMapConfig — early return when the compilation has no MapConfig<S,T> runtime type
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 

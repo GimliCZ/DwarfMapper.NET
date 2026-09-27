@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: DictionaryConverter.SourceKeyIsNullableRef — key/value nullable-ref reads on a non-pair-sequence source (+1 more)
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 

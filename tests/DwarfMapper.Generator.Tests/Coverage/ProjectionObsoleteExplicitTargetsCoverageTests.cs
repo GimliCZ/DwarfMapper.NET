@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveProjectionMembers — an obsolete destination member stays when targeted by [MapProperty]/[MapValue]
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Projection.cs's ResolveProjectionMembers under IgnoreObsoleteMembers. An obsolete

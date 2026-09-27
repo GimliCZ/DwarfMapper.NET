@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: TransferModelShape.AssemblyDisplayName — no-assembly and no-base-beyond-object outcomes (+1 more)
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

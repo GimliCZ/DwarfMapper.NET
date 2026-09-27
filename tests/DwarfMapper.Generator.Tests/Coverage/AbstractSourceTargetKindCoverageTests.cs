@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.IsAbstractOrInterfaceAutoNestSource — an abstract source into enum/interface stays DWARF005, not DWARF033
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

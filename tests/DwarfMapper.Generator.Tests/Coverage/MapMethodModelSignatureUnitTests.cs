@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapMethodModel.EmitParameterTypeSignature — signature-vs-full-name fallback (+2 more)
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Model;
 

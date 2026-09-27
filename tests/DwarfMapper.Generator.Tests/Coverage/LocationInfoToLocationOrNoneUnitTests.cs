@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: LocationInfo.ToLocationOrNone — null-info to Location.None fallback
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.CollectFactoryExcludedMembers — interface base-walk to null, and readonly/const/required field arms
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

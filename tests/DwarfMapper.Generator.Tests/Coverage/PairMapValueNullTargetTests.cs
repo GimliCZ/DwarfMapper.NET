@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadPairMapValues — a null target name reports DWARF042 like empty; Use = null supplies nothing
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

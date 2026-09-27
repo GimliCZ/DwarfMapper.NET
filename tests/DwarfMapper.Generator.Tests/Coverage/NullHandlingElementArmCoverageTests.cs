@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: DictionaryConverter.Expr — null-handling arms (ValueOrDefault/ThrowIfNull/NullableProject) for dict values, list elements (+1 more)
 // Coverage suite for the per-ENTRY null-handling arms shared by DictionaryConverter.Expr and
 // CollectionConverter.ElementExpr. Both builders switch on NullHandling twice — once for an entry with no
 // converter, once for an entry routed through one — and the ValueOrDefault / ThrowIfNull / NullableProject arms

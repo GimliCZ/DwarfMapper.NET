@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: UserConversionConverter.Short — sanitizes an empty (array) type name and keeps an underscore in one
 // A user-defined conversion operator is called through a synthesized __DwarfMap_UserConv_ shim whose name is built
 // from the two types' simple names. Two name shapes had never been sanitized: an ARRAY, whose simple name is empty and
 // is written as a single underscore, and a name holding a character that is not a letter or digit.

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: KnownNames.AttributeSimpleName — null-class arm no compilation reaches (+1 more: IsAttributeNamed)
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

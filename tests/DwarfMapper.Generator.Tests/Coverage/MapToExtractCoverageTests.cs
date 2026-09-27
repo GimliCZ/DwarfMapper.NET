@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapToGenerator.Extract — non-binding ctor arg, nameless [MapIgnore], multi-target [MapProperty], global namespace
 using System.Globalization;
 
 // Coverage for MapToGenerator.Extract — the [MapTo] registry front door's reading of one annotated source — and for the

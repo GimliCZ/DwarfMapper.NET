@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.DrainNestedMappingQueue — nested pair factory lookup/ctor-arg resolution; update-into init-only scan (+1 more)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Phases.cs arms that only a nested pair's construction or an update-into

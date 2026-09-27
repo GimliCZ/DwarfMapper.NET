@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapToGenerator.Resolver.TryCollection — non-enumerable source into a list/array destination is refused
 using System.Globalization;
 
 // Coverage for the [MapTo] registry's TryCollection: a U[] or List<U> destination fed by a source that is not

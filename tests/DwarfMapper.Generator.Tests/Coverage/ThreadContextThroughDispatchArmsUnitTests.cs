@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ThreadContextThroughDispatchArms — arm already needing ctx is kept idempotently
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;

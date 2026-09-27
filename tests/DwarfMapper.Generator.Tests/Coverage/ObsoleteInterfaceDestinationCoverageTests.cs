@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ObsoleteMemberNames — an interface destination (no base type) still drops its obsolete member under update-into
 // ObsoleteMemberNames walks the destination type and its base types, stopping at `object`. An INTERFACE has no base type
 // at all, so the walk ends on null instead — an arm no fixture had reached, because a create map refuses an interface
 // destination before member resolution. An update-into writes into an existing instance and accepts one, and with

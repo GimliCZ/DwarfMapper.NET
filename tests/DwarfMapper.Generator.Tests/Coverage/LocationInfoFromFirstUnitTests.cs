@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: LocationInfo.FromFirst — empty-locations fallback no generator fixture reaches
 using System.Collections.Immutable;
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;

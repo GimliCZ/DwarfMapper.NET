@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveUnflattenTarget — dotted-path missing segment (DWARF043), unknown source (DWARF009) refusals (+2 more)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Flatten.cs:

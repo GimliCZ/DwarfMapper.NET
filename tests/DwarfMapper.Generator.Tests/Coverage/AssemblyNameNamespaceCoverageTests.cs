@@ -1,5 +1,6 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: DwarfGenerator.SanitizeNamespace — non-identifier/digit-leading/doubled-dot segment spellings (+1 more)
 using DwarfMapper.Generator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

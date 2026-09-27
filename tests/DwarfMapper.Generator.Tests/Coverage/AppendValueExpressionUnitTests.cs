@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapEmitter.AppendValueExpression — a null-lifting member with no converter, and a recursion-capable unwrapped converter
 using System.Text;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;

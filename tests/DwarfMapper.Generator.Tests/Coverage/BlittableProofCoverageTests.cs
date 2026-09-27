@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: BlittableProof.CanReinterpret — layout identity across primitives, enums, nested/partial structs, pointers and fixed buffers
 using System.Numerics;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;

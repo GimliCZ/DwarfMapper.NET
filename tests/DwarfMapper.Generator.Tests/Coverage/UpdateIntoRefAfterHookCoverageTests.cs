@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapEmitter.EmitUpdateIntoMethod — an [AfterMap] hook taking the destination by ref is called with `ref d`
 // Coverage suite for MapEmitter's EmitUpdateIntoMethod after-hook call. An [AfterMap] hook may take the destination BY
 // REF, and the update-into body must then pass it as `ref d`, or the call does not bind (CS1620). Every update-into
 // fixture's after-hook took the destination by value, so the `ref ` prefix was never written.

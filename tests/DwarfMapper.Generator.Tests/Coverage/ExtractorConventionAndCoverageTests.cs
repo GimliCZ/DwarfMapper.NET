@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.EmitSourceCoverageFromConsumed — IgnoreObsoleteMembers arm under projection RequiredMapping.Both (+2 more)
 // Coverage suite for three MapperExtractor.cs arms that each need one more thing than the existing fixtures had:
 //   - EmitSourceCoverageFromConsumed's IgnoreObsoleteMembers arm — the PROJECTION endpoint's source-coverage gate
 //     (RequiredMapping = Both), which the create/update fixtures for the same option never reach;

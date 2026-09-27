@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.WithNonNullKey — null-keyed items are skipped while the rest keep order and key
 using DwarfMapper.Generator.Pipeline;
 
 // Unit test for MapperExtractor.WithNonNullKey, extracted from ReadDerivedTypeAttributes' skip of an attribute with no

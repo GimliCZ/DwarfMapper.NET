@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: AmbientRequiresCollector.ReadUsesMapAttribute — non-generic typeof(Type,Type) UsesMap branch reaching the REQUIRES manifest
 // Coverage suite for DwarfGenerator's ambient REQUIRES manifest. It merges four sources of consumed pairs: facade
 // Map calls, assembly-level [UsesMap], and class-level [UsesMap] in both its generic and its typeof forms. Only the
 // generic class-level form had a fixture. A class carrying the typeof form contributed nothing the tests could see,

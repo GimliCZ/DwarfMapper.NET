@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.HasImplicitConversion — the [BeforeMap] applicability check at the update-into and GenerateMap-pair endpoints
 // Coverage suite for [BeforeMap] wiring at the two endpoints that build their own hook list and had never been
 // handed a hook that APPLIES: the update-into map and the [GenerateMap] pair. Both loops ran on every fixture
 // with a hook declared, but only ever to reject it, so a regression that dropped the before-hook call from

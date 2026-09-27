@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: EquatableArray<T>.GetHashCode — default/empty array and a null element hash consistently (+2 more)
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;

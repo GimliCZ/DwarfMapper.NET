@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveProjectionExpr — DWARF070 dedup: a nullable source bound twice reports once; unrelated diagnostics don't count
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

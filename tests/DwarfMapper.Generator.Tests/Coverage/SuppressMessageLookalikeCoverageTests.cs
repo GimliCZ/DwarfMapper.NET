@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.HasSuppressMessage — rejects name-only lookalikes (wrong arity, non-string id, prefix-only id)
 // Coverage suite for MapperExtractor.Conversions.cs's HasSuppressMessage, which honours [SuppressMessage] on the MAPPER
 // CLASS as the in-file escape hatch for generator diagnostics (#pragma cannot reach them). It matches the attribute by
 // class NAME, so it has to reject the look-alikes a name match lets in: a user-defined SuppressMessageAttribute with

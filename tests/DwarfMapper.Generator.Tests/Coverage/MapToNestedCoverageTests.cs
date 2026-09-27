@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapToGenerator.Resolver.SynthNested — no-source-member and no-conversion refusals named on the nested type
 using System.Globalization;
 
 // Coverage for the [MapTo] registry's SynthNested, which builds a nested object one level down with the same rules the

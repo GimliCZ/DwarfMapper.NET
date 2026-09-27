@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadPairNullSkips — explicit false carve-out and non-bool-argument fallback to enabled
 // ReadPairNullSkips reads the pair-scoped [MapNullSkip<TSource, TTarget>] / [MapNullSkip<TSource, TTarget>(bool)] on a
 // mapper class: no argument means enabled, a bool means itself. As for the method-scoped form, two outcomes had never
 // executed: an explicit `false` that turns the pair off under a mapper-wide SkipNullSourceMembers, and an argument that

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveConstructorArguments — ctor-arg refusals: missing source, case-insensitive clash, no conversion
 using System.Globalization;
 
 // Coverage for three refusals of MapperExtractor.ResolveConstructorArguments that had never executed in the full suite.

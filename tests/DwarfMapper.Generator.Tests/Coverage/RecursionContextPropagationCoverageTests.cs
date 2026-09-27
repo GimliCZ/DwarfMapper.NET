@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.MarkRecursionCapableCallers — ctor-arg halves of the recursion-context passes (+2 more)
 // Coverage suite for MapperExtractor.Phases.cs's post-resolution passes that thread a DwarfRefContext into a
 // CONSTRUCTOR ARGUMENT, or into a member that calls a [MapDerivedType] dispatch method. Every recursion fixture
 // the suite had routed the cycle through settable members, so the ctor-arg halves of these passes — separate

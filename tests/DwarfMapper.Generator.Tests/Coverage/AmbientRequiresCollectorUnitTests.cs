@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: AmbientRequiresCollector.IsFacadeMap — wrong name/type/null containing-type refusals (+1 more: ReadUsesMapAttribute)
 using System.Collections.Immutable;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;

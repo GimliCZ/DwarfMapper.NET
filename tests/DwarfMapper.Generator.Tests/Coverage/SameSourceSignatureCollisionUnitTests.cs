@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReportSameSourceSignatureCollisions — location fallbacks and the declared-after-twin arm
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;

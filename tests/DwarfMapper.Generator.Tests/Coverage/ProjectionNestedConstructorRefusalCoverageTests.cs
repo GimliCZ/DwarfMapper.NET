@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveProjectionNestedObjectExpr — ambiguous nested ctor (DWARF025) stops resolution, no DWARF028 stack
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

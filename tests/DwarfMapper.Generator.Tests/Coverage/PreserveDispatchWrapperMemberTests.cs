@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.SynthesizePreserveDispatchWrappers — a settable-member caller of an acyclic dispatch method shares one ctx wrapper
 // SynthesizePreserveDispatchWrappers redirects a caller of a recursion-capable public [MapDerivedType] dispatch method
 // to the private ctx-accepting wrapper, so two members reaching one source object land in ONE identity map. The
 // constructor-argument arm was pinned (RecursionContextPropagationCoverageTests); the MEMBER arm — the far more common

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ChooseProjectionConstructor — get-only target falls back to the widest public ctor
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Projection.cs's ChooseProjectionConstructor fallback. When the selector's answer is

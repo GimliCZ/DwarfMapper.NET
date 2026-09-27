@@ -1,5 +1,6 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveMembers — an obsolete member a [MapValue] names is kept under IgnoreObsoleteMembers
 // Coverage for an outcome of MapperExtractor.ResolveMembers that had never executed in the full suite:
 // IgnoreObsoleteMembers folds obsolete destination members into the ignore set, but a member a [MapValue] names
 // explicitly is left out of it, so the caller can opt one obsolete member back in without tripping DWARF012.

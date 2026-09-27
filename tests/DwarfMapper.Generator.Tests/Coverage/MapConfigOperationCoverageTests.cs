@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadMapConfig — Map/MapWhen/Ignore/Construct paths and selector/call refusals
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.MapConfig.cs's ReadMapConfig. MapConfig's runtime behaviour is exercised by

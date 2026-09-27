@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadPairConstructors — an unbound [MapConstructor] argument (CS1503) leaves no ctor args; skipped, no double report
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Pairs.cs's ReadPairConstructors skip of a [MapConstructor<S,T>] whose argument does

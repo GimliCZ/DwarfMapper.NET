@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.HasImplicitConversion — the [AfterMap] applicability check at 5 HookCall construction sites (+4 more)
 using System.Globalization;
 
 // Coverage suite for the [AfterMap] "does this hook apply to this pair?" loop, which MapperExtractor.Phases.cs

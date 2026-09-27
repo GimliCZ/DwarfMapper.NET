@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MemberFacts.Readable — no-compilation internal opt-in, cross-assembly InternalsVisibleTo gate, interface static member skip (+1 more)
 using DwarfMapper.Generator.Core;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveAutoMatchedMembers — DWARF080 not reported when a factory-owned required member has no source match
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Members.Phases.cs's DWARF080 condition in ResolveAutoMatchedMembers. A
