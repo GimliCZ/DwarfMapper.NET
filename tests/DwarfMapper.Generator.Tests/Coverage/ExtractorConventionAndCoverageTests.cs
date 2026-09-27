@@ -25,7 +25,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
             GeneratorAssert.DoesNotReport(src, "DWARF039");
-            Assert.Contains("A = __s.A", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("A = __s.A"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.DoesNotContain("Legacy", generated, StringComparison.Ordinal);
         }
 

@@ -35,7 +35,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                                                   public partial class M { [MapNullSkip("x")] public partial Dst Map(Src s); }
                                                                   """);
 
-            Assert.Contains("if (s.Name is not null) __dwarf_target.Name = s.Name;", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("if (s.Name is not null) __dwarf_target.Name = s.Name;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

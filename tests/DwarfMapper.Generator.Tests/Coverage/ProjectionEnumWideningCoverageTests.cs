@@ -30,10 +30,14 @@ namespace DwarfMapper.Generator.Tests.Coverage
                               """);
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            Assert.Contains("A = (int)__s.A,", generated, StringComparison.Ordinal);   // unsigned 8 -> signed 32
-            Assert.Contains("B = (long)__s.B,", generated, StringComparison.Ordinal);  // signed 8 -> signed 64
-            Assert.Contains("C = (int)__s.C,", generated, StringComparison.Ordinal);   // unsigned 16 -> signed 32
-            Assert.Contains("E = (ulong)__s.E,", generated, StringComparison.Ordinal); // unsigned 64 -> unsigned 64
+            Assert.Contains(GeneratorAssert.NormalizeLocals("A = (int)__s.A,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);   // unsigned 8 -> signed 32
+            Assert.Contains(GeneratorAssert.NormalizeLocals("B = (long)__s.B,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);  // signed 8 -> signed 64
+            Assert.Contains(GeneratorAssert.NormalizeLocals("C = (int)__s.C,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);   // unsigned 16 -> signed 32
+            Assert.Contains(GeneratorAssert.NormalizeLocals("E = (ulong)__s.E,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal); // unsigned 64 -> unsigned 64
         }
 
         [Fact]
@@ -63,8 +67,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
                               """);
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            Assert.Contains("M = new global::Demo.D1 { X = __s.M.X },", generated, StringComparison.Ordinal);
-            Assert.DoesNotContain("__s.M == null", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("M = new global::Demo.D1 { X = __s.M.X },"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__s.M == null"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

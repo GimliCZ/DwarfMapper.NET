@@ -64,8 +64,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                """;
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            Assert.Contains("__d[__i++] = __DwarfMap_Obj_global__Demo_P_global__Demo_P2_", generated, StringComparison.Ordinal);
-            Assert.Contains("Finish(s, ref __dwarf_target);", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__d[__i++] = __DwarfMap_Obj_global__Demo_P_global__Demo_P2_"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("Finish(s, ref __dwarf_target);"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -93,7 +95,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                """;
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            Assert.DoesNotContain("__d[__i++] = __DwarfMap_Obj_global__Demo_P_global__Demo_P2_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__d[__i++] = __DwarfMap_Obj_global__Demo_P_global__Demo_P2_"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]

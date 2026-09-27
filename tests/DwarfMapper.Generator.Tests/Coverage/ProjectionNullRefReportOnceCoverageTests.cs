@@ -29,8 +29,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var d = Assert.Single(diagnostics, x => x.Id == "DWARF070");
             Assert.StartsWith("Source member 'A' is a nullable reference", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
-            Assert.Contains("Copy = __s.A!,", generated, StringComparison.Ordinal);
-            Assert.Contains("A = __s.A!,", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("Copy = __s.A!,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("A = __s.A!,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]

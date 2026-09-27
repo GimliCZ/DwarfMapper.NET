@@ -27,8 +27,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF080");
-            Assert.Contains("__dwarf_target.A = src.A;", generated, StringComparison.Ordinal);
-            Assert.DoesNotContain("__dwarf_target.Q", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__dwarf_target.A = src.A;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__dwarf_target.Q"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

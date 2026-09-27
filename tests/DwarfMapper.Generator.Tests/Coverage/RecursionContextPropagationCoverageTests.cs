@@ -42,7 +42,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var generated = GeneratorAssert.EmitsCompilableCode(src);
             // Calling ToDto directly would open a fresh identity map per call and lose the shared graph.
             Assert.Contains("star: __DwarfMap_Disp_global__Demo_Animal_global__Demo_AnimalDto_", generated, StringComparison.Ordinal);
-            Assert.Contains("(z.Star!, __dwarf_ctx, 0));", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("(z.Star!, __dwarf_ctx, 0));"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -69,7 +70,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
             Assert.Contains("global::Demo.Dog __s => __DwarfMap_Obj_global__Demo_Dog_global__Demo_DogDto_", generated, StringComparison.Ordinal);
-            Assert.Contains("(__s, __dwarf_ctx, 0),", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("(__s, __dwarf_ctx, 0),"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.DoesNotContain("__DwarfMap_Disp_", generated, StringComparison.Ordinal);
         }
 

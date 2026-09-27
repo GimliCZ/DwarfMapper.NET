@@ -31,9 +31,11 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
 
             Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-            Assert.Contains("B = __s.B,", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("B = __s.B,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.Contains("C = 7,", generated, StringComparison.Ordinal);
-            Assert.Contains("A = __s.A,", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("A = __s.A,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

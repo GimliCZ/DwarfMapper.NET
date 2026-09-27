@@ -33,7 +33,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var generated = GeneratorAssert.EmitsCompilableCode(
                 Source("Dictionary<string, int?>", "Dictionary<string, int>", setDefault: true));
             // No converter: the unwrap is the whole expression, closed by the statement, not by a call.
-            Assert.Contains("__kv.Value.GetValueOrDefault(); }", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__kv.Value.GetValueOrDefault(); }"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -41,8 +42,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var generated = GeneratorAssert.EmitsCompilableCode(
                 Source("Dictionary<string, int?>", "Dictionary<string, int>", setDefault: false));
-            Assert.Contains("= __kv.Value ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")",
-                generated,
+            Assert.Contains(GeneratorAssert.NormalizeLocals("= __kv.Value ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")"),
+                GeneratorAssert.NormalizeLocals(generated),
                 StringComparison.Ordinal);
         }
 
@@ -52,7 +53,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var generated = GeneratorAssert.EmitsCompilableCode(
                 Source("Dictionary<string, E1?>", "Dictionary<string, E2>", setDefault: true));
             // The unwrap is the converter's ARGUMENT: the call closes right after it.
-            Assert.Contains("(__kv.Value.GetValueOrDefault())", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("(__kv.Value.GetValueOrDefault())"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -60,8 +62,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var generated = GeneratorAssert.EmitsCompilableCode(
                 Source("Dictionary<string, E1?>", "Dictionary<string, E2>", setDefault: false));
-            Assert.Contains("(__kv.Value ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\"))",
-                generated,
+            Assert.Contains(GeneratorAssert.NormalizeLocals("(__kv.Value ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\"))"),
+                GeneratorAssert.NormalizeLocals(generated),
                 StringComparison.Ordinal);
         }
 
@@ -70,7 +72,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var generated = GeneratorAssert.EmitsCompilableCode(
                 Source("Dictionary<string, E1?>", "Dictionary<string, E2?>", setDefault: false));
-            Assert.Contains("(__kv.Value.HasValue ? (", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("(__kv.Value.HasValue ? ("),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         // ── CollectionConverter.ElementExpr ─────────────────────────────────────────────────────────────────

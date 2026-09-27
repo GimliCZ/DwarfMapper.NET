@@ -30,8 +30,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var generated = GeneratorAssert.EmitsCompilableCode(source);
 
-            Assert.Contains("var __dwarf_target = Make(src);", generated, StringComparison.Ordinal);
-            Assert.Contains("__dwarf_target.A = src.A;", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("var __dwarf_target = Make(src);"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__dwarf_target.A = src.A;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -50,10 +52,14 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
 
-            Assert.Contains("__dwarf_target.A = src.A;", generated, StringComparison.Ordinal);
-            Assert.DoesNotContain("__dwarf_target.R", generated, StringComparison.Ordinal);
-            Assert.DoesNotContain("__dwarf_target.Q", generated, StringComparison.Ordinal);
-            Assert.DoesNotContain("__dwarf_target.C", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__dwarf_target.A = src.A;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__dwarf_target.R"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__dwarf_target.Q"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__dwarf_target.C"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             var owned = Assert.Single(diagnostics, d => d.Id == "DWARF080");
             Assert.StartsWith("Destination member 'Q' is init-only or required", owned.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }

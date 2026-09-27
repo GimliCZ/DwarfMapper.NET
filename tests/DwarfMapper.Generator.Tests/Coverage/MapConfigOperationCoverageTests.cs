@@ -35,7 +35,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var src = Cfg(" => c.MapWhen(t => t.A, s => s.A, Keep).Ignore(t => t.Label).Ignore(t => t.Extra);",
                 "    private static bool Keep(S s) => s.A > 0;\n");
 
-            Assert.Contains("if (Keep(s)) __dwarf_target.A = s.A;", GeneratorAssert.EmitsCompilableCode(src), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("if (Keep(s)) __dwarf_target.A = s.A;"),
+                GeneratorAssert.NormalizeLocals(GeneratorAssert.EmitsCompilableCode(src)), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -54,7 +55,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var src = Cfg(" => c.Construct(Make).Ignore(t => t.Label).Ignore(t => t.Extra);",
                 "    private static D Make(S s) => new D();\n", "[GenerateMap<S, D>]\n", "");
 
-            Assert.Contains("var __dwarf_target = Make(src);", GeneratorAssert.EmitsCompilableCode(src), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("var __dwarf_target = Make(src);"),
+                GeneratorAssert.NormalizeLocals(GeneratorAssert.EmitsCompilableCode(src)), StringComparison.Ordinal);
         }
 
         [Fact]

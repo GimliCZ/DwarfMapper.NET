@@ -34,7 +34,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.DoesNotContain(diagnostics, d => d.Id.StartsWith("DWARF", StringComparison.Ordinal) && d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
             Assert.Contains("public partial global::Demo.Dst Map(global::Demo.Src s)", generated, StringComparison.Ordinal);
             Assert.Contains("A = s.A,", generated, StringComparison.Ordinal);
-            Assert.Contains("Items = __DwarfMapColl_", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("Items = __DwarfMapColl_"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
         }
     }

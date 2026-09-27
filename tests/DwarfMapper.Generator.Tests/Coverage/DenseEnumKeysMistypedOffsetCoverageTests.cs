@@ -28,8 +28,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             // Offset 0: the first declared key lands in slot 0 and the last in slot 2, exactly as with no Offset at all.
             Assert.Contains("case global::Demo.Platform.Web:", generated, StringComparison.Ordinal);
-            Assert.Contains("__r[0] = __kv.Value;", generated, StringComparison.Ordinal);
-            Assert.Contains("__r[2] = __kv.Value;", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__r[0] = __kv.Value;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__r[2] = __kv.Value;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

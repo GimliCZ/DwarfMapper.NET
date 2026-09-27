@@ -34,7 +34,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             const string wrapper = "__DwarfMap_Disp_global__Demo_Animal_global__Demo_AnimalDto_";
             Assert.Contains("__dwarf_t.First = " + wrapper, generated, StringComparison.Ordinal);
             Assert.Contains("__dwarf_t.Second = " + wrapper, generated, StringComparison.Ordinal);
-            Assert.Contains("(z.Second!, __dwarf_ctx, 0);", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("(z.Second!, __dwarf_ctx, 0);"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.Contains("private global::Demo.AnimalDto " + wrapper, generated, StringComparison.Ordinal);
             Assert.DoesNotContain("First = Map(", generated, StringComparison.Ordinal);
         }
