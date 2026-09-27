@@ -17,14 +17,17 @@ namespace DwarfMapper.Generator.Pipeline
         private const string FacadeInterface = "DwarfMapper.IDwarfMapper";
         private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
 
-        /// <summary>Cheap syntactic gate: any <c>receiver.Map&lt;...&gt;(...)</c> invocation.</summary>
+        /// <summary>Cheap syntactic gate: any <c>receiver.Map&lt;...&gt;(...)</c> or bare <c>Map&lt;...&gt;(...)</c> invocation.</summary>
         public static bool IsFacadeMapCall(SyntaxNode node, CancellationToken _)
         {
-            return node is InvocationExpressionSyntax
-                   {
-                       Expression: MemberAccessExpressionSyntax { Name: GenericNameSyntax g }
-                   } &&
-                   g.Identifier.Text == "Map";
+            // The bare `Map<S, D>(x)` form is `using static DwarfMapper.Dwarf;` (round 31 T26): Dwarf.Map is static, so
+            // it can be called without a receiver, and it consumes the same ambient pair as the facade does.
+            return node is InvocationExpressionSyntax inv && inv.Expression switch
+            {
+                MemberAccessExpressionSyntax { Name: GenericNameSyntax g } => g.Identifier.Text == "Map",
+                GenericNameSyntax g => g.Identifier.Text == "Map",
+                _ => false
+            };
         }
 
         /// <summary>

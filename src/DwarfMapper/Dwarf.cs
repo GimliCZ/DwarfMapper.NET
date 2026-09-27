@@ -18,10 +18,16 @@ namespace DwarfMapper
     ///     </para>
     ///     <para>
     ///         <b>What is bound, and what is not.</b> A call is bound only when the pair is registered by the SAME
-    ///         assembly the call is in and by no assembly it references - precisely the case where the registry would
-    ///         hand back that assembly's own delegate. The bound call runs the expression the registration runs, on the
-    ///         same mapper instance, so a bound call and a looked-up one cannot differ. A pair declared in another
-    ///         assembly, or reached through a base type or an interface, is resolved at run time by the bodies below.
+    ///         assembly the call is in - and, for a create map, by no assembly it references - which is the case where
+    ///         the registry hands back that assembly's own delegate. The bound call runs the expression the registration
+    ///         runs, on the same mapper instance. A pair declared in another assembly, or reached through a base type or
+    ///         an interface, is resolved at run time by the bodies below.
+    ///     </para>
+    ///     <para>
+    ///         One case can differ: an update-into pair registered by this assembly AND by another one. Update maps
+    ///         carry no manifest, so the generator cannot see the other registration; the bound call uses this
+    ///         assembly's map, while the registry answers with whichever registered first.
+    ///         <see cref="DwarfMapperRegistry.IsUpdateAmbiguous" /> reports that pair either way.
     ///     </para>
     ///     <para>
     ///         The compile-time binding uses C# interceptors. The package's <c>build/DwarfMapper.props</c> enables

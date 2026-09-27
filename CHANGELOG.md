@@ -74,8 +74,10 @@ so a version with no section here ships with no notes.
   and `Dwarf.Map(patch, existing)` resolve exactly like `IDwarfMapper.Map`, but they are static: when the calling
   project itself registers the pair, the generator binds the call to the generated mapper with a C# interceptor — a
   direct call on the same mapper instance the ambient registration uses, running the same expression, with no
-  registry lookup. A pair from another assembly, a pair a referenced assembly also provides, and a call whose types
-  are type parameters fall back to the registry at run time, so no call changes meaning. `IDwarfMapper` is never
+  registry lookup. A pair from another assembly, a create pair a referenced assembly also provides, and a call whose
+  types are type parameters fall back to the registry at run time. (An update-into pair registered by two assemblies
+  is the one exception: update maps have no manifest, so the bound call uses the local map where the registry would
+  use whichever registered first; `IsUpdateAmbiguous` reports it either way.) `IDwarfMapper` is never
   bound (that could bypass an injected decorator or test double). The package enables interceptors for the
   `DwarfMapper.Generated` namespace only, through its `build/DwarfMapper.props`; nothing needs to be set in the
   consuming project. Verified through a package reference and under NativeAOT. (Round 31 T26.)

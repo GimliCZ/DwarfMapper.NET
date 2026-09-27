@@ -377,7 +377,8 @@ var byDi = provider.GetRequiredService<CallStyles>().Map(order);
 - **`Dwarf.Map<TSource, TDest>(src)`** is the same ambient call made static, so the generator can bind it: when the
   calling project registers the pair itself, the call compiles to a direct call on the generated mapper (a C#
   interceptor, enabled by the package for DwarfMapper's own generated namespace only) — no registry lookup. Any other
-  pair falls back to the registry, so the result is always what `IDwarfMapper` would return. Use `IDwarfMapper` where
+  pair falls back to the registry, so the result is what `IDwarfMapper` would return (the one exception, an update-into
+  pair registered by two assemblies, is in the `Dwarf` API docs). Use `IDwarfMapper` where
   you inject a mapper (decorators and test doubles keep working, because an interface call is never bound);
   `Dwarf.Map` where you just want the map. `Dwarf.Map(patch, existing)` is the update-into form.
 

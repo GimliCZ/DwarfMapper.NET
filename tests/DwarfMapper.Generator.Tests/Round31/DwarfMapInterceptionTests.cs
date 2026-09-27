@@ -86,6 +86,9 @@ namespace DwarfMapper.Generator.Tests.Round31
         [Theory]
         [InlineData("public static UnmappedDto C(Unmapped u) => Dwarf.Map<Unmapped, UnmappedDto>(u);")]
         [InlineData("public static OrderDto C(Order? o) => Dwarf.Map<Order?, OrderDto>(o);")]
+        [InlineData("public static OrderDto? C(Order o) => Dwarf.Map<Order, OrderDto?>(o);")]
+        [InlineData("public static class Dwarf { public static T Map<S, T>(S s) => default!; } public static OrderDto C(Order o) => Dwarf.Map<Order, OrderDto>(o);")]
+        [InlineData("public static int C(System.Func<int>[] f) => f[0]();")]
         [InlineData("public static TD C<TS, TD>(TS s) => Dwarf.Map<TS, TD>(s);")]
         [InlineData("public static OrderDto C(Order o) => DwarfMapperFacade.Instance.Map<Order, OrderDto>(o);")]
         [InlineData("public static OrderDto C(IDwarfMapper m, Order o) => m.Map<Order, OrderDto>(o);")]
@@ -135,6 +138,98 @@ namespace DwarfMapper.Generator.Tests.Round31
             Assert.Equal(!referencedProvidesIt, interceptors.Contains("InterceptsLocation(", StringComparison.Ordinal));
         }
 
+        [Fact]
+        public void A_using_static_call_is_bound_and_still_counted_as_a_consumed_pair()
+        {
+            var (interceptors, errors) = Generate("using static DwarfMapper.Dwarf;\n" + Types + """
+                public static class Calls { public static OrderDto Create(Order o) => Map<Order, OrderDto>(o); }
+                """, out _, out var output);
+
+            Assert.Empty(errors);
+            Assert.Contains("InterceptsLocation(", interceptors, StringComparison.Ordinal);
+            // The Requires manifest is what DWARF061 checks at the validation root; a receiver-less call must reach it
+            // exactly as `Dwarf.Map<...>(...)` and `mapper.Map<...>(...)` do.
+            Assert.Contains("DwarfRequiresMap(typeof(global::Demo.Order), typeof(global::Demo.OrderDto))", output,
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Bound_pairs_are_emitted_creates_first_then_by_source_then_by_destination()
+        {
+            var (interceptors, errors) = Generate("""
+                #nullable enable
+                using DwarfMapper;
+                namespace Demo;
+                public class Order { public int Id { get; set; } }
+                public class OrderDto { public int Id { get; set; } }
+                public class OrderRow { public int Id { get; set; } }
+                public class Line { public int Id { get; set; } }
+                public class LineDto { public int Id { get; set; } }
+                [DwarfMapper]
+                public partial class Maps
+                {
+                    public partial OrderRow ToRow(Order source);
+                    public partial OrderDto ToDto(Order source);
+                    public partial LineDto ToLine(Line source);
+                    public partial void Merge(Order source, OrderDto destination);
+                }
+                public static class Calls
+                {
+                    public static void M(Order o, OrderDto d) => Dwarf.Map(o, d);
+                    public static LineDto L(Line l) => Dwarf.Map<Line, LineDto>(l);
+                    public static OrderRow R(Order o) => Dwarf.Map<Order, OrderRow>(o);
+                    public static OrderDto D(Order o) => Dwarf.Map<Order, OrderDto>(o);
+                }
+                """, out _);
+
+            Assert.Empty(errors);
+            string[] expected =
+            [
+                "internal static global::Demo.LineDto __DwarfMap_0(global::Demo.Line source)",
+                "internal static global::Demo.OrderDto __DwarfMap_1(global::Demo.Order source)",
+                "internal static global::Demo.OrderRow __DwarfMap_2(global::Demo.Order source)",
+                "internal static void __DwarfMap_3(global::Demo.Order source, global::Demo.OrderDto destination)"
+            ];
+            var positions = expected.Select(e => interceptors.IndexOf(e, StringComparison.Ordinal)).ToList();
+            Assert.All(positions, p => Assert.True(p >= 0, interceptors));
+            Assert.Equal(positions.OrderBy(p => p), positions);
+        }
+
+        [Fact]
+        public void A_value_type_source_is_bound_like_any_other()
+        {
+            // Only an annotated REFERENCE type is skipped; a struct never carries a nullable annotation to mismatch.
+            var (interceptors, errors) = Generate("""
+                #nullable enable
+                using DwarfMapper;
+                namespace Demo;
+                public struct Point { public int X { get; set; } }
+                public class PointDto { public int X { get; set; } }
+                [DwarfMapper] public partial class Maps { public partial PointDto ToDto(Point source); }
+                public static class Calls { public static PointDto C(Point p) => Dwarf.Map<Point, PointDto>(p); }
+                """, out _);
+
+            Assert.Empty(errors);
+            Assert.Contains("internal static global::Demo.PointDto __DwarfMap_0(global::Demo.Point source)", interceptors,
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_collection_shape_call_is_bound_to_the_registered_collection_walk()
+        {
+            var (interceptors, errors) = Generate(Types + """
+                public static class Calls
+                {
+                    public static System.Collections.Generic.List<OrderDto> All(System.Collections.Generic.IEnumerable<Order> o) =>
+                        Dwarf.Map<System.Collections.Generic.IEnumerable<Order>, System.Collections.Generic.List<OrderDto>>(o);
+                }
+                """, out _);
+
+            Assert.Empty(errors);
+            Assert.Contains("global::DwarfMapper.DwarfCollectionMap.ToList<global::Demo.Order, global::Demo.OrderDto>(source, ",
+                interceptors, StringComparison.Ordinal);
+        }
+
         private static int CountOf(string text, string needle)
         {
             var count = 0;
@@ -152,6 +247,13 @@ namespace DwarfMapper.Generator.Tests.Round31
         private static (string Interceptors, IReadOnlyList<Diagnostic> Errors) Generate(string source,
             out string registeredField, MetadataReference? extra = null)
         {
+            return Generate(source, out registeredField, out _, extra);
+        }
+
+        /// <summary>As above, also returning every generated file, concatenated.</summary>
+        private static (string Interceptors, IReadOnlyList<Diagnostic> Errors) Generate(string source,
+            out string registeredField, out string allGenerated, MetadataReference? extra = null)
+        {
             var compilation = GeneratorTestHarness.BuildCompilation("DwarfMapInterception_" + Guid.NewGuid().ToString("N"),
                 [CSharpSyntaxTree.ParseText(source, Interceptable)], NullableContextOptions.Enable);
             if (extra is not null)
@@ -165,6 +267,9 @@ namespace DwarfMapper.Generator.Tests.Round31
                 .FirstOrDefault(t => t.FilePath.EndsWith("DwarfMapper.Interceptors.g.cs", StringComparison.Ordinal))
                 ?.ToString() ?? string.Empty;
             var errors = output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+            allGenerated = string.Join("\n", output.SyntaxTrees
+                .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+                .Select(t => t.ToString()));
             var registration = output.SyntaxTrees
                 .FirstOrDefault(t => t.FilePath.EndsWith("DwarfMapper.AmbientRegistration.g.cs", StringComparison.Ordinal))
                 ?.ToString() ?? string.Empty;

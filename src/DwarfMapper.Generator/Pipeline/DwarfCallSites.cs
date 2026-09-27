@@ -63,36 +63,35 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     The call site of a <c>Dwarf.Map</c> call that can be bound, or <c>null</c>: not that method, a type
+        ///     The call site of a <c>Dwarf.Map</c> call that can be bound, or <c>null</c>: not that method, or a type
         ///     argument that is not a concrete public type (a type parameter, <c>object</c>, an annotated nullable
-        ///     reference - its signature would not match the interceptor's), or a location the compiler cannot
-        ///     intercept.
+        ///     reference - its signature would not match the interceptor's).
         /// </summary>
         public static DwarfMapCallSite? Extract(GeneratorSyntaxContext ctx, CancellationToken ct)
         {
             var inv = (InvocationExpressionSyntax)ctx.Node;
+            // Both Dwarf.Map overloads are named Map and take two type arguments, and IsCandidate admitted only a
+            // call named Map - so the containing type is the one question left. A symbol comparison, not a name
+            // comparison: it has no null arm to leave untested, and a user type that happens to be called Dwarf in
+            // another namespace is not ours.
+            var dwarf = ctx.SemanticModel.Compilation.GetTypeByMetadataName(DwarfClass);
             if (ctx.SemanticModel.GetSymbolInfo(inv, ct).Symbol is not IMethodSymbol method ||
-                method.Name != "Map" ||
-                method.ContainingType?.ToDisplayString() != DwarfClass ||
-                method.TypeArguments.Length != 2)
+                !SymbolEqualityComparer.Default.Equals(method.ContainingType, dwarf))
             {
                 return null;
             }
 
             var source = method.TypeArguments[0];
             var destination = method.TypeArguments[1];
-            if (IsAnnotatedReference(source) || IsAnnotatedReference(destination))
-            {
-                return null;
-            }
-
             var pair = AmbientRequiresCollector.ToPair(source, destination);
-            var location = ctx.SemanticModel.GetInterceptableLocation(inv, ct);
-            if (pair is null || location is null)
+            if (pair is null || IsAnnotatedReference(source) || IsAnnotatedReference(destination))
             {
                 return null;
             }
 
+            // Never null here: the compiler answers null only for an invocation whose target is not a (member-access
+            // or simple) name, and IsCandidate admitted nothing else.
+            var location = ctx.SemanticModel.GetInterceptableLocation(inv, ct)!;
             return new DwarfMapCallSite(pair.Value.Source, pair.Value.Destination, method.Parameters.Length == 2,
                 location.Version, location.Data);
         }
