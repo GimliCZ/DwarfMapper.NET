@@ -618,23 +618,11 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static (List<FlattenGraphDirective> Directives, List<MemberMap> InjectedMembers)
             ResolveFlattenGraphDirectives(
-                ITypeSymbol sourceType,
-                INamedTypeSymbol targetType,
                 IReadOnlyList<(string SourceNavigation, string TargetCollection)> rawDirectives,
-                Compilation compilation,
-                LocationInfo? location,
+                FlattenGraphRequest req,
                 List<DiagnosticInfo> diagnostics,
-                IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
-                IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-                EnumPolicy enumPolicy,
                 Dictionary<string, SynthesizedMethod> synthesized,
-                NullStrategy nullStrategy,
-                bool autoNest,
-                NestedMappingRegistry nestedRegistry,
-                bool isPreserve,
-                bool allowNonPublic,
-                HashSet<string> consumedTargets,
-                IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> rawDerivedPairs)
+                HashSet<string> consumedTargets)
         {
             var directives = new List<FlattenGraphDirective>();
             var injected = new List<MemberMap>();
@@ -655,22 +643,8 @@ namespace DwarfMapper.Generator.Pipeline
             // severity is ever configured below Error.
             var seenTargets = new HashSet<string>(StringComparer.Ordinal);
 
-            // Built once: every directive is resolved against the same context, and they all write into the
-            // same six collections. Which side a name falls on was measured -- see FlattenGraphRequest for the
-            // two parameters that are deliberately not carried.
-            var req = new FlattenGraphRequest(sourceType,
-                targetType,
-                compilation,
-                location,
-                allMethods,
-                autoCandidates,
-                enumPolicy,
-                nullStrategy,
-                autoNest,
-                nestedRegistry,
-                isPreserve,
-                allowNonPublic,
-                rawDerivedPairs);
+            // Every directive is resolved against the same request (built by the caller) and writes into the same
+            // six collections. Which side a name falls on was measured -- see FlattenGraphRequest.
             var acc = new FlattenGraphAccumulators(directives,
                 injected,
                 diagnostics,

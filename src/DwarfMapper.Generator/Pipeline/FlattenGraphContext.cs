@@ -14,7 +14,8 @@ namespace DwarfMapper.Generator.Pipeline
         ///     outside the loop.
         /// </summary>
         /// <remarks>
-        ///     Two of <c>ResolveFlattenGraphDirectives</c>' parameters are deliberately absent. <c>rawDirectives</c>
+        ///     Built by the CALLER since round 31 (T08), so <c>ResolveFlattenGraphDirectives</c> takes it instead of the
+        ///     eleven values it holds. Two of that method's former parameters are deliberately absent. <c>rawDirectives</c>
         ///     is the loop's own sequence, and <c>nullAsNull</c> is read nowhere in the loop body -- measured, not
         ///     assumed. Carrying either would suggest a per-directive dependency that does not exist.
         /// </remarks>
@@ -30,6 +31,10 @@ namespace DwarfMapper.Generator.Pipeline
             bool AutoNest,
             NestedMappingRegistry NestedRegistry,
             bool IsPreserve,
+            // Round 31: the mapper's ImplicitConversions setting, which never reached this path - the leaf resolutions
+            // ran with the default (true), so a lossy leaf refused as DWARF038 in a plain map was converted silently
+            // inside a flattened graph. See FlattenGraphLeafConversionTests.
+            bool ImplicitConversions,
             bool AllowNonPublic,
             IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> RawDerivedPairs);
 

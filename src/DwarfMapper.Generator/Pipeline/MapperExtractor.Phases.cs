@@ -1899,23 +1899,24 @@ namespace DwarfMapper.Generator.Pipeline
             if (flattenGraphRaw.Count > 0)
             {
                 (resolvedFgDirectives, fgInjectedMembers) = ResolveFlattenGraphDirectives(
-                    sourceType,
-                    namedTargetType,
                     flattenGraphRaw,
-                    ctx.SemanticModel.Compilation,
-                    methodLocation,
+                    new FlattenGraphRequest(sourceType,
+                        namedTargetType,
+                        ctx.SemanticModel.Compilation,
+                        methodLocation,
+                        decls.AllMethods,
+                        decls.MapperMethods,
+                        policy.EnumPolicy,
+                        policy.NullStrategy,
+                        methodAutoNest,
+                        acc.NestedRegistry,
+                        policy.IsPreserveMode,
+                        policy.ImplicitConversions,
+                        policy.AllowNonPublic,
+                        rawDerivedPairs),
                     acc.Diagnostics,
-                    decls.AllMethods,
-                    decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
-                    methodAutoNest,
-                    acc.NestedRegistry,
-                    policy.IsPreserveMode,
-                    policy.AllowNonPublic,
-                    flattenGraphConsumed,
-                    rawDerivedPairs);
+                    flattenGraphConsumed);
 
                 // Add consumed targets to ignores so ResolveMembers skips them and
                 // does not emit DWARF001 (unmapped) for them.

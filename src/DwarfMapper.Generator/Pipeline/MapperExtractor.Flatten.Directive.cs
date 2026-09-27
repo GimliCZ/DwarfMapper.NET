@@ -350,12 +350,14 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out _,
                         req.AutoNest,
-                        req.NestedRegistry);
+                        req.NestedRegistry,
+                        implicitConversions: req.ImplicitConversions);
 
+                    // SF-LEAFDIAG, both outcomes: an unmappable leaf's errors, and a RESOLVED leaf's diagnostics too - a
+                    // DWARF038 suggestion or a strict-mode refusal was discarded with the throw-away list (round 31).
+                    acc.Diagnostics.AddRange(leafTestDiags);
                     if (!leafResolved)
                     {
-                        // SF-LEAFDIAG: propagate errors from unmappable leaf members (not silently dropped).
-                        acc.Diagnostics.AddRange(leafTestDiags);
                         continue;
                     }
 

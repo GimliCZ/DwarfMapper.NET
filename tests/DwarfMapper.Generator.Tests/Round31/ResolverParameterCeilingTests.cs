@@ -72,7 +72,6 @@ namespace DwarfMapper.Generator.Tests.Round31
             ["MapperExtractor.Flatten.cs::CollectReverseRenames"] = 7,
             ["MapperExtractor.Flatten.cs::FlatLeafNeedsBang"] = 8,
             ["MapperExtractor.Flatten.cs::FlatLeafResultNeedsBang"] = 7,
-            ["MapperExtractor.Flatten.cs::ResolveFlattenGraphDirectives"] = 17,
             ["MapperExtractor.Flatten.cs::ResolveFlattenInfos"] = 8,
             ["MapperExtractor.Flatten.cs::ResolveUnflattenTarget"] = 23,
             ["MapperExtractor.Flatten.cs::TryResolveSourcePath"] = 7,

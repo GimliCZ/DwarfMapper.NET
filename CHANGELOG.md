@@ -471,6 +471,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[FlattenGraph]` leaves ignored `ImplicitConversions = false`, and dropped their `DWARF038` suggestion.** A leaf
+  member of a flattened node was resolved without the mapper's `ImplicitConversions` setting, and a leaf that
+  resolved had its diagnostics discarded. So a lossy leaf (`long` → `double`) that a plain map refuses as `DWARF038`
+  under `[DwarfMapper(ImplicitConversions = false)]` was converted **silently** inside a flattened graph — in both
+  the linear and the heterogeneous (`[MapDerivedType]`) node — and without strict mode its suggestion vanished. Both
+  now behave exactly as a plain map. (Round 31, found while paying down T08.)
 - **`[MaybeNull]` and `[DisallowNull]` leaked `CS8601` into generated code, with no `DWARF070`.** Nullability was
   read from the type's annotation alone, so a `[MaybeNull] string` source mapped into a `string`, or a `string?`
   into a `[DisallowNull] string?`, reported nothing — while the compiler, which does read those attributes,

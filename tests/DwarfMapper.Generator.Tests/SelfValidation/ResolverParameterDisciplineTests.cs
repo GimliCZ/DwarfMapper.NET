@@ -128,7 +128,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> ParameterAllowance = new(StringComparer.Ordinal)
         {
-            // 57 rows. Round 31 T08 lowered the three recursive projection resolvers (15/13/13 -> 9/7/7) by moving
+            // 56 rows. Round 31 T08 deleted ResolveFlattenGraphDirectives (17 -> 5: its caller now builds the
+            // FlattenGraphRequest) and lowered the three recursive projection resolvers (15/13/13 -> 9/7/7) by moving
             // their seven pass-through parameters into ProjectionRequest. Was 64 when this scan was written: CollectionConverter's seven collection emitters were
             // paid off in the commit that added CollectionEmit, and this list shrank by exactly the seven rows
             // the shrink-only test named. That is the ratchet doing its job - the debt is deleted, not edited.
@@ -138,7 +139,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "MapperExtractor.Members.cs::ResolveConstructorArguments = 21",
             "DictionaryConverter.cs::Synthesize = 18",
             "DictionaryConverter.cs::SynthesizeInPlace = 18",
-            "MapperExtractor.Flatten.cs::ResolveFlattenGraphDirectives = 17",
             "MapperExtractor.Projection.cs::ResolveProjectionCtorExpr = 9",
             "MapperExtractor.Projection.cs::ResolveProjectionMembers = 15",
             "CollectionConverter.cs::EmitBody = 14",

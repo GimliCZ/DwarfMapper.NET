@@ -178,10 +178,13 @@ namespace DwarfMapper.Generator.Pipeline
                             out _,
                             out _,
                             req.AutoNest,
-                            req.NestedRegistry);
+                            req.NestedRegistry,
+                            implicitConversions: req.ImplicitConversions);
+                        // Both outcomes, as in the homogeneous loop: a RESOLVED leaf's diagnostics (a DWARF038
+                        // suggestion, a strict-mode refusal) used to be discarded with the throw-away list (round 31).
+                        acc.Diagnostics.AddRange(leafTestDiags);
                         if (!leafResolved)
                         {
-                            acc.Diagnostics.AddRange(leafTestDiags);
                             continue;
                         }
 
