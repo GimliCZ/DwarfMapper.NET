@@ -56,11 +56,9 @@ namespace DwarfMapper.Generator.Pipeline
 
         public static EquatableArray<ProjectionSite> ProjectionsOf(GeneratorAttributeSyntaxContext ctx)
         {
-            if (ctx.TargetSymbol is not INamedTypeSymbol mapper)
-            {
-                return EquatableArray.From(Array.Empty<ProjectionSite>());
-            }
-
+            // A cast, not a guard: the pipeline's predicate admits only a ClassDeclarationSyntax, whose declared symbol
+            // is always a named type, so a guarded "else" branch would be unreachable (full-coverage ruling: removed).
+            var mapper = (INamedTypeSymbol)ctx.TargetSymbol;
             var sites = new List<ProjectionSite>();
             foreach (var member in mapper.GetMembers())
                 if (member is IMethodSymbol { IsPartialDefinition: true, Parameters.Length: 1 } method &&
