@@ -84,10 +84,9 @@ namespace DwarfMapper.Generator.Tests.Round31
             var s = asm!.GetType(ns + ".S", true)!;
             var m = asm.GetType(ns + ".M", true)!;
             var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(s))!;
-            var queryable = typeof(Queryable).GetMethods()
-                .First(x => string.Equals(x.Name, nameof(Queryable.AsQueryable), StringComparison.Ordinal) && x.IsGenericMethod)
-                .MakeGenericMethod(s)
-                .Invoke(null, [list])!;
+            // Not list.AsQueryable(): since round 31 T13 an EnumerableQuery takes the compiled route and carries no
+            // tree. TreeOnlyQueryable is a provider the generated code cannot recognise, so it always gets the tree.
+            var queryable = Activator.CreateInstance(typeof(TreeOnlyQueryable<>).MakeGenericType(s), list)!;
             var project = m.GetMethod("Project")!;
             var instance = project.IsStatic ? null : Activator.CreateInstance(m);
             var trees = new List<LambdaExpression>();

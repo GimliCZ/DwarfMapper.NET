@@ -161,6 +161,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The projection lambda's body — everything after <c>__s =&gt; </c> — for the static tree field. One writer,
         ///     so the tree text exists in exactly one place (round 31 T13 reuses it for the in-memory twin).
         /// </summary>
+        private static string ProjectionDelegateField(string treeField)
+        {
+            return "__dwarf_projfn_" + treeField.Substring("__dwarf_proj_".Length);
+        }
+
         private static void AppendProjectionLambdaBody(StringBuilder sb, MapMethodModel method, string indent)
         {
             var projMembers = method.ProjectionMembers;
@@ -227,6 +232,16 @@ namespace DwarfMapper.Generator.Pipeline
                 sb.Append(indent).Append("private static readonly global::System.Linq.Expressions.Expression<global::System.Func<")
                     .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
                     .Append(">> ").Append(projectionField).Append(" = __s => ");
+                AppendProjectionLambdaBody(sb, method, indent);
+                sb.AppendLine(";");
+                sb.AppendLine();
+
+                // Round 31 T13 (research P5 Case 2): the SAME lambda text compiled as a delegate, for a queryable that
+                // is only a list in disguise. Same text, not a call into Map: projection and map semantics may differ
+                // by design (OptionGaps), and the in-memory answer must be the one the tree would have given.
+                sb.Append(indent).Append("private static readonly global::System.Func<")
+                    .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
+                    .Append("> ").Append(ProjectionDelegateField(projectionField)).Append(" = __s => ");
                 AppendProjectionLambdaBody(sb, method, indent);
                 sb.AppendLine(";");
                 sb.AppendLine();
@@ -411,6 +426,14 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (projectionField is not null)
             {
+                // An EnumerableQuery is LINQ-to-objects wearing IQueryable: handing it the tree makes LINQ compile the
+                // tree again on every enumeration (research P5b: 10 rows 985 us -> 1.3 us). The type of the PROVIDER is
+                // the one fact about a projection the compiler cannot know, so this is the one runtime test it gets.
+                sb.Append(indent).Append("    if (").Append(method.EmitParameterName)
+                    .Append(" is global::System.Linq.EnumerableQuery<").Append(method.ProjectionSourceElementFullName).AppendLine(">)");
+                sb.Append(indent).Append("        return global::System.Linq.Queryable.AsQueryable(global::System.Linq.Enumerable.Select(")
+                    .Append("(global::System.Collections.Generic.IEnumerable<").Append(method.ProjectionSourceElementFullName).Append(">)")
+                    .Append(method.EmitParameterName).Append(", ").Append(ProjectionDelegateField(projectionField)).AppendLine("));");
                 sb.Append(indent).Append("    return global::System.Linq.Queryable.Select(")
                     .Append(method.EmitParameterName).Append(", ").Append(projectionField).AppendLine(");");
                 sb.Append(indent).AppendLine("}");
