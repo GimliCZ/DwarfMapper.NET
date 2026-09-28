@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -114,6 +115,13 @@ namespace DwarfMapper.Generator.Tests
             var matches = diagnostics.Where(d => d.Id == diagnosticId).ToList();
             Assert.True(matches.Count == 0,
                 $"Expected NO {diagnosticId}, but the generator reported:\n  " + Describe(matches) + "\n\n--- source ---\n" + source);
+        }
+
+        /// <summary>Replaces every generator-internal identifier (a word starting with two underscores) with <c>__L</c>, so an
+        /// assertion on generated text survives a pure rename of a generated local.</summary>
+        internal static string NormalizeLocals(string text)
+        {
+            return Regex.Replace(text, @"\b__[A-Za-z_][A-Za-z0-9_]*\b", "__L", RegexOptions.CultureInvariant);
         }
 
         private static string Describe(IEnumerable<Diagnostic> diagnostics)

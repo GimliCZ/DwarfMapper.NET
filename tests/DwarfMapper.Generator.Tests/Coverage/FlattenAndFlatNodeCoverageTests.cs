@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveUnflattenTarget — dotted-path missing segment (DWARF043), unknown source (DWARF009) refusals (+2 more)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Flatten.cs:
@@ -117,7 +118,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
         public void Flat_node_nullable_leaf_into_a_nullable_member_lifts_through_the_converter()
         {
             var generated = GeneratorAssert.EmitsCompilableCode(Graph("public E1? V { get; set; }", "public E2? V { get; set; }"));
-            Assert.Contains("V = n.V.HasValue ? __DwarfMap_EnumName_", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("V = n.V.HasValue ? __DwarfMap_EnumName_"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.Contains("(n.V.Value) : null,", generated, StringComparison.Ordinal);
         }
 

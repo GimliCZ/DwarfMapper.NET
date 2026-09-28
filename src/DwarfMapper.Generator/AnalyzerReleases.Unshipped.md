@@ -116,6 +116,10 @@ DWARF108 | DwarfMapper | Warning | OnCycle = SetNull requires a reference-type d
 DWARF109 | DwarfMapper | Error | [AfterMap] by-ref target type does not exactly match this pair's destination
 DWARF110 | DwarfMapper | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry
 DWARF111 | DwarfMapper | Warning | [ProvidesMap] method is not registered because its pair is already provided
+DWARF112 | DwarfMapper | Info | Projection expression property was not generated
+DWARF113 | DwarfMapper | Error | Union types are not mapped yet
+DWARF114 | DwarfMapper | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm
+DWARF115 | DwarfMapper | Warning | EF Core cannot precompile a query built by a projection method
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

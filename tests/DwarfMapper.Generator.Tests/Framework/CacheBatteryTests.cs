@@ -23,6 +23,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                     [GenerateMap<Src3, Dst3>]
                                                     [MapProperty<Src3, Dst3>("Name", "FullName")]
                                                     public sealed class Dst3 { public int Id { get; set; } public string FullName { get; set; } = ""; }
+                                                    public static class Calls { public static B Use(A a) => Dwarf.Map<A, B>(a); }
                                                     """;
 
         public static TheoryData<string> Generators()

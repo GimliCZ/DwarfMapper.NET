@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper
 {
@@ -62,26 +62,22 @@ namespace DwarfMapper
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        ///     The same resolution as <see cref="Dwarf.Map{TSource,TDestination}(TSource)" />: the exact
+        ///     <c>(TSource, TDestination)</c> pair first, so <c>Map&lt;Base, Dto&gt;(derived)</c> uses the map the caller
+        ///     asked for rather than dispatching on the derived runtime type, then the runtime-type walk. Through this
+        ///     interface the call is never bound at compile time - that would bypass an injected implementation - so
+        ///     it always looks the pair up.
+        /// </remarks>
         public TDestination Map<TSource, TDestination>(TSource source)
         {
-            // Actually use TSource. This overload documents itself as "uses the static source type — avoids the
-            // GetType() hop", but its body was byte-identical to the one-parameter overload: it called
-            // DwarfMapperRegistry.Map, which resolves via source.GetType() and then walks base types. So the
-            // advertised fast path did not exist, and `Map<Base, Dto>(derived)` silently dispatched on the DERIVED
-            // runtime type rather than the requested static one. The exact-pair lookup gives both: no GetType()
-            // hop, and the pair the caller actually asked for.
-            if (DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var map) && map is not null)
-            {
-                return (TDestination)map(source!);
-            }
-
-            return (TDestination)DwarfMapperRegistry.Map(source!, typeof(TDestination));
+            return Dwarf.Map<TSource, TDestination>(source);
         }
 
         /// <inheritdoc />
         public void Map<TSource, TDestination>(TSource source, TDestination destination)
         {
-            DwarfMapperRegistry.Update(source!, destination!, typeof(TSource), typeof(TDestination));
+            Dwarf.Map(source, destination);
         }
     }
 }

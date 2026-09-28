@@ -31,10 +31,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     public class CiToolPrerequisiteScanTests
     {
         /// <summary>
-        ///     A job filtered to <c>Category=SurfaceMatrix</c> cannot reach the ILVerify tests, so it is exempt.
-        ///     Any other <c>dotnet test</c> invocation can, whether it filters SurfaceMatrix OUT or not at all.
+        ///     A job whose filter SELECTS one category — <c>Category=SurfaceMatrix</c>, or since round 31
+        ///     <c>Category=Perf</c> — cannot reach the ILVerify tests, which carry neither, so it is exempt. Any other
+        ///     <c>dotnet test</c> invocation can, whether it filters a category OUT (<c>!=</c>, which these strings do
+        ///     not match) or not at all.
         /// </summary>
         private const string SurfaceMatrixOnly = "Category=SurfaceMatrix";
+
+        private const string PerfOnly = "Category=Perf";
 
         private static string Workflow()
         {
@@ -79,7 +83,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             foreach (var (name, body) in runners)
             {
                 // Exempt: filtered to the surface matrix, so the ILVerify tests are out of scope for it.
-                if (body.Contains(SurfaceMatrixOnly, StringComparison.Ordinal)) { continue; }
+                if (body.Contains(SurfaceMatrixOnly, StringComparison.Ordinal) || body.Contains(PerfOnly, StringComparison.Ordinal)) { continue; }
 
                 if (!body.Contains("dotnet-ilverify", StringComparison.Ordinal))
                 {

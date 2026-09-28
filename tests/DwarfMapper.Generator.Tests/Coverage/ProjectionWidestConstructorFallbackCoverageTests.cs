@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ChooseProjectionConstructor — get-only target falls back to the widest public ctor
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Projection.cs's ChooseProjectionConstructor fallback. When the selector's answer is
@@ -33,7 +34,9 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var generated = GeneratorAssert.CompilesClean(source, NullableContextOptions.Enable);
 
-            Assert.Contains("__s => new global::Demo.D(__s.A, __s.B));", generated, StringComparison.Ordinal);
+            // One ')' fewer since round 31 T10: the lambda initialises a static tree field instead of being an argument.
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__s => new global::Demo.D(__s.A, __s.B);"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

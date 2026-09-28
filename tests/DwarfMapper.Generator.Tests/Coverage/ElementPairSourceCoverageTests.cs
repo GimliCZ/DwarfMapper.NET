@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.DrainNestedMappingQueue — ElementPairsOwedCoverage match for span element vs. other-source nested pairs
 using System.Globalization;
 
 // A span or async-stream map does not resolve members itself: its ELEMENT pair is resolved by the nested-pair drain,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapEmitter.EmitMappingPlanDoc — a void update-into method gets the "onto an existing target" summary
 // Regression tests for MapEmitter's EmitMappingPlanDoc summary on a VOID update-into method. The mapping-plan doc
 // (Phase B, 37b684b) gave a method that returns nothing its own summary: "maps from S onto an existing target". It
 // tested `ReturnTypeFullName == "void"`, but the update-into model that arrived later records the DESTINATION type there

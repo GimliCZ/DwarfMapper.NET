@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ValidateDenseEnumDirectives — ignore conflict (DWARF012), MapValue conflict beside another refusal (DWARF105) (+1 more)
 using System.Globalization;
 
 // Two conflicts [MapDenseEnumKeys] must refuse rather than resolve silently, each reached by nothing before:

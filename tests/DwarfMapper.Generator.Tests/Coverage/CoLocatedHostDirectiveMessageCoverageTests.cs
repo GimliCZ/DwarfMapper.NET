@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.DirectivesArePlaceable — DWARF089 wording: null MapIgnore placeholder, singular/plural stacked-directive count
 using System.Globalization;
 
 // DWARF089's host-member messages quote what the consumer wrote. Two of their wording arms had no fixture:

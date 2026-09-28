@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: AggregateEmitter.IsAmbientUpdateRegisterable — partial/extra-parameter refusal fallbacks (+2 more)
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;

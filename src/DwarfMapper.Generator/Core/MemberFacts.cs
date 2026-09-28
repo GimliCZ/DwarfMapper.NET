@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Core
@@ -98,9 +99,9 @@ namespace DwarfMapper.Generator.Core
                 return m switch
                 {
                     IPropertySymbol p when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic)
-                        => (p, p.Name, p.Type),
+                        => (p, p.Name, ReadType(p.Type, p.GetAttributes(), p.GetMethod!.GetReturnTypeAttributes())),
                     IFieldSymbol f when !f.IsImplicitlyDeclared && FieldUsable(f, compilation, allowNonPublic)
-                        => (f, f.Name, f.Type),
+                        => (f, f.Name, ReadType(f.Type, f.GetAttributes(), ImmutableArray<AttributeData>.Empty)),
                     _ => null
                 };
             }
@@ -230,7 +231,8 @@ namespace DwarfMapper.Generator.Core
                             when !p.IsIndexer && AccessorUsable(p.SetMethod, compilation, allowNonPublic):
                             if (seen.Add(p.Name))
                             {
-                                yield return (p, p.Name, p.Type);
+                                yield return (p, p.Name,
+                                    WriteType(p.Type, p.GetAttributes(), p.SetMethod!.Parameters[0].GetAttributes()));
                             }
 
                             break;
@@ -240,12 +242,60 @@ namespace DwarfMapper.Generator.Core
                                                  FieldUsable(f, compilation, allowNonPublic):
                             if (seen.Add(f.Name))
                             {
-                                yield return (f, f.Name, f.Type);
+                                yield return (f, f.Name, WriteType(f.Type, f.GetAttributes(), ImmutableArray<AttributeData>.Empty));
                             }
 
                             break;
                     }
                 }
+        }
+
+        private const string MaybeNullAttribute = "System.Diagnostics.CodeAnalysis.MaybeNullAttribute";
+        private const string DisallowNullAttribute = "System.Diagnostics.CodeAnalysis.DisallowNullAttribute";
+
+        /// <summary>
+        ///     The type a READ of the member yields as far as the compiler's null analysis is concerned. A
+        ///     <c>[MaybeNull]</c> member (on the member or on its getter's return) is annotated non-nullable but may
+        ///     return null, and the compiler treats every read as maybe-null — so a raw assignment of it into a
+        ///     non-nullable destination raises CS8601 inside the generated file. Folding the attribute into the
+        ///     annotation here, at the one funnel every resolver reads members through, is what lets DWARF070 and its
+        ///     null-forgiving <c>!</c> see it (research A6; Mapperly #2333/#2334).
+        /// </summary>
+        /// <remarks>
+        ///     Only the two attributes that make a member MORE nullable than its annotation are honoured. <c>[NotNull]</c>
+        ///     and <c>[AllowNull]</c> would remove reports, and a change that turns a report into silence is decided on
+        ///     its own, not folded into a fix.
+        /// </remarks>
+        private static ITypeSymbol ReadType(ITypeSymbol type, ImmutableArray<AttributeData> member, ImmutableArray<AttributeData> accessor)
+        {
+            return type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.NotAnnotated &&
+                   (HasAttribute(member, MaybeNullAttribute) || HasAttribute(accessor, MaybeNullAttribute))
+                ? type.WithNullableAnnotation(NullableAnnotation.Annotated)
+                : type;
+        }
+
+        /// <summary>
+        ///     The type a WRITE into the member accepts. A <c>[DisallowNull]</c> member (on the member or on its setter's
+        ///     value parameter) is annotated nullable but rejects null, and the compiler raises CS8601 for a maybe-null
+        ///     value assigned to it — so for DWARF070 it is a non-nullable destination. See <see cref="ReadType" />.
+        /// </summary>
+        private static ITypeSymbol WriteType(ITypeSymbol type, ImmutableArray<AttributeData> member, ImmutableArray<AttributeData> value)
+        {
+            return type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated &&
+                   (HasAttribute(member, DisallowNullAttribute) || HasAttribute(value, DisallowNullAttribute))
+                ? type.WithNullableAnnotation(NullableAnnotation.NotAnnotated)
+                : type;
+        }
+
+        private static bool HasAttribute(ImmutableArray<AttributeData> attributes, string fullName)
+        {
+            foreach (var a in attributes)
+                if (a.AttributeClass is { } c && string.Equals(c.ToDisplayString(), fullName, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+            return false;
         }
     }
 }

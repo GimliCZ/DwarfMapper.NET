@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.IsEnabledFlag — a non-bool constant defaults to true (+1 more: TryReadSingleBool)
 using System.Collections.Immutable;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;

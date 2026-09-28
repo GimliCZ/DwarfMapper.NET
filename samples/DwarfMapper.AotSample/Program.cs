@@ -712,6 +712,30 @@ if (asyncCollected.Count != 3 || asyncCollected[0].V != 1 || asyncCollected[2].V
 
 Console.WriteLine($"async stream: mapped {asyncCollected.Count} elements lazily (AOT-safe)");
 
+// ── Dwarf.Map, bound at compile time (round 31 T26) ───────────────────────────
+// This assembly registers (Source, Target), so the direct call is bound to SampleMapper by a generated interceptor.
+// The generic helper cannot be bound - its type arguments are type parameters - so it runs the registry path. Under
+// NativeAOT both must work, and they must agree.
+static TDestination LookedUp<TSource, TDestination>(TSource source) => Dwarf.Map<TSource, TDestination>(source);
+
+var bound = Dwarf.Map<Source, Target>(new Source
+{
+    Id = 11,
+    Label = "seam"
+});
+var lookedUp = LookedUp<Source, Target>(new Source
+{
+    Id = 11,
+    Label = "seam"
+});
+if (bound.Id != 11 || bound.Label != "seam" || lookedUp.Id != bound.Id || lookedUp.Label != bound.Label)
+{
+    Console.WriteLine("ERROR: Dwarf.Map bound and looked-up results differ");
+    return 1;
+}
+
+Console.WriteLine($"Dwarf.Map: bound and looked-up agree ({bound.Id}:{bound.Label})");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 

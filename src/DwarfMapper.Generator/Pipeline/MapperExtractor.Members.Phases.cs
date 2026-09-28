@@ -255,7 +255,7 @@ namespace DwarfMapper.Generator.Pipeline
                         srcName,
                         tgtName,
                         useMethod,
-                        req.Compilation,
+                        req.Settings,
                         req.Location,
                         acc.Diagnostics,
                         acc.HandledTargets,
@@ -263,16 +263,8 @@ namespace DwarfMapper.Generator.Pipeline
                         lookups.WritableByName,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         acc.Synthesized,
-                        req.NullStrategy,
-                        req.Options.AutoNest,
                         req.NestedRegistry,
-                        req.Options.NullAsNull,
-                        req.Options.IsPreserve,
-                        req.Options.IsSetNull,
-                        req.Options.ImplicitConversions,
-                        req.Options.AllowNonPublic,
                         acc.Result);
                     continue;
                 }
@@ -449,15 +441,13 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (TryResolveConversion(req.Compilation,
+                if (TryResolveConversion(req.Settings,
                         srcMatch,
                         tgtType,
                         useMethod,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         acc.Synthesized,
-                        req.NullStrategy,
                         req.Location,
                         tgtName,
                         acc.Diagnostics,
@@ -465,12 +455,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var nullH,
                         out var convNeedsCtx,
                         out var convParamType,
-                        req.Options.AutoNest,
                         req.NestedRegistry,
-                        req.Options.NullAsNull,
-                        req.Options.IsPreserve,
-                        isSetNull: req.Options.IsSetNull,
-                        implicitConversions: req.Options.ImplicitConversions,
                         reservedConverters: lookups.ReservedConverters))
                 {
                     // [MapProperty(StringFormat="…")]: replace the resolved converter with a format-aware
@@ -721,15 +706,13 @@ namespace DwarfMapper.Generator.Pipeline
                         }
 
                     if (ep.Name is not null &&
-                        TryResolveConversion(req.Compilation,
+                        TryResolveConversion(req.Settings,
                             ep.Type!,
                             target.Type,
                             null,
                             req.AllMethods,
                             req.AutoCandidates,
-                            req.EnumPolicy,
                             acc.Synthesized,
-                            req.NullStrategy,
                             req.Location,
                             target.Name,
                             acc.Diagnostics,
@@ -737,12 +720,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var epNull,
                             out var epNeedsCtx,
                             out var epConvParamType,
-                            req.Options.AutoNest,
                             req.NestedRegistry,
-                            req.Options.NullAsNull,
-                            req.Options.IsPreserve,
-                            isSetNull: req.Options.IsSetNull,
-                            implicitConversions: req.Options.ImplicitConversions,
                             reservedConverters: lookups.ReservedConverters) &&
                         !epNeedsCtx)
                     {
@@ -808,15 +786,13 @@ namespace DwarfMapper.Generator.Pipeline
                     if (flatMatches.Count == 1)
                     {
                         var fm = flatMatches[0];
-                        if (TryResolveConversion(req.Compilation,
+                        if (TryResolveConversion(req.Settings,
                                 fm.LeafType,
                                 target.Type,
                                 null,
                                 req.AllMethods,
                                 req.AutoCandidates,
-                                req.EnumPolicy,
                                 acc.Synthesized,
-                                req.NullStrategy,
                                 req.Location,
                                 target.Name,
                                 acc.Diagnostics,
@@ -824,12 +800,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 out var fnull,
                                 out var fneedsCtx,
                                 out var fconvParamType,
-                                req.Options.AutoNest,
                                 req.NestedRegistry,
-                                req.Options.NullAsNull,
-                                req.Options.IsPreserve,
-                                isSetNull: req.Options.IsSetNull,
-                                implicitConversions: req.Options.ImplicitConversions,
                                 reservedConverters: lookups.ReservedConverters))
                         {
                             acc.Result.Add(new MemberMap(target.Name,
@@ -978,15 +949,13 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (TryResolveConversion(req.Compilation,
+                if (TryResolveConversion(req.Settings,
                         source.Type,
                         target.Type,
                         null,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         acc.Synthesized,
-                        req.NullStrategy,
                         req.Location,
                         target.Name,
                         acc.Diagnostics,
@@ -994,12 +963,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var nullH,
                         out var needsCtx,
                         out var convParamType,
-                        req.Options.AutoNest,
                         req.NestedRegistry,
-                        req.Options.NullAsNull,
-                        req.Options.IsPreserve,
-                        isSetNull: req.Options.IsSetNull,
-                        implicitConversions: req.Options.ImplicitConversions,
                         reservedConverters: lookups.ReservedConverters))
                 {
                     // A nullable-reference source passed into a user-declared converter/map whose parameter is

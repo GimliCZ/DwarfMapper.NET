@@ -66,6 +66,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Path.Combine("Pipeline", "CollectionConverter.cs"),
             Path.Combine("Pipeline", "DenseEnumProof.cs"),
             Path.Combine("Pipeline", "DictionaryConverter.cs"),
+            Path.Combine("Pipeline", "DwarfCallSites.cs"),
             Path.Combine("Pipeline", "EnumConverter.cs"),
             Path.Combine("Pipeline", "MapEmitter.SpanMap.cs"),
             Path.Combine("Pipeline", "MapEmitter.cs"),
@@ -145,7 +146,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             ("targetMemberName + \".\" + tgtMember.Name));",
                 "A projection DIAGNOSTIC's path label (DWARF's untranslatable-member message), not an expression."),
 
-            ("targetMemberName + \".\" + tgtMember.Name,",
+            ("targetMemberName + \".\" + tgtMember.Name);",
                 "The same label, passed to the same diagnostic on the sibling branch."),
 
             ("var emitClassName = separateEmit ? classSymbol.Name + \"Mapper\" : classSymbol.Name;",

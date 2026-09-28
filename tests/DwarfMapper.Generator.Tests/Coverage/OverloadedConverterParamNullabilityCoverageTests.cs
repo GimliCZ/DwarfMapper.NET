@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ConverterParamIsNonNullableRef — a value-type overload sharing the name doesn't hide the ref overload's null guard
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Conversions.cs's ConverterParamIsNonNullableRef, which finds the adopted converter

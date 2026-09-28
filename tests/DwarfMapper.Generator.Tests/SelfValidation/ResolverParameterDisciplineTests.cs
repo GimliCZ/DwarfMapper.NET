@@ -58,7 +58,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> Allowlist = new(StringComparer.Ordinal)
         {
-            // 14 rows. Was 31 when this scan was written. ResolveMembers lost nine and ResolveProjectionMembers seven when
+            // 6 rows. Round 31 T08 deleted eight: TryResolveConversion and ResolveConstructorArguments now take one
+            // ResolutionSettings, so none of their mapper-wide flags can be omitted and silently defaulted any more - the
+            // shape that let two call sites ignore ImplicitConversions. Was 14 before that, 31 when this scan was written. ResolveMembers lost nine and ResolveProjectionMembers seven when
             // R27-02 bundled their mapper-wide flags into MapperOptions — the allowlist doing exactly what a
             // shrink-only list is for. TryResolveConversion's autoNest became required in round 30, when the
             // non-nullable nestedRegistry after it could no longer carry a default. What remains is the converters
@@ -67,14 +69,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "CollectionConverter.cs::TryResolve::nullAsNull",
             "DictionaryConverter.cs::Synthesize::isPreserve",
             "DictionaryConverter.cs::Synthesize::nullAsNull",
-            "MapperExtractor.Conversions.cs::TryResolveConversion::implicitConversions",
-            "MapperExtractor.Conversions.cs::TryResolveConversion::isPreserve",
-            "MapperExtractor.Conversions.cs::TryResolveConversion::isSetNull",
-            "MapperExtractor.Conversions.cs::TryResolveConversion::nullAsNull",
-            "MapperExtractor.Members.cs::ResolveConstructorArguments::implicitConversions",
-            "MapperExtractor.Members.cs::ResolveConstructorArguments::isPreserve",
-            "MapperExtractor.Members.cs::ResolveConstructorArguments::isSetNull",
-            "MapperExtractor.Members.cs::ResolveConstructorArguments::nullAsNull",
             "MapperExtractor.Members.cs::ResolveMembers::requiredMembersAlreadySatisfied",
             "NestedMappingRegistry.cs::GetOrReserve::autoNest"
         };
@@ -128,39 +122,42 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> ParameterAllowance = new(StringComparer.Ordinal)
         {
-            // 57 rows. Was 64 when this scan was written: CollectionConverter's seven collection emitters were
+            // 56 rows. Round 31 T08 deleted ResolveFlattenGraphDirectives (17 -> 5: its caller now builds the
+            // FlattenGraphRequest) and lowered the three recursive projection resolvers (15/13/13 -> 9/7/7) by moving
+            // their seven pass-through parameters into ProjectionRequest; ResolveMembers (29 -> 26) and ResolveProjectionMembers (15 -> 13)
+            // now take ResolutionSettings in place of the compilation, the enum and null policies and MapperOptions; the
+            // three coverage/element-wise emitters take MapperPolicy in place of two policy bools each. Was 64 when this scan was written: CollectionConverter's seven collection emitters were
             // paid off in the commit that added CollectionEmit, and this list shrank by exactly the seven rows
             // the shrink-only test named. That is the ratchet doing its job - the debt is deleted, not edited.
-            "MapperExtractor.Members.cs::ResolveMembers = 29",
-            "MapperExtractor.Conversions.cs::TryResolveConversion = 24",
-            "MapperExtractor.Flatten.cs::ResolveUnflattenTarget = 23",
-            "MapperExtractor.Members.cs::ResolveConstructorArguments = 21",
+            "MapperExtractor.Members.cs::ResolveMembers = 26",
+            "MapperExtractor.Conversions.cs::TryResolveConversion = 17",
+            "MapperExtractor.Flatten.cs::ResolveUnflattenTarget = 15",
+            "MapperExtractor.Members.cs::ResolveConstructorArguments = 12",
             "DictionaryConverter.cs::Synthesize = 18",
             "DictionaryConverter.cs::SynthesizeInPlace = 18",
-            "MapperExtractor.Flatten.cs::ResolveFlattenGraphDirectives = 17",
-            "MapperExtractor.Projection.cs::ResolveProjectionCtorExpr = 15",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers = 15",
+            "MapperExtractor.Projection.cs::ResolveProjectionCtorExpr = 9",
+            "MapperExtractor.Projection.cs::ResolveProjectionMembers = 13",
             "CollectionConverter.cs::EmitBody = 14",
             "MapperExtractor.Phases.cs::ReportSourceMemberCoverage = 13",
-            "MapperExtractor.Projection.cs::ResolveProjectionExpr = 13",
-            "MapperExtractor.Projection.cs::ResolveProjectionNestedObjectExpr = 13",
+            "MapperExtractor.Projection.cs::ResolveProjectionExpr = 7",
+            "MapperExtractor.Projection.cs::ResolveProjectionNestedObjectExpr = 7",
             "CollectionConverter.cs::Synthesize = 11",
             "CollectionConverter.cs::ElementExpr = 10",
             "CollectionConverter.cs::SynthesizeInPlace = 10",
-            "MapperExtractor.cs::EmitSourceCoverage = 10",
+            "MapperExtractor.cs::EmitSourceCoverage = 9",
             "TransferModelShape.cs::TryMeasureMember = 10",
             "MapperExtractor.Conversions.cs::ForgiveNestedNullableArg = 9",
             "MapperExtractor.Members.cs::TryValidateMapValueTarget = 9",
-            "MapperExtractor.cs::EmitSourceCoverageFromConsumed = 9",
+            "MapperExtractor.cs::EmitSourceCoverageFromConsumed = 8",
             "MapperExtractor.cs::JudgeUnscopedIgnores = 9",
-            "MapperExtractor.cs::ReportElementWiseDirectiveGaps = 9",
+            "MapperExtractor.cs::ReportElementWiseDirectiveGaps = 8",
             "AggregateEmitter.cs::ExtCandidate = 8",
             "ConstructorSelector.cs::Select = 8",
             "DictionaryConverter.cs::Expr = 8",
             "DictionaryConverter.cs::TryResolve = 8",
             "MapperExtractor.Conversions.cs::ForgiveConverterNullableReturn = 8",
             "MapperExtractor.DenseEnum.cs::TryPlanDense = 8",
-            "MapperExtractor.DenseEnum.cs::ValidateDenseEnumDirectives = 8",
+            "MapperExtractor.DenseEnum.cs::ValidateDenseEnumDirectives = 7",
             "MapperExtractor.Diagnostics.cs::EmitImplicitConversionDiag = 8",
             "MapperExtractor.Flatten.cs::ApplyCollectionKeyUpserts = 8",
             "MapperExtractor.Flatten.cs::FlatLeafNeedsBang = 8",

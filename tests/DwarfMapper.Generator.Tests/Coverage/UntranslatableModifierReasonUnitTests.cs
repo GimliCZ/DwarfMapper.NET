@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.UntranslatableModifierReason — NullSubstitute-first ordering and the no-modifier/neither cases
 using DwarfMapper.Generator.Pipeline;
 
 // Unit tests for MapperExtractor.UntranslatableModifierReason, extracted from ResolveProjectionMembers' inline refusal of

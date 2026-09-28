@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: DwarfGenerator.DescribeDivergence — DWARF081 hook-only wording and >3-member naming with total count
 using System.Globalization;
 
 // Coverage suite for DwarfGenerator's DescribeDivergence, the clause of DWARF081 that says WHAT differs between two

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.DrainNestedMappingQueue — nested pair factory lookup/ctor-arg resolution; update-into init-only scan (+1 more)
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Phases.cs arms that only a nested pair's construction or an update-into
@@ -47,7 +48,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var generated = GeneratorAssert.EmitsCompilableCode(src);
             // The Preserve helper for the nested Inner pair must build through the factory the declared pair uses,
             // not through MakeOther, whose attribute appears first.
-            Assert.Contains("var __dwarf_t = MakeInner(s);", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("var __dwarf_t = MakeInner(s);"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.DoesNotContain("MakeOther(s)", generated, StringComparison.Ordinal);
         }
 

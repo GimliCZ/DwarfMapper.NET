@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.TryFormatConstant — non-renderable typeof and non-convertible enum [MapValue] constants (+4 more)
 using System.Globalization;
 using System.Text;
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text;
 using DwarfMapper.Generator.Diagnostics;
@@ -95,16 +95,13 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol sourceType,
             INamedTypeSymbol targetType,
             HashSet<string> ignores,
-            Compilation compilation,
+            ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
             IReadOnlyList<string> flattenRoots,
             List<string> reinterpretMembers,
             // REQUIRED, like mapValues below, because every caller has one to pass and always did: as optional
@@ -154,6 +151,12 @@ namespace DwarfMapper.Generator.Pipeline
             // array is a declaration the consumer writes, not a fact the generator can prove.
             List<(string Member, int Offset)>? denseEnumMembers = null)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var options = settings.Options;
+
             // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
             // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
             // honours `ignores`, so this one addition covers them all. An obsolete member that IS explicitly
@@ -248,8 +251,7 @@ namespace DwarfMapper.Generator.Pipeline
             // one member are all refusals that must not wait for a member match that will never happen.
             var denseEnumDirectives = ValidateDenseEnumDirectives(denseEnumMembers ?? [],
                 targetType,
-                compilation,
-                options.AllowNonPublic,
+                settings,
                 ignores,
                 mapValues,
                 location,
@@ -606,32 +608,33 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool ResolveConstructorArguments(
             IMethodSymbol ctor,
             ITypeSymbol sourceType,
-            Compilation compilation,
+            ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            bool caseInsensitive,
-            bool allowNonPublic,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
-            bool autoNest,
             NestedMappingRegistry nestedRegistry,
             out MemberMap[] ctorArgs,
-            out HashSet<string> consumedParams,
-            bool nullAsNull = false,
-            bool isPreserve = false,
-            bool isSetNull = false,
-            bool implicitConversions = true)
+            out HashSet<string> consumedParams)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var autoNest = settings.Options.AutoNest;
+            var nullAsNull = settings.Options.NullAsNull;
+            var isPreserve = settings.Options.IsPreserve;
+            var isSetNull = settings.Options.IsSetNull;
+            var implicitConversions = settings.Options.ImplicitConversions;
+            var allowNonPublic = settings.Options.AllowNonPublic;
             // Constructor parameters are matched case-insensitively by default. C# convention is camelCase
             // parameters (`name`) binding PascalCase source/target members (`Name`) — the dominant record /
             // primary-constructor shape — so case-sensitive binding would fail the most common ctor mapping.
             // The class-level CaseInsensitive flag governs property-to-property matching; ctor binding is always
-            // insensitive (a genuine case-only collision still surfaces as DWARF010 AmbiguousMatch below).
-            _ = caseInsensitive;
+            // insensitive (a genuine case-only collision still surfaces as DWARF010 AmbiguousMatch below) - which is
+            // why the settings' CaseInsensitive is deliberately not read here.
             var comparer = StringComparer.OrdinalIgnoreCase;
 
             // Build explicit-maps index: target (param) name → source name (exact match).
@@ -709,15 +712,13 @@ namespace DwarfMapper.Generator.Pipeline
                         continue;
                     }
 
-                    if (TryResolveConversion(compilation,
+                    if (TryResolveConversion(settings,
                             srcType,
                             param.Type,
                             explicitInfo.Use,
                             allMethods,
                             autoCandidates,
-                            enumPolicy,
                             synthesized,
-                            nullStrategy,
                             location,
                             param.Name,
                             diagnostics,
@@ -725,12 +726,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var eNull,
                             out var eNeedsCtx,
                             out var eConvParamType,
-                            autoNest,
                             nestedRegistry,
-                            nullAsNull,
-                            isPreserve,
-                            isSetNull: isSetNull,
-                            implicitConversions: implicitConversions,
                             reservedConverters: reservedConverters))
                     {
                         args.Add(new MemberMap(param.Name,
@@ -808,15 +804,13 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var srcMember = matches[0];
-                if (TryResolveConversion(compilation,
+                if (TryResolveConversion(settings,
                         srcMember.Type,
                         param.Type,
                         null,
                         allMethods,
                         autoCandidates,
-                        enumPolicy,
                         synthesized,
-                        nullStrategy,
                         location,
                         param.Name,
                         diagnostics,
@@ -824,12 +818,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var nullH,
                         out var needsCtx,
                         out var convParamType,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions))
+                        nestedRegistry))
                 {
                     args.Add(new MemberMap(param.Name,
                         srcMember.Name,

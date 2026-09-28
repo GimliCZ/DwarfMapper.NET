@@ -1,5 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadPairIgnores — a pair-scoped [MapIgnore<T>] with a null or unbound member name is skipped, no diagnostic
 // The pair-scoped [MapIgnore<TTarget>] reader skips an application that names no member: [MapIgnore<Dst>(null)] binds
 // the string constructor with a null value (at most CS8625), and [MapIgnore<Dst>()] fails to bind at all, which leaves
 // no constructor arguments behind. A generator runs on every keystroke, so both half-typed shapes reach it. Neither
@@ -8,6 +9,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class PairScopedIgnoreReaderCoverageTests
     {
+        // shared-fixture: the same two-member Src/Dst pair UnscopedIgnoreNoMatchTests.PairTypes declares, on
+        // purpose. That file asserts what a pair-scoped [MapIgnore<T>] with a MISSPELLED member name reports
+        // (DWARF095); this one asserts what one with NO member name does (nothing - it is skipped). Same types,
+        // different directive, different outcome, so neither test subsumes the other.
         private const string Types = """
                                      using DwarfMapper;
                                      namespace Demo;

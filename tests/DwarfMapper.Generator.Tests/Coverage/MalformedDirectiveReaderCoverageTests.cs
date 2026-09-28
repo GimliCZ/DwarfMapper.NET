@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadIgnoreSources — argument-less [MapIgnoreSource] dropped, not crashed (+1 more: ReadMapValues)
 // Coverage suite for MapperExtractor.cs directive readers, on applications the compiler itself refuses. The consumer is
 // told by that compile error, in their own source. The readers must drop what they cannot read, neither crashing nor
 // adding a report of their own:

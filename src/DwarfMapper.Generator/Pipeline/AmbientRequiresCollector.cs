@@ -17,14 +17,17 @@ namespace DwarfMapper.Generator.Pipeline
         private const string FacadeInterface = "DwarfMapper.IDwarfMapper";
         private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
 
-        /// <summary>Cheap syntactic gate: any <c>receiver.Map&lt;...&gt;(...)</c> invocation.</summary>
+        /// <summary>Cheap syntactic gate: any <c>receiver.Map&lt;...&gt;(...)</c> or bare <c>Map&lt;...&gt;(...)</c> invocation.</summary>
         public static bool IsFacadeMapCall(SyntaxNode node, CancellationToken _)
         {
-            return node is InvocationExpressionSyntax
-                   {
-                       Expression: MemberAccessExpressionSyntax { Name: GenericNameSyntax g }
-                   } &&
-                   g.Identifier.Text == "Map";
+            // The bare `Map<S, D>(x)` form is `using static DwarfMapper.Dwarf;` (round 31 T26): Dwarf.Map is static, so
+            // it can be called without a receiver, and it consumes the same ambient pair as the facade does.
+            return node is InvocationExpressionSyntax inv && inv.Expression switch
+            {
+                MemberAccessExpressionSyntax { Name: GenericNameSyntax g } => g.Identifier.Text == "Map",
+                GenericNameSyntax g => g.Identifier.Text == "Map",
+                _ => false
+            };
         }
 
         /// <summary>
@@ -71,7 +74,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     Whether a method named <paramref name="name" /> declared on <paramref name="containingType" /> is
-        ///     <c>IDwarfMapper.Map</c>.
+        ///     <c>IDwarfMapper.Map</c> or its statically-bound twin <c>Dwarf.Map</c>.
         /// </summary>
         /// <remarks>
         ///     Takes the name and the containing type rather than the method, so both "not the facade" answers can be
@@ -81,7 +84,9 @@ namespace DwarfMapper.Generator.Pipeline
         /// </remarks>
         internal static bool IsFacadeMap(string name, INamedTypeSymbol? containingType)
         {
-            return name == "Map" && containingType?.ToDisplayString() == FacadeInterface;
+            // Dwarf.Map (round 31 T26) consumes the same ambient pair as the facade, whether or not the call is
+            // bound at compile time, so a missing provider is still DWARF061 at the validation root.
+            return name == "Map" && containingType?.ToDisplayString() is FacadeInterface or DwarfCallSites.DwarfClass;
         }
 
         /// <summary>Reads assembly-level <c>[UsesMap]</c> (generic and non-generic) from the compilation.</summary>
@@ -156,7 +161,7 @@ namespace DwarfMapper.Generator.Pipeline
             return null;
         }
 
-        private static (string Source, string Destination)? ToPair(ITypeSymbol? source, ITypeSymbol? destination)
+        internal static (string Source, string Destination)? ToPair(ITypeSymbol? source, ITypeSymbol? destination)
         {
             if (source is null || destination is null)
             {

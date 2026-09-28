@@ -13,6 +13,12 @@
         <AnalysisMode>All</AnalysisMode>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
+        <!-- Round 31 T26: Dwarf.Map calls are bound at compile time by interceptors the generator emits into
+             DwarfMapper.Generated. Package consumers get this from the package's build/DwarfMapper.props; the
+             projects in this repository reference src/DwarfMapper by PROJECT, which does not import that file, so
+             the same line is stated here. -->
+        <InterceptorsNamespaces>$(InterceptorsNamespaces);DwarfMapper.Generated</InterceptorsNamespaces>
+
         <!-- Reproducible / CRA: deterministic builds, source link -->
         <Deterministic>true</Deterministic>
         <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>

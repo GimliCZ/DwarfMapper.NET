@@ -605,7 +605,10 @@ The same destination member is configured more than once — by both an attribut
 Something that may be null is being written into a destination slot whose type says it cannot hold one. That
 something is one of four things, and the message says which:
 
-* **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`).
+* **`Source member 'X'`** — a nullable reference member of the source type (`string?` into `string`). The
+  nullability is the one the compiler uses, attributes included: a `[MaybeNull] string` source counts as nullable,
+  and a `[DisallowNull] string?` destination counts as non-nullable (round 31, T23). `[NotNull]` and `[AllowNull]`
+  are not read yet, so they cannot silence this warning.
 * **`Mapping parameter 'x'`** — an extra parameter on the map method
   (`partial Dst Map(Src s, Child? inner)`), matched to the destination member by name.
 * **`The source element mapped into 'Items'`** — a nullable reference *element* of a mapped collection, array,
@@ -2524,6 +2527,76 @@ policy (`Preserve` vs `SetNull`, say) are the ordinary reason for two, and the r
 order.
 
 **Fix:** remove the `[ProvidesMap]` attribute — or, for two `[ProvidesMap]` methods, all but one.
+
+## dwarf112
+**Projection expression property was not generated** · Info
+
+Every projection method (`IQueryable<D> Project(IQueryable<S> q)`) also exposes the expression tree it applies,
+as a static property named after the method — `ProjectExpression` here — so you can compose it into a query of
+your own — `db.Orders.Where(o => o.Open).OrderBy(o => o.Id).Select(OrderMapper.ProjectExpression)`.
+
+It is the same instance the method uses, built once per process. It is left out, and this is reported, when the
+name is already taken:
+
+- **the mapper or one of its base types declares a member of that name** — emitting it would duplicate or hide
+  that member;
+- **two projections share the method name** (overloads on different source types) — both would claim the one
+  property.
+
+Info, not Warning: the projection itself is generated and works, and a mapper that happened to own the name before
+the property existed must not start failing a warnings-as-errors build.
+
+**Fix:** rename the member, or give the projection a name of its own. To keep things as they are, suppress this in
+`.editorconfig` (`dotnet_diagnostic.DWARF112.severity = none`).
+
+## dwarf113
+**Union types are not mapped yet** · Error
+
+C# 15 (.NET 11) adds union types — `union Pet(Cat, Dog)`, lowered to a struct marked
+`System.Runtime.CompilerServices.UnionAttribute` with one constructor per case type and an `object? Value`.
+DwarfMapper has no mapping policy for them yet, so a mapping between two **different** types where either one is
+a union is refused: a member (`Pet` → `PetDto`, `Pet` → `object`, `Cat` → `Pet`), a mapping method's own
+endpoints (`partial PetDto Map(Pet p)`), and a projection member. Before this refusal a union was handled as an
+ordinary struct — mapped into `object` it boxed the union **wrapper** rather than its case value, silently.
+
+Not refused: the **same** union type on both sides (a struct copy, which is exactly right), and a member with an
+explicit converter.
+
+**Fix:** convert it yourself — `[MapProperty(nameof(Src.Pet), nameof(Dst.Pet), Use = nameof(ToDto))]` with a
+`PetDto ToDto(Pet p)` that switches over the cases — or keep the same union type on both sides.
+
+## dwarf114
+**A closed hierarchy has a direct descendant with no [MapDerivedType] arm** · Error
+
+A C# 15 `closed` class can only be derived from inside its own assembly, so its direct descendants are a known,
+complete set. When a `[MapDerivedType]` dispatch maps a closed source type, DwarfMapper checks that every direct
+descendant has an arm — its own, or one for an ancestor below the base (an arm matches every subtype of its
+source), or, for a descendant that is itself `closed`, arms covering all of *its* direct descendants. A missing
+one used to reach the dispatch's run-time fallback and throw for that instance; now it is a build error naming it.
+
+The check reads the `IsClosedTypeAttribute` the C# 15 compiler writes on every closed class, so it applies to closed
+hierarchies from **referenced assemblies** (a domain model in its own project). A closed class declared in the same
+project as the mapper is not checked yet: the compiler does not expose that attribute on source declarations, and
+the API that reports `closed` needs a newer Roslyn than DwarfMapper's floor.
+
+**Fix:** add a `[MapDerivedType<Derived, DerivedDto>]` arm for each descendant the message names.
+
+## dwarf115
+**EF Core cannot precompile a query built by a projection method** · Warning
+
+Reported on each projection method (`IQueryable<D> Project(IQueryable<S> q)`) when the project **publishes
+NativeAOT** (`PublishAot=true`) **and references EF Core**. Measured on EF Core 10: EF's query precompiler only
+analyses a query whose whole operator chain is written at the call site, so a call to a generated
+`mapper.Project(db.Orders)` is reported as a dynamic query and is **not** precompiled — and under NativeAOT a query
+that was not precompiled fails when it first runs. The same tree composed at the call site **is** precompiled.
+
+The project property reaches the generator through the package's `build/DwarfMapper.props`
+(`CompilerVisibleProperty`). Nothing is reported without both conditions: another query provider, or a JIT app,
+is unaffected.
+
+**Fix:** compose the exposed tree at the call site —
+`db.Orders.Where(...).OrderBy(...).Select(OrderMapper.ProjectExpression)` (see [`DWARF112`](#dwarf112) for the
+property) — and keep `Project()` for code that is not precompiled.
 
 ---
 

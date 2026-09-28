@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.IsAssignedByConstructorOnly — consumed param with no required-member set, never reached via a mapper
 using DwarfMapper.Generator.Pipeline;
 
 // Unit tests for MapperExtractor.IsAssignedByConstructorOnly, extracted from ResolveExplicitMaps' and

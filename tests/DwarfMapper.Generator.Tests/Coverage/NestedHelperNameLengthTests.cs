@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: NestedMappingRegistry.Sanitize — caps each sanitized type segment of a synthesized helper name at 48 characters
 // NestedMappingRegistry.Sanitize truncates each sanitized type segment of a synthesized helper name to 48 characters.
 // No fixture declared a type long enough to reach the cap, so the truncation never ran.
 namespace DwarfMapper.Generator.Tests.Coverage

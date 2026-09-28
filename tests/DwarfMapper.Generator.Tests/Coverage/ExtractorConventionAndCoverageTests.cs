@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.EmitSourceCoverageFromConsumed — IgnoreObsoleteMembers arm under projection RequiredMapping.Both (+2 more)
 // Coverage suite for three MapperExtractor.cs arms that each need one more thing than the existing fixtures had:
 //   - EmitSourceCoverageFromConsumed's IgnoreObsoleteMembers arm — the PROJECTION endpoint's source-coverage gate
 //     (RequiredMapping = Both), which the create/update fixtures for the same option never reach;
@@ -25,7 +26,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var generated = GeneratorAssert.EmitsCompilableCode(src);
             GeneratorAssert.DoesNotReport(src, "DWARF039");
-            Assert.Contains("A = __s.A", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("A = __s.A"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.DoesNotContain("Legacy", generated, StringComparison.Ordinal);
         }
 

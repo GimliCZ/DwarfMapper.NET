@@ -117,15 +117,13 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (!IsNullableValue(req.SrcType, out _) && IsNullableValue(req.TgtType, out var tgtUnderlying))
             {
-                if (TryResolveConversion(req.Compilation,
+                if (TryResolveConversion(req.Settings.WithoutReferenceTracking(),
                         req.SrcType,
                         tgtUnderlying,
                         req.UseMethod,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         synthesized,
-                        req.NullStrategy,
                         req.Location,
                         req.TargetName,
                         diagnostics,
@@ -133,10 +131,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out _,
                         out _,
-                        req.AutoNest,
                         req.NestedRegistry,
-                        req.NullAsNull,
-                        implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters))
                 {
                     converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
@@ -213,15 +208,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // Recurse: try to resolve a conversion from the underlying (non-nullable) type to req.TgtType.
                 // This handles cases like E1? → E2 where E1 → E2 requires a synthesized conversion.
                 // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
-                if (TryResolveConversion(req.Compilation,
+                if (TryResolveConversion(req.Settings.WithoutReferenceTracking(),
                         underlying,
                         req.TgtType,
                         req.UseMethod,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         synthesized,
-                        req.NullStrategy,
                         req.Location,
                         req.TargetName,
                         diagnostics,
@@ -229,10 +222,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out _,
                         out _,
-                        req.AutoNest,
                         req.NestedRegistry,
-                        req.NullAsNull,
-                        implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters))
                 {
                     nullHandling = req.NullStrategy == NullStrategy.SetDefault
@@ -286,15 +276,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // silently off for the whole nullable half of the type space. The collection-element and
                 // dictionary key/value recursions above always passed it; these three did not. (TASKS.md I20.)
             {
-                if (TryResolveConversion(req.Compilation,
+                if (TryResolveConversion(req.Settings.WithoutReferenceTracking(),
                         bothSrcU,
                         bothTgtU,
                         req.UseMethod,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         synthesized,
-                        req.NullStrategy,
                         req.Location,
                         req.TargetName,
                         diagnostics,
@@ -302,10 +290,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out _,
                         out _,
-                        req.AutoNest,
                         req.NestedRegistry,
-                        req.NullAsNull,
-                        implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters) &&
                     innerNonNull is not null)
                 {
@@ -1158,15 +1143,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // A1: propagate req.NullAsNull to the element converter so nullable elements
                 // (e.g. element type List<int>? inside List<List<int>?>) generate helpers
                 // that preserve null instead of silently mapping to empty.
-                if (!TryResolveConversion(req.Compilation,
+                if (!TryResolveConversion(req.Settings,
                         srcElem,
                         tgtElem,
                         null,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         synthesized,
-                        req.NullStrategy,
                         req.Location,
                         req.TargetName,
                         diagnostics,
@@ -1174,12 +1157,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var elemNull,
                         out var elemNeedsCtx,
                         out var elemParamType,
-                        req.AutoNest,
                         req.NestedRegistry,
-                        req.NullAsNull,
-                        req.IsPreserve,
-                        isSetNull: req.IsSetNull,
-                        implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters))
                 {
                     resolved = false; // element diagnostic already reported by the recursive call
@@ -1365,15 +1343,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // A1: propagate req.NullAsNull to nested key/value converters so nullable elements
                 // (e.g. the value type List<int>? in Dictionary<string, List<int>?>) generate
                 // helpers that preserve null instead of silently mapping to empty.
-                if (!TryResolveConversion(req.Compilation,
+                if (!TryResolveConversion(req.Settings,
                         srcKey,
                         tgtKey,
                         null,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         synthesized,
-                        req.NullStrategy,
                         req.Location,
                         req.TargetName,
                         diagnostics,
@@ -1381,27 +1357,20 @@ namespace DwarfMapper.Generator.Pipeline
                         out var keyNull,
                         out var keyNeedsCtx,
                         out var keyParamType,
-                        req.AutoNest,
                         req.NestedRegistry,
-                        req.NullAsNull,
-                        req.IsPreserve,
-                        isSetNull: req.IsSetNull,
-                        implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters))
                 {
                     resolved = false;
                     return true;
                 }
 
-                if (!TryResolveConversion(req.Compilation,
+                if (!TryResolveConversion(req.Settings,
                         srcVal,
                         tgtVal,
                         null,
                         req.AllMethods,
                         req.AutoCandidates,
-                        req.EnumPolicy,
                         synthesized,
-                        req.NullStrategy,
                         req.Location,
                         req.TargetName,
                         diagnostics,
@@ -1409,12 +1378,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var valNull,
                         out var valNeedsCtx,
                         out var valParamType,
-                        req.AutoNest,
                         req.NestedRegistry,
-                        req.NullAsNull,
-                        req.IsPreserve,
-                        isSetNull: req.IsSetNull,
-                        implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters))
                 {
                     resolved = false;

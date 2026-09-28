@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveProjectionMembers — inner-resolution-failed refusal arms in nested/nullable recursion
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.Projection.cs refusals that only a failing INNER resolution reaches. The

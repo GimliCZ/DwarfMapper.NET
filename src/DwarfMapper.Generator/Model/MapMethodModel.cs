@@ -228,6 +228,17 @@ namespace DwarfMapper.Generator.Model
     ///     target in the projection body, where a nullable annotation is <c>CS8628</c>. Empty for every other
     ///     method shape. Round 29 task 2.8.
     /// </param>
+    /// <param name="ProjectionSourceElementFullName">
+    ///     The SOURCE element type of an <see cref="IsProjection" /> method (<c>S</c> of <c>IQueryable&lt;S&gt;</c>),
+    ///     fully qualified. It types the static <c>Expression&lt;Func&lt;S, D&gt;&gt;</c> field the tree is hoisted
+    ///     into (round 31 T10) — a field initializer has no <c>Queryable.Select</c> call to infer the lambda from.
+    ///     Empty for every other method shape.
+    /// </param>
+    /// <param name="ProjectionExpressionName">
+    ///     The name of the static <c>Expression&lt;Func&lt;S, D&gt;&gt;</c> property that exposes an
+    ///     <see cref="IsProjection" /> method's tree (round 31 T16), or <see langword="null" /> when none is emitted —
+    ///     any other method shape, or a projection whose name is taken (DWARF112).
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -271,7 +282,9 @@ namespace DwarfMapper.Generator.Model
         string? ReturnTypeSignature = null,
         string? UpdateTargetTypeSignature = null,
         bool ReturnIsNullableRef = false,
-        string AsyncStreamTargetElementFullName = "") : IEquatable<MapMethodModel>
+        string AsyncStreamTargetElementFullName = "",
+        string ProjectionSourceElementFullName = "",
+        string? ProjectionExpressionName = null) : IEquatable<MapMethodModel>
     {
         /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
         /// <remarks>

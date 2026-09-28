@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapMethodModel.ElementMember — no-element-member fallback (async-stream/span models always have one)
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Model;
 

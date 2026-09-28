@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadDenseEnumKeys — mistyped Offset named-argument value falls back to 0
 // ReadDenseEnumKeys reads [MapDenseEnumKeys("Member", Offset = n)]. It matches the named argument by key and then by the
 // value's type (`named.Key == "Offset" && named.Value.Value is int`), and the type half had never been false: every
 // fixture passed an int. A mistyped Offset is what a consumer has on screen mid-edit — CS0029 is already in the
@@ -28,8 +29,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             // Offset 0: the first declared key lands in slot 0 and the last in slot 2, exactly as with no Offset at all.
             Assert.Contains("case global::Demo.Platform.Web:", generated, StringComparison.Ordinal);
-            Assert.Contains("__r[0] = __kv.Value;", generated, StringComparison.Ordinal);
-            Assert.Contains("__r[2] = __kv.Value;", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__r[0] = __kv.Value;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__r[2] = __kv.Value;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

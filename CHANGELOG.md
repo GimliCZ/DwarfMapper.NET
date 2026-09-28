@@ -15,6 +15,23 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Ambient collection shapes are pre-sized.** The six collection shapes every mapped pair registers now fill through
+  one runtime helper that pre-sizes from the source's count (research P1: 1.07-1.95x, and 17-29 % less allocation on
+  the array target), reading a `List<T>` source with a version-checked walk so a hook that mutates the list still fails
+  loudly. (Round 31 T09.) An interim per-pair delegate cache on the facade (T12) was replaced before release by
+  `Dwarf.Map` (see Added): `IDwarfMapper.Map<TSource, TDestination>` resolves with one dictionary probe per call, as it
+  did before round 31, and the runtime has no mutable static state.
+- **Ambient collection dispatch no longer slows down as an application adds maps.** A collection handed to
+  `IDwarfMapper.Map<TDestination>(object)` (or `DwarfMapperRegistry.Map`) never hits an exact key, and the interface
+  lookup tested every interface-keyed entry in the process — six per mapped pair. Measured on the shipped registry:
+  272 ns with no extra pairs, 6.3 µs with 1,000. Entries are now bucketed by destination, so only the entries that
+  could answer are tested: 109–114 ns flat across the same sweep (55× at 1,000 pairs). Resolution rules, first-wins
+  and ambiguity are unchanged. (Round 31 T14, research P4.)
+- **Projection methods build their expression tree once, and a list-backed `IQueryable` skips it.** The tree is a
+  static readonly field instead of a new tree per call (research P5a: 15.0 µs / 5,400 B → 1.0 µs / 424 B per call),
+  and an `EnumerableQuery` — `list.AsQueryable()` — is mapped through a delegate compiled from the same lambda text
+  instead of having LINQ compile the tree on every enumeration (P5b: 10 rows 985 µs → 1.3 µs). Results are equal
+  row for row; a real query provider still receives the tree. (Round 31 T10, T13.)
 - **Two sources that used to build now report an error, both because the array/list block copy stopped
   overriding the resolver (see *Fixed*).** Neither is a silent behaviour change — each replaces a silent WRONG
   mapping with a diagnostic that names the fix:
@@ -53,6 +70,57 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`Dwarf.Map` — the ambient call, bound at compile time when the pair is local.** `Dwarf.Map<Order, OrderDto>(order)`
+  and `Dwarf.Map(patch, existing)` resolve exactly like `IDwarfMapper.Map`, but they are static: when the calling
+  project itself registers the pair, the generator binds the call to the generated mapper with a C# interceptor — a
+  direct call on the same mapper instance the ambient registration uses, running the same expression, with no
+  registry lookup. A pair from another assembly, a create pair a referenced assembly also provides, and a call whose
+  types are type parameters fall back to the registry at run time. (An update-into pair registered by two assemblies
+  is the one exception: update maps have no manifest, so the bound call uses the local map where the registry would
+  use whichever registered first; `IsUpdateAmbiguous` reports it either way.) `IDwarfMapper` is never
+  bound (that could bypass an injected decorator or test double). The package enables interceptors for the
+  `DwarfMapper.Generated` namespace only, through its `build/DwarfMapper.props`; nothing needs to be set in the
+  consuming project. Verified through a package reference and under NativeAOT. (Round 31 T26.)
+- **The CVE-2026-32933 guarantee is a pinned claim.** AutoMapper 14's unpatched uncontrolled recursion kills the process
+  at ~30,000 nesting levels. DwarfMapper's default `MaxDepth` (64) ends the same graphs in a catchable
+  `DwarfMappingDepthException`, now pinned at the advisory's own depth for self-referential, list- and dictionary-routed
+  recursion in both reference modes, and recorded in `SECURITY.md`'s claim register. `docs/MIGRATION.md` gained a
+  "where DwarfMapper refuses and AutoMapper did not" section. (Round 31 T03, T30.)
+- **`DWARF115` (Warning): a projection method in a NativeAOT project that references EF Core.** Measured on EF
+  Core 10: `mapper.Project(db.Orders)` is not precompiled by `dotnet ef dbcontext optimize --precompile-queries`
+  ("Dynamic LINQ queries are not supported"), while `db.Orders.Select(OrderMapper.ProjectExpression)` is — and
+  under NativeAOT an un-precompiled query fails on first run. The warning names the precompilable shape. The
+  package now ships `build/DwarfMapper.props` (and `buildTransitive/`), whose only content makes `PublishAot`
+  visible to the generator. (Round 31 T17.)
+- **`DWARF114` (Error): a `[MapDerivedType]` dispatch over a C# 15 `closed` type must cover every direct
+  descendant.** A closed class's direct descendants are a complete set, so a missing arm — which used to throw at
+  run time for that instance — is now a build error naming it. Coverage counts an arm for the descendant or an
+  ancestor, and descends into a descendant that is itself closed. Read from the `IsClosedTypeAttribute` the C# 15
+  compiler emits, which works on the current Roslyn floor for closed hierarchies in referenced assemblies; one
+  declared in the mapper's own project is not checked yet (it needs a newer Roslyn). Arms are not inferred.
+  (Round 31 T25, research C2.)
+- **`DWARF113` (Error): C# 15 union types are refused until DwarfMapper has a policy for them.** .NET 11 ships
+  unions on 2026-11-10. Without this, a union was mapped as an ordinary struct — into `object` it boxed the union
+  wrapper instead of its case value, silently, and into another union it was refused as `DWARF025` "ambiguous
+  constructor", which names the wrong problem. A mapping between two different types where either is a union
+  (member, method endpoint or projection member) now reports `DWARF113`. The same union on both sides is still
+  copied, and an explicit `[MapProperty(Use = …)]` converter is honoured. Detected by the attribute's name, so it
+  works on the current Roslyn floor. (Round 31 T24, research C3.)
+- **`DwarfMapperRegistry.RegisterMany`, and generated module initializers register through it.** Every mapped pair
+  registers six collection shapes keyed on `IEnumerable<S>`, and each one grew the registry's lock-free interface
+  list by copying it — startup allocation quadratic in the application's map count (research P6: 412 MB at 1,000
+  pairs, mostly on the Large Object Heap). A module initializer now registers its whole assembly in one batch, and
+  the list is copied once. `RegisterMany` is defined as exactly the sequence of `Register` calls it replaces —
+  first wins, a second provider of a pair (in the same batch or another) is ambiguous — and 3,000 interface
+  entries now allocate under 1 MB where a loop over `Register` allocated 280 MB. (Round 31 T11.)
+- **`DWARF112` (Info) and a `{Method}Expression` property on every projection.** A projection method
+  (`IQueryable<D> Project(IQueryable<S> q)`) now also exposes the tree it applies as a static
+  `Expression<Func<S, D>>` named after the method, so a query can be composed the EF-native way —
+  `db.Orders.Where(…).OrderBy(…).Select(OrderMapper.ProjectExpression)` — instead of handing the whole query to
+  `Project()`. Same instance the method uses, same accessibility as the method. When the name is taken by a member
+  of the mapper or a base type, or two projections share the method name, the property is left out and
+  **`DWARF112`** says why. Info, so a mapper that already owns the name keeps building under warnings-as-errors.
+  **Remedy:** rename the member or the method. (Round 31 T16.)
 - **`DWARF111` (Warning): a `[ProvidesMap]` method that is not registered says so.** When the same
   `(source, destination)` — or a collection shape — is already registered in the assembly by a generated map (see
   *Fixed*) or by an earlier `[ProvidesMap]`, the marked method is left out of the ambient registry. That was
@@ -425,6 +493,28 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Projection null guards no longer call a user `operator ==`, and a type with two of them no longer breaks the
+  build.** A nested member's null guard was written `x == null`, which in an expression tree calls a record's (or any
+  type's) `op_Equality` — user code inside every generated projection — and for a type declaring two `==` overloads
+  produced `CS0034` (ambiguous operator) in the generated file, with no DWARF diagnostic. Reference-typed operands are now
+  compared as `(object)x == null`, plain reference equality that EF Core 10 translates to `IS NULL`. (Round 31 T02.)
+- **Span-map and async-stream element conversions ignored `ImplicitConversions = false`.** Their element conversion
+  was resolved with the option at its default, so under `[DwarfMapper(ImplicitConversions = false)]` a lossy element
+  (`ReadOnlySpan<long>` → `Span<double>`, `IAsyncEnumerable<long>` → `IAsyncEnumerable<double>`) produced a `DWARF038`
+  Warning where a member produces the Error strict mode promises. It is now the same refusal. (Round 31, found by
+  the T08 refactor that made the defaulted flags visible.)
+- **`[FlattenGraph]` leaves ignored `ImplicitConversions = false`, and dropped their `DWARF038` suggestion.** A leaf
+  member of a flattened node was resolved without the mapper's `ImplicitConversions` setting, and a leaf that
+  resolved had its diagnostics discarded. So a lossy leaf (`long` → `double`) that a plain map refuses as `DWARF038`
+  under `[DwarfMapper(ImplicitConversions = false)]` was converted **silently** inside a flattened graph — in both
+  the linear and the heterogeneous (`[MapDerivedType]`) node — and without strict mode its suggestion vanished. Both
+  now behave exactly as a plain map. (Round 31, found while paying down T08.)
+- **`[MaybeNull]` and `[DisallowNull]` leaked `CS8601` into generated code, with no `DWARF070`.** Nullability was
+  read from the type's annotation alone, so a `[MaybeNull] string` source mapped into a `string`, or a `string?`
+  into a `[DisallowNull] string?`, reported nothing — while the compiler, which does read those attributes,
+  raised `CS8601` inside the `.g.cs`, where it cannot be suppressed. Both now take the ordinary `DWARF070` path
+  (with its null-forgiving `!`), on members declared in referenced assemblies as well. `[NotNull]` and
+  `[AllowNull]` are not read yet, so nothing that reported before goes quiet. (Round 31 T23, research A6.)
 - **`[MapTo(typeof(Dto<>))]` was refused for the wrong reason.** An open generic target — or `typeof(Outer<>.Dto)`,
   a class nested in an unbound generic type — was refused as `DWARFR09`, "has no public parameterless
   constructor", although `Dto<T>` has one and adding another changed nothing. It now reports **`DWARFR14`**,

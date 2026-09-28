@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ThreadContextThroughDispatchArms — self-recursive dispatch arm redirect to depth companion (+3 more)
 // Coverage suite for MapperExtractor.Phases.cs arms that need a [MapDerivedType] arm or an OVERLOADED mapping-method
 // name to reach:
 //   - ThreadContextThroughDispatchArms: an arm resolved to a self-recursive declared method is redirected to that

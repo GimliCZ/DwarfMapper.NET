@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: CollectionConverter.IsMutableReferenceCollection — HashSet/ISet/IReadOnlySet arms (+4 more)
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -56,7 +57,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
                              """;
             var (diagnostics, generated) = GeneratorTestHarness.Run(s);
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF027");
-            Assert.Contains("private global::System.Collections.Generic.IEnumerable<int> __DwarfMapColl_", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("private global::System.Collections.Generic.IEnumerable<int> __DwarfMapColl_"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
 
         // HasPublicInstanceInt32 refuses a Count property with no getter at all. Every Count the corpus meets is

@@ -49,10 +49,20 @@ namespace DwarfMapper.Generator
         /// <summary>Tracking name for the DWARF086 scan over hand-written manifest attributes.</summary>
         internal const string HandWrittenManifestStepName = "DwarfMapperHandWrittenManifest";
 
+        /// <summary>Tracking name for the DWARF115 check (projection methods under EF Core + NativeAOT).</summary>
+        internal const string EfAotProjectionStepName = "DwarfMapperEfAotProjection";
+
+        /// <summary>Tracking name for the <c>Dwarf.Map</c> call-site scan (round 31 T26).</summary>
+        internal const string DwarfCallSiteStepName = "DwarfMapperDwarfCallSites";
+
+        /// <summary>Tracking name for the compile-time binding of those call sites (round 31 T26).</summary>
+        internal const string InterceptorStepName = "DwarfMapperInterceptors";
+
         /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
         internal static readonly string[] AllStepNames =
         {
-            ExtractStepName, CoLocatedExtractStepName, AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName, HandWrittenManifestStepName
+            ExtractStepName, CoLocatedExtractStepName, AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName, HandWrittenManifestStepName,
+            EfAotProjectionStepName, DwarfCallSiteStepName, InterceptorStepName
         };
 
         /// <inheritdoc />
@@ -126,6 +136,19 @@ namespace DwarfMapper.Generator
                             entry.AttributeName));
                 });
 
+            // DWARF115 (round 31 T17): a projection method in a project that publishes NativeAOT and references EF Core.
+            // Both halves are value-equatable (a bool; an array of records), so the node caches like the ones above.
+            var efAot = context.CompilationProvider.Combine(context.AnalyzerConfigOptionsProvider)
+                .Select(static (pair, _) => EfAotProjectionCheck.IsEfAot(pair.Left, pair.Right.GlobalOptions));
+            var projectionSites = context.SyntaxProvider.ForAttributeWithMetadataName(
+                MarkerAttributeFullName,
+                static (node, _) => node is ClassDeclarationSyntax,
+                static (ctx, _) => EfAotProjectionCheck.ProjectionsOf(ctx));
+            // Collected first: the compile-cost battery anchors its per-mapper claims on the ONE tracked step that
+            // outputs one model per mapper (the extraction), and this check has no per-mapper work worth tracking.
+            context.RegisterSourceOutput(projectionSites.Collect().Combine(efAot).WithTrackingName(EfAotProjectionStepName),
+                static (spc, pair) => EfAotProjectionCheck.Report(spc, pair.Left, pair.Right));
+
             // Ambient REQUIRES manifest: the cross-assembly maps this assembly consumes through IDwarfMapper —
             // auto-detected from Map<TDest>(src) call sites + declared via [UsesMap] — emitted as
             // [assembly: DwarfRequiresMap(...)] for the validation root to cross-check against the Provides set.
@@ -184,6 +207,47 @@ namespace DwarfMapper.Generator
                         .Where(static m => !m.HasBlockingError && m.IsNameableFromAssembly)
                         .ToList();
                     return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
+                });
+
+            // Round 31 T26: Dwarf.Map calls whose pair this assembly registers are bound at compile time to the
+            // registration's own expression. Kept apart from the aggregate output: an interceptor location carries a
+            // checksum of its file, so every edit to a calling file changes it, and that must not re-emit the mappers.
+            var dwarfCalls = context.SyntaxProvider
+                .CreateSyntaxProvider(DwarfCallSites.IsCandidate, DwarfCallSites.Extract)
+                .Where(static c => c is not null)
+                .Select(static (c, _) => c!.Value)
+                .WithTrackingName(DwarfCallSiteStepName)
+                .Collect();
+
+            var interceptTargets = mappers.Collect().Combine(coLocated.Collect())
+                .Select(static (pair, _) =>
+                {
+                    // Same filter as the registration itself (EmitAggregates / ownProvided), so a target always names a
+                    // mapper instance the registration declares.
+                    var usable = pair.Left.AddRange(pair.Right)
+                        .Where(static m => !m.HasBlockingError && m.IsNameableFromAssembly)
+                        .ToList();
+                    return EquatableArray.From(AggregateEmitter.InterceptTargets(usable));
+                });
+
+            // What referenced assemblies provide, read only when there is a call to bind: the scan walks every
+            // reference's attributes, and a CompilationProvider node re-runs on every keystroke.
+            var noProviders = EquatableArray.From(Array.Empty<(string, string, string)>());
+            var referencedProvided = dwarfCalls.Combine(context.CompilationProvider)
+                .Select((data, _) => data.Left.IsEmpty
+                    ? noProviders
+                    : EquatableArray.From(AmbientValidator.ReadReferenced(data.Right).Provided));
+
+            context.RegisterSourceOutput(
+                dwarfCalls.Combine(interceptTargets).Combine(referencedProvided).WithTrackingName(InterceptorStepName),
+                static (spc, data) =>
+                {
+                    var ((calls, targets), provided) = data;
+                    var source = DwarfCallSites.EmitInterceptors(calls, targets, provided);
+                    if (source is not null)
+                    {
+                        spc.AddNormalizedSource("DwarfMapper.Interceptors.g.cs", source);
+                    }
                 });
 
             // Root-only whole-graph view: is this the validation root (+ its AutoValidate/DI settings), and the

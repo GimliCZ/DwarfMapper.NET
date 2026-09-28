@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MemberDirectives.Read — inherited metadata [MapIgnore] falls back to the [MapTo] source's own location
 using System.Globalization;
 using DwarfMapper.Generator.Registry;
 using Microsoft.CodeAnalysis;

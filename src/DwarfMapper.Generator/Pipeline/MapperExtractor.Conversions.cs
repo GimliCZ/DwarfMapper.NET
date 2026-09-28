@@ -51,15 +51,13 @@ namespace DwarfMapper.Generator.Pipeline
         private static readonly ConditionalWeakTable<Compilation, HashSet<ISymbol>> BaseTypesByCompilation = new();
 
         private static bool TryResolveConversion(
-            Compilation compilation,
+            ResolutionSettings settings,
             ITypeSymbol srcType,
             ITypeSymbol tgtType,
             string? useMethod,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
             LocationInfo? location,
             string targetName,
             List<DiagnosticInfo> diagnostics,
@@ -67,15 +65,19 @@ namespace DwarfMapper.Generator.Pipeline
             out NullHandling nullHandling,
             out bool converterNeedsCtx,
             out string? converterParamTypeFqn,
-            bool autoNest,
             NestedMappingRegistry nestedRegistry,
-            bool nullAsNull = false,
-            bool isPreserve = false,
             bool allowInterfaceSrc = false,
-            bool isSetNull = false,
-            bool implicitConversions = true,
             IReadOnlyCollection<string>? reservedConverters = null)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var autoNest = settings.Options.AutoNest;
+            var nullAsNull = settings.Options.NullAsNull;
+            var isPreserve = settings.Options.IsPreserve;
+            var isSetNull = settings.Options.IsSetNull;
+            var implicitConversions = settings.Options.ImplicitConversions;
             converterMethod = null;
             nullHandling = NullHandling.None;
             converterNeedsCtx = false;
@@ -135,6 +137,14 @@ namespace DwarfMapper.Generator.Pipeline
                     }
 
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UseMethodInvalid, location, useMethod));
+                return false;
+            }
+
+            // DWARF113: after Use= (an explicit converter is the remedy, and it is honoured above), before every
+            // automatic path — each of which would treat a union as an ordinary struct.
+            if (UnionRefusal(srcType, tgtType, targetName) is { } unionMessage)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, location, unionMessage));
                 return false;
             }
 
@@ -1146,6 +1156,53 @@ namespace DwarfMapper.Generator.Pipeline
         ///     (i.e. a reference type with <c>NullableAnnotation.Annotated</c>), e.g. <c>List&lt;int&gt;?</c>.
         ///     Used to decide whether AsNull semantics are safe for a given target field (A3).
         /// </summary>
+        private const string UnionAttributeFqn = "System.Runtime.CompilerServices.UnionAttribute";
+
+        /// <summary>
+        ///     The DWARF113 message when <paramref name="srcType" /> and <paramref name="tgtType" /> differ and either is a
+        ///     C# 15 union type, else <see langword="null" />. Nullability and <c>Nullable&lt;T&gt;</c> are looked
+        ///     through on both sides, so <c>Pet?</c> into <c>Pet</c> is the same union, not a refusal.
+        /// </summary>
+        internal static string? UnionRefusal(ITypeSymbol srcType, ITypeSymbol tgtType, string what)
+        {
+            var src = Unwrapped(srcType);
+            var tgt = Unwrapped(tgtType);
+            if (SymbolEqualityComparer.Default.Equals(src, tgt))
+            {
+                return null;
+            }
+
+            var union = IsUnionType(src) ? src : IsUnionType(tgt) ? tgt : null;
+            if (union is null)
+            {
+                return null;
+            }
+
+            return "'" + what + "' maps '" + src.ToDisplayString() + "' to '" + tgt.ToDisplayString() + "', and '" +
+                   union.ToDisplayString() + "' is a C# 15 union type. DwarfMapper does not map union types yet: an " +
+                   "automatic mapping would treat the union as an ordinary struct and copy or box the wrapper instead of " +
+                   "its case value. Convert it yourself with [MapProperty(Use = nameof(...))], or keep the same union " +
+                   "type on both sides, which is copied as-is";
+
+            static ITypeSymbol Unwrapped(ITypeSymbol t)
+            {
+                return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
+                    ? n.TypeArguments[0]
+                    : t;
+            }
+        }
+
+        private static bool IsUnionType(ITypeSymbol type)
+        {
+            foreach (var a in type.GetAttributes())
+                if (KnownNames.IsAttributeClass(a.AttributeClass, UnionAttributeFqn))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
         private static bool IsNullableReferenceType(ITypeSymbol type)
         {
             return type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;

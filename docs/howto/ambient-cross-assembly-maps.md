@@ -57,7 +57,27 @@ do **not** declare the map in the consuming assembly — it is declared once, an
 |---|---|
 | Both types in this assembly (or a referenced one) | the concrete generated mapper / `order.ToOrderDto()` extension — fully compile-checked |
 | Map declared in an assembly you don't reference | `IDwarfMapper.Map<TDest>(src)` (ambient) |
+| You want the ambient call without injecting anything | `Dwarf.Map<TSrc, TDest>(src)` / `Dwarf.Map(src, existing)` — see below |
 | Collections | project at the call site: `list.Select(mapper.Map<Dst>)` (the ambient registry holds single-object maps) |
+
+### `Dwarf.Map`: the ambient call, bound at compile time where possible
+
+`Dwarf.Map<TSrc, TDest>(src)` resolves exactly like `IDwarfMapper.Map<TSrc, TDest>(src)` - the exact
+`(TSrc, TDest)` pair first, then the runtime type - but it is static, so the generator can bind it. When the
+project making the call also registers the pair (and, for a create map, no project it references provides the
+same pair), the generator emits a C# interceptor that turns the call into a direct call on the generated mapper:
+the same mapper instance and the same expression the ambient registration uses, without the registry lookup.
+Every other call - a map from another assembly, a call inside a generic method whose types are type parameters -
+runs through the registry at run time, as it always did.
+
+- Nothing to configure: the package enables interceptors for its own `DwarfMapper.Generated` namespace, and only
+  that one, through `build/DwarfMapper.props`. A project that references `src/DwarfMapper` by *project* reference
+  (as this repository's tests do) states `InterceptorsNamespaces` itself; see `Directory.Build.props`.
+- `IDwarfMapper` calls are never bound. An injected `IDwarfMapper` may be your own decorator or a test double, and
+  binding the call statically would silently skip it.
+- One case can differ from the registry: an update-into pair registered by two assemblies. Update maps carry no
+  manifest, so the bound call uses the local map, while the registry uses whichever registered first.
+  `DwarfMapperRegistry.IsUpdateAmbiguous(typeof(S), typeof(T))` reports that pair either way.
 
 ## Limits
 

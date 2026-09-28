@@ -28,13 +28,50 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 75 | 7 | 34,810 | 2,473 | **7.1 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 44 | 6 | 3,666 | 996 | **27.2 %** | 73.9 %† |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,182 | 657 | **55.6 %** | 97.4 % |
-| `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
-| `DwarfMapper.Testing` | 9 | 5 | 2,243 | 402 | **17.9 %** | 96.4 % |
+| `DwarfMapper.Generator` | 79 | 7 | 36,958 | 2,561 | **6.9 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 46 | 8 | 3,972 | 1,301 | **32.8 %** | 73.9 %† |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
+| `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
+| `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **145** | **27** | **43,288** | **5,239** | **12.1 %** | |
+| **all** | **151** | **29** | **45,760** | **5,662** | **12.4 %** | |
+
+Re-measured 2026-09-27 (round-31 T08, ResolutionSettings): one more generator file (`ResolutionSettings.cs`, outside
+every glob) and 32 fewer mutated lines - `MapperExtractor.Members.Phases.cs`, in the pipeline leg, passes `req.Settings`
+where it passed eight arguments at four call sites. The pipeline leg was re-run for that change (see TASK-LOG).
+
+Re-measured 2026-09-27 (round-31 T17): one more generator file, `EfAotProjectionCheck.cs` (DWARF115), outside every
+`mutate` glob - files 76 -> 77, share 7.1 %.
+
+Re-measured 2026-09-27 (round-31 T24 + T25): the generator gains one file, `MapperExtractor.ClosedHierarchy.cs`
+(DWARF114), outside every `mutate` glob like the rest of the extractor partials it sits beside - files 75 -> 76, share
+unchanged at 7.1 %.
+
+Re-measured 2026-09-27 (round-31 T26): runtime 34.0 % -> 32.8 %, generator 7.0 % -> 6.9 %. `ExactPairSlot.cs` was
+DELETED (Dwarf.Map calls whose pair the calling assembly registers are now bound to the generated mapper at compile
+time, so the cache had nothing left to do) and `Dwarf.cs`, the statically-bound entry point's run-time fallback, takes
+its place in the runtime `mutate` list, so `in a leg` stays 8 and mutated lines fall 1,379 -> 1,301. The generator gains
+`Pipeline/DwarfCallSites.cs` (79 files), outside any glob like the rest of the emission code.
+
+Re-measured 2026-09-27 (round-31 T11 + T14): runtime 32.9 % -> 34.0 %, both halves of the ratio inside the ONE
+file that moved, `DwarfMapperRegistry.cs` (+70 lines, already in the runtime leg): `RegisterMany` and the per-destination
+interface buckets. No file entered or left a leg. The generator's lines grew with T10/T13/T16/T23 emission and
+extraction code, none of it in a `mutate` glob, so its share drifted 7.2 % -> 7.1 % the usual way — by denominator.
+
+Re-measured 2026-09-26 (round-31 T12): the runtime assembly moves 25.9 % -> 32.9 %, and this is the one entry in
+this file's history that moved because scope was ADDED rather than because the denominator drifted. Round 31
+shipped two new runtime files, and neither was inside any `mutate` glob: `ExactPairSlot.cs` (T12 — a version-
+stamped cache whose whole correctness argument is an ordering, i.e. precisely the kind of code where a surviving
+mutant is the only honest proof a case is untested) and `DwarfCollectionMap.cs` (T09 — the fast paths every
+auto-registered collection shape now walks). Both are now named in `stryker-config.runtime.json`, so `in a leg`
+goes 6 -> 8 and mutated lines 996 -> 1,309. THE LEG'S FLOOR IS STALE UNTIL IT IS RE-RUN: a bigger denominator of
+never-mutated code can only move the score down first, and the answer to that is to kill the survivors, not to
+lower `break`.
+
+The other four rows drift for the usual reason — code added outside the globs — all within the gate's 1 pp
+tolerance: generator 7.1 % -> 7.2 %, DocTooling 55.6 % -> 56.1 %, CodeFixes 53.2 % -> 52.7 %, Testing
+17.9 % -> 18.2 %, overall 12.1 % -> 12.7 %. The line-coverage column is NOT re-measured here; it comes from the
+coverage runs, not from this scan, and nothing in this commit moved it.
 
 Re-measured 2026-09-21 (round-30 sweep, continued): `DwarfMapper.DocTooling` moves 57.3 % -> 55.6 % for the same
 reason again - 35 more lines outside the leg's globs, this time RepoLayout's root walk split into FindRoot and
@@ -201,6 +238,13 @@ sized to complete, each with its own measured floor, exactly as section 3 below 
 abandoned run's cost curve is what makes that recommendation concrete: ~0.20 tested mutants per line, so an
 area of about a thousand lines is the largest unit that behaves.
 
+
+**Round 31 T09 (2026-09-26).** `DwarfCollectionMap.cs` was added to the runtime: the element walk the ambient
+registry's auto-registered collection shapes use, moved OUT of the emitted registrations and into one generic
+helper. It is not in the runtime leg's `mutate` globs, so the runtime row's file count goes 44 → 45 and its
+share 27.2 % → 25.9 % without any leg's population changing — the denominator grew and the numerator did not.
+Recorded rather than absorbed, per this document's own purpose: a share that drifts silently is how a leg's
+score comes to be read as covering the product.
 ## What is NOT excluded — worth stating, because it is the good news
 
 - **No mutator is disabled anywhere.** No config carries `ignore-mutations` or an excluded-mutator list, and

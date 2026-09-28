@@ -161,15 +161,13 @@ namespace DwarfMapper.Generator.Pipeline
 
                         var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(StringComparer.Ordinal);
                         var leafTestDiags = new List<DiagnosticInfo>();
-                        var leafResolved = TryResolveConversion(req.Compilation,
+                        var leafResolved = TryResolveConversion(req.LeafSettings,
                             leaf.Type,
                             dtoMemberType,
                             null,
                             req.AllMethods,
                             req.AutoCandidates,
-                            req.EnumPolicy,
                             leafThrowAwaySynth,
-                            req.NullStrategy,
                             req.Location,
                             leaf.Name,
                             leafTestDiags,
@@ -177,11 +175,12 @@ namespace DwarfMapper.Generator.Pipeline
                             out var leafNull,
                             out _,
                             out _,
-                            req.AutoNest,
                             req.NestedRegistry);
+                        // Both outcomes, as in the homogeneous loop: a RESOLVED leaf's diagnostics (a DWARF038
+                        // suggestion, a strict-mode refusal) used to be discarded with the throw-away list (round 31).
+                        acc.Diagnostics.AddRange(leafTestDiags);
                         if (!leafResolved)
                         {
-                            acc.Diagnostics.AddRange(leafTestDiags);
                             continue;
                         }
 

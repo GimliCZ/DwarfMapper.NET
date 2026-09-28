@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.IsMappableObjectPair — a non-named-type source and an abstract-class target both refuse auto-nest
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

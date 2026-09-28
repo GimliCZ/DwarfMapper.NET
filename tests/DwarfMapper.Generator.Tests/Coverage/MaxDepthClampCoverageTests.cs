@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadMaxDepth — MaxDepth below DwarfLimits.MinMaxDepth is raised to the minimum, not left at 0
 // ReadMaxDepth clamps [DwarfMapper(MaxDepth = n)] into [DwarfLimits.MinMaxDepth, DwarfLimits.AbsoluteMaxDepth]. The
 // upper clamp was pinned; the LOWER one never executed: no fixture asked for a depth below the minimum. A depth of 0
 // would make the very first recursive call throw DwarfMappingDepthException, so it is raised to the minimum (1) — the

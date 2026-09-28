@@ -33,7 +33,14 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -81,6 +88,10 @@ jobs:
       # of the default leg. It is excluded for isolation, not for speed — it is the one leg whose red is
       # expected to be a list of findings rather than a regression, so mixing it into the ordinary run would
       # make every build look broken.
+      # Category!=Perf (round 31 T19) keeps the wall-clock ratio tests out of every per-push leg: a timing
+      # oracle on a shared runner is nondeterministic (invariant R4), so those run in their own nightly job,
+      # perf-tests, below. Applied to every plain `dotnet test` step here, so no leg can go red on a noisy
+      # neighbour.
       # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
       # testhost is dumped and killed with the offending test NAMED, instead of the job idling until its
       # timeout eats the evidence. Applied to every plain `dotnet test` step in this workflow; the Stryker
@@ -90,7 +101,7 @@ jobs:
       # reads JUnit XML only. Without it the upload below finds nothing and reports success.
       # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
       # show which tests fail and how often, which is precisely the run you must not skip.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
         continue-on-error: true
         id: tests
 
@@ -151,7 +162,14 @@ jobs:
   surface-matrix:
     runs-on: ubuntu-latest
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -238,7 +256,14 @@ jobs:
             timeout: 200
     timeout-minutes: ${{ matrix.timeout }}
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -351,8 +376,12 @@ jobs:
       # worse than no badge at all.
       - name: Publish the verified report to the Stryker dashboard
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        # REF_NAME through env, not ${{ }} inside the script (zizmor template-injection, round 31 T20): a branch
+        # name is attacker-choosable text, and expanding it into a shell script makes it code. Read from the
+        # environment, it stays a string.
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${STRYKER_DASHBOARD_API_KEY:-}" ]; then
@@ -362,9 +391,9 @@ jobs:
           report=$(find StrykerOutput -name mutation-report.json -print | sort | tail -n 1)
           project=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['name'])" '${{ matrix.config }}')
           module=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['module'])" '${{ matrix.config }}')
-          echo "publishing ${{ matrix.leg }} as module '$module' of '$project', version '${{ github.ref_name }}'"
+          echo "publishing ${{ matrix.leg }} as module '$module' of '$project', version '$REF_NAME'"
           status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
-            "https://dashboard.stryker-mutator.io/api/reports/$project/${{ github.ref_name }}?module=$module" \
+            "https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module" \
             -H 'Content-Type: application/json' \
             -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
             --data-binary @"$report")
@@ -376,7 +405,7 @@ jobs:
             # than that anything is broken. Say so here, with the pieces needed to fix it in one edit, instead
             # of leaving six red legs reporting an opaque status code.
             echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
-            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/${{ github.ref_name }}?module=$module"
+            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
             echo "Response body is above. The URL SHAPE is documentation-verified - the dashboard's HTTP API"
             echo "documents exactly '\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx"
             echo "suspect the API KEY or the project name before the parameter. The report itself was measured"
@@ -434,7 +463,14 @@ jobs:
     # plus ~50% margin -> 45.
     timeout-minutes: 45
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -463,6 +499,48 @@ jobs:
           name: bench-smoke-results
           path: BenchmarkDotNet.Artifacts/results/
 
+  # ── Wall-clock ratio tests (round 31 T19) ──────────────────────────────────────────────────────────────
+  # Tests tagged [Trait("Category", "Perf")] assert a RATIO measured inside one process — "collection dispatch
+  # after 6,000 unrelated registrations costs at most 1.5x what it did before" — which is far steadier than an
+  # absolute time, but still a timing oracle, so it never runs per push (every other leg excludes the category).
+  # Nightly, dispatch, or a `full-ci` PR, like the rest of the expensive tier.
+  #
+  # The vacuity guard is the second step: a filter that matches nothing makes `dotnet test` exit 0, and a Perf
+  # lane that ran no test must read as broken, not as green.
+  perf-tests:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement — never run on a hosted runner. Restore + build ~4 min; the Perf tests are
+    # seconds. 20 leaves room for a cold cache.
+    timeout-minutes: 20
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
+      - name: Assert the Perf lane ran at least one test
+        run: |
+          set -euo pipefail
+          ran=$(grep -ho '<UnitTestResult ' PerfResults/*.trx 2>/dev/null | wc -l || true)
+          echo "Perf tests executed: $ran"
+          if [ "$ran" -lt 1 ]; then
+            echo "::error::the Category=Perf filter matched no test, so this lane proved nothing." >&2
+            exit 1
+          fi
+
   aot-trim-gate:
     strategy:
       matrix:
@@ -473,7 +551,14 @@ jobs:
             runs-on: windows-latest
     runs-on: ${{ matrix.runs-on }}
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -526,7 +611,14 @@ jobs:
   conformance-gate:
     runs-on: ubuntu-latest
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -553,7 +645,14 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'   # deliberately NOT the pin: this leg is about a newer host
@@ -617,14 +716,21 @@ jobs:
       # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
       # stays loud; every job that can reach it gets the tool.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   codeql:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -641,7 +747,14 @@ jobs:
       attestations: write
       contents: read
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -710,7 +823,14 @@ jobs:
     # with SDK setup. Doubled -> 25. Replace this paragraph with the first real run's wall-clock.
     timeout-minutes: 25
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -789,7 +909,14 @@ jobs:
     # setup. Trebled -> 15. Replace this paragraph with the first real run's wall-clock.
     timeout-minutes: 15
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -865,7 +992,14 @@ jobs:
     # plan's own budget figure. Doubled -> 20. Replace with the first real per-OS wall-clocks.
     timeout-minutes: 20
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
@@ -897,7 +1031,8 @@ jobs:
       # --blame-hang: the H7-f runner-level backstop, same rationale as in build-test. It matters more
       # here, not less: a hang that only happens on one OS is exactly the kind of finding this leg is for,
       # and without the dump it would present as an anonymous 20-minute timeout.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --blame-hang --blame-hang-timeout 5m
+      # Category!=Perf only: this leg still runs the whole population otherwise, SurfaceMatrix included.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   # ── .NET preview-SDK canary (round-23 S5) ─────────────────────────────────────────────────────────────
   # A source generator's worst consumer-facing failure is "the new SDK refuses to load it". roslyn-forward-
@@ -939,7 +1074,14 @@ jobs:
     # cannot die of its own download. Replace with the first real wall-clock.
     timeout-minutes: 20
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '11.0.x'
@@ -961,12 +1103,31 @@ jobs:
                  "Check whether the 11.0 preview channel still publishes, or bump dotnet-version." >&2
             exit 1
           fi
-      # Locked-mode note, inherited from roslyn-forward-compat verbatim in spirit: this leg runs an
-      # UNPINNED, newer-MAJOR SDK, whose package-prune data can change the resolved graph. If it reds with
-      # NU1004 while build-test stays green, that IS the diagnosis — SDK-driven graph drift, not a
-      # lock-file defect — and it is information this leg exists to surface, not noise to exempt.
+      # Round 31 T22: aligned with roslyn-forward-compat, which learned this first. The earlier note here
+      # predicted this leg would red with NU1004 (an unpinned SDK resolves the implicit AOT/trim packages at its
+      # own patch, not the lock file's) and on every analyzer rule the next major adds (TreatWarningsAsErrors
+      # with AnalysisLevel=latest-all) — and called both "information". They are, but they arrive as a failed
+      # RESTORE or BUILD, so the leg never reached the one question it exists to ask: does the generator load
+      # and emit under the next major? roslyn-forward-compat hit exactly that and was dead for weeks
+      # (Issues/round26/FINDING-forward-compat-lockmode.md). So, for THIS leg only: locked mode off, warnings
+      # not errors, and the new diagnostics REPORTED in the next step, counted per id — the forward-compat
+      # signal, delivered as a signal instead of as a wall. Every pinned job keeps both switches on.
       - name: Build the whole solution on the preview SDK
-        run: dotnet build DwarfMapper.NET.sln -c Release
+        run: |
+          set -euo pipefail
+          dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false -p:TreatWarningsAsErrors=false -v n 2>&1 | tee preview-build.log
+
+      - name: Report what the preview SDK newly objects to
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          echo "SDK under test: $(dotnet --version)"
+          if grep -oE 'warning [A-Z]+[0-9]+' preview-build.log | sort | uniq -c | sort -rn > preview-warnings.txt && [ -s preview-warnings.txt ]; then
+            echo "::notice::the preview SDK produces $(wc -l < preview-warnings.txt) distinct diagnostic(s) the pinned SDK does not"
+            cat preview-warnings.txt
+          else
+            echo "no new diagnostics: the preview compiler agrees with the pinned one"
+          fi
       # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
       # still LOADS and EMITS under the next major, and the matrix has its own job.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
@@ -976,7 +1137,7 @@ jobs:
       # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
       # stays loud; every job that can reach it gets the tool.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
   # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
@@ -1052,7 +1213,14 @@ jobs:
     # is ~1-2 min; 10 leaves room for a slow download without letting the leg idle.
     timeout-minutes: 10
     steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: bench-smoke-results

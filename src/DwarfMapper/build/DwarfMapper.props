@@ -1,0 +1,16 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- Imported into every project that references the DwarfMapper package (build/ and buildTransitive/).
+     Makes PublishAot readable by the source generator as build_property.PublishAot, which DWARF115 needs to
+     know whether EF Core query precompilation is load-bearing for this project (round 31 T17), and enables C#
+     interceptors for the one namespace the generator emits them into (round 31 T26: a Dwarf.Map call whose pair
+     the project itself registers is bound to the generated mapper at compile time). The compiler refuses an
+     interceptor in any namespace not listed here, so this line is what lets the package do that with nothing set
+     in the consuming project. It enables DwarfMapper.Generated only; no other code is affected. -->
+<Project>
+    <PropertyGroup>
+        <InterceptorsNamespaces>$(InterceptorsNamespaces);DwarfMapper.Generated</InterceptorsNamespaces>
+    </PropertyGroup>
+    <ItemGroup>
+        <CompilerVisibleProperty Include="PublishAot"/>
+    </ItemGroup>
+</Project>

@@ -20,7 +20,14 @@ namespace DwarfMapper.NegativeCases
     ///     // EXPECT: DWARF007, DWARF078          (or `none` for a case that must stay clean)
     ///     // EXPECT-MESSAGE DWARF078: CS8795     (repeatable; substring of the RENDERED message)
     ///     // EXPECT-CS: CS8795                   (optional; compiler errors the emission must produce)
+    ///     // BUILD-PROPERTY: PublishAot=true     (optional, repeatable; seen by the generator as build_property.*)
+    ///     // REFERENCES-ASSEMBLY: Name           (optional, repeatable; an EMPTY assembly of that name is referenced)
     ///     </code>
+    ///     <para>
+    ///         The last two exist for a diagnostic gated on the consumer's PROJECT rather than on its source — round 31's
+    ///         DWARF115 fires only when <c>PublishAot</c> is set AND EF Core is referenced. They are read by
+    ///         <c>CaseDriver</c>, which is why this parser skips them.
+    ///     </para>
     ///     <para>
     ///         <c>EXPECT</c> is an EXACT set, not a "contains". A case that provokes an extra diagnostic is a case
     ///         that changed meaning, and the whole reason this project exists is that such a change was invisible.

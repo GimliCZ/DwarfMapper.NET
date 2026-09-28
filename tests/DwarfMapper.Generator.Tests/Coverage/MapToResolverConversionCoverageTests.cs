@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapToGenerator.Resolver.Resolve — numeric narrowing, string parse and enum-name conversion arms
 // Coverage for the [MapTo] registry resolver's built-in conversion arms. After a direct assignment fails, the resolver
 // tries a checked numeric conversion, then a string parse, then an enum conversion. None of those three arms had ever
 // produced a member in the full suite — every registry fixture mapped identical or implicitly convertible types — so the

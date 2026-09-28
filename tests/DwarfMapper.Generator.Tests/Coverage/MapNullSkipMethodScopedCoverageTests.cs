@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadMapNullSkip — explicit false carve-out and non-bool-argument fallback to enabled
 // ReadMapNullSkip reads a method-scoped [MapNullSkip] / [MapNullSkip(bool)]: no argument means enabled (the constructor's
 // default), a bool means itself. Two outcomes had never executed: an explicit `false` that carves one method out of a
 // mapper-wide SkipNullSourceMembers, and an argument that does not bind at all (a non-bool constant reaches the generator as NO argument) — what a consumer has on screen mid-edit,
@@ -35,7 +36,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                                                   public partial class M { [MapNullSkip("x")] public partial Dst Map(Src s); }
                                                                   """);
 
-            Assert.Contains("if (s.Name is not null) __dwarf_target.Name = s.Name;", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("if (s.Name is not null) __dwarf_target.Name = s.Name;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

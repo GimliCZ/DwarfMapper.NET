@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace DwarfMapper
 {
@@ -23,8 +24,9 @@ namespace DwarfMapper
         private static readonly RegistryTable<Func<object, object>> Maps = new();
 
         /// <summary>
-        ///     The subset of <see cref="Maps" /> whose SOURCE is an interface, kept as a flat list so lookup can
-        ///     test assignability without asking the runtime type for its interfaces.
+        ///     The subset of <see cref="Maps" /> whose SOURCE is an interface, bucketed by DESTINATION, so lookup can
+        ///     test assignability without asking the runtime type for its interfaces — and tests only the entries that
+        ///     could possibly answer.
         /// </summary>
         /// <remarks>
         ///     This exists to keep the library trim-safe. The obvious implementation —
@@ -39,8 +41,22 @@ namespace DwarfMapper
         ///         already rooted — generated module initializers reference them directly to register the map.
         ///     </para>
         ///     <para>
-        ///         The list stays short: one entry per interface-keyed registration, scanned only after both the
-        ///         exact-type and base-type lookups have missed.
+        ///         <b>Why bucketed by destination (round 31).</b> This was one flat list of every interface-keyed
+        ///         registration, and "it stays short" stopped being true once every mapped pair started registering
+        ///         six collection shapes keyed on <c>IEnumerable&lt;S&gt;</c>: a collection handed to
+        ///         <c>Map&lt;TDestination&gt;(object)</c> never hits an exact key, so every such call tested every
+        ///         entry in the application. Measured on this registry (<c>AmbientScanBenchmarks</c>): 272 ns with no
+        ///         extra pairs, 6.3 µs with 1,000 — linear in the size of the consumer's map graph, for a question
+        ///         whose answer is only ever among the entries for ONE destination. The destination is the one type
+        ///         the caller always supplies, so it is the key; the source is runtime data and is still tested by
+        ///         <see cref="Type.IsInstanceOfType" />, which is why ambiguity (two interfaces accepting one source)
+        ///         is decided exactly as before — it is always an intra-destination question.
+        ///     </para>
+        ///     <para>
+        ///         Round 31 T14 specified per-destination dispatchers GENERATED at the validation root instead. They
+        ///         were not built: after bucketing, the remaining cost is one probe plus the few assignability tests
+        ///         of one destination, flat in application size, for every consumer — with or without a validation
+        ///         root — and a generated switch on top would have been a second cache over this one.
         ///     </para>
         ///     <para>
         ///         <b>Why a copy-on-write array and not a concurrent collection.</b> This was a
@@ -59,10 +75,20 @@ namespace DwarfMapper
         ///         read once. Pinned by <c>AmbientDispatchAllocationRuntimeTests</c>.
         ///     </para>
         /// </remarks>
-        private static volatile (Type Source, Type Destination, Func<object, object> Map)[] _interfaceMaps = [];
+        private static readonly ConcurrentDictionary<Type, InterfaceBucket> InterfaceMapsByDestination = new();
 
-        /// <summary>Serialises the copy-on-write swap; never taken on the lookup path.</summary>
+        /// <summary>Serialises bucket creation and the copy-on-write swaps; never taken on the lookup path.</summary>
         private static readonly Lock InterfaceMapsGate = new();
+
+        /// <summary>
+        ///     One destination's interface-keyed entries. The bucket is created once and never replaced — the table
+        ///     is insert-only like every other registry table — and grows by publishing a new array into
+        ///     <see cref="Entries" />: a reader sees the old array or the complete new one, never a half-filled one.
+        /// </summary>
+        private sealed class InterfaceBucket
+        {
+            public volatile (Type Source, Func<object, object> Map)[] Entries = [];
+        }
 
         /// <summary>
         ///     Update-into (merge) maps, keyed separately from the create-maps.
@@ -73,6 +99,7 @@ namespace DwarfMapper
         ///     shadowing the other.
         /// </remarks>
         private static readonly RegistryTable<Action<object, object>> UpdateMaps = new();
+
 
         /// <summary>All registered (source, destination) pairs. For diagnostics / validation only.</summary>
         public static IReadOnlyCollection<(Type Source, Type Destination)> Provided
@@ -110,18 +137,101 @@ namespace DwarfMapper
             // duplicate registration does not double-count and read as ambiguous at lookup time.
             if (source.IsInterface)
             {
-                lock (InterfaceMapsGate)
-                {
-                    var current = _interfaceMaps;
-                    var grown = new (Type, Type, Func<object, object>)[current.Length + 1];
-                    Array.Copy(current, grown, current.Length);
-                    grown[current.Length] = (source, destination, map);
+                PublishInterfaceMaps([(source, destination, map)]);
+            }
+        }
 
-                    // Publish the fully built array in one volatile write: a reader either sees the old array
-                    // or the complete new one, never a half-filled one.
-                    _interfaceMaps = grown;
+        /// <summary>
+        ///     Registers many maps at once, with exactly the semantics of calling <see cref="Register" /> for each entry
+        ///     in order — first wins, and a second distinct provider of a pair (in this batch or an earlier one) marks it
+        ///     ambiguous. Generated module initializers use it so an assembly's interface-keyed entries grow the lock-free
+        ///     lookup snapshot once, instead of once per entry.
+        /// </summary>
+        /// <remarks>
+        ///     Each pair auto-registers six collection shapes keyed on <c>IEnumerable&lt;S&gt;</c>, and growing the
+        ///     copy-on-write interface list by one per entry made startup allocation QUADRATIC in the application's map
+        ///     count — measured 412 MB at 1,000 pairs, every copy past 85 KB on the Large Object Heap (research P6). The
+        ///     exact-pair table is written entry by entry, as before; only the interface list is deferred, and it is
+        ///     published in a <see langword="finally" /> so an argument that throws mid-batch leaves exactly the state the
+        ///     equivalent sequence of <see cref="Register" /> calls would have left.
+        /// </remarks>
+        public static void RegisterMany(ReadOnlySpan<(Type Source, Type Destination, Func<object, object> Map)> maps)
+        {
+            List<(Type, Type, Func<object, object>)>? accepted = null;
+            try
+            {
+                foreach (var (source, destination, map) in maps)
+                {
+                    ArgumentNullException.ThrowIfNull(source, nameof(maps));
+                    ArgumentNullException.ThrowIfNull(destination, nameof(maps));
+                    ArgumentNullException.ThrowIfNull(map, nameof(maps));
+
+                    if (Maps.TryRegister(new Key(source, destination), map) && source.IsInterface)
+                    {
+                        (accepted ??= new List<(Type, Type, Func<object, object>)>(maps.Length)).Add((source, destination, map));
+                    }
                 }
             }
+            finally
+            {
+                if (accepted is not null)
+                {
+                    PublishInterfaceMaps(CollectionsMarshal.AsSpan(accepted));
+                }
+            }
+        }
+
+        /// <summary>
+        ///     Appends to the destination buckets under the gate: each touched bucket is copied ONCE, however many of
+        ///     <paramref name="added" /> land in it, and published in one volatile write. Registration order is kept
+        ///     within a bucket, so an ambiguity message names its candidates in the order they were registered.
+        /// </summary>
+        private static void PublishInterfaceMaps(ReadOnlySpan<(Type Source, Type Destination, Func<object, object> Map)> added)
+        {
+            lock (InterfaceMapsGate)
+            {
+                if (added.Length == 1)
+                {
+                    Append(added[0].Destination, [(added[0].Source, added[0].Map)]);
+                    return;
+                }
+
+                // One pass to group, in first-appearance order, so each bucket is copied once per batch.
+                var groups = new Dictionary<Type, List<(Type, Func<object, object>)>>();
+                var order = new List<Type>();
+                foreach (var (source, destination, map) in added)
+                {
+                    if (!groups.TryGetValue(destination, out var group))
+                    {
+                        group = [];
+                        groups.Add(destination, group);
+                        order.Add(destination);
+                    }
+
+                    group.Add((source, map));
+                }
+
+                foreach (var destination in order)
+                {
+                    Append(destination, CollectionsMarshal.AsSpan(groups[destination]));
+                }
+            }
+        }
+
+        /// <summary>Grows one destination's bucket by <paramref name="entries" />. Caller holds the gate.</summary>
+        private static void Append(Type destination, ReadOnlySpan<(Type, Func<object, object>)> entries)
+        {
+            if (!InterfaceMapsByDestination.TryGetValue(destination, out var bucket))
+            {
+                bucket = new InterfaceBucket();
+                InterfaceMapsByDestination.TryAdd(destination, bucket); // under the gate, so it cannot race
+            }
+
+            var current = bucket.Entries;
+            var grown = new (Type, Func<object, object>)[current.Length + entries.Length];
+            Array.Copy(current, grown, current.Length);
+            entries.CopyTo(grown.AsSpan(current.Length));
+            bucket.Entries = grown;
         }
 
         /// <summary>True if a map for the exact pair is registered.</summary>
@@ -137,7 +247,7 @@ namespace DwarfMapper
         }
 
         /// <summary>Tries to get the map delegate for the exact pair (no base-type walk).</summary>
-        public static bool TryGet(Type source, Type destination, out Func<object, object>? map)
+        public static bool TryGet(Type source, Type destination, [NotNullWhen(true)] out Func<object, object>? map)
         {
             return Maps.TryGet(new Key(source, destination), out map);
         }
@@ -193,9 +303,12 @@ namespace DwarfMapper
                     return viaBase(source);
                 }
 
-            // One volatile read; the array is never mutated in place, so this snapshot stays coherent for the
-            // whole walk even if another assembly registers mid-loop.
-            var interfaceMaps = _interfaceMaps;
+            // Only this destination's entries can answer. One volatile read of its array; the array is never
+            // mutated in place, so the snapshot stays coherent for the whole walk even if another assembly
+            // registers mid-loop. No bucket means no interface-keyed map for this destination at all.
+            var interfaceMaps = InterfaceMapsByDestination.TryGetValue(destination, out var bucket)
+                ? bucket.Entries
+                : [];
 
             Func<object, object>? viaInterface = null;
             Type? firstMatch = null;
@@ -203,8 +316,8 @@ namespace DwarfMapper
 
             for (var i = 0; i < interfaceMaps.Length; i++)
             {
-                var (ifaceSource, ifaceDestination, map) = interfaceMaps[i];
-                if (ifaceDestination != destination || !ifaceSource.IsInstanceOfType(source))
+                var (ifaceSource, map) = interfaceMaps[i];
+                if (!ifaceSource.IsInstanceOfType(source))
                 {
                     continue;
                 }
@@ -274,8 +387,9 @@ namespace DwarfMapper
         //     whether a create map is reachable — the emitted `DwarfMap.Validate()` calls `IsProvided`, never
         //     `Provided` — so an update-table enumerator would be surface added for no caller.
         //   * No `TryGetUpdate`. `TryGet` hands out the create delegate for callers that want to invoke it
-        //     themselves; the update delegate is only ever meaningful applied to a destination the caller
-        //     already holds, which is exactly what `Update` does.
+        //     themselves; the update delegate is only ever meaningful applied to a destination the caller already
+        //     holds, which is exactly what `Update` does. (Round 31 T12 had an internal one for the facade's cache
+        //     slot; T26 deleted the slot, and it went with it.)
         //   * No base/interface walk in `Update` — see its remarks below. That one is a SAFETY property, not an
         //     omission, so mirroring the create table here would be a regression.
         //

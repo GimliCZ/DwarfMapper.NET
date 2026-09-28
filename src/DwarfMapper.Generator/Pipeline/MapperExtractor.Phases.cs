@@ -1378,6 +1378,14 @@ namespace DwarfMapper.Generator.Pipeline
 
             var sourceType = method.Parameters[0].Type;
 
+            // DWARF113 at the endpoint itself: `partial PetDto Map(Pet p)` would otherwise be resolved member by
+            // member as an ordinary struct pair (and refused as DWARF025, which names the wrong problem).
+            if (UnionRefusal(sourceType, targetType, method.Name) is { } unionMessage)
+            {
+                acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, methodLocation, unionMessage));
+                return;
+            }
+
             // The FIFTH call site of the one gate, and the reason it is not named after the create map any
             // more. Every branch above this one is some other endpoint, so this is the create map — and a
             // directive whose home is the UPDATE-INTO ([MapCollectionKey], finding D14) is discarded HERE
@@ -1479,7 +1487,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // are acc.Synthesized correctly. The DWARF033 guard is suppressed here because the
                     // user explicitly opted in via the attribute.
                     var resolved = TryResolveConversion(
-                        ctx.SemanticModel.Compilation,
+                        PolicySettings(policy, ctx.SemanticModel.Compilation, methodAutoNest),
                         derivedSrc,
                         derivedTgt,
                         null,
@@ -1496,9 +1504,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // Excluded, the arm synthesizes a real AliasCommand -> CommandOverviewDto mapper,
                         // which is what "map this derived type differently" asked for.
                         ExcludingMethod(decls.MapperMethods, method.Name, sourceType, targetType),
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         methodLocation,
                         srcFqn,
                         acc.Diagnostics,
@@ -1506,15 +1512,10 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out var armNeedsCtx,
                         out var armParamType,
-                        methodAutoNest,
                         acc.NestedRegistry,
-                        policy.NullCollections == NullCollectionsBehavior.AsNull,
-                        policy.IsPreserveMode,
-                        true,
-                        policy.IsSetNullMode,
-                        policy.ImplicitConversions,
+                        allowInterfaceSrc: true,
                         // An arm is not an invitation to reuse a converter dedicated to some other pair.
-                        decls.MapperReservedConverters);
+                        reservedConverters: decls.MapperReservedConverters);
 
                     if (!resolved || armConverter is null)
                     {
@@ -1539,6 +1540,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // Concrete-to-concrete pairs are NOT ambiguous: a concrete instance has exactly
                 // one runtime type, so at most one arm can match at runtime.
                 DetectAmbiguousInterfaceArms(sortedArms, ctx.SemanticModel.Compilation, methodLocation, acc.Diagnostics);
+
+                // DWARF114: over a C# 15 closed source type, the arm set can be checked for completeness.
+                ReportMissingClosedHierarchyArms(sourceType,
+                    rawDerivedPairs.Select(p => p.Item1).ToList(),
+                    method.Name,
+                    methodLocation,
+                    acc.Diagnostics);
 
                 var armModels = sortedArms
                     .Select(a => new DerivedTypeArm(
@@ -1668,7 +1676,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var tlResolved = TryResolveConversion(
-                    ctx.SemanticModel.Compilation,
+                    PolicySettings(policy, ctx.SemanticModel.Compilation, methodAutoNest),
                     sourceType,
                     targetType,
                     null,
@@ -1680,9 +1688,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // This pair is resolved as a WHOLE, so the method must not be a candidate for its own
                     // conversion — the same self-exclusion the [GenerateMap] collection path needs.
                     ExcludingPair(decls.MapperMethods, sourceType, targetType),
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     methodLocation,
                     method.Name,
                     acc.Diagnostics,
@@ -1690,12 +1696,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out _,
                     out var tlNeedsCtx,
                     out _,
-                    methodAutoNest,
                     acc.NestedRegistry,
-                    policy.NullCollections == NullCollectionsBehavior.AsNull,
-                    policy.IsPreserveMode,
-                    isSetNull: policy.IsSetNullMode,
-                    implicitConversions: policy.ImplicitConversions,
                     // WITHOUT this the ELEMENT conversion adopts a method dedicated to one pair. Found in a
                     // real consumer: `[MapConstructor<DbCommand, UserCommand>(nameof(CreateUserCommand))]`
                     // plus `partial ICollection<UserCommand> ToUserCommands(List<DbCommand>)` emitted
@@ -1884,23 +1885,24 @@ namespace DwarfMapper.Generator.Pipeline
             if (flattenGraphRaw.Count > 0)
             {
                 (resolvedFgDirectives, fgInjectedMembers) = ResolveFlattenGraphDirectives(
-                    sourceType,
-                    namedTargetType,
                     flattenGraphRaw,
-                    ctx.SemanticModel.Compilation,
-                    methodLocation,
+                    new FlattenGraphRequest(sourceType,
+                        namedTargetType,
+                        ctx.SemanticModel.Compilation,
+                        methodLocation,
+                        decls.AllMethods,
+                        decls.MapperMethods,
+                        policy.EnumPolicy,
+                        policy.NullStrategy,
+                        methodAutoNest,
+                        acc.NestedRegistry,
+                        policy.IsPreserveMode,
+                        policy.ImplicitConversions,
+                        policy.AllowNonPublic,
+                        rawDerivedPairs),
                     acc.Diagnostics,
-                    decls.AllMethods,
-                    decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
-                    methodAutoNest,
-                    acc.NestedRegistry,
-                    policy.IsPreserveMode,
-                    policy.AllowNonPublic,
-                    flattenGraphConsumed,
-                    rawDerivedPairs);
+                    flattenGraphConsumed);
 
                 // Add consumed targets to ignores so ResolveMembers skips them and
                 // does not emit DWARF001 (unmapped) for them.
@@ -1930,25 +1932,16 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 if (!ResolveConstructorArguments(ctor,
                         sourceType,
-                        ctx.SemanticModel.Compilation,
+                        PolicySettings(policy, ctx.SemanticModel.Compilation, methodAutoNest),
                         methodLocation,
                         acc.Diagnostics,
-                        policy.CaseInsensitive,
-                        policy.AllowNonPublic,
                         explicitMaps,
                         decls.AllMethods,
                         decls.MapperMethods,
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
-                        methodAutoNest,
                         acc.NestedRegistry,
                         out ctorArgs,
-                        out consumedParams,
-                        policy.NullCollections == NullCollectionsBehavior.AsNull,
-                        policy.IsPreserveMode,
-                        policy.IsSetNullMode,
-                        policy.ImplicitConversions))
+                        out consumedParams))
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                 {
                     return;
@@ -1963,10 +1956,7 @@ namespace DwarfMapper.Generator.Pipeline
                 sourceType,
                 namedTargetType,
                 ignores,
-                ctx.SemanticModel.Compilation,
-                methodLocation,
-                acc.Diagnostics,
-                new MapperOptions(
+                new ResolutionSettings(ctx.SemanticModel.Compilation, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                     CaseInsensitive: policy.CaseInsensitive,
                     AutoNest: methodAutoNest,
                     NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -1977,13 +1967,13 @@ namespace DwarfMapper.Generator.Pipeline
                     SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, method, sourceType, targetType, policy.SkipNullSrc),
                     AllowNonPublic: policy.AllowNonPublic,
                     ExplicitOnly: policy.ExplicitOnly,
-                    IgnoreObsolete: policy.IgnoreObsolete),
+                    IgnoreObsolete: policy.IgnoreObsolete)),
+                methodLocation,
+                acc.Diagnostics,
                 explicitMaps,
                 decls.AllMethods,
                 decls.MapperMethods,
-                policy.EnumPolicy,
                 acc.Synthesized,
-                policy.NullStrategy,
                 flattenRoots,
                 reinterpretMembers,
                 decls.MapperReservedConverters,
@@ -2068,24 +2058,21 @@ namespace DwarfMapper.Generator.Pipeline
                         decls.ClassSymbol,
                         asSrcElem,
                         asDstElem,
-                        policy.ExplicitOnly,
+                        policy,
                         asComp,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics))
                 {
                     return true;
                 }
 
-                if (!TryResolveConversion(asComp,
+                if (!TryResolveConversion(PolicySettings(policy, asComp, asAutoNest).ForElementEndpoint(),
                         asSrcElem,
                         asDstElem,
                         null,
                         decls.AllMethods,
                         decls.MapperMethods,
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         methodLocation,
                         method.Name,
                         acc.Diagnostics,
@@ -2093,7 +2080,6 @@ namespace DwarfMapper.Generator.Pipeline
                         out var asNull,
                         out var asNeedsCtx,
                         out _,
-                        asAutoNest,
                         acc.NestedRegistry,
                         reservedConverters: decls.MapperReservedConverters))
                 {
@@ -2283,10 +2269,7 @@ namespace DwarfMapper.Generator.Pipeline
                     projSource,
                     projTargetNamed,
                     projIgnores,
-                    ctx.SemanticModel.Compilation,
-                    methodLocation,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(ctx.SemanticModel.Compilation, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: projAutoNest,
                         // I19: the FIFTH reader of NullCollections, and the endpoint that never read it.
@@ -2323,9 +2306,10 @@ namespace DwarfMapper.Generator.Pipeline
                         SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, method, projSource, projTargetNamed, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         ExplicitOnly: policy.ExplicitOnly,
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    methodLocation,
+                    acc.Diagnostics,
                     projExplicitMaps,
-                    policy.EnumPolicy,
                     "__s",
                     ReadMapPropertyExtras(method),
                     projConsumedSources,
@@ -2354,9 +2338,8 @@ namespace DwarfMapper.Generator.Pipeline
                         projConsumedSources,
                         decls.ClassIgnoreSources,
                         ReadIgnoreSources(method),
-                        policy.IgnoreObsolete,
+                        policy,
                         ctx.SemanticModel.Compilation,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics);
                 }
@@ -2387,11 +2370,55 @@ namespace DwarfMapper.Generator.Pipeline
                     ProjectionMembers: EquatableArray.From(projMembers.ToArray()),
                     ParameterTypeSignature: method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     ReturnTypeSignature: DeclaredReturnSignature(method),
-                    ReturnIsNullableRef: DeclaresNullableRefReturn(method)));
+                    ReturnIsNullableRef: DeclaresNullableRefReturn(method),
+                    ProjectionSourceElementFullName: projSource.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ProjectionExpressionName: ProjectionExpressionNameFor(method, methodLocation, acc.Diagnostics)));
                 return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        ///     The <c>{Method}Expression</c> property name for a projection, or <see langword="null" /> with DWARF112 when
+        ///     it cannot be emitted: two projections of one name would claim the same property (CS0102), and a member of
+        ///     that name on the mapper or a base would be duplicated or hidden (CS0102 / CS0108 in the .g.cs). The RAW
+        ///     method name, as for the tree field: the suffix makes an escaped name like <c>@class</c> a plain identifier.
+        /// </summary>
+        private static string? ProjectionExpressionNameFor(IMethodSymbol method, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+        {
+            var name = method.Name + "Expression";
+            string? reason = null;
+            var projectionsOfThisName = 0;
+            foreach (var m in method.ContainingType.GetMembers(method.Name))
+                if (m is IMethodSymbol candidate && candidate.Parameters.Length == 1 &&
+                    IsQueryable(candidate.ReturnType, out _) && IsQueryable(candidate.Parameters[0].Type, out _))
+                {
+                    projectionsOfThisName++;
+                }
+
+            if (projectionsOfThisName > 1)
+            {
+                reason = $"{projectionsOfThisName.ToString(System.Globalization.CultureInfo.InvariantCulture)} projections are named '{method.Name}', and each would claim it";
+            }
+            else
+            {
+                for (ITypeSymbol? t = method.ContainingType; t is not null && reason is null; t = t.BaseType)
+                    if (!t.GetMembers(name).IsEmpty)
+                    {
+                        reason = $"'{t.Name}' already declares a member of that name";
+                    }
+            }
+
+            if (reason is null)
+            {
+                return name;
+            }
+
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ProjectionExpressionNotExposed,
+                location,
+                $"The expression property '{name}' was not generated for projection '{method.Name}': {reason}. Rename the member or the method to get it"));
+            return null;
         }
 
         // ── Update-into-existing: void/T Map(S src, T dest) ─────────────────────
@@ -2452,10 +2479,7 @@ namespace DwarfMapper.Generator.Pipeline
                     updSrc,
                     updTgt,
                     updIgnores,
-                    comp,
-                    methodLocation,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(comp, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: updAutoNest,
                         // These were hardcoded `false` while the other ResolveMembers call sites passed the
@@ -2474,13 +2498,13 @@ namespace DwarfMapper.Generator.Pipeline
                         SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, method, updSrc, updTgt, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         ExplicitOnly: policy.ExplicitOnly,
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    methodLocation,
+                    acc.Diagnostics,
                     updExplicit,
                     decls.AllMethods,
                     decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     updFlatten,
                     updReinterpret,
                     decls.MapperReservedConverters,
@@ -2512,9 +2536,8 @@ namespace DwarfMapper.Generator.Pipeline
                         null,
                         decls.ClassIgnoreSources,
                         ReadIgnoreSources(method),
-                        policy.IgnoreObsolete,
+                        policy,
                         comp,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics);
                 }
@@ -2848,24 +2871,21 @@ namespace DwarfMapper.Generator.Pipeline
                         decls.ClassSymbol,
                         spanSrcElem,
                         spanDstElem,
-                        policy.ExplicitOnly,
+                        policy,
                         spanComp,
-                        policy.AllowNonPublic,
                         methodLocation,
                         acc.Diagnostics))
                 {
                     return true;
                 }
 
-                if (!TryResolveConversion(spanComp,
+                if (!TryResolveConversion(PolicySettings(policy, spanComp, spanAutoNest).ForElementEndpoint(),
                         spanSrcElem,
                         spanDstElem,
                         null,
                         decls.AllMethods,
                         decls.MapperMethods,
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         methodLocation,
                         method.Name,
                         acc.Diagnostics,
@@ -2873,7 +2893,6 @@ namespace DwarfMapper.Generator.Pipeline
                         out var spanNull,
                         out var spanNeedsCtx,
                         out _,
-                        spanAutoNest,
                         acc.NestedRegistry,
                         // Reservation is mapper-wide: a converter dedicated by Use=, or a [MapConstructor]
                         // factory, must not be adopted as this element's converter either.
@@ -3072,9 +3091,8 @@ namespace DwarfMapper.Generator.Pipeline
                     ctorArgs,
                     decls.ClassIgnoreSources,
                     ReadIgnoreSources(method),
-                    policy.IgnoreObsolete,
+                    policy,
                     ctx.SemanticModel.Compilation,
-                    policy.AllowNonPublic,
                     methodLocation,
                     acc.Diagnostics);
             }
@@ -3258,16 +3276,14 @@ namespace DwarfMapper.Generator.Pipeline
                 if (genIsColl || genIsDict || genIsValueLike)
                 {
                     var gResolved = TryResolveConversion(
-                        genComp,
+                        PolicySettings(policy, genComp, policy.ClassAutoNest),
                         genSrc,
                         genTgt,
                         null,
                         decls.AllMethods,
                         // This pair is resolved as a WHOLE, so it must not be a candidate for its own conversion.
                         ExcludingPair(decls.MapperMethods, genSrc, genTgt),
-                        policy.EnumPolicy,
                         acc.Synthesized,
-                        policy.NullStrategy,
                         genLoc,
                         "Map",
                         acc.Diagnostics,
@@ -3275,12 +3291,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out _,
                         out var gNeedsCtx,
                         out _,
-                        policy.ClassAutoNest,
                         acc.NestedRegistry,
-                        policy.NullCollections == NullCollectionsBehavior.AsNull,
-                        policy.IsPreserveMode,
-                        isSetNull: policy.IsSetNullMode,
-                        implicitConversions: policy.ImplicitConversions,
                         // Without this the ELEMENT conversion for a collection pair can adopt a method
                         // dedicated to one pair — a [MapConstructor] factory over the same types matches by
                         // signature and wins, so the loop constructs each element and assigns nothing.
@@ -3408,25 +3419,16 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     if (!ResolveConstructorArguments(genCtor,
                             genSrc,
-                            genComp,
+                            PolicySettings(policy, genComp, policy.ClassAutoNest),
                             genLoc,
                             acc.Diagnostics,
-                            policy.CaseInsensitive,
-                            policy.AllowNonPublic,
                             genExplicit,
                             decls.AllMethods,
                             decls.MapperMethods,
-                            policy.EnumPolicy,
                             acc.Synthesized,
-                            policy.NullStrategy,
-                            policy.ClassAutoNest,
                             acc.NestedRegistry,
                             out genCtorArgs,
-                            out genConsumed,
-                            policy.NullCollections == NullCollectionsBehavior.AsNull,
-                            policy.IsPreserveMode,
-                            policy.IsSetNullMode,
-                            policy.ImplicitConversions))
+                            out genConsumed))
                     {
                         continue;
                     }
@@ -3439,10 +3441,7 @@ namespace DwarfMapper.Generator.Pipeline
                     genSrc,
                     genTgtNamed,
                     genIgnores,
-                    genComp,
-                    genLoc,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(genComp, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: policy.ClassAutoNest,
                         NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -3455,13 +3454,13 @@ namespace DwarfMapper.Generator.Pipeline
                         SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, null, genSrc, genTgt, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         ExplicitOnly: policy.ExplicitOnly,
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    genLoc,
+                    acc.Diagnostics,
                     genExplicit,
                     decls.AllMethods,
                     decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     Array.Empty<string>(),
                     new List<string>(),
                     decls.MapperReservedConverters,
@@ -3686,25 +3685,16 @@ namespace DwarfMapper.Generator.Pipeline
                     // C1: use the per-pair autoNest value (pairAutoNest), NOT policy.ClassAutoNest.
                     if (!ResolveConstructorArguments(nestedCtor!,
                             nestedSrc,
-                            ctx.SemanticModel.Compilation,
+                            PolicySettings(policy, ctx.SemanticModel.Compilation, pairAutoNest),
                             nestedLocation,
                             acc.Diagnostics,
-                            policy.CaseInsensitive,
-                            policy.AllowNonPublic,
                             nestedExplicit,
                             decls.AllMethods,
                             decls.MapperMethods,
-                            policy.EnumPolicy,
                             acc.Synthesized,
-                            policy.NullStrategy,
-                            pairAutoNest,
                             acc.NestedRegistry,
                             out nestedCtorArgs,
-                            out nestedConsumed,
-                            policy.NullCollections == NullCollectionsBehavior.AsNull,
-                            policy.IsPreserveMode,
-                            policy.IsSetNullMode,
-                            policy.ImplicitConversions))
+                            out nestedConsumed))
                     {
                         acc.NestedRegistry.ClearCurrentPair();
                         continue;
@@ -3718,10 +3708,7 @@ namespace DwarfMapper.Generator.Pipeline
                     nestedSrc,
                     nestedTgt,
                     nestedIgnores, // pair-scoped [MapIgnore<T>] (empty when none declared)
-                    ctx.SemanticModel.Compilation,
-                    nestedLocation,
-                    acc.Diagnostics,
-                    new MapperOptions(
+                    new ResolutionSettings(ctx.SemanticModel.Compilation, policy.EnumPolicy, policy.NullStrategy, new MapperOptions(
                         CaseInsensitive: policy.CaseInsensitive,
                         AutoNest: pairAutoNest,
                         NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
@@ -3746,13 +3733,13 @@ namespace DwarfMapper.Generator.Pipeline
                         // IgnoreObsolete DOES propagate, unlike ExplicitOnly: skipping an obsolete nested
                         // member just leaves it at its default — safe and consistent, with no "unmappable"
                         // hazard.
-                        IgnoreObsolete: policy.IgnoreObsolete),
+                        IgnoreObsolete: policy.IgnoreObsolete)),
+                    nestedLocation,
+                    acc.Diagnostics,
                     nestedExplicit, // pair-scoped [MapProperty<S,T>] (empty when none declared)
                     decls.AllMethods,
                     decls.MapperMethods,
-                    policy.EnumPolicy,
                     acc.Synthesized,
-                    policy.NullStrategy,
                     new List<string>(),
                     new List<string>(), // no flatten/reinterpret
                     // A synthesized nested mapper must not adopt a dedicated converter either — the author never wrote
@@ -3780,9 +3767,8 @@ namespace DwarfMapper.Generator.Pipeline
                             null,
                             decls.ClassIgnoreSources,
                             owed.IgnoreSources,
-                            policy.IgnoreObsolete,
+                            policy,
                             ctx.SemanticModel.Compilation,
-                            policy.AllowNonPublic,
                             owed.Loc,
                             acc.Diagnostics);
                         break;

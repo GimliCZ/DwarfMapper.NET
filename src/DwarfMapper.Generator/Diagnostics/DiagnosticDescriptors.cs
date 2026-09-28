@@ -2159,5 +2159,88 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Warning,
             true,
             helpLinkUri: HelpBase + "dwarf111");
+
+        /// <summary>
+        ///     <c>DWARF112</c> (Info) — a projection's <c>{Method}Expression</c> property was not generated, because the
+        ///     name is already taken by a member of the mapper (declared or inherited), or because two projections share
+        ///     the method name and would claim the same property.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 31 T16 (research P5d) exposes each projection's tree as a static
+        ///         <c>Expression&lt;Func&lt;S, D&gt;&gt; {Method}Expression</c>, so a consumer can compose it into a query of
+        ///         their own. The property is a convenience; its absence breaks nothing that worked before. Info rather
+        ///         than Warning for exactly that reason: an existing mapper that happens to declare the name, or
+        ///         overloads a projection, must not fail a warnings-as-errors build because a new convenience could not
+        ///         be added. It is reported at all so that the missing member is explained where the reader looks for
+        ///         it, not discovered as CS0117 at a call site. Args: {0} = the whole message, built by
+        ///         <c>MapperExtractor.ProjectionExpressionNameFor</c>.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ProjectionExpressionNotExposed = new(
+            "DWARF112",
+            "Projection expression property was not generated",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            helpLinkUri: HelpBase + "dwarf112");
+
+        /// <summary>
+        ///     <c>DWARF113</c> (Error) — a mapping between two DIFFERENT types where at least one is a C# 15 union type
+        ///     (a class or struct carrying <c>System.Runtime.CompilerServices.UnionAttribute</c>).
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 31 T24, research C3: .NET 11 / C# 15 ships unions on 2026-11-10, and DwarfMapper has no mapping
+        ///         policy for them yet. Measured before this id existed: a union member fell into ordinary struct
+        ///         handling — <c>Pet</c> into <c>object</c> boxed the union WRAPPER rather than its case value, silently,
+        ///         and <c>Pet</c> into <c>PetDto</c> was refused as DWARF025 "ambiguous constructor", which names the
+        ///         wrong problem (one constructor per case type is the union's shape, not an ambiguity). Refusing by name
+        ///         before any of that runs is the loud answer until a policy exists.
+        ///     </para>
+        ///     <para>
+        ///         Not refused: the SAME union type on both sides (a struct copy, which is exactly right), and an explicit
+        ///         <c>[MapProperty(Use = ...)]</c> converter, which is the remedy this message offers. Detected by the
+        ///         attribute's full name, which needs nothing newer than the Roslyn floor and also recognises a union
+        ///         declared by hand. Args: {0} = the whole message, built by <c>MapperExtractor.UnionRefusal</c>.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor UnionTypeNotMapped = new(
+            "DWARF113",
+            "Union types are not mapped yet",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf113");
+
+        /// <summary>
+        ///     <c>DWARF114</c> (Error) — a <c>[MapDerivedType]</c> dispatch over a C# 15 <c>closed</c> source type leaves a
+        ///     direct descendant without an arm. See <c>MapperExtractor.ReportMissingClosedHierarchyArms</c> for the
+        ///     coverage rule and the one case detection does not reach yet. Args: {0} = the whole message.
+        /// </summary>
+        public static readonly DiagnosticDescriptor ClosedHierarchyArmMissing = new(
+            "DWARF114",
+            "A closed hierarchy has a direct descendant with no [MapDerivedType] arm",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf114");
+
+        /// <summary>
+        ///     <c>DWARF115</c> (Warning) — a projection method in a project that publishes NativeAOT and references EF
+        ///     Core, where EF cannot precompile a query built inside the generated method. See
+        ///     <c>EfAotProjectionCheck</c> for the measurement and the gate. Args: {0} = the whole message.
+        /// </summary>
+        public static readonly DiagnosticDescriptor ProjectionNotPrecompilable = new(
+            "DWARF115",
+            "EF Core cannot precompile a query built by a projection method",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf115");
     }
 }

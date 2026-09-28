@@ -36,6 +36,18 @@ Marks a method to run before mapping. Signature: void Hook(TSource source). Appl
 |---|---|---|---|
 | `TypeId` | `Object` | `DwarfMapper.BeforeMapAttribute` |  |
 
+### class `Dwarf`
+
+The statically-bound twin of IDwarfMapper: Dwarf.Map<Order, OrderDto>(order). When the calling assembly itself registers the pair, the generator binds the call at compile time to the generated mapper - a direct call, no registry lookup. Every other call resolves through DwarfMapperRegistry exactly as the facade does.
+
+_No public settable surface._
+
+### class `DwarfCollectionMap`
+
+The element-by-element walk the ambient registry's auto-registered collection shapes use. Called from generated [ModuleInitializer] registrations; not meant to be called by hand.
+
+_No public settable surface._
+
 ### class `DwarfMapMissingException`
 
 Thrown by the ambient IDwarfMapper / DwarfMapperRegistry when no map is registered for the requested pair. Normally prevented ahead of time by the compile-time DWARF061 validation at the composition root, or by DwarfMap.Validate() at startup; this is the last-resort loud failure if neither ran.

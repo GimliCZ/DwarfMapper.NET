@@ -79,6 +79,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 + "flat lookup contracted above. Called once per pair per assembly load.",
             ["DwarfMapperRegistry.RegisterUpdate"] =
                 "EXEMPT: load-time only, as Register.",
+            // Load-time like Register, but it is the one registration path with a cost CONTRACT: it exists because a
+            // per-entry copy made startup allocation quadratic (research P6, round 31 T11), so its linearity is pinned.
+            ["DwarfMapperRegistry.RegisterMany"] = "RegisterManyTests.Registering_3000_interface_entries_allocates_linearly",
 
             // ── DwarfRefContext: allocated per invocation, threaded through recursion ─────────────────────
             ["DwarfRefContext.TryGetReference"] = "AmbientCostContractTests.Ref_context_cost_is_flat_over_time",

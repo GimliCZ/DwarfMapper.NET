@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.AccessibilityText — the NotApplicable fallback, unreached by any declared class or method
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 

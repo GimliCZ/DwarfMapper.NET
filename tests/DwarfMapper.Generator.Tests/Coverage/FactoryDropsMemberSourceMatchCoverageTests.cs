@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveAutoMatchedMembers — DWARF080 not reported when a factory-owned required member has no source match
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Members.Phases.cs's DWARF080 condition in ResolveAutoMatchedMembers. A
@@ -27,8 +28,10 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF080");
-            Assert.Contains("__dwarf_target.A = src.A;", generated, StringComparison.Ordinal);
-            Assert.DoesNotContain("__dwarf_target.Q", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("__dwarf_target.A = src.A;"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
+            Assert.DoesNotContain(GeneratorAssert.NormalizeLocals("__dwarf_target.Q"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.TryBindProjectionCtorParam — a case-insensitive retry matching two source members is ambiguous (DWARF010)
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

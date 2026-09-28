@@ -39,10 +39,10 @@ namespace DwarfMapper.Generator.Pipeline
             // I17: a method whose own completeness gate refused it (DWARF001) is recorded in the model but
             // never written. Half a mapping method is silently wrong data — worse than the CS8795 the
             // missing implementing part produces, which DWARF097 signposts.
-            foreach (var method in model.Methods)
-                if (!method.Withheld)
+            for (var ordinal = 0; ordinal < model.Methods.Count; ordinal++)
+                if (!model.Methods[ordinal].Withheld)
                 {
-                    EmitMethod(sb, method, "    ");
+                    EmitMethod(sb, model.Methods[ordinal], "    ", ordinal);
                 }
 
             foreach (var synth in model.SynthesizedMethods)
@@ -157,8 +157,109 @@ namespace DwarfMapper.Generator.Pipeline
             return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
-        private static void EmitMethod(StringBuilder sb, MapMethodModel method, string indent)
+        /// <summary>
+        ///     The projection lambda's body — everything after <c>__s =&gt; </c> — for the static tree field. One writer,
+        ///     so the tree text exists in exactly one place (round 31 T13 reuses it for the in-memory twin).
+        /// </summary>
+        private static string ProjectionDelegateField(string treeField)
         {
+            return "__dwarf_projfn_" + treeField.Substring("__dwarf_proj_".Length);
+        }
+
+        private static void AppendProjectionLambdaBody(StringBuilder sb, MapMethodModel method, string indent)
+        {
+            var projMembers = method.ProjectionMembers;
+
+            if (projMembers.Count > 0 && projMembers[0].TargetName.Length == 0)
+            {
+                // Constructor projection. The leading empty-named entry carries the `new T(...)` call; any
+                // entries after it are members the constructor did NOT take, and they become an object
+                // initializer on top of it:
+                //
+                //   __s => new global::D.DstRec(__s.X, __s.Y)                      (no extra members)
+                //   __s => new global::D.DstRec(__s.X) { Extra = __s.Extra }       (with them)
+                //
+                // Both are ordinary MemberInit(New(…), bindings) expression trees and translate.
+                //
+                // R18-32: this used to require Count == 1, and the resolver returned the moment it had a
+                // constructor — so an init-only member the ctor did not take was dropped in silence, and a
+                // named entry that reached here anyway fell through to the member-init branch below and
+                // emitted `{ = new T(...) }` with an empty left-hand side. Neither had a diagnostic.
+                sb.Append(projMembers[0].InlineExpr);
+                if (projMembers.Count > 1)
+                {
+                    sb.AppendLine();
+                    sb.Append(indent).AppendLine("    {");
+                    for (var i = 1; i < projMembers.Count; i++)
+                        sb.Append(indent).Append("        ").Append(projMembers[i].EmitTargetName)
+                            .Append(" = ").Append(projMembers[i].InlineExpr).AppendLine(",");
+                    sb.Append(indent).Append("    }");
+                }
+            }
+            else
+            {
+                // Member-init projection with inline expression fragments (Plan 19D recursive resolver).
+                // Round 30: this used to be two arms — this one for projMembers.Count > 0, and a
+                // "legacy flat Members path" for Count == 0 that looped over method.Members instead of
+                // projMembers. method.Members is Array.Empty for EVERY projection method model (the
+                // MapMethodModel constructor in MapperExtractor.Phases.cs passes
+                // EquatableArray.From(Array.Empty<MemberMap>()) unconditionally for a projection pair),
+                // so that second loop could never iterate and the two arms emitted byte-identical text
+                // for Count == 0 (a destination with no public settable member and no explicit map).
+                // One arm, reachable-and-tested at both Count == 0 and Count > 0, replaces the dead one.
+                sb.AppendLine("new " + method.ElementTargetTypeFullName);
+                sb.Append(indent).AppendLine("    {");
+                foreach (var pm in projMembers)
+                    sb.Append(indent).Append("        ").Append(pm.EmitTargetName)
+                        .Append(" = ").Append(pm.InlineExpr).AppendLine(",");
+                sb.Append(indent).Append("    }");
+            }
+        }
+
+        private static void EmitMethod(StringBuilder sb, MapMethodModel method, string indent, int ordinal)
+        {
+            // Round 31 T10 (research P5a): a projection's expression tree is built ONCE, into a static field, instead
+            // of on every call — measured 15.0 µs / 5,400 B → 1.0 µs / 424 B per Project() call. Unconditional because
+            // a projection has exactly one parameter (TryHandleProjection requires it), so there is never a captured
+            // argument that would make a shared tree wrong. The ordinal keeps overloads apart; the RAW method name is
+            // used because the field name carries a prefix, so `@class` needs no escape and `@` would not be legal
+            // mid-identifier. Written before the doc comment so the comment stays attached to the method.
+            var projectionField = method.IsProjection
+                ? "__dwarf_proj_" + method.MethodName + "_" + ordinal.ToString(CultureInfo.InvariantCulture)
+                : null;
+            if (projectionField is not null)
+            {
+                sb.Append(indent).Append("private static readonly global::System.Linq.Expressions.Expression<global::System.Func<")
+                    .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
+                    .Append(">> ").Append(projectionField).Append(" = __s => ");
+                AppendProjectionLambdaBody(sb, method, indent);
+                sb.AppendLine(";");
+                sb.AppendLine();
+
+                // Round 31 T13 (research P5 Case 2): the SAME lambda text compiled as a delegate, for a queryable that
+                // is only a list in disguise. Same text, not a call into Map: projection and map semantics may differ
+                // by design (OptionGaps), and the in-memory answer must be the one the tree would have given.
+                // Round 31 T16 (research P5d): the same tree, exposed, so a consumer can write the EF-native
+                // `db.Orders.Where(...).Select(OrderMapper.ProjectExpression)` and compose freely. Same accessibility as
+                // the method, which already names both element types at that accessibility. Absent under DWARF112.
+                if (method.ProjectionExpressionName is not null)
+                {
+                    sb.Append(indent).Append("/// <summary>The expression tree <c>").Append(method.EmitMethodName)
+                        .AppendLine("</c> applies, for composing into a query of your own. One instance for the process.</summary>");
+                    sb.Append(indent).Append(method.Accessibility).Append(" static global::System.Linq.Expressions.Expression<global::System.Func<")
+                        .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
+                        .Append(">> ").Append(method.ProjectionExpressionName).Append(" => ").Append(projectionField).AppendLine(";");
+                    sb.AppendLine();
+                }
+
+                sb.Append(indent).Append("private static readonly global::System.Func<")
+                    .Append(method.ProjectionSourceElementFullName).Append(", ").Append(method.ElementTargetTypeFullName)
+                    .Append("> ").Append(ProjectionDelegateField(projectionField)).Append(" = __s => ");
+                AppendProjectionLambdaBody(sb, method, indent);
+                sb.AppendLine(";");
+                sb.AppendLine();
+            }
+
             // Public methods carry an XML-doc mapping plan (hover + readable in the .g.cs).
             if (method.IsPartial)
             {
@@ -336,60 +437,18 @@ namespace DwarfMapper.Generator.Pipeline
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
 
-            if (method.IsProjection)
+            if (projectionField is not null)
             {
+                // An EnumerableQuery is LINQ-to-objects wearing IQueryable: handing it the tree makes LINQ compile the
+                // tree again on every enumeration (research P5b: 10 rows 985 us -> 1.3 us). The type of the PROVIDER is
+                // the one fact about a projection the compiler cannot know, so this is the one runtime test it gets.
+                sb.Append(indent).Append("    if (").Append(method.EmitParameterName)
+                    .Append(" is global::System.Linq.EnumerableQuery<").Append(method.ProjectionSourceElementFullName).AppendLine(">)");
+                sb.Append(indent).Append("        return global::System.Linq.Queryable.AsQueryable(global::System.Linq.Enumerable.Select(")
+                    .Append("(global::System.Collections.Generic.IEnumerable<").Append(method.ProjectionSourceElementFullName).Append(">)")
+                    .Append(method.EmitParameterName).Append(", ").Append(ProjectionDelegateField(projectionField)).AppendLine("));");
                 sb.Append(indent).Append("    return global::System.Linq.Queryable.Select(")
-                    .Append(method.EmitParameterName).Append(", __s => ");
-
-                var projMembers = method.ProjectionMembers;
-
-                if (projMembers.Count > 0 && projMembers[0].TargetName.Length == 0)
-                {
-                    // Constructor projection. The leading empty-named entry carries the `new T(...)` call; any
-                    // entries after it are members the constructor did NOT take, and they become an object
-                    // initializer on top of it:
-                    //
-                    //   __s => new global::D.DstRec(__s.X, __s.Y)                      (no extra members)
-                    //   __s => new global::D.DstRec(__s.X) { Extra = __s.Extra }       (with them)
-                    //
-                    // Both are ordinary MemberInit(New(…), bindings) expression trees and translate.
-                    //
-                    // R18-32: this used to require Count == 1, and the resolver returned the moment it had a
-                    // constructor — so an init-only member the ctor did not take was dropped in silence, and a
-                    // named entry that reached here anyway fell through to the member-init branch below and
-                    // emitted `{ = new T(...) }` with an empty left-hand side. Neither had a diagnostic.
-                    sb.Append(projMembers[0].InlineExpr);
-                    if (projMembers.Count > 1)
-                    {
-                        sb.AppendLine();
-                        sb.Append(indent).AppendLine("    {");
-                        for (var i = 1; i < projMembers.Count; i++)
-                            sb.Append(indent).Append("        ").Append(projMembers[i].EmitTargetName)
-                                .Append(" = ").Append(projMembers[i].InlineExpr).AppendLine(",");
-                        sb.Append(indent).Append("    }");
-                    }
-
-                    sb.AppendLine(");");
-                }
-                else
-                {
-                    // Member-init projection with inline expression fragments (Plan 19D recursive resolver).
-                    // Round 30: this used to be two arms — this one for projMembers.Count > 0, and a
-                    // "legacy flat Members path" for Count == 0 that looped over method.Members instead of
-                    // projMembers. method.Members is Array.Empty for EVERY projection method model (the
-                    // MapMethodModel constructor in MapperExtractor.Phases.cs passes
-                    // EquatableArray.From(Array.Empty<MemberMap>()) unconditionally for a projection pair),
-                    // so that second loop could never iterate and the two arms emitted byte-identical text
-                    // for Count == 0 (a destination with no public settable member and no explicit map).
-                    // One arm, reachable-and-tested at both Count == 0 and Count > 0, replaces the dead one.
-                    sb.AppendLine("new " + method.ElementTargetTypeFullName);
-                    sb.Append(indent).AppendLine("    {");
-                    foreach (var pm in projMembers)
-                        sb.Append(indent).Append("        ").Append(pm.EmitTargetName)
-                            .Append(" = ").Append(pm.InlineExpr).AppendLine(",");
-                    sb.Append(indent).AppendLine("    });");
-                }
-
+                    .Append(method.EmitParameterName).Append(", ").Append(projectionField).AppendLine(");");
                 sb.Append(indent).AppendLine("}");
                 return;
             }

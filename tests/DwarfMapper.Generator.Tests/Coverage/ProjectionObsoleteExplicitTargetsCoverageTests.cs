@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveProjectionMembers — an obsolete destination member stays when targeted by [MapProperty]/[MapValue]
 using Microsoft.CodeAnalysis;
 
 // Coverage suite for MapperExtractor.Projection.cs's ResolveProjectionMembers under IgnoreObsoleteMembers. An obsolete
@@ -31,9 +32,11 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var (diagnostics, generated) = GeneratorTestHarness.Run(source, NullableContextOptions.Enable);
 
             Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-            Assert.Contains("B = __s.B,", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("B = __s.B,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.Contains("C = 7,", generated, StringComparison.Ordinal);
-            Assert.Contains("A = __s.A,", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("A = __s.A,"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
         }
     }
 }

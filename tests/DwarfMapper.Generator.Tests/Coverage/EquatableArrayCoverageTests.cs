@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: EquatableArray<T>.Equals — full equality/hash/enumeration incl. null≡empty identity (ISSUE-029) (+3 more)
 using System.Collections;
 using DwarfMapper.Generator.Collections;
 

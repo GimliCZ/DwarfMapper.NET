@@ -27,7 +27,7 @@ namespace DwarfMapper.Generator.Tests
             var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
 
             Assert.Contains("ModuleInitializer", ambient, StringComparison.Ordinal);
-            Assert.Contains("DwarfMapperRegistry.Register(typeof(global::Demo.A), typeof(global::Demo.B)",
+            Assert.Contains("(typeof(global::Demo.A), typeof(global::Demo.B), static __s =>",
                 ambient,
                 StringComparison.Ordinal);
             Assert.Contains(
@@ -118,7 +118,7 @@ namespace DwarfMapper.Generator.Tests
 
             var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
             // The create-map still registers; RegisterUpdate for this pair must not appear.
-            Assert.Contains("DwarfMapperRegistry.Register(typeof(global::Demo.A), typeof(global::Demo.B)",
+            Assert.Contains("(typeof(global::Demo.A), typeof(global::Demo.B), static __s =>",
                 ambient,
                 StringComparison.Ordinal);
             Assert.DoesNotContain("RegisterUpdate", ambient, StringComparison.Ordinal);
@@ -181,7 +181,7 @@ namespace DwarfMapper.Generator.Tests
                                           """;
 
         private const string DirectRegistration =
-            "DwarfMapperRegistry.Register(typeof(global::Demo.Src), typeof(global::Demo.Dst),";
+            "(typeof(global::Demo.Src), typeof(global::Demo.Dst),";
 
         private const string DirectManifest =
             "[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::Demo.Src), typeof(global::Demo.Dst))]";
@@ -227,7 +227,7 @@ namespace DwarfMapper.Generator.Tests
             var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
             var lines = ambient.Split('\n');
 
-            const string shape = "DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.List<global::Demo.Dst>),";
+            const string shape = "(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.Src>), typeof(global::System.Collections.Generic.List<global::Demo.Dst>),";
             Assert.Single(lines, line => line.Contains(shape, StringComparison.Ordinal));
             Assert.DoesNotContain("global::Demo.P2.ProvideAll", ambient, StringComparison.Ordinal);
         }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.PropagateContextToPublicMethodsSecondPass — Preserve ctor-arg/member patch arms
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;

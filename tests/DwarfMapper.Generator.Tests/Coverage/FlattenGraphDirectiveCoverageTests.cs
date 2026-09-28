@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: FlattenGraphDirective.Equals — record value-equality, GetHashCode, and ToString coverage (+2 more)
 using DwarfMapper.Generator.Model;
 
 // Coverage suite for DwarfMapper.Generator.Model.FlattenGraphDirective.

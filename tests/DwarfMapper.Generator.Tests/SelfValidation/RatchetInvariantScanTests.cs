@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using System.Text.Json;
@@ -38,8 +38,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // types of the SAME width and [Reinterpret] accepts those - they were never equivalent and are now
         // killed by tests. Rows can grow while mutants shrink; both halves are pinned so neither can move
         // quietly. Ledger section "Rows re-adjudicated on 2026-09-21".
-        private const int PinnedEntryRows = 62;
-        private const int PinnedTotalOccurrences = 65;
+        // Round 31 (2026-09-26): 62 -> 61 rows and 65 -> 64 mutants. T12 replaced the facade's
+        // `TryGet(...) && map is not null` with an ExactPairSlot lookup whose null result is REACHABLE - it is how
+        // the slot says "no exact pair, use the runtime-type fallback" - so the guard that row proved
+        // unfalsifiable is now a branch ExactPairSlotTests drives both ways. The row is retired because its
+        // expression is gone; unusually, the proof stopped holding in the good direction. Ledger section "Rows
+        // retired on 2026-09-26".
+        private const int PinnedEntryRows = 61;
+        private const int PinnedTotalOccurrences = 64;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -79,7 +85,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // can supply).
             // Round 30 (2026-09-14) added the DwarfRefContext upper-clamp row ('>' -> '>=' at AbsoluteMaxDepth), the
             // mirror of the lower-clamp proof, with its accidental-static-kill evidence (same commit).
-            ["runtime|proven-equivalent"] = 3,
+            ["runtime|proven-equivalent"] = 2, // 3 -> 2, round 31 T12; see PinnedEntryRows above
             // Round 30 (2026-09-14) retired the one ruled-in-practice row, Key.Equals(Key) && -> ||: by owner ruling
             // DwarfMapperRegistry.Key became a readonly record struct, so its equality is compiler-generated and the
             // mutant cannot be generated. The 'runtime|ruled-in-practice' pin went with it (a pin is a category that

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.SynthesizePreserveDispatchWrappers — non-recursion-capable dispatch skip and caller redirection
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: AssemblyConfiguration.PublicExtensions — non-boolean [DwarfMapperOptions] value keeps the internal default
 // [assembly: DwarfMapperOptions(PublicExtensions = …)] decides the accessibility of the generated extension class. A
 // value of the wrong type is a compile error in the consumer's own code, and the generator still runs on that
 // compilation: it must read no opt-in from it and keep the documented internal default.

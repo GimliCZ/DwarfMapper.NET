@@ -173,7 +173,7 @@ namespace DwarfMapper.Generator.Pipeline
             string srcName,
             string tgtName,
             string? useMethod,
-            Compilation compilation,
+            ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
             HashSet<string> handledTargets,
@@ -181,18 +181,20 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, ITypeSymbol> writableByName,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
-            NullStrategy nullStrategy,
-            bool autoNest,
             NestedMappingRegistry nestedRegistry,
-            bool nullAsNull,
-            bool isPreserve,
-            bool isSetNull,
-            bool implicitConversions,
-            bool allowNonPublic,
             List<MemberMap> result)
         {
+            // The settings' values under the names this body has always used (round 31 T08).
+            var compilation = settings.Compilation;
+            var enumPolicy = settings.EnumPolicy;
+            var nullStrategy = settings.NullStrategy;
+            var autoNest = settings.Options.AutoNest;
+            var nullAsNull = settings.Options.NullAsNull;
+            var isPreserve = settings.Options.IsPreserve;
+            var isSetNull = settings.Options.IsSetNull;
+            var implicitConversions = settings.Options.ImplicitConversions;
+            var allowNonPublic = settings.Options.AllowNonPublic;
             // Resolve the source (simple or dotted) to its leaf type.
             ITypeSymbol? uSrc;
             if (srcName.IndexOf('.') >= 0)
@@ -278,15 +280,13 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            if (TryResolveConversion(compilation,
+            if (TryResolveConversion(settings,
                     uSrc!,
                     leafType,
                     useMethod,
                     allMethods,
                     autoCandidates,
-                    enumPolicy,
                     synthesized,
-                    nullStrategy,
                     location,
                     tgtName,
                     diagnostics,
@@ -294,12 +294,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out var uNullH,
                     out var uNeedsCtx,
                     out var uConvParamType,
-                    autoNest,
-                    nestedRegistry,
-                    nullAsNull,
-                    isPreserve,
-                    isSetNull: isSetNull,
-                    implicitConversions: implicitConversions))
+                    nestedRegistry))
             {
                 var rootFqn = rootType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 result.Add(new MemberMap(tgtName,
@@ -618,23 +613,11 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static (List<FlattenGraphDirective> Directives, List<MemberMap> InjectedMembers)
             ResolveFlattenGraphDirectives(
-                ITypeSymbol sourceType,
-                INamedTypeSymbol targetType,
                 IReadOnlyList<(string SourceNavigation, string TargetCollection)> rawDirectives,
-                Compilation compilation,
-                LocationInfo? location,
+                FlattenGraphRequest req,
                 List<DiagnosticInfo> diagnostics,
-                IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
-                IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-                EnumPolicy enumPolicy,
                 Dictionary<string, SynthesizedMethod> synthesized,
-                NullStrategy nullStrategy,
-                bool autoNest,
-                NestedMappingRegistry nestedRegistry,
-                bool isPreserve,
-                bool allowNonPublic,
-                HashSet<string> consumedTargets,
-                IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)> rawDerivedPairs)
+                HashSet<string> consumedTargets)
         {
             var directives = new List<FlattenGraphDirective>();
             var injected = new List<MemberMap>();
@@ -655,22 +638,8 @@ namespace DwarfMapper.Generator.Pipeline
             // severity is ever configured below Error.
             var seenTargets = new HashSet<string>(StringComparer.Ordinal);
 
-            // Built once: every directive is resolved against the same context, and they all write into the
-            // same six collections. Which side a name falls on was measured -- see FlattenGraphRequest for the
-            // two parameters that are deliberately not carried.
-            var req = new FlattenGraphRequest(sourceType,
-                targetType,
-                compilation,
-                location,
-                allMethods,
-                autoCandidates,
-                enumPolicy,
-                nullStrategy,
-                autoNest,
-                nestedRegistry,
-                isPreserve,
-                allowNonPublic,
-                rawDerivedPairs);
+            // Every directive is resolved against the same request (built by the caller) and writes into the same
+            // six collections. Which side a name falls on was measured -- see FlattenGraphRequest.
             var acc = new FlattenGraphAccumulators(directives,
                 injected,
                 diagnostics,

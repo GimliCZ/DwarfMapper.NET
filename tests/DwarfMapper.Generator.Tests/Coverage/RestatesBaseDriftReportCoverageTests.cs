@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.MemberTypeOf — dropped-member cap at three names and a public FIELD target match
 using System.Globalization;
 
 // Coverage suite for MapperExtractor.RestatesBase.cs's DWARF085 report, on two shapes no fixture reached:

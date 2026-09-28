@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ConverterReturnIsNullableRef — a value-type overload sharing the name doesn't hide the ref overload's nullable return
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 

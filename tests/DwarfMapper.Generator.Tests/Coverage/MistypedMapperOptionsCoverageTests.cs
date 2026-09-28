@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ReadNullStrategy — a mistyped [DwarfMapper] option value falls back to its default instead of casting/throwing (+17 more)
 // The [DwarfMapper] option readers (MapperExtractor.Attributes.cs) each match a named argument by key and then by the
 // value's type: `named.Key == "NullStrategy" && named.Value.Value is int`. The second half had never been false in the
 // suite: every fixture passed a well-typed value. A mistyped argument is exactly what a consumer has on screen while
@@ -34,7 +35,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.DoesNotContain(diagnostics, d => d.Id.StartsWith("DWARF", StringComparison.Ordinal) && d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
             Assert.Contains("public partial global::Demo.Dst Map(global::Demo.Src s)", generated, StringComparison.Ordinal);
             Assert.Contains("A = s.A,", generated, StringComparison.Ordinal);
-            Assert.Contains("Items = __DwarfMapColl_", generated, StringComparison.Ordinal);
+            Assert.Contains(GeneratorAssert.NormalizeLocals("Items = __DwarfMapColl_"),
+                GeneratorAssert.NormalizeLocals(generated), StringComparison.Ordinal);
             Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
         }
     }

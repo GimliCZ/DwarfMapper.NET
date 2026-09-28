@@ -34,8 +34,10 @@ which attaches the following to a GitHub Release:
 | `SHA256SUMS` | SHA-256 fingerprint of every `.nupkg`/`.snupkg` |
 | build-provenance attestation | keyless Sigstore signature bound to the GitHub identity |
 
-The release is **not** pushed to nuget.org automatically — that step is manual. (When published to
-nuget.org, packages additionally receive nuget.org's own *repository* signature.)
+Pushing to nuget.org is **never unattended**. It is either the `publish` job in `release.yml` — NuGet Trusted
+Publishing, approved by a human in the `release` environment (see *Publishing to nuget.org* below) — or, until
+that is switched on, a manual push. (When published to nuget.org, packages additionally receive nuget.org's own
+*repository* signature.)
 
 ## Consumer-side verification
 
@@ -83,6 +85,28 @@ git push origin v1.0.2-rc.1
 #    gh release download v1.0.2-rc.1 -p '*.nupkg' -p '*.snupkg'
 #    dotnet nuget push '*.nupkg' -s https://api.nuget.org/v3/index.json -k <API_KEY>
 ```
+
+### Publishing to nuget.org: Trusted Publishing (round 31 T21)
+
+The `publish` job pushes the **same** packages the GitHub Release carries (handed over as a workflow artifact,
+never rebuilt) with **no API key stored anywhere**: `NuGet/login` exchanges the job's GitHub OIDC token for a
+short-lived, single-use nuget.org key, and nuget.org accepts it only for the repository, workflow file and
+environment its Trusted Publishing policy names. The deliberate manual gate stays — it moves from "a maintainer
+runs `dotnet nuget push`" to "a maintainer approves the `publish` job in the `release` environment".
+
+The job is **off until you switch it on**, because GitHub silently auto-creates an environment a job names —
+*without* protection rules — and an unreviewed publish on every tag is exactly what this must not become. One-time
+setup, in this order:
+
+1. **nuget.org** → your account → *Trusted Publishing* → add a policy: owner = the package owner, repository
+   `GimliCZ/DwarfMapper.NET`, workflow file `release.yml`, environment `release`.
+2. **GitHub** → *Settings → Environments* → create `release` and add **required reviewers**.
+3. In that environment, add the secret `NUGET_USER` = your nuget.org **profile name** (not your e-mail).
+4. *Settings → Variables → Actions* → add the repository variable `NUGET_TRUSTED_PUBLISHING` = `true`.
+5. Delete any long-lived nuget.org API key used for manual pushes.
+
+From then on every tag stops at the `publish` job until a reviewer approves it. Until step 4, the job is skipped
+and the manual push above remains the path.
 
 The version flows from the tag (`vX.Y.Z` → `X.Y.Z`) into `-p:Version=` for both build and pack.
 Local default (no tag) is `1.0.2-rc.1`, set in [`Directory.Build.props`](../Directory.Build.props).

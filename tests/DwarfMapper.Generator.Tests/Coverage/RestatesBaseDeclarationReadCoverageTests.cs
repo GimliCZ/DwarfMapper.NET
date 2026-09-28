@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.ResolveByFqn — partial-method-declared hierarchy and a null Overrides entry (+1 more)
 using System.Globalization;
 
 // Coverage suite for how MapperExtractor.RestatesBase.cs reads its inputs, on two shapes no fixture reached:

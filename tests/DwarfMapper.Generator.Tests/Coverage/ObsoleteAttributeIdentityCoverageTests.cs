@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// Covers: MapperExtractor.IsObsolete — only System.ObsoleteAttribute by name+namespace drops a member, not a same-named or unrelated one
 // [DwarfMapper(IgnoreObsoleteMembers = true)] drops destination members marked [System.Obsolete]. IsObsolete decides that
 // by the attribute's NAME and its NAMESPACE, and only `System.ObsoleteAttribute` itself had ever been seen: no fixture
 // put a different attribute on a destination member, or an attribute that merely shares the name. A consumer's own

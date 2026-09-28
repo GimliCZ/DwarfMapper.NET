@@ -374,6 +374,14 @@ var byDi = provider.GetRequiredService<CallStyles>().Map(order);
   call site: `list.Select(mapper.Map<Dst>)`. Full
   guide: [ambient cross-assembly maps](docs/howto/ambient-cross-assembly-maps.md).
 
+- **`Dwarf.Map<TSource, TDest>(src)`** is the same ambient call made static, so the generator can bind it: when the
+  calling project registers the pair itself, the call compiles to a direct call on the generated mapper (a C#
+  interceptor, enabled by the package for DwarfMapper's own generated namespace only) — no registry lookup. Any other
+  pair falls back to the registry, so the result is what `IDwarfMapper` would return (the one exception, an update-into
+  pair registered by two assemblies, is in the `Dwarf` API docs). Use `IDwarfMapper` where
+  you inject a mapper (decorators and test doubles keep working, because an interface call is never bound);
+  `Dwarf.Map` where you just want the map. `Dwarf.Map(patch, existing)` is the update-into form.
+
 - **Extension methods** are generated for every simple `TTarget Map(TSource)` method, named `To<TargetType>()`, backed
   by a cached stateless instance. They live in the `DwarfMapper.Extensions` namespace (one `using` to surface them). Opt
   a mapper out with `[DwarfMapper(GenerateExtensions = false)]`. Update-into, span, async-streaming, projection, and
@@ -645,6 +653,14 @@ collections (`.Select(…).ToList()/.ToArray()`), and dotted-path source flatten
 inlined into the expression tree. Only members needing a runtime conversion — narrowing, string-parse, enum-by-name, a
 custom `Use=`, a non-translatable collection/dictionary target (`HashSet`/`ISet`/immutable/`Dictionary`), or reference
 handling — are rejected as `DWARF028` (with a reason); do those with a runtime mapper instead.
+
+The tree is built once per process, and every projection also exposes it as a static `{Method}Expression`
+(`OrderMapper.ProjectExpression`), so you can compose it into your own query:
+`db.Orders.Where(o => o.Open).OrderBy(o => o.Id).Select(OrderMapper.ProjectExpression)`. **For EF Core with
+NativeAOT, that composed shape is the one to use:** EF's query precompiler only sees a query whose whole chain is
+written at the call site, so `mapper.Project(db.Orders)` is not precompiled (measured on EF Core 10), while
+`.Select(OrderMapper.ProjectExpression)` is. A project that sets `PublishAot` and references EF Core gets `DWARF115`
+on each projection method as the reminder. A `list.AsQueryable()` source skips the tree and runs a compiled delegate.
 
 ### Blittable fast-path (SIMD)
 
