@@ -131,10 +131,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
         // ── R1: floors are measurements with provenance ───────────────────────────
 
+        // All six legs (round 32 T08). Until then R1 read the first three only, so the codefixes, pipeline and
+        // testing floors could lose their dated, measured provenance with no test noticing.
         [Theory]
         [InlineData("stryker-config.json")]
         [InlineData("stryker-config.doctooling.json")]
         [InlineData("stryker-config.runtime.json")]
+        [InlineData("stryker-config.codefixes.json")]
+        [InlineData("stryker-config.pipeline.json")]
+        [InlineData("stryker-config.testing.json")]
         public void R1_every_stryker_break_is_internally_consistent_and_carries_dated_measured_provenance(string configFile)
         {
             var path = Path.Combine(RepoPaths.Root, configFile);
