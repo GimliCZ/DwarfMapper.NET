@@ -48,7 +48,14 @@ it wait for it.
 
 ## Final gate
 
-- [ ] **T99** Protocol G8
+- [x] **T99** Protocol G8 — at `aa250531`, with HEAD the same before and after:
+  - build: 0 warnings, 0 errors (full, non-incremental);
+  - default lane: 9/9 assemblies, 0 failed; Generator.Tests 7,836;
+  - surface matrix: 901/901;
+  - `GoldenCorpusTests`: 2/2, without update;
+  - audit: 5 TODO, which are exactly the escalated T04, T05, T06, T07 and T13, none landed;
+  - CHANGELOG: no landed task is user-visible, so no line is owed;
+  - tree: clean.
 
 ## Owner actions still open
 

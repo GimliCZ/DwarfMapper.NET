@@ -309,3 +309,30 @@ Done as specified.
   Recommended: none; this is governance. Practice has been B since 2026-07-26. Costs if wrong: A blocks every
   unsigned commit, agents' included; B removes a stated contribution requirement.
 - Blocks: nothing.
+
+## T99 — final gate (protocol G8) · run at `aa250531`
+
+HEAD was `aa250531` before and after the gate. The checks, run as CI runs them, with the pinned SDK 10.0.101 and
+PowerShell 7.5.11 (T00's):
+
+| Check | Result |
+|---|---|
+| `dotnet restore … --locked-mode`; `dotnet build … -c Release --no-restore --no-incremental` | 0 Warning(s), 0 Error(s) |
+| Default lane, `build-test`'s filter | 9/9 assemblies, 0 failed: CorpusTests 20, Testing.Tests 139, ConsumerTests.Host 23, DifferentialTests 70, CleanCorpus 53, NegativeCases 192, IntegrationTests 987, CompilerTests 52, Generator.Tests 7,836 |
+| Surface matrix, as `surface-matrix` runs it | 901/901 |
+| `GoldenCorpusTests`, `DWARF_GOLDEN_UPDATE` unset | 2/2 |
+| `round32-audit.sh static` | 5 TODO: T04, T05, T06 (fix), T07 (ceiling), T13, all escalated, none landed |
+| `CHANGELOG.md` `[Unreleased]` | no landed task is user-visible (CI, tests, documents, a setup script), so no line |
+| `git status --porcelain` | empty |
+
+Generator.Tests is T00's 7,831 plus this round's five: `StrykerConfigEncodingTests` (1), R1's three new rows (3)
+and `ProbeFileScanTests` (1).
+
+The only commit after the gate records it, and it touches two `.md` files.
+
+**Owed, not run here:**
+- the PR-tier jobs this machine cannot run: AOT publish, conformance, CodeQL and SBOM;
+- coverage floors and mutation legs, through `scripts/housekeeping.ps1`;
+- the deep tier;
+- everything behind the `full-ci` label;
+- the nightly or dispatch that proves T01 and T03.
