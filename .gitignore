@@ -39,3 +39,8 @@ docs/research/_raw-harvest.jsonl
 # `git status` showed it as untracked and a bare `git add` could stage a report. Mutation output is build
 # output: the ledger and the badges are where a score becomes a fact.
 StrykerOutput/
+
+# Agent worktrees. Claude Code creates them under .claude/worktrees/, INSIDE the repository, and each is a whole
+# other checkout: untracked, it shows in `git status` and trips a custody check (protocol G1), and a bare
+# `git add` would stage another tree. Scans that walk the repository already skip it (AuditSuppressionScanTests).
+.claude/worktrees/
