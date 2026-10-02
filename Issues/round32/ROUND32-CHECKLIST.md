@@ -23,7 +23,7 @@ it wait for it.
   - audit: 16 TODO.
 
   Figures are in `TASK-LOG.md`.
-- [ ] **T01** The runtime config's BOM, test first
+- [x] **T01** The runtime config's BOM, test first — `3543f6ae`. RED from the test and from CI's own Python; three bytes removed; GREEN.
 - [ ] **T02** Research: CI's generator leg above its proven ceiling
 - [ ] **T03** Every CI job that runs the suite installs ilverify (workflow)
 - [ ] **T04** The band check runs in CI (D2; workflow)
@@ -33,14 +33,14 @@ it wait for it.
 
 ## Tier 2 — gate gaps
 
-- [ ] **T08** R1 covers all six mutation configs
-- [ ] **T09** The probe rule is a test
-- [ ] **T10** Agent worktrees are ignored
+- [x] **T08** R1 covers all six mutation configs — `17874059`. codefixes and testing went RED as predicted; two one-word comment fixes; 13/13.
+- [x] **T09** The probe rule is a test — `3deb34b9`. Shown failing once with a planted probe.
+- [x] **T10** Agent worktrees are ignored — `b6d99dce`.
 
 ## Tier 3 — documentation and rules against practice
 
-- [ ] **T11** NegativeCases README states the rule the ratchet enforces
-- [ ] **T12** Ledgers README names its capture commit
+- [x] **T11** NegativeCases README states the rule the ratchet enforces — `48f46a15`.
+- [x] **T12** Ledgers README names its capture commit — `d8f24aa7`. One deviation; see the task log.
 - [ ] **T13** DCO sign-off (D4)
 - [ ] **T14** A cloud session can install the toolchain
 - [ ] **T15** The `full-ci` label

@@ -55,3 +55,78 @@ under their own heading at the end (protocol §6).
   | `probes` | 0 |
   | `r1_rows` | 3 |
 - **Audit `static`:** every task reports TODO (16 TODO, exit 1), which proves the audit can see work.
+
+## T01 — the runtime config's BOM, test first · `3543f6ae`
+
+Done as specified.
+
+- **RED, three ways:**
+  - `StrykerConfigEncodingTests` failed naming exactly `stryker-config.runtime.json: starts with a UTF-8
+    byte-order mark`.
+  - CI's own config-check Python, lifted unchanged from `ci.yml`, raised `JSONDecodeError: Unexpected UTF-8 BOM`.
+  - So did the publish step's `project-info` read.
+- **Fix:** the first three bytes removed and nothing else. `cmp` shows old-minus-three-bytes against new:
+  16,096 → 16,093 bytes.
+- **GREEN, all three:**
+  - the test passes;
+  - the config check prints `break 97 <= low 97 - runnable`;
+  - the publish read prints `module = runtime`.
+- **Gate:** Generator.Tests 7,832, CompilerTests 52 and IntegrationTests 987, all green.
+- **Owed:** a nightly or dispatch. The runtime leg will run in CI for the first time since `ed69922`, and its
+  round-31 red (90.45 % against `break` 97, with a re-measure owed) may now show honestly. That is a known
+  owner action, not a regression.
+
+## T08 — R1 covers all six mutation configs · `17874059`
+
+Done as specified, and the prediction made while planning held: two configs went RED, one passed.
+
+- **RED:** with the three `InlineData` rows added and nothing else changed:
+  - `codefixes`: "carries no 'MEASURED YYYY-MM-DD' / 'RE-MEASURED YYYY-MM-DD' provenance";
+  - `testing`: "quotes no 'score NN.NN %' measurement at all";
+  - `pipeline`: passed.
+- **The measurements existed in both comments;** only the wording missed R1's patterns. These are one-word
+  fixes, and each `stryker-config` section was verified identical before and after:
+  - "RE-VERIFIED 2026-09-26" became "RE-MEASURED 2026-09-26";
+  - "detected = 100.00 %" became "detected, score 100.00 %".
+
+  Both figures agree with the ledger's rows: codefixes 87.64 % (2026-09-26), testing 100.00 % (2026-09-21).
+- **GREEN:** `RatchetInvariantScanTests` 13/13. CI's config check still prints "runnable" for both files.
+- **Gate:** Generator.Tests 7,835, CompilerTests 52 and IntegrationTests 987, all green.
+
+`Ruling: change the comments' wording rather than widen R1's regex to accept "RE-VERIFIED" or "= NN.NN %" —
+costs if wrong: one revert; widening the instrument was the option that loosens a gate (I-3).`
+
+## T09 — the probe rule is a test · `3deb34b9`
+
+Done as specified. `ProbeFileScanTests` is a guard (green on the tree), so it was shown failing once:
+
+| State | Result |
+|---|---|
+| clean tree | 1/1 passed |
+| `tests/DwarfMapper.Generator.Tests/Round32/ZZPlantedProbe.cs` planted | failed, naming the file |
+| plant removed | 1/1 passed |
+
+The plant was never staged. **Gate:** Generator.Tests 7,836, CompilerTests 52 and IntegrationTests 987, all
+green.
+
+## T10 — agent worktrees are ignored · `b6d99dce`
+
+Done as specified.
+
+- **RED:** `git check-ignore -q .claude/worktrees/agent/x` → exit 1.
+- **GREEN:** exit 0.
+- **Control:** `.claude/skills/round/SKILL.md` and `.claude/hooks/*.ps1` are still tracked (exit 1).
+
+## T11 — the NegativeCases README states the rule the ratchet enforces · `48f46a15`
+
+Done as specified. The paragraph quotes the test ("a counted, bounded population"). It names the guard
+(`The_exemption_list_is_an_exactly_pinned_bounded_population`) and the constants (`PredatesThisProjectPin`,
+`ExemptionIdHorizon`) rather than their values, so it cannot drift from them the way the old one did.
+NegativeCases builds with 0 warnings and passes 192/192.
+
+## T12 — the ledgers README names its capture commit · `d8f24aa7`
+
+**Deviation.** The task list said to state that "later ledgers name their own capture point in their headers".
+Checked before writing: rounds 21, 22, 23 and 25 do not. The README instead gives `656042c2` (parent `069987f7`)
+for the rounds 19 and 20 copies, and the `git log --diff-filter=A` command for every later file. It says only
+"some" later headers state their capture.
