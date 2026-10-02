@@ -43,8 +43,8 @@ it wait for it.
 - [x] **T12** Ledgers README names its capture commit — `d8f24aa7`. One deviation; see the task log.
 - [ ] **T13** DCO sign-off (D4)
 - [ ] **T14** A cloud session can install the toolchain
-- [ ] **T15** The `full-ci` label
-- [ ] **T16** Shallow cloud clones
+- [d] **T15** The `full-ci` label — decided: protocol phase 8 makes it part of closing a round; opening and labelling the PR is the owner's.
+- [d] **T16** Shallow cloud clones — decided: protocol G7/§8 unshallow first; T14's script does it on setup.
 
 ## Final gate
 

@@ -130,3 +130,17 @@ NegativeCases builds with 0 warnings and passes 192/192.
 Checked before writing: rounds 21, 22, 23 and 25 do not. The README instead gives `656042c2` (parent `069987f7`)
 for the rounds 19 and 20 copies, and the `git log --diff-filter=A` command for every later file. It says only
 "some" later headers state their capture.
+
+## T15 — the `full-ci` label · decided, nothing to build
+
+Protocol §1.1 phase 8 makes the label part of closing a round, and the round report lists "open the round PR
+with the full-ci label" as an owner action. Opening and labelling a PR is the owner's (protocol §4).
+
+The finding's corrected item 2 also bounds what the label can prove. It reaches the BOM (T01) and the
+package-size job (T07). It cannot reach the dashboard publish step, which runs only on `schedule` and
+`workflow_dispatch`.
+
+## T16 — shallow cloud clones · decided, nothing to build beyond T14
+
+Protocol G7 and §8 make `git fetch --unshallow` the first step of any history search. T14's script does it on
+setup.
