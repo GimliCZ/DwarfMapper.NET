@@ -6,11 +6,23 @@ Source: `ROUND32-TASKS.md`, derived from `FINDING-nightly-red-and-gate-gaps.md`.
 `feat/round32`. Marks: `[ ]` open · `[x]` landed · `[~]` landed with an open owner step · `[d]` decided, not built ·
 `[!]` escalated, or blocked by an escalated task (protocol §6).
 
-Status: proposed — awaiting owner approval
+Status: approved by the owner on 2026-10-02 at 85215901
+
+The approval was given in an attended session, in the owner's words: *"Take findings for round32, create a branch
+and start resolving them. As per other rounds."* The owner gave it before this list was written. The list derives
+every task from the finding's items. The decisions table (D1–D5) stays the owner's, and the tasks that depend on
+it wait for it.
 
 ## Tier 1 — the red nightly
 
-- [ ] **T00** Baseline
+- [x] **T00** Baseline — on `5561ada5`, with the pinned SDK:
+  - build: 0 warnings, 0 errors;
+  - default lane: 9/9 assemblies, 0 failed;
+  - surface matrix: 901/901;
+  - golden: green;
+  - audit: 16 TODO.
+
+  Figures are in `TASK-LOG.md`.
 - [ ] **T01** The runtime config's BOM, test first
 - [ ] **T02** Research: CI's generator leg above its proven ceiling
 - [ ] **T03** Every CI job that runs the suite installs ilverify (workflow)
