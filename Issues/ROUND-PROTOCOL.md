@@ -281,6 +281,9 @@ another SDK, never edits `global.json`, and never filters out the tests that nee
   "$HOME/dotnet"`, then run `export PATH="$HOME/dotnet:$HOME/.dotnet/tools:$PATH"`. The install needs
   `builds.dotnet.microsoft.com` and `api.nuget.org`; a cloud environment whose network policy blocks either host
   cannot run a goal.
+- **One command for this section:** `eval "$(scripts/cloud-toolchain.sh)"` (round 32 T14). Where
+  `builds.dotnet.microsoft.com` is blocked, it installs the same SDK build from `mcr.microsoft.com`, layer digests
+  checked, so the rule above stops a goal only when that host is blocked too.
 - **English output.** Set `DOTNET_CLI_UI_LANGUAGE=en`, so build and test summaries print in the form the goals
   quote. Without it, the owner's machine prints Czech, as the grep in `round31-audit.sh` shows.
 - **`dotnet-ilverify`**, at the version CI installs (`.github/workflows/ci.yml`). Without it,
