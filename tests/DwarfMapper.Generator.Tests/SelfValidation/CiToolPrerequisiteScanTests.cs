@@ -27,6 +27,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///         The fix was three lines of YAML. The reason this test exists rather than only those three lines is
     ///         that nothing else would notice the FOURTH job, whenever someone adds one.
     ///     </para>
+    ///     <para>
+    ///         <b>Round 32: the fourth job had arrived, and the scan could not see it.</b> CI's <c>mutation</c> job runs
+    ///         the suite through <c>dotnet stryker</c>, not <c>dotnet test</c>, and <c>release.yml</c> runs
+    ///         <c>dotnet test</c> in a file this scan never opened. Neither installed the tool, so every Stryker leg
+    ///         started with two failing tests (nightly run 213), and a release tag would have failed its own test
+    ///         step. The scan now reads every workflow file and counts <c>dotnet stryker</c> as running the suite
+    ///         (round 32 T03; <c>Issues/round32/FINDING-T02-ci-phantom-kills.md</c>).
+    ///     </para>
     /// </summary>
     public class CiToolPrerequisiteScanTests
     {
@@ -40,9 +48,36 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private const string PerfOnly = "Category=Perf";
 
-        private static string Workflow()
+        /// <summary>Every workflow file, as (file name, YAML). Not only <c>ci.yml</c>: <c>release.yml</c> runs the suite too.</summary>
+        private static List<(string File, string Yaml)> Workflows()
         {
-            return File.ReadAllText(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"));
+            var dir = Path.Combine(RepoPaths.Root, ".github", "workflows");
+            return Directory.GetFiles(dir, "*.yml").Concat(Directory.GetFiles(dir, "*.yaml"))
+                            .OrderBy(p => p, StringComparer.Ordinal)
+                            .Select(p => (Path.GetFileName(p), File.ReadAllText(p)))
+                            .ToList();
+        }
+
+        /// <summary><c>file:job</c> -> the job's YAML body, over every workflow file.</summary>
+        private static Dictionary<string, string> AllJobs()
+        {
+            var all = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (file, yaml) in Workflows())
+            {
+                foreach (var (name, body) in Jobs(yaml)) { all[file + ":" + name] = body; }
+            }
+
+            return all;
+        }
+
+        /// <summary>
+        ///     A job runs the suite if it says <c>dotnet test</c>, or <c>dotnet stryker</c>: Stryker's initial run and
+        ///     every mutant run execute the test projects, and a test that cannot pass there fails there too.
+        /// </summary>
+        private static bool RunsTheSuite(string body)
+        {
+            return body.Contains("dotnet test", StringComparison.Ordinal) ||
+                   body.Contains("dotnet stryker", StringComparison.Ordinal);
         }
 
         /// <summary>Job name -> its YAML body, split on the two-space keys directly under <c>jobs:</c>.</summary>
@@ -69,15 +104,18 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void Every_job_that_can_reach_the_ILVerify_tests_installs_ilverify()
         {
-            var jobs = Jobs(Workflow());
+            var workflows = Workflows();
+            var jobs = AllJobs();
 
             // Non-vacuity first. A parser that found no jobs, or a workflow that stopped running tests, would
             // make the loop below pass by iterating over nothing.
-            Assert.True(jobs.Count >= 10, $"parsed only {jobs.Count} CI job(s); the workflow has many more.");
+            Assert.True(workflows.Count >= 2, $"found only {workflows.Count} workflow file(s); ci.yml and release.yml both run the suite.");
+            Assert.True(jobs.Count(j => j.Key.StartsWith("ci.yml:", StringComparison.Ordinal)) >= 10,
+                $"parsed only {jobs.Count(j => j.Key.StartsWith("ci.yml:", StringComparison.Ordinal))} ci.yml job(s); the workflow has many more.");
 
-            var runners = jobs.Where(j => j.Value.Contains("dotnet test", StringComparison.Ordinal)).ToList();
+            var runners = jobs.Where(j => RunsTheSuite(j.Value)).ToList();
             Assert.True(runners.Count >= 4,
-                $"only {runners.Count} job(s) appear to run `dotnet test`; this scan is looking at the wrong thing.");
+                $"only {runners.Count} job(s) appear to run `dotnet test` or `dotnet stryker`; this scan is looking at the wrong thing.");
 
             var offenders = new List<string>();
             foreach (var (name, body) in runners)
@@ -92,7 +130,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             }
 
             Assert.True(offenders.Count == 0,
-                "CI job(s) run the test suite in a way that reaches EmittedIlIsVerifiableTests but do not " +
+                "Workflow job(s) run the test suite (`dotnet test` or `dotnet stryker`) in a way that reaches EmittedIlIsVerifiableTests but do not " +
                 "install ilverify, so they will fail with \"ilverify is not on PATH\" rather than with a real " +
                 "finding: [" + string.Join(", ", offenders) + "]. Add " +
                 "`- run: dotnet tool install --global dotnet-ilverify --version 10.0.11` to each, or filter the " +
@@ -107,7 +145,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void The_surface_matrix_exemption_applies_to_a_job_that_really_is_filtered()
         {
-            var jobs = Jobs(Workflow());
+            var jobs = AllJobs();
 
             var exempt = jobs.Where(j => j.Value.Contains("dotnet test", StringComparison.Ordinal) &&
                                          j.Value.Contains(SurfaceMatrixOnly, StringComparison.Ordinal))
@@ -136,11 +174,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void Every_ilverify_install_pins_the_same_version()
         {
-            var versions = Regex.Matches(Workflow(), @"dotnet tool install --global dotnet-ilverify --version ([\d.]+)")
+            // Every workflow, so an install added to release.yml is held to the same pin as ci.yml's.
+            var text = string.Join("\n", Workflows().Select(w => w.Yaml));
+            var versions = Regex.Matches(text, @"dotnet tool install --global dotnet-ilverify --version ([\d.]+)")
                                 .Select(m => m.Groups[1].Value)
                                 .ToList();
 
-            var bare = Regex.Matches(Workflow(), @"dotnet tool install --global dotnet-ilverify(?! --version)").Count;
+            var bare = Regex.Matches(text, @"dotnet tool install --global dotnet-ilverify(?! --version)").Count;
 
             Assert.True(bare == 0, $"{bare} ilverify install(s) do not pin a version.");
             Assert.True(versions.Count >= 2, $"expected several pinned ilverify installs, found {versions.Count}.");

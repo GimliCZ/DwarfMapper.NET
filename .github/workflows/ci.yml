@@ -294,6 +294,13 @@ jobs:
       # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
       # runtimes 7/9/10.
       - run: dotnet tool install --global dotnet-stryker --version 4.16.0
+      # ilverify, for the reason every other suite-running job installs it (round 32 T03): Stryker RUNS THE
+      # SUITE, and EmittedIlIsVerifiableTests fails loudly without the tool. Until round 32 every leg started
+      # with those two tests failing, and in the pinned Stryker that is not harmless: any initially failing
+      # test moves every static mutant from one run per test assembly to its whole test list once per test
+      # assembly, and a spurious failure in any of those passes lands as a kill. Nightly run 213's generator
+      # leg reported 98.80 % against a proven ceiling of 96.62 % (Issues/round32/FINDING-T02-ci-phantom-kills.md).
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       # Exits non-zero when the score falls below the config's thresholds.break — each leg keeps its own
       # measured floor (see each config's comment for the measurement it came from, and for why an older,
       # higher number must not be "restored": the runtime leg's 66 counted load-induced timeouts on mutants
