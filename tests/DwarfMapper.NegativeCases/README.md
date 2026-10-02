@@ -56,10 +56,15 @@ been a mechanical translation of tests that already exist; what was missing is a
 the ids that predate this project (2026-08-12) are listed in `PredatesThisProject`, and a descriptor that is
 neither listed there nor backed by a case file fails the build.
 
-Adding an id to that list is how you opt out — deliberately, in a diff a reviewer will see and ask about. The
-list is also allowed to **shrink**, and should: every entry removed is a diagnostic that gained an executable
-statement of the shape that triggers it and the message a consumer will read. Removing an id from the list is
-part of the same commit that adds its case.
+The list is **not** an opt-out. It used to be described as one ("add an id, a reviewer sees the diff and asks"),
+but then visibility was the only enforcement. Now it is, in the test's own words, "a counted, bounded population":
+`The_exemption_list_is_an_exactly_pinned_bounded_population` pins its size exactly (`PredatesThisProjectPin`) and
+refuses any id newer than `ExemptionIdHorizon`, the highest id that existed on 2026-08-12. A new diagnostic
+therefore arrives with a case file, or it does not arrive.
+
+The list may only **shrink**, and should. Every entry removed is a diagnostic that gained an executable statement
+of the shape that triggers it and the message a consumer will read. Removing an id, adding its case and lowering
+the pin happen in one commit.
 
 ## Why its own driver
 
