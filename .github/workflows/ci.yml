@@ -323,6 +323,10 @@ jobs:
                  "Check that the config's 'mutate' globs are PROJECT-relative ('**/Name.cs')."
             exit 1
           fi
+          # ...and not a score a starved runner invented: Stryker counts a Timeout as detected, so a run where
+          # most mutants time out reports ~100 %. The same function housekeeping's band check calls, dot-sourced
+          # (GateBandLogicTests), with the measured 25 % limit and its evidence beside it in gate-checks.ps1.
+          LEG='${{ matrix.leg }}' REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Assert-NotTimeoutDominated -Leg $env:LEG -ReportPath $env:REPORT'
       # The doctooling leg once wrote a mutated renderer's output over 2,523 lines of tracked documentation
       # (H1, 2026-08-19): Stryker has no test sandbox, so a mutated writer writes to the REAL tree.
       # RepoWriteGuard's contract since then is that a mutation run leaves the tracked tree byte-clean —
