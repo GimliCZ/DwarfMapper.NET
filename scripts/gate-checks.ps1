@@ -986,10 +986,35 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (323 KB = 330,752 B) 953 B on Windows, 1,556 B on ubuntu.
 # DwarfMapper.Testing (53 KB = 54,272 B) 493 B on Windows, 720 B on ubuntu.
+#
+# RE-MEASURED 2026-10-11 (round 31 merged as 24a31de; measured at that tree): DwarfMapper 322 -> 353,
+# DwarfMapper.Testing 52 -> 53. The gate had been red on every nightly since before the merge - round 30's own
+# final master (b688bb9) already failed it on 2026-09-27/28 - and nobody re-measured, so this raise covers both
+# rounds' growth; R1 was missed twice, stated rather than backdated.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101 (the gate's platform), git archive of the tree, Release:
+#     DwarfMapper.1.0.2-rc.1.nupkg           361,591 B   floor 353 KB
+#     DwarfMapper.Testing.1.0.2-rc.1.nupkg    54,474 B   floor  53 KB
+#   Windows, SDK 10.0.101, same tree: 362,228 B (+637) and 54,669 B (+195) - floor 353 / 53, so both
+#   platforms agree on the ceiling.
+#
+# ENTRY BY ENTRY, round 30 (b688bb9) -> round 31, compressed bytes, packed on Windows:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll   +12,197   Dwarf.Map interceptors (T26), DWARF112-115, the
+#                                                             projection work (T10/T13/T16/T17)
+#   lib/net10.0/DwarfMapper.xml                      +4,043   docs of the new public API
+#   lib/net10.0/DwarfMapper.dll                      +1,315   Dwarf, RegisterMany, DwarfCollectionMap
+#   build/ and buildTransitive/DwarfMapper.props     +1,080   new: PublishAot visibility (T17), interceptors (T26)
+#   README.md                                          +541   in BOTH packages - the Testing package's whole delta
+#
+# Every row is intended round-31 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (354 KB = 362,496 B) 268 B on Windows, 905 B on ubuntu.
+# DwarfMapper.Testing (54 KB = 55,296 B) 627 B on Windows, 822 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 322
-    'DwarfMapper.Testing' = 52
+    'DwarfMapper'         = 353
+    'DwarfMapper.Testing' = 53
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
