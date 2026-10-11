@@ -2572,6 +2572,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var updDense = ReadDenseEnumKeys(method);
                 var updAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
 
+                var updDiagnosticsStart = acc.Diagnostics.Count;
                 var updMembers = ResolveMembers(
                     updSrc,
                     updTgt,
@@ -2620,6 +2621,18 @@ namespace DwarfMapper.Generator.Pipeline
                     ignoredSourceMembers: IgnoredSourcesFor(decls, method),
                     shareMembers: updShare,
                     denseEnumMembers: updDense);
+
+                // DWARF066 says a When guard leaves a member at its DEFAULT when the predicate is false - a statement
+                // about a new destination. Here the caller hands over an instance it already holds, so a false guard
+                // leaves the member at its CURRENT value, which is the whole point of a guarded update. The report is
+                // made inside the member resolution every endpoint shares, so it is taken back here, where the
+                // endpoint is known: every DWARF066 in this window comes from this method's own When guards (nested
+                // pairs resolve later, in DrainNestedMappingQueue).
+                for (var i = acc.Diagnostics.Count - 1; i >= updDiagnosticsStart; i--)
+                    if (ReferenceEquals(acc.Diagnostics[i].Descriptor, DiagnosticDescriptors.WhenLeavesNonNullableDefault))
+                    {
+                        acc.Diagnostics.RemoveAt(i);
+                    }
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing

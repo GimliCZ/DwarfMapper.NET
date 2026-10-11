@@ -581,7 +581,9 @@ A `[MapProperty(When=)]` guards a non-nullable reference target with no non-null
 false the member is not assigned and keeps its default (which for a non-nullable reference is `null`). A member
 declared with its own non-null initializer (`= ""`, `= string.Empty`, `= new()`) is not reported - the remedy
 this entry has always named, which until round 32 did not actually clear it; `= null!` and `= default!` are nulls
-in disguise and still report. **Fix:** give the member a non-null default initializer, make it nullable, or
+in disguise and still report. An update-into (`partial void Patch(Src s, Dst d)`) is not reported either: it
+writes into an instance the caller already holds, so a false guard leaves the member at its current value, which
+is the point of a guarded update. **Fix:** give the member a non-null default initializer, make it nullable, or
 confirm the unset default is intended.
 
 ## dwarf067

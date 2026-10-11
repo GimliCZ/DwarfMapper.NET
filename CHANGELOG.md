@@ -510,6 +510,9 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`DWARF066` no longer fires on an update-into.** A `When` guard in `partial void Patch(Src s, Dst d)` leaves the
+  member at its CURRENT value when the predicate is false - the point of a guarded update - not at a default, so the
+  Info's premise did not hold there; it fired anyway, beside the create map over the same pair.
 - **`DWARF066` no longer fires on a `When`-guarded member that has its own non-null initializer - the remedy its message named.**
   The Info says a `[MapProperty(When = …)]` guard leaves a non-nullable member at its default when the predicate is false,
   and its first remedy was "give the member a default initializer" - but nothing looked for one, so `public string Name

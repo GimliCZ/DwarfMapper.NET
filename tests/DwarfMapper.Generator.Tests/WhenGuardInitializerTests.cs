@@ -60,5 +60,30 @@ namespace DwarfMapper.Generator.Tests
         {
             Assert.DoesNotContain(Run(Source("public string? Name { get; set; }")), d => d.Id == "DWARF066");
         }
+
+        [Fact]
+        public void An_update_into_is_not_reported_because_a_false_guard_keeps_the_current_value_not_a_default()
+        {
+            // `if (IsReady(a)) b.Name = a.Name;` writes into an instance the caller already holds: a false predicate
+            // leaves the member at whatever it is NOW, which is the point of a guarded update. DWARF066's premise - the
+            // member "keeps its default (null)" - is about a NEW destination, and it fired here regardless (found
+            // 2026-10-11, measured: the create map and the update-into of one pair both reported).
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class A { public string Name { get; set; } = ""; public bool Ready { get; set; } }
+                                  public class B { public string Name { get; set; } = null!; }
+                                  [DwarfMapper] public partial class M
+                                  {
+                                      private static bool IsReady(A a) => a.Ready;
+                                      [MapProperty("Name", "Name", When = nameof(IsReady))] public partial void Patch(A a, B b);
+                                      [MapProperty("Name", "Name", When = nameof(IsReady))] public partial B Create(A a);
+                                  }
+                                  """;
+
+            // Line 8 (0-based) is Create: the create map keeps its report, the update-into on line 7 loses it.
+            var d = Assert.Single(Run(source), x => x.Id == "DWARF066");
+            Assert.Equal(8, d.Location.GetLineSpan().StartLinePosition.Line);
+        }
     }
 }
