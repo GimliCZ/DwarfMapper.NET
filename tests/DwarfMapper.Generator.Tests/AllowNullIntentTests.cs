@@ -183,6 +183,31 @@ namespace DwarfMapper.Generator.Tests
                 ClassModel(NoAllow, method: "public partial void Map(A a, B b);"));
         }
 
+        [Fact]
+        public void A_reverse_map_does_not_inherit_the_forward_maps_AllowNull()
+        {
+            // The forward statement is about the FORWARD destination accepting a null; whether the reverse one may is
+            // the reverse's own decision, so CollectReverseRenames never carries the flag over. Here the null risk
+            // runs only on the way back: the forward statement is dead (DWARF116) and the reverse still reports.
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class A { public string Note { get; set; } = ""; }
+                                  public class B { public string? Remark { get; set; } }
+                                  [DwarfMapper] public partial class M
+                                  {
+                                      [ReverseMap] [MapProperty("Note", "Remark", AllowNull = true)] public partial B Map(A a);
+                                      public partial A Back(B b);
+                                  }
+                                  """;
+
+            var diagnostics = Run(source).Diagnostics;
+
+            Assert.Single(diagnostics, d => d.Id == "DWARF116");
+            var d070 = Assert.Single(diagnostics, d => d.Id == "DWARF070");
+            Assert.StartsWith("Source member 'Remark' is a nullable reference", Message(d070), StringComparison.Ordinal);
+        }
+
         // ── The projection endpoint ─────────────────────────────────────────────────────────────────────
 
         [Fact]

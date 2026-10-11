@@ -10,8 +10,10 @@ namespace DwarfMapper.IntegrationTests
 // mapper-decides-for-you magic DwarfMapper exists to avoid. The null still flows — and the developer is told
 // at BUILD time (DWARF070) instead of being surprised at run time.
 //
-// This fixture deliberately maps `string?` -> `string`, so it deliberately raises DWARF070; the project
-// suppresses that id (see the csproj) precisely because pinning the un-fixed behaviour is the point here.
+// This fixture deliberately maps `string?` -> `string`, and since round 32 it says so where it does it:
+// [MapProperty(AllowNull = true)] accepts the null for this one member, so DWARF070 is not reported for it and the
+// project carries no NoWarn for the id. The statement changes nothing that is generated, which makes this fixture the
+// runtime half of that promise too: with the acceptance written, the null still flows exactly as before.
 
     public sealed class NullRefSrc
     {
@@ -26,6 +28,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper]
     public partial class NullRefMapper
     {
+        [MapProperty(nameof(NullRefSrc.Name), nameof(NullRefDst.Name), AllowNull = true)]
         public partial NullRefDst Map(NullRefSrc src);
     }
 

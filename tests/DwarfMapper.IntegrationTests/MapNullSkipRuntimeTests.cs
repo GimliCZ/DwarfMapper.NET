@@ -41,7 +41,9 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
     public partial class SettingsMappers
     {
-        /// <summary>A null in the DTO means "clear this".</summary>
+        /// <summary>A null in the DTO means "clear this" - into a non-nullable string, deliberately (AllowNull).</summary>
+        [MapProperty(nameof(SettingsPatchDto.DisplayName), nameof(UserSettings.DisplayName), AllowNull = true)]
+        [MapProperty(nameof(SettingsPatchDto.Bio), nameof(UserSettings.Bio), AllowNull = true)]
         public partial void Replace(SettingsPatchDto src, UserSettings dst);
 
         /// <summary>A null in the DTO means "leave this alone".</summary>
@@ -56,16 +58,24 @@ namespace DwarfMapper.IntegrationTests
         public partial void Patch(SettingsPatchDto src, UserSettings dst);
 
         [MapNullSkip(false)]
+        [MapProperty(nameof(SettingsPatchDto.DisplayName), nameof(UserSettings.DisplayName), AllowNull = true)]
+        [MapProperty(nameof(SettingsPatchDto.Bio), nameof(UserSettings.Bio), AllowNull = true)]
         public partial void Replace(SettingsPatchDto src, UserSettings dst);
     }
 
     /// <summary>Pair-scoped form, for a mapper that declares its pairs as attributes rather than methods.</summary>
     [DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
     [GenerateMap<SettingsPatchDto, UserSettings>]
+    // The declared pair replaces too, so its nulls are stated pair-scoped; the update-into below reads only its
+    // own method-level [MapProperty], so it states them again there.
+    [MapProperty<SettingsPatchDto, UserSettings>(nameof(SettingsPatchDto.DisplayName), nameof(UserSettings.DisplayName), AllowNull = true)]
+    [MapProperty<SettingsPatchDto, UserSettings>(nameof(SettingsPatchDto.Bio), nameof(UserSettings.Bio), AllowNull = true)]
     [GenerateMap<RankPatchDto, UserRank>]
     [MapNullSkip<RankPatchDto, UserRank>]
     public partial class PairScopedNullSkipMappers
     {
+        [MapProperty(nameof(SettingsPatchDto.DisplayName), nameof(UserSettings.DisplayName), AllowNull = true)]
+        [MapProperty(nameof(SettingsPatchDto.Bio), nameof(UserSettings.Bio), AllowNull = true)]
         public partial void UpdateSettings(SettingsPatchDto src, UserSettings dst);
 
         [MapNullSkip]
