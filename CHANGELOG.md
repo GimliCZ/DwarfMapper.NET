@@ -70,6 +70,13 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`.oss-scanner/`: an offline audit image and a threat model, the two things Anthropic's OSS Scanner reads.**
+  `.oss-scanner/Dockerfile` builds the whole solution the way CI does - the SDK `global.json` pins (held by digest),
+  CI's locked restore with its NuGet audit, CI's ilverify, CI's push-time test filter - and leaves it ready for an
+  agent that has no network. `.oss-scanner/threat_model.md` says where untrusted values enter (mapping attacker-shaped
+  graphs at run time, far above the generator reading your own source), what is out of scope, and how a finding is
+  rated. `OssScannerImageTests` holds every pin to its source of truth. Enrolment itself is a request the maintainer
+  makes to the scanner's repository; this is only what it needs.
 - **`[MapProperty(When = …, KeepDefault = true)]` says a guarded member's unset default is intended, so `DWARF066` never needs a `NoWarn`.**
   `DWARF066` (Info) reports a `When` guard that can leave a non-nullable member at its default, and its only answer for
   an intended default was "confirm the unset default is intended", with nothing to confirm it with. `KeepDefault = true`
