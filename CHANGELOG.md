@@ -70,6 +70,13 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`[MapClone]` says a same-type map is a deliberate clone, so `DWARF076` never needs a project-wide `NoWarn` - and no DWARF message or doc recommends one any more.**
+  `DWARF076` ("source and target are the same type") told you to add it to `<NoWarn>` if the shallow copy was intended -
+  project-wide, for every mapper. `[MapClone]` on the method accepts that one method and changes nothing that is generated;
+  `[SuppressMessage("DwarfMapper", "DWARF076")]` on the class still accepts every method of it. A `[MapClone]` on a method
+  that is not a same-type create map (different types, update-into, span, stream, projection) is `DWARF116`. `DWARF108`'s
+  message and the `DWARF038`/`DWARF108` docs recommended `<NoWarn>` as well; they now name the in-file hatch or a
+  `.globalconfig`, and a self-validation test fails the build if user-facing text recommends `<NoWarn>` again.
 - **`[MapProperty(AllowNull = true)]` accepts a deliberate null for one member, so `DWARF070` never needs a project-wide `NoWarn`.**
   A nullable source written into a non-nullable destination is reported as `DWARF070`; when the null is intended (for
   example parity with a mapper that wrote the raw value), the only way to say so was project-wide - a `.globalconfig`

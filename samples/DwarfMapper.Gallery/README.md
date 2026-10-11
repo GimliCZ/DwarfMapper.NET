@@ -39,6 +39,7 @@ The alternative to this page was deleting those markers — removing evidence to
 | 41 | [`41_AutoNestOverride.cs`](41_AutoNestOverride.cs) — Per-method auto-nest override | disabling nested-mapper synthesis for a single method |
 | 42 | [`42_IgnoreSourceMember.cs`](42_IgnoreSourceMember.cs) — Intentionally unread source member | silencing DWARF039 for a source member no destination reads |
 | 43 | [`43_ConstructorSelection.cs`](43_ConstructorSelection.cs) — Explicit constructor selection | marking the constructor a mapped type should be built through |
+| 51 | [`51_MapClone.cs`](51_MapClone.cs) — A deliberate same-type copy | accepting DWARF076 for one method with [MapClone] |
 | | **Front doors** | |
 | 15 | [`ex15/15_CoLocated.cs`](ex15/15_CoLocated.cs) — Co-located on the DTO | `[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]` |
 | 16 | [`16_MapToRegistry.cs`](16_MapToRegistry.cs) — The `[MapTo]` registry | declaring the pair on the source type — no mapper class at all |
@@ -722,6 +723,21 @@ public partial class Mapper
     // Ore is 1-based, so Offset = 1 puts Ore.Iron in slot 0 and the array needs exactly four slots.
     [MapDenseEnumKeys(nameof(SeamReport.Yield), Offset = 1)]
     public partial SeamReport ToReport(Seam s);
+}
+```
+<!-- endsnippet -->
+
+### 51. `[MapClone]` — a deliberate same-type copy
+
+*51_MapClone.cs* — accepting DWARF076 for one method with [MapClone]
+
+<!-- snippet: map-clone -->
+```csharp
+[DwarfMapper]
+public partial class Mapper
+{
+    [MapClone]
+    public partial Tunnel Snapshot(Tunnel tunnel);
 }
 ```
 <!-- endsnippet -->

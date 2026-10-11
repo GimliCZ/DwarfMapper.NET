@@ -2054,8 +2054,8 @@ namespace DwarfMapper.Generator.Diagnostics
             "but a genuinely cyclic source now throws DwarfMappingDepthException instead of terminating " +
             "early. Make '{1}' a reference type (a class or a record class) to use OnCycle = SetNull for it, " +
             "or leave it a value type and accept the depth-limited fallback — say so with " +
-            "[SuppressMessage(\"DwarfMapper\", \"DWARF108:...\")] on the mapper class, or add DWARF108 to " +
-            "<NoWarn> in the project to accept it everywhere. A per-site #pragma does NOT suppress generator " +
+            "[SuppressMessage(\"DwarfMapper\", \"DWARF108:...\")] on the mapper class, or " +
+            "dotnet_diagnostic.DWARF108.severity = none in a .globalconfig to accept it everywhere. A per-site #pragma does NOT suppress generator " +
             "diagnostics.",
             Category,
             DiagnosticSeverity.Warning,

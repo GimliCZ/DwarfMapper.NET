@@ -59,6 +59,36 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "the per-site intent statement where one exists:\n  " + string.Join("\n  ", offenders));
         }
 
+        // Wider than Negation on purpose: "no DWARF warning ever needs a NoWarn" and "nothing short of a NoWarn
+        // silenced it" are the two ways this text legitimately mentions the switch.
+        private static readonly Regex NoWarnNegation = new(@"\bnot\b|n't\b|\bno\b|\bnever\b|\bnothing\b", RegexOptions.IgnoreCase);
+
+        /// <summary>
+        ///     Owner ruling 2026-09-27: "there should be no reason to do nowarn with dwarf". Every DWARF risk a
+        ///     consumer accepts deliberately is accepted where it is - a per-site statement of intent
+        ///     (<c>[MapProperty(AllowNull = true)]</c>, <c>[MapClone]</c>) - or, project-wide, in a
+        ///     <c>.globalconfig</c>, which can also escalate. So user-facing text may mention <c>NoWarn</c> only to
+        ///     say it is not the advice. DWARF076's own message, DWARF108's message and two docs entries recommended
+        ///     it until round 32; this is what keeps the next one from doing so.
+        /// </summary>
+        [Fact]
+        public void No_user_facing_text_recommends_NoWarn_for_a_DWARF_diagnostic()
+        {
+            var offenders = new List<string>();
+            foreach (var file in UserFacingFiles())
+            {
+                var lines = File.ReadAllLines(file);
+                for (var i = 0; i < lines.Length; i++)
+                    if (lines[i].Contains("NoWarn", StringComparison.OrdinalIgnoreCase) && !NoWarnNegation.IsMatch(lines[i]))
+                        offenders.Add(Path.GetRelativePath(RepoPaths.Root, file) + ":" + (i + 1) + "  " + lines[i].Trim());
+            }
+
+            Assert.True(offenders.Count == 0,
+                "These lines recommend <NoWarn> for a DWARF diagnostic. Name the per-site statement of intent the " +
+                "diagnostic's entry gives, or a .globalconfig for a project-wide severity:\n  " +
+                string.Join("\n  ", offenders));
+        }
+
         [Fact]
         public void The_scan_reads_the_files_it_claims_to()
         {

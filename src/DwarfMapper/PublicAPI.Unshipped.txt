@@ -1,6 +1,8 @@
 #nullable enable
 DwarfMapper.Dwarf
 DwarfMapper.DwarfCollectionMap
+DwarfMapper.MapCloneAttribute
+DwarfMapper.MapCloneAttribute.MapCloneAttribute() -> void
 DwarfMapper.MapDenseEnumKeysAttribute
 DwarfMapper.MapDenseEnumKeysAttribute.MapDenseEnumKeysAttribute(string! member) -> void
 DwarfMapper.MapDenseEnumKeysAttribute.Member.get -> string!

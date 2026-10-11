@@ -532,12 +532,17 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         beside its <c>NullSubstitute</c>, <c>When</c>, <c>Use</c> and <c>StringFormat</c> cells there.
         ///         Structural, for the fourth time.
         ///     </para>
+        ///     <para>
+        ///         Re-measured again 2026-10-11 (round 32, <c>[MapClone]</c>): no-mapping-method 80 -> 82, total 130 ->
+        ///         132. A method-level marker with no argument and no property renders one case, at the two sites that
+        ///         declare no mapping method to carry it. Structural, for the fifth time.
+        ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
             ["registry-has-no-mapper-class"] = 50,
-            ["no-mapping-method"] = 80
+            ["no-mapping-method"] = 82
         };
 
         /// <summary>

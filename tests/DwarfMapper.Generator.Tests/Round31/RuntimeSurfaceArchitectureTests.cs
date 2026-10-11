@@ -357,7 +357,7 @@ namespace DwarfMapper.Generator.Tests.Round31
             "DwarfMapperConstructorAttribute", "DwarfMapperDefaultsAttribute", "DwarfMapperOptionsAttribute",
             "DwarfMapperValidationRootAttribute", "DwarfProvidesMapAttribute", "DwarfRequiresMapAttribute",
             "EnumStrategy", "EnumStringSource", "FlattenAttribute", "FlattenGraphAttribute",
-            "GenerateMapAttribute", "GenerateWrapperMapAttribute", "MapCollectionKeyAttribute", "MapConfig",
+            "GenerateMapAttribute", "GenerateWrapperMapAttribute", "MapCloneAttribute", "MapCollectionKeyAttribute", "MapConfig",
             "MapConstructorAttribute", "MapDenseEnumKeysAttribute", "MapDerivedTypeAttribute", "MapIgnoreAttribute",
             "MapIgnoreSourceAttribute", "MapNullSkipAttribute", "MapPropertyAttribute", "MapShareAttribute",
             "MapToAttribute", "MapValueAttribute", "NameConvention", "NullCollectionStrategy", "NullStrategy",

@@ -129,6 +129,10 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "DictionaryNullableValueIntoNonNullable", "\"Dictionary entry was null\""
                 },
                 {
+                    // The declared clone is generated; the statement changes no byte, so the hash pins the rest.
+                    "MapClone", "Copy("
+                },
+                {
                     // The lift the payload edge was missing. Deliberately the FORGIVING spelling: the plain
                     // `is null ? null :` arm is also reachable from several already-pinned shapes, whereas
                     // `is null ? null! :` can only be emitted by the arm where both ends are non-nullable-

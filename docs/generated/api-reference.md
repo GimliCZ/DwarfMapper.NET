@@ -272,6 +272,14 @@ Ambient mapper facade: resolves a map from the process-wide DwarfMapperRegistry 
 
 _No public settable surface._
 
+### attribute `MapCloneAttribute`
+
+States that this mapping method's source and destination are the SAME type on purpose: the method is a clone, and DWARF076 ("source and target are the same type") is not reported for it. The generated method is exactly the one it would be without the attribute - a member-by-member copy, in which a nested object is the SAME instance in both (it is not cloned) while a collection or array member is copied into a new one holding the same elements. [DwarfMapper] public partial class OrderMapper { [MapClone] public partial Order Copy(Order source); } It accepts the one method it is written on; [SuppressMessage("DwarfMapper", "DWARF076")] on the mapper class accepts every same-type method of the class at once. Written on a method that is not a same-type create map - its types differ, or it maps into an existing instance, a span, a stream or a query, none of which DWARF076 ever judges - it accepts nothing and is itself reported (DWARF116).
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `TypeId` | `Object` | `DwarfMapper.MapCloneAttribute` |  |
+
 ### attribute `MapCollectionKeyAttribute`
 
 On an update-into mapping method (void Map(TSource src, TTarget dest)), merges a List<T> collection member by key instead of replacing it wholesale. The existing list instance is kept and mutated in place: an element whose key matches an existing one updates that slot, an element with a new key is added, and existing elements whose key is absent from the source are left untouched. Without this, update-into replaces the whole collection with a freshly-built one (see DWARF065) — discarding the existing list's identity and any elements the update did not mention. Key-based upsert is the merge semantics an update usually wants. v1 scope: the collection member must be a List<T> whose element type is the same on source and target (the common Entity↔Entity update), and the key must be a readable member of that element type. Anything else reports DWARF074. The key value is compared with the type's default equality (EqualityComparer<TKey>.Default).

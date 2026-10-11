@@ -52,10 +52,11 @@ So the suppression options are:
 
 | Scope | Mechanism | Availability |
 |---|---|---|
-| One member | the statement of intent the id's entry names - `[MapProperty(AllowNull = true)]` for `DWARF070` and `DWARFR15` | the ids whose entry names one; a statement that matches nothing is [`DWARF116`](#dwarf116) |
-| Whole project | `dotnet_diagnostic.DWARFxxx.severity = none` in a `.globalconfig` (`is_global = true`), or `<NoWarn>` | **every** id |
+| One member or method | the statement of intent the id's entry names - `[MapProperty(AllowNull = true)]` for `DWARF070` and `DWARFR15`, `[MapClone]` for `DWARF076` | the ids whose entry names one; a statement that matches nothing is [`DWARF116`](#dwarf116) |
+| Whole project | `dotnet_diagnostic.DWARFxxx.severity = none` in a `.globalconfig` (`is_global = true`) | **every** id |
+| Whole project, by the compiler | `<NoWarn>` | every id too - but never the advice: a `.globalconfig` does the same, can also escalate, and leaves the per-site statements as the place a single accepted risk is written |
 | Whole project, per file | the same line under `[*.cs]` in an `.editorconfig` | **never** - DwarfMapper reports at a location the compiler does not tie to the source file, so per-file severities do not reach it |
-| One mapper class, in the file | `[SuppressMessage("DwarfMapper", "DWARFxxx:…")]` on the mapper | `DWARF076` today; see the note below |
+| One mapper class, in the file | `[SuppressMessage("DwarfMapper", "DWARFxxx:…")]` on the mapper | `DWARF076` and `DWARF108`; see the note below |
 | One line | `#pragma warning disable` | **never** — see above |
 
 `[SuppressMessage]` is an ordinary attribute the generator can read, so it *can* be honoured where the
@@ -122,7 +123,7 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR11` | **`[DwarfMapperConstructor]` is not read by the `[MapTo]` registry** (Warning) — the directive names the constructor DwarfMapper must build a target with, and this front door selects no constructor at all: every type it constructs — the `[MapTo]` target and every nested object (including a collection's element type) — is built with `new T { … }` and its members assigned afterwards. The mapping is still generated and still complete; what it is not is the construction the caller asked for, and the *same* annotation on the *same* type is honoured through a `[DwarfMapper]` class-model map over that pair. **Fix:** map the pair with the class model — a `partial Dst Map(Src s)` on a `[DwarfMapper]` class, which selects the annotated constructor — or remove the attribute if the object-initializer mapping is what you want. |
 | `DWARFR13` | **A `[MapTo]` source type cannot be generic** — the registry emits extension methods on the source type, and a generic source (`class Src<T>`, or any class nested in a generic type such as `Outer<T>.Src`) left `T` undeclared in them: the generated file failed with `CS0246` and no diagnostic said why. The `[DwarfMapper]` class model refuses the same shape as `DWARF054`. Nothing is generated for the type. **Fix:** put `[MapTo]` on a non-generic source type, or map the closed pair (`Src<int>` → `Dto`) with the `[DwarfMapper]` class model, for example `[GenerateMap<Src<int>, Dto>]`. |
 | `DWARFR14` | **A `[MapTo]` target type cannot be an open generic** — `[MapTo(typeof(Dto<>))]`, or `typeof(Outer<>.Dto)` for a class nested in an unbound generic type, names no type the registry can construct. It used to be refused as `DWARFR09` ("no public parameterless constructor"), which was the wrong reason: `Dto<T>` has a constructor, and adding another changes nothing. Nothing is generated for the source type. **Fix:** close the type arguments (`typeof(Dto<int>)`), or map the pair with the `[DwarfMapper]` class model. |
-| `DWARFR15` | **A nullable source is assigned where the destination forbids null** (Warning) — the registry counterpart of `DWARF070`. A nullable reference written straight into a member, element or dictionary value whose type forbids null (`string? Name` into `string Name`, `List<string?>` into `List<string>`, `Dictionary<K, string?>` into `Dictionary<K, string>`) is null-forgiven in the generated code, so no `CS8601`/`CS8619` reaches a file you cannot edit — which means a null at run time is stored rather than refused, and this warning is what says so. It used to be emitted bare: the build got `CS8601`/`CS8619` from `__DwarfRegistry_*.g.cs` with nothing naming the cause, and the only way out was a project-wide `NoWarn`. Fix it at the declaration — make the destination nullable, or the source non-nullable if it never holds null — or map the pair through the `[DwarfMapper]` class model, where `[MapProperty(NullSubstitute = …)]` supplies a fallback. A separate id rather than `DWARF070` because that message offers remedies this front door does not read. A nested object goes through a null-tolerant helper and is not reported, as in the class model; a difference C# accepts (`string[]` into `string?[]`) is left as it was. A deliberate null in a source member's own value is accepted for that member alone with `[MapProperty("Dest", AllowNull = true)]` on it; written where no null can reach, that is [`DWARF116`](#dwarf116). |
+| `DWARFR15` | **A nullable source is assigned where the destination forbids null** (Warning) — the registry counterpart of `DWARF070`. A nullable reference written straight into a member, element or dictionary value whose type forbids null (`string? Name` into `string Name`, `List<string?>` into `List<string>`, `Dictionary<K, string?>` into `Dictionary<K, string>`) is null-forgiven in the generated code, so no `CS8601`/`CS8619` reaches a file you cannot edit — which means a null at run time is stored rather than refused, and this warning is what says so. It used to be emitted bare: the build got `CS8601`/`CS8619` from `__DwarfRegistry_*.g.cs` with nothing naming the cause, and nothing short of a project-wide `NoWarn` silenced it. Fix it at the declaration — make the destination nullable, or the source non-nullable if it never holds null — or map the pair through the `[DwarfMapper]` class model, where `[MapProperty(NullSubstitute = …)]` supplies a fallback. A separate id rather than `DWARF070` because that message offers remedies this front door does not read. A nested object goes through a null-tolerant helper and is not reported, as in the class model; a difference C# accepts (`string[]` into `string?[]`) is left as it was. A deliberate null in a source member's own value is accepted for that member alone with `[MapProperty("Dest", AllowNull = true)]` on it; written where no null can reach, that is [`DWARF116`](#dwarf116). |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
 ---
@@ -374,8 +375,8 @@ is not translatability-refused there, it is reported here, at the same severity 
 conversions into build errors. To silence it project-wide, downgrade it in a `.globalconfig`:
 `dotnet_diagnostic.DWARF038.severity = suggestion` (a `-warnaserror` build treats the Warning as an error
 until downgraded). A conversion on a nested/collection element may be reported without a file location; for a
-blanket downgrade across a project use `<WarningsNotAsErrors>DWARF038</WarningsNotAsErrors>` (keep the warning,
-don't fail the build) or `<NoWarn>DWARF038</NoWarn>` (suppress) in the `.csproj`.
+blanket downgrade across a project use `<WarningsNotAsErrors>DWARF038</WarningsNotAsErrors>` in the `.csproj` (keep
+the warning, don't fail the build), or `dotnet_diagnostic.DWARF038.severity = none` in the `.globalconfig` to suppress it.
 
 ## dwarf039
 **Source member is read by no destination member** · Info
@@ -849,9 +850,17 @@ and the cost of the silence is that the mapper looks wired up while mapping noth
   nothing to fix, so it stays quiet.
 
 **Fix:** correct the type argument to the target you meant. If a shallow clone genuinely *is* what you want, say
-so by suppressing the id at that site — either `[SuppressMessage("DwarfMapper", "DWARF076:…")]` on the mapper
-class, or `dotnet_diagnostic.DWARF076.severity = none` in a `.globalconfig` (project-wide). This is a Warning, so a
-warnings-as-errors build still fails until you make that choice explicit.
+so where it is:
+
+| Scope | Statement |
+|---|---|
+| this one method | `[MapClone] public partial Dto Copy(Dto source);` - changes nothing that is generated |
+| every same-type map of the mapper class | `[SuppressMessage("DwarfMapper", "DWARF076:…")]` on the class - the per-site answer for a `[GenerateMap<Dto, Dto>]`, which has no method to carry `[MapClone]` |
+| the whole project | `dotnet_diagnostic.DWARF076.severity = none` in a `.globalconfig` |
+
+A `[MapClone]` on a method that is not a same-type create map - its types differ, or it is an update-into, span,
+stream or projection map, none of which this id judges - accepts nothing and is [`DWARF116`](#dwarf116). This is a
+Warning, so a warnings-as-errors build still fails until you make that choice explicit.
 
 > **`#pragma warning disable DWARF076` does not work**, and neither does a pragma for any other `DWARF…` id.
 > Pragmas are applied by the compiler's diagnostic filtering, which source-generator-reported diagnostics do
@@ -2468,7 +2477,7 @@ nulling the back-edge.
 termination, or leave it a value type and accept the depth-limited fallback (raise `MaxDepth` if a deep but
 acyclic value-type graph needs to map without throwing). Say so with
 `[SuppressMessage("DwarfMapper", "DWARF108:…")]` on the mapper class for an in-file, next-to-the-code hatch, or
-add `DWARF108` to `<NoWarn>` in the project to accept it everywhere. **`#pragma warning disable DWARF108` does
+`dotnet_diagnostic.DWARF108.severity = none` in a `.globalconfig` to accept it everywhere. **`#pragma warning disable DWARF108` does
 not work**, and neither does a pragma for any other `DWARF…` id — pragmas are applied by the compiler's
 diagnostic filtering, which source-generator-reported diagnostics do not pass through, a Roslyn limitation
 rather than something DwarfMapper can fix. `[SuppressMessage]` works anyway: the generator reads it directly
@@ -2619,10 +2628,12 @@ property) — and keep `Project()` for code that is not precompiled.
 ## dwarf116
 **A statement of intent matches nothing** · Warning
 
-A per-site statement of intent - today `[MapProperty(AllowNull = true)]` - is written where there is nothing
-for it to accept: the member's source is not a nullable reference, its destination accepts null, or the null
-is already handled before it could land (a `NullSubstitute`, `[DwarfMapper(SkipNullSourceMembers = true)]`, a
-conversion). The message names the member and the reason.
+A per-site statement of intent is written where there is nothing for it to accept. For
+`[MapProperty(AllowNull = true)]`: the member's source is not a nullable reference, its destination accepts null,
+or the null is already handled before it could land (a `NullSubstitute`,
+`[DwarfMapper(SkipNullSourceMembers = true)]`, a conversion). For `[MapClone]`: the method is not a same-type create
+map - its types differ, or it is an update-into, span, stream or projection map, none of which
+[`DWARF076`](#dwarf076) judges. The message names the member or method and the reason.
 
 These statements exist so that no DWARF warning ever needs a project-wide `NoWarn`: each one accepts one risk,
 at the member it is written on. The price of that is that a dead one is reported, because it is not harmless -

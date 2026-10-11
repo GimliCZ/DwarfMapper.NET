@@ -549,6 +549,24 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                      public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
                                                      """, "MapToGenerator");
 
+            // [MapClone] (round 32): a declared clone, accepted - no DWARF076 - beside a statement on a map between
+            // two types, which accepts nothing (DWARF116), and a same-type map with no statement, whose DWARF076 names
+            // the three ways to accept it. The diagnostics are in the hash, so this pins all three; no other case in
+            // the corpus reports DWARF076 at all.
+            yield return ("MapClone", """
+                                      using DwarfMapper;
+                                      namespace Demo;
+                                      public class A { public int X { get; set; } public string Name { get; set; } = ""; }
+                                      public class B { public int X { get; set; } public string Name { get; set; } = ""; }
+                                      [DwarfMapper]
+                                      public partial class M
+                                      {
+                                          [MapClone] public partial A Copy(A a);
+                                          [MapClone] public partial B Map(A a);
+                                          public partial B CopyB(B b);
+                                      }
+                                      """, "DwarfGenerator");
+
             // A dictionary VALUE differing only by its annotation (round 32): #100's value twin - a null value throws,
             // as a null collection element always has, instead of being copied bare (CS8601) and stored.
             yield return ("DictionaryNullableValueIntoNonNullable", """

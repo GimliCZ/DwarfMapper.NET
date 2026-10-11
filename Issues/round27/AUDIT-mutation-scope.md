@@ -29,12 +29,16 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
 | `DwarfMapper.Generator` | 80 | 7 | 36,958 | 2,561 | **6.9 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 46 | 8 | 3,972 | 1,301 | **32.8 %** | 73.9 %† |
+| `DwarfMapper` (runtime) | 47 | 8 | 3,972 | 1,301 | **32.8 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **152** | **29** | **45,760** | **5,662** | **12.4 %** | |
+| **all** | **153** | **29** | **45,760** | **5,662** | **12.4 %** | |
+
+Re-measured 2026-10-11 (round 32, [MapClone]): one more runtime file, `MapCloneAttribute.cs` - a compile-time marker
+the generator reads and the runtime never executes - outside every `mutate` glob like the other attributes, so
+runtime files 46 -> 47 and the share is unchanged.
 
 Re-measured 2026-10-11 (round 32, DWARFR15): one more generator file, `Registry/NullabilityLanding.cs` - where a direct
 assignment's nullable annotations disagree - outside every `mutate` glob like the rest of the registry front door, so
