@@ -94,5 +94,15 @@ namespace DwarfMapper
         ///     </para>
         /// </summary>
         public string? StringFormat { get; set; }
+
+        /// <summary>
+        ///     States that the destination member may receive a <c>null</c> from a nullable source although its type
+        ///     forbids one. The generated assignment does not change - the source value is written as it is - and
+        ///     <c>DWARF070</c> is not reported for this member, because the null is now declared rather than
+        ///     overlooked. Use it where the null is deliberate (for example parity with a mapper that wrote the raw
+        ///     value); where it is not, prefer <see cref="NullSubstitute" /> or a nullable destination. Stated on a
+        ///     member that no null can reach, it is itself reported (<c>DWARF116</c>).
+        /// </summary>
+        public bool AllowNull { get; set; }
     }
 }

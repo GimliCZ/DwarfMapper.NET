@@ -549,6 +549,23 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                      public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
                                                      """, "MapToGenerator");
 
+            // [MapProperty(AllowNull = true)] (round 32): one statement that accepts a null - no DWARF070, the '!' kept -
+            // and one with nothing to accept, which is DWARF116. The diagnostics are in the hash, so this pins both.
+            yield return ("AllowNullMember", """
+                                             #nullable enable
+                                             using DwarfMapper;
+                                             namespace Demo;
+                                             public class A { public string? Name { get; set; } public string Code { get; set; } = ""; }
+                                             public class B { public string Name { get; set; } = ""; public string Code { get; set; } = ""; }
+                                             [DwarfMapper]
+                                             public partial class M
+                                             {
+                                                 [MapProperty(nameof(A.Name), nameof(B.Name), AllowNull = true)]
+                                                 [MapProperty(nameof(A.Code), nameof(B.Code), AllowNull = true)]
+                                                 public partial B Map(A a);
+                                             }
+                                             """, "DwarfGenerator");
+
             // DWARFR15 (2026-10-11): every edge the registry used to emit bare - CS8601/CS8619 in its .g.cs - in one
             // nullable-enabled source, plus the invariant widening that is forgiven but not reported. The runner
             // compiles with nullable disabled by default, so the case states its own context.

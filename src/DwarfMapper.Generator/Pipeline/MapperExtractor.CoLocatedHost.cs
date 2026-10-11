@@ -92,7 +92,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // `!` is carried by DirectivesArePlaceable, which drops the member's whole directive SET
                     // unless every non-ignore one names something — arity one does not imply a name, because
                     // [MapProperty(null)] is a legal application and a half-typed one leaves an error constant.
-                    config.Explicit.Add((d.Name!, member.Name, d.Use));
+                    config.Explicit.Add((d.Name!, member.Name, d.Use, d.AllowNull));
                     if (d.HasNullSub || d.When is not null)
                     {
                         config.Extras.Add((member.Name, d.HasNullSub, d.NullSub, d.When, null));
@@ -221,7 +221,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private sealed class HostPairDirectives
         {
-            public readonly List<(string Source, string Target, string? Use)> Explicit = new();
+            public readonly List<(string Source, string Target, string? Use, bool AllowNull)> Explicit = new();
 
             public readonly List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When,
                 string? NullSubLiteral)> Extras = new();

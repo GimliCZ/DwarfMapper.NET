@@ -225,7 +225,7 @@ namespace DwarfMapper.Generator.Pipeline
             var unflattenRoots = new HashSet<string>(StringComparer.Ordinal);
             var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var (srcName, tgtName, useMethod) in req.ExplicitMaps)
+            foreach (var (srcName, tgtName, useMethod, _) in req.ExplicitMaps)
             {
                 if (!explicitSeen.Add(tgtName))
                 {

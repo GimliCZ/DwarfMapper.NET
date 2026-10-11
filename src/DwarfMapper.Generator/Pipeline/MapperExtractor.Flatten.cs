@@ -498,16 +498,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///     skipped (declare those reverse renames explicitly). A rename whose inverse target the inverse method
         ///     already maps itself is also skipped (the explicit one wins).
         /// </summary>
-        private static List<(string Source, string Target, string? Use)> CollectReverseRenames(
+        private static List<(string Source, string Target, string? Use, bool AllowNull)> CollectReverseRenames(
             INamedTypeSymbol classSymbol,
             IMethodSymbol method,
             ITypeSymbol sourceType,
             ITypeSymbol targetType,
-            IReadOnlyList<(string Source, string Target, string? Use)> ownExplicit,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> ownExplicit,
             List<DiagnosticInfo> diagnostics,
             LocationInfo? location)
         {
-            var added = new List<(string, string, string?)>();
+            var added = new List<(string Source, string Target, string? Use, bool AllowNull)>();
             IMethodSymbol? forward = null;
             foreach (var f in classSymbol.GetMembers().OfType<IMethodSymbol>())
                 if (!SymbolEqualityComparer.Default.Equals(f, method) &&
@@ -531,7 +531,7 @@ namespace DwarfMapper.Generator.Pipeline
             var ownTargets = new HashSet<string>(ownExplicit.Select(e => e.Target), StringComparer.Ordinal);
             var fwdExtraTargets =
                 new HashSet<string>(ReadMapPropertyExtras(forward).Select(e => e.Target), StringComparer.Ordinal);
-            foreach (var (a, b, use) in ReadExplicitMaps(forward))
+            foreach (var (a, b, use, _) in ReadExplicitMaps(forward))
             {
                 var invertible = use is null && a.IndexOf('.') < 0 && b.IndexOf('.') < 0 && !fwdExtraTargets.Contains(b);
                 if (!invertible)
@@ -542,9 +542,11 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // AllowNull is never inverted: the forward's statement is about the FORWARD destination accepting
+                // a null, and says nothing about whether the reverse one may - that is the reverse's own decision.
                 if (!ownTargets.Contains(a))
                 {
-                    added.Add((b, a, null));
+                    added.Add((b, a, null, false));
                 }
             }
 

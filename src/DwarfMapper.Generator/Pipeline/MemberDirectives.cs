@@ -31,6 +31,7 @@ namespace DwarfMapper.Generator.Pipeline
     /// <param name="HasNullSub">Whether <c>NullSubstitute =</c> was written at all (null is a legal value).</param>
     /// <param name="NullSub">The <c>NullSubstitute =</c> value; meaningful only when <paramref name="HasNullSub" />.</param>
     /// <param name="StringFormat">The <c>StringFormat =</c> format string, or null.</param>
+    /// <param name="AllowNull">Whether <c>AllowNull = true</c> was written: a null reaching this destination is accepted.</param>
     /// <param name="Loc">Where the attribute was written, for a diagnostic that refuses it.</param>
     internal sealed record MemberDirective(
         bool Ignore,
@@ -41,6 +42,7 @@ namespace DwarfMapper.Generator.Pipeline
         bool HasNullSub,
         TypedConstant NullSub,
         string? StringFormat,
+        bool AllowNull,
         LocationInfo? Loc);
 
     /// <summary>
@@ -88,6 +90,7 @@ namespace DwarfMapper.Generator.Pipeline
                 string? format = null;
                 var hasNullSub = false;
                 TypedConstant nullSub = default;
+                var allowNull = false;
                 foreach (var na in a.NamedArguments)
                     switch (na.Key)
                     {
@@ -107,6 +110,10 @@ namespace DwarfMapper.Generator.Pipeline
                             hasNullSub = true;
                             nullSub = na.Value;
                             break;
+
+                        case "AllowNull" when na.Value.Value is true:
+                            allowNull = true;
+                            break;
                     }
 
                 var count = a.ConstructorArguments.Length;
@@ -119,6 +126,7 @@ namespace DwarfMapper.Generator.Pipeline
                     hasNullSub,
                     nullSub,
                     format,
+                    allowNull,
                     LocationInfo.FromReference(reference))));
             }
 

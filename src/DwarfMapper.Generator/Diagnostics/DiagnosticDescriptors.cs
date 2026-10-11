@@ -1086,7 +1086,7 @@ namespace DwarfMapper.Generator.Diagnostics
             // message that calls any of them a "member" names the wrong kind of thing and offers two remedies
             // ([MapProperty(NullSubstitute)], SkipNullSourceMembers) that cannot reach it. Built in one place -
             // MapperExtractor.NullSourceLabel - so the four spellings cannot drift.
-            "{0} is a nullable reference but its destination is non-nullable, so a null " + "would be stored where the type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. For a collection ELEMENT or a dictionary VALUE neither attribute reaches " + "it either — the null is in the element type, not the member: make the destination element type " + "nullable (List<T?>, T?[], Dictionary<K, V?>), or declare the converter's parameter nullable. Either " + "way, dotnet_diagnostic.DWARF070.severity = none in a .globalconfig accepts the null knowingly, project-wide " +
+            "{0} is a nullable reference but its destination is non-nullable, so a null " + "would be stored where the type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable - or, if the null is " + "deliberate, accept it for that member alone with [MapProperty(source, destination, AllowNull = true)]. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. For a collection ELEMENT or a dictionary VALUE neither attribute reaches " + "it either — the null is in the element type, not the member: make the destination element type " + "nullable (List<T?>, T?[], Dictionary<K, V?>), or declare the converter's parameter nullable. Either " + "way, dotnet_diagnostic.DWARF070.severity = none in a .globalconfig accepts the null knowingly, project-wide " +
             "(an .editorconfig does not reach this diagnostic).",
             Category,
             DiagnosticSeverity.Warning,
@@ -2243,5 +2243,34 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Warning,
             true,
             helpLinkUri: HelpBase + "dwarf115");
+
+        /// <summary>
+        ///     A per-site statement of intent - <c>[MapProperty(AllowNull = true)]</c> - stated where there is nothing
+        ///     for it to accept.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The statements exist so that no DWARF warning ever needs a project-wide <c>NoWarn</c> (owner ruling
+        ///         2026-09-27): each one accepts ONE risk, at the member it is written on, in mapping terms. The price of
+        ///         a statement that cannot be stale is that a stale one is reported - an <c>AllowNull</c> on a member no
+        ///         null can reach is not harmless, it is a pre-signed acceptance: the day the source becomes nullable,
+        ///         the null is accepted silently by a decision made about a different type, and DWARF070 never fires.
+        ///     </para>
+        ///     <para>
+        ///         A <b>Warning</b>, like <c>DWARF095</c> and <c>DWARF056</c>, its "a written directive does nothing"
+        ///         precedents: the mapping is correct and ships. One id for every kind of intent, so the family reads
+        ///         as one rule; the message is composed at the site (<c>{0}</c>) because it names the statement, the
+        ///         member and the reason the statement is dead - which, for a converter whose own parameter refuses the
+        ///         null, is that a DWARF070 still stands beside it about something the statement could not reach.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor IntentMatchesNothing = new(
+            "DWARF116",
+            "A statement of intent matches nothing",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            helpLinkUri: HelpBase + "dwarf116");
     }
 }

@@ -2265,6 +2265,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var projAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
                 var projConsumedSources = new HashSet<string>(StringComparer.Ordinal);
                 var projExplicitMaps = ReadExplicitMaps(method);
+                var projDiagnosticsStart = acc.Diagnostics.Count;
                 var projMembers = ResolveProjectionMembers(
                     projSource,
                     projTargetNamed,
@@ -2328,6 +2329,10 @@ namespace DwarfMapper.Generator.Pipeline
                     ReadFlattenRoots(method),
                     ReadMapValues(method),
                     IgnoredSourcesFor(decls, method));
+
+                // Here rather than inside the resolver, which has several exits: every one of them leaves its DWARF070
+                // reports in this window, and this is the one place they all pass through.
+                SettleProjectionNullReports(projExplicitMaps, acc.Diagnostics, projDiagnosticsStart, methodLocation);
 
                 // Source-side completeness for projection. The resolver already knows which source members it
                 // read, so this needed tracking rather than new analysis — it was simply never asked.

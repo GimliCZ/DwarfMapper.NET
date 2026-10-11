@@ -376,6 +376,7 @@ Explicitly maps a source member to a differently-named destination member, overr
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
+| `AllowNull` | `Boolean` | — | States that the destination member may receive a null from a nullable source although its type forbids one. The generated assignment does not change - the source value is written as it is - and DWARF070 is not reported for this member, because the null is now declared rather than overlooked. Use it where the null is deliberate (for example parity with a mapper that wrote the raw value); where it is not, prefer NullSubstitute or a nullable destination. Stated on a member that no null can reach, it is itself reported (DWARF116). |
 | `NullSubstitute` | `Object` | — | Optional constant value coalesced onto the source — emitted verbatim as source ?? value (so it takes effect when the source member is null; on a non-nullable source the ?? is simply a harmless no-op; on a non-nullable value-type source such as int, ?? is a C# compile error (CS0019) — use it only on a nullable source). The value must be assignable to the destination type (else DWARF049). Direct-assignable members only — not combinable with a Use converter. |
 | `Source` | `String` | — | Name of the source member to read from. |
 | `StringFormat` | `String` | — | Optional .NET format string applied when converting the source to a string destination — emitted as source.ToString(format, CultureInfo.InvariantCulture). E.g. "yyyy-MM-dd" for a DateTime, "F2" for a decimal, "N0" for an int. The provider is always InvariantCulture — by design, so the formatted output is stable across deployments and threads rather than shifting with the ambient culture (the same reason every generated Parse/ToString is invariant). Only valid when the destination member is string and the source is IFormattable, and not combinable with Use; otherwise DWARF073. |
@@ -390,6 +391,7 @@ Configures a member mapping for a specific (TSource → TTarget) pair from the c
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
+| `AllowNull` | `Boolean` | — | States that the destination member may receive a null from a nullable source although its type forbids one: the assignment is unchanged and DWARF070 is not reported for it (same meaning as the method-level twin). Stated on a member that no null can reach, it is DWARF116. |
 | `NullSubstitute` | `Object` | — | Optional constant coalesced onto a nullable source — emitted as source ?? value. The value must be assignable to the destination type, else DWARF049 (same validation as the method-level twin). |
 | `Source` | `String` | — | Name of the source member to read from. |
 | `Target` | `String` | — | Name of the destination member to assign. |

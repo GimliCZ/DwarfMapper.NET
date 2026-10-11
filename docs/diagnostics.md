@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF095`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF116`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -52,6 +52,7 @@ So the suppression options are:
 
 | Scope | Mechanism | Availability |
 |---|---|---|
+| One member | the statement of intent the id's entry names - `[MapProperty(AllowNull = true)]` for `DWARF070` and `DWARFR15` | the ids whose entry names one; a statement that matches nothing is [`DWARF116`](#dwarf116) |
 | Whole project | `dotnet_diagnostic.DWARFxxx.severity = none` in a `.globalconfig` (`is_global = true`), or `<NoWarn>` | **every** id |
 | Whole project, per file | the same line under `[*.cs]` in an `.editorconfig` | **never** - DwarfMapper reports at a location the compiler does not tie to the source file, so per-file severities do not reach it |
 | One mapper class, in the file | `[SuppressMessage("DwarfMapper", "DWARFxxx:…")]` on the mapper | `DWARF076` today; see the note below |
@@ -121,7 +122,7 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR11` | **`[DwarfMapperConstructor]` is not read by the `[MapTo]` registry** (Warning) — the directive names the constructor DwarfMapper must build a target with, and this front door selects no constructor at all: every type it constructs — the `[MapTo]` target and every nested object (including a collection's element type) — is built with `new T { … }` and its members assigned afterwards. The mapping is still generated and still complete; what it is not is the construction the caller asked for, and the *same* annotation on the *same* type is honoured through a `[DwarfMapper]` class-model map over that pair. **Fix:** map the pair with the class model — a `partial Dst Map(Src s)` on a `[DwarfMapper]` class, which selects the annotated constructor — or remove the attribute if the object-initializer mapping is what you want. |
 | `DWARFR13` | **A `[MapTo]` source type cannot be generic** — the registry emits extension methods on the source type, and a generic source (`class Src<T>`, or any class nested in a generic type such as `Outer<T>.Src`) left `T` undeclared in them: the generated file failed with `CS0246` and no diagnostic said why. The `[DwarfMapper]` class model refuses the same shape as `DWARF054`. Nothing is generated for the type. **Fix:** put `[MapTo]` on a non-generic source type, or map the closed pair (`Src<int>` → `Dto`) with the `[DwarfMapper]` class model, for example `[GenerateMap<Src<int>, Dto>]`. |
 | `DWARFR14` | **A `[MapTo]` target type cannot be an open generic** — `[MapTo(typeof(Dto<>))]`, or `typeof(Outer<>.Dto)` for a class nested in an unbound generic type, names no type the registry can construct. It used to be refused as `DWARFR09` ("no public parameterless constructor"), which was the wrong reason: `Dto<T>` has a constructor, and adding another changes nothing. Nothing is generated for the source type. **Fix:** close the type arguments (`typeof(Dto<int>)`), or map the pair with the `[DwarfMapper]` class model. |
-| `DWARFR15` | **A nullable source is assigned where the destination forbids null** (Warning) — the registry counterpart of `DWARF070`. A nullable reference written straight into a member, element or dictionary value whose type forbids null (`string? Name` into `string Name`, `List<string?>` into `List<string>`, `Dictionary<K, string?>` into `Dictionary<K, string>`) is null-forgiven in the generated code, so no `CS8601`/`CS8619` reaches a file you cannot edit — which means a null at run time is stored rather than refused, and this warning is what says so. It used to be emitted bare: the build got `CS8601`/`CS8619` from `__DwarfRegistry_*.g.cs` with nothing naming the cause, and the only way out was a project-wide `NoWarn`. Fix it at the declaration — make the destination nullable, or the source non-nullable if it never holds null — or map the pair through the `[DwarfMapper]` class model, where `[MapProperty(NullSubstitute = …)]` supplies a fallback. A separate id rather than `DWARF070` because that message offers remedies this front door does not read. A nested object goes through a null-tolerant helper and is not reported, as in the class model; a difference C# accepts (`string[]` into `string?[]`) is left as it was. |
+| `DWARFR15` | **A nullable source is assigned where the destination forbids null** (Warning) — the registry counterpart of `DWARF070`. A nullable reference written straight into a member, element or dictionary value whose type forbids null (`string? Name` into `string Name`, `List<string?>` into `List<string>`, `Dictionary<K, string?>` into `Dictionary<K, string>`) is null-forgiven in the generated code, so no `CS8601`/`CS8619` reaches a file you cannot edit — which means a null at run time is stored rather than refused, and this warning is what says so. It used to be emitted bare: the build got `CS8601`/`CS8619` from `__DwarfRegistry_*.g.cs` with nothing naming the cause, and the only way out was a project-wide `NoWarn`. Fix it at the declaration — make the destination nullable, or the source non-nullable if it never holds null — or map the pair through the `[DwarfMapper]` class model, where `[MapProperty(NullSubstitute = …)]` supplies a fallback. A separate id rather than `DWARF070` because that message offers remedies this front door does not read. A nested object goes through a null-tolerant helper and is not reported, as in the class model; a difference C# accepts (`string[]` into `string?[]`) is left as it was. A deliberate null in a source member's own value is accepted for that member alone with `[MapProperty("Dest", AllowNull = true)]` on it; written where no null can reach, that is [`DWARF116`](#dwarf116). |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
 ---
@@ -637,7 +638,8 @@ own source, where you can act on it.
 | a fallback value when the source is null | `[MapProperty(nameof(Src.Name), nameof(Dst.Name), NullSubstitute = "(none)")]` |
 | the destination to keep its own default | `[DwarfMapper(SkipNullSourceMembers = true)]` |
 | null to be a legal value here | make the destination member nullable (`string?`) |
-| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` in a `.globalconfig` (project-wide) |
+| to accept the null for **this one member** | `[MapProperty(nameof(Src.Name), nameof(Dst.Name), AllowNull = true)]` — drops this warning for that member only and changes no generated byte (the `!` stays); written where no null can reach, it is [`DWARF116`](#dwarf116) |
+| to accept every such null knowingly | `dotnet_diagnostic.DWARF070.severity = none` in a `.globalconfig` (project-wide) |
 
 **Fix, for a mapping PARAMETER.** The first two rows above do not apply — both are source-member
 instruments, and an extra parameter is not a member of the source type. Two remedies remain:
@@ -680,6 +682,16 @@ whether bound by name or through `[MapProperty]`. The message names the source m
 wording is the source side. It used to fire for object-initializer members only, so the same source member
 bound once through the initializer and once through the constructor got the `!` and this warning on one path
 and a bare `CS8604` from inside the generated file on the other.
+
+**Accepting a null for one member (round 32).** `AllowNull = true` is read on every `[MapProperty]` form - the
+method-level one, the pair-scoped `[MapProperty<S, T>]` (which also reaches a nested or element pair), and the
+member-placement form on a co-located `[GenerateMap]` host - and on the `[MapTo]` registry's member form, where
+it accepts [`DWARFR15`](#registry-diagnostics-mapto). It reaches a member, a constructor parameter and a
+projected member, at `.Map`, update-into and `.Project` alike. It does **not** reach a null *inside* the member
+(a collection element or a dictionary value), a null going into a converter's parameter, a mapping parameter,
+or a `[FlattenGraph]` leaf: each of those is a different edge with its own remedy in the tables above, and the
+project-wide `.globalconfig` switch is what remains for them. A statement no null can reach is reported as
+[`DWARF116`](#dwarf116), with the reason.
 
 ---
 
@@ -2603,6 +2615,27 @@ is unaffected.
 **Fix:** compose the exposed tree at the call site —
 `db.Orders.Where(...).OrderBy(...).Select(OrderMapper.ProjectExpression)` (see [`DWARF112`](#dwarf112) for the
 property) — and keep `Project()` for code that is not precompiled.
+
+## dwarf116
+**A statement of intent matches nothing** · Warning
+
+A per-site statement of intent - today `[MapProperty(AllowNull = true)]` - is written where there is nothing
+for it to accept: the member's source is not a nullable reference, its destination accepts null, or the null
+is already handled before it could land (a `NullSubstitute`, `[DwarfMapper(SkipNullSourceMembers = true)]`, a
+conversion). The message names the member and the reason.
+
+These statements exist so that no DWARF warning ever needs a project-wide `NoWarn`: each one accepts one risk,
+at the member it is written on. The price of that is that a dead one is reported, because it is not harmless -
+it is an acceptance signed in advance. The day the member's source becomes nullable, the null lands with no
+[`DWARF070`](#dwarf070) and nobody having decided it.
+
+One reason means a second warning is still standing: when the member goes through a converter whose own
+parameter refuses the null, the `DWARF070` that remains is about that parameter, which a statement about the
+member cannot reach - declare the parameter nullable if the converter can take a null. The same goes for a
+null *inside* the member (an element, a dictionary value).
+
+**Fix:** remove the statement - or, if it was written ahead of a change that has not happened yet, write it
+with that change.
 
 ---
 

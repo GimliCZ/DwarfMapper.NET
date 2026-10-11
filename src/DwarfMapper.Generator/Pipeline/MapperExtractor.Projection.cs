@@ -85,7 +85,70 @@ namespace DwarfMapper.Generator.Pipeline
                 DiagnosticDescriptors.UnmappedMember);
         }
 
-/// <summary>
+        /// <summary>
+        ///     Settles a projection method's DWARF070 reports once the method is resolved - the method's own window of
+        ///     the class-wide list, from <paramref name="start" />. Two rules, in this order. A report for a member whose
+        ///     <c>[MapProperty]</c> states <c>AllowNull = true</c> is dropped: the null is declared. The rest are kept
+        ///     ONE PER SOURCE MEMBER, the first, exactly as the report-time probe this replaced kept them, so the
+        ///     initializer and constructor bindings of one member - or a rename beside the auto-match - still say it
+        ///     once. The order is the point: deduplicating first let an accepted binding's report stand in for an
+        ///     unaccepted one's, and accepting it then silenced both.
+        /// </summary>
+        /// <remarks>
+        ///     An <c>AllowNull</c> no report reached is DWARF116 - but only when the method resolved without an error,
+        ///     which is what proves every explicit binding was made. A binding that failed already has the error that
+        ///     says so, and a stale-statement warning on top of it would be about a member that was never mapped.
+        /// </remarks>
+        private static void SettleProjectionNullReports(
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> explicitMaps,
+            List<DiagnosticInfo> diagnostics,
+            int start,
+            LocationInfo? location)
+        {
+            var allowNull = AllowNullTargets(explicitMaps);
+            var accepted = new HashSet<string>(StringComparer.Ordinal);
+            var resolvedClean = true;
+            for (var i = start; i < diagnostics.Count; i++)
+            {
+                var d = diagnostics[i];
+                if ((d.SeverityOverride ?? d.Descriptor.DefaultSeverity) == DiagnosticSeverity.Error)
+                {
+                    resolvedClean = false;
+                }
+
+                if (!ReferenceEquals(d.Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget))
+                {
+                    continue;
+                }
+
+                if (d.MemberName is { } member && allowNull.Contains(member))
+                {
+                    accepted.Add(member);
+                    diagnostics.RemoveAt(i--);
+                    continue;
+                }
+
+                // Earlier anywhere in the list, as the probe scanned it: another method's report differs by location.
+                for (var j = 0; j < i; j++)
+                    if (ReferenceEquals(diagnostics[j].Descriptor, d.Descriptor) &&
+                        diagnostics[j].MessageArg == d.MessageArg &&
+                        Equals(diagnostics[j].Location, d.Location))
+                    {
+                        diagnostics.RemoveAt(i--);
+                        break;
+                    }
+            }
+
+            if (!resolvedClean)
+            {
+                return;
+            }
+
+            foreach (var target in allowNull.Where(t => !accepted.Contains(t)).OrderBy(t => t, StringComparer.Ordinal))
+                diagnostics.Add(IntentMatchesNothing(target, "nothing in this projection writes a nullable reference straight into it", location));
+        }
+
+        /// <summary>
         ///     The read-only half of a projection method's resolution: what ResolveProjectionExpr and its nested-object and
         ///     constructor siblings used to take as seven loose parameters at every one of their eleven call sites, all of
         ///     them pure pass-through (round 31 T08). A REQUEST, in the lifetime-and-direction split ae9c7ea chose over a
@@ -245,7 +308,7 @@ namespace DwarfMapper.Generator.Pipeline
             ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> explicitMaps,
             string paramExpr,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
                 mapPropertyExtras,
@@ -406,7 +469,7 @@ namespace DwarfMapper.Generator.Pipeline
             var ctorArgTargets = new HashSet<string>(StringComparer.Ordinal);
 
             // ── Explicit maps ([MapProperty]) ────────────────────────────────────
-            foreach (var (srcName, tgtName, use) in explicitMaps)
+            foreach (var (srcName, tgtName, use, _) in explicitMaps)
             {
                 if (!explicitSeen.Add(tgtName))
                 {
@@ -983,7 +1046,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // generated file, in an expression tree the consumer can edit even less than a method body.
                     // Null-forgiven here, and DWARF070 carries the signal against the DTO — once per source
                     // member per method, whichever binding (initializer or constructor) reached it first.
-                    ReportProjectionNullRefIntoNonNullable(diagnostics, req.Location, srcExpr);
+                    ReportProjectionNullRefIntoNonNullable(diagnostics, req.Location, srcExpr, depth == 0 ? targetMemberName : null);
                     return srcExpr + "!";
                 }
 
@@ -991,26 +1054,22 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             /// <summary>
-            ///     DWARF070 for the projection endpoint, keyed on the source member the access names so the
-            ///     initializer and constructor bindings of one member report once.
+            ///     DWARF070 for the projection endpoint. Every binding reports;
+            ///     <see cref="SettleProjectionNullReports" /> keeps one per source member once the method is resolved
+            ///     and drops the ones a <c>[MapProperty(AllowNull = true)]</c> accepts. The member is named only at
+            ///     depth 0 - the member's OWN value - because an element or nested-object access reuses the member's
+            ///     name on its way down, and a statement about the member must never accept a null inside it.
             /// </summary>
             static void ReportProjectionNullRefIntoNonNullable(
                 List<DiagnosticInfo> diagnostics,
                 LocationInfo? location,
-                string srcExpr)
+                string srcExpr,
+                string? memberName)
             {
-                // The LABEL, not the bare name, on both the dedup probe and the report — they must be the same
-                // string or the once-per-member guarantee this method exists for silently stops holding.
-                var name = NullSourceLabel(srcExpr.Substring(srcExpr.LastIndexOf('.') + 1).TrimStart('@'));
-                foreach (var d in diagnostics)
-                    if (ReferenceEquals(d.Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
-                        d.MessageArg == name &&
-                        Equals(d.Location, location))
-                    {
-                        return;
-                    }
-
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, name));
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
+                    location,
+                    NullSourceLabel(srcExpr.Substring(srcExpr.LastIndexOf('.') + 1).TrimStart('@')),
+                    MemberName: memberName));
             }
 
             // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
@@ -1397,7 +1456,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps)
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)>? explicitMaps)
         {
             var hasParameterlessCtor = targetType.InstanceConstructors.Any(c =>
                 c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length == 0);

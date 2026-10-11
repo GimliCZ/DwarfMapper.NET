@@ -782,9 +782,10 @@ namespace DwarfMapper.Generator.Tests
                 "Source member 'Name' is a nullable reference but its destination is non-nullable, so a null would be " +
                 "stored where the type forbids it. The generated assignment is null-forgiven so no CS8601/CS8619 reaches " +
                 "a file you cannot edit - which means a null at run time is STORED rather than refused. Fix it at the " +
-                "declaration: make the destination nullable, or the source non-nullable if it never holds null; mapping " +
-                "the pair with the [DwarfMapper] class model instead offers [MapProperty(NullSubstitute = …)] for a " +
-                "fallback value.",
+                "declaration: make the destination nullable, or the source non-nullable if it never holds null; if the " +
+                "null is deliberate, [MapProperty(\"Name\", AllowNull = true)] on the source member accepts it for this " +
+                "member alone; mapping the pair with the [DwarfMapper] class model instead offers " +
+                "[MapProperty(NullSubstitute = …)] for a fallback value.",
                 r15.GetMessage(CultureInfo.InvariantCulture));
         }
 

@@ -56,7 +56,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation Compilation,
             LocationInfo? Location,
             MapperOptions Options,
-            IReadOnlyList<(string Source, string Target, string? Use)> ExplicitMaps,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> ExplicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> AllMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> AutoCandidates,
             EnumPolicy EnumPolicy,
