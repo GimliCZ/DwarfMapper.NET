@@ -176,6 +176,21 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Error,
             true);
 
+        // The registry twin of DWARF070, and a separate id for DWARFR10's reason: DWARF070's message offers
+        // [MapProperty(NullSubstitute = …)] and [DwarfMapper(SkipNullSourceMembers = true)], and neither exists at this
+        // front door - the registry reads no NullSubstitute and has no mapper class to set an option on. The generated
+        // assignment is null-forgiven because the alternative was CS8601/CS8619 inside __DwarfRegistry_*.g.cs, a file
+        // the consumer cannot edit, with nothing naming the cause; this warning is what they get in exchange, so it
+        // says exactly what was traded. Message composed at the site ("{0}"): the noun differs per edge - a source
+        // member, a member of a nested type, a collection element, a dictionary value - and so does the remedy.
+        public static readonly DiagnosticDescriptor NullableSourceToNonNullableDestination = new(
+            "DWARFR15",
+            "A nullable source is assigned where the destination forbids null",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
         public static readonly DiagnosticDescriptor RecursiveNesting = new(
             "DWARFR06",
             "Recursive nested mapping is not supported by the registry",

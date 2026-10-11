@@ -493,6 +493,15 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **The `[MapTo]` registry no longer leaks `CS8601`/`CS8619` into your build for a nullable source - it reports `DWARFR15` instead.**
+  `string? Name` mapped into `string Name` was emitted as `Name = source.Name,` inside `__DwarfRegistry_*.g.cs`, so a
+  nullable-enabled consumer got `CS8601` from a file they cannot edit, and the same for a nullable element or dictionary
+  value (`List<string?>` into `List<string>`: `CS8619`) - with no DwarfMapper diagnostic at all. The only way out was a
+  project-wide `<NoWarn>CS8601</NoWarn>`, which hides every real one too. The registry now does what the class model
+  does for the same shape: the assignment is null-forgiven and the risk is reported in DwarfMapper's own voice, as
+  `DWARFR15` (Warning), naming the member, element or value. A difference C# accepts (`string[]` into `string?[]`) is
+  emitted exactly as before. It hid behind a corpus hole: the warning-free oracle runs the registry only where a test
+  opts in, and its one registry case mapped nullable into nullable.
 - **The docs no longer send you to `.editorconfig` to change a DWARF diagnostic's severity - it never worked.**
   DwarfMapper reports every `DWARF` id at a location the compiler does not tie to a source file, so a per-file
   `.editorconfig` severity does not reach it: it neither silences nor escalates it. `docs/diagnostics.md` recommended exactly

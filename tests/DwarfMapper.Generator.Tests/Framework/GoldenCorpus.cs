@@ -548,6 +548,31 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                      public class Src : SrcBase { public string Name { get; set; } = ""; }
                                                      public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
                                                      """, "MapToGenerator");
+
+            // DWARFR15 (2026-10-11): every edge the registry used to emit bare - CS8601/CS8619 in its .g.cs - in one
+            // nullable-enabled source, plus the invariant widening that is forgiven but not reported. The runner
+            // compiles with nullable disabled by default, so the case states its own context.
+            yield return ("RegistryNullableIntoNonNullable", """
+                                                             #nullable enable
+                                                             using DwarfMapper;
+                                                             using System.Collections.Generic;
+                                                             namespace Demo;
+                                                             [MapTo(typeof(Dto))]
+                                                             public class Src
+                                                             {
+                                                                 public string? Name { get; set; }
+                                                                 public List<string?> Tags { get; set; } = new();
+                                                                 public Dictionary<string, string?> Lookup { get; set; } = new();
+                                                                 public List<string> Widened { get; set; } = new();
+                                                             }
+                                                             public class Dto
+                                                             {
+                                                                 public string Name { get; set; } = "";
+                                                                 public List<string> Tags { get; set; } = new();
+                                                                 public Dictionary<string, string> Lookup { get; set; } = new();
+                                                                 public List<string?> Widened { get; set; } = new();
+                                                             }
+                                                             """, "MapToGenerator");
         }
 
         private static string Mapper(string methodDeclaration)

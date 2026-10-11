@@ -332,7 +332,11 @@ namespace DwarfMapper.Generator.Registry
                     }
 
                     resolver.ClearRefusalReported();
-                    var expr = resolver.Resolve(src.Type, w.Type, "source." + Identifiers.Escape(src.Sym.Name), w.Name);
+                    var expr = resolver.Resolve(src.Type,
+                        w.Type,
+                        "source." + Identifiers.Escape(src.Sym.Name),
+                        w.Name,
+                        "Source member '" + src.Sym.Name + "'");
                     if (expr is null)
                     {
                         // Silent when the refusal already said why (see Resolver.RefusalReported): the types are
@@ -649,14 +653,16 @@ namespace DwarfMapper.Generator.Registry
 
             /// <summary>
             ///     RHS expression assigning <paramref name="srcExpr" /> (of <paramref name="srcType" />) into a member of
-            ///     <paramref name="tgtType" />, or null.
+            ///     <paramref name="tgtType" />, or null. <paramref name="nullSubject" /> is how <c>DWARFR15</c> names
+            ///     this edge if a null can land through it ("Source member 'Name'", "The source element mapped into
+            ///     'Tags'") - the caller knows which edge it is, this method does not.
             /// </summary>
-            public string? Resolve(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName)
+            public string? Resolve(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName, string nullSubject)
             {
                 var conv = _comp.ClassifyCommonConversion(srcType, tgtType);
                 if (conv.IsIdentity)
                 {
-                    return srcExpr;
+                    return DirectAssignment(srcType, tgtType, srcExpr, targetName, nullSubject);
                 }
 
                 if (conv.IsImplicit)
@@ -672,7 +678,7 @@ namespace DwarfMapper.Generator.Registry
                             $"'{srcType.ToDisplayString()}' → '{tgtType.ToDisplayString()}' for '{targetName}'"));
                     }
 
-                    return srcExpr;
+                    return DirectAssignment(srcType, tgtType, srcExpr, targetName, nullSubject);
                 }
 
                 var n = NumericConverter.TryCreate(srcType, tgtType, Synth);
@@ -714,6 +720,49 @@ namespace DwarfMapper.Generator.Registry
                 }
 
                 return null;
+            }
+
+            /// <summary>
+            ///     The direct assignment an identity or implicit conversion is, null-forgiven where the two types'
+            ///     annotations disagree in a way C# would warn about inside the generated file, and reported as
+            ///     <c>DWARFR15</c> where that disagreement lets a null land in a destination that forbids one. It used to
+            ///     be the bare <paramref name="srcExpr" /> everywhere - CS8601/CS8619 in a file the consumer cannot edit.
+            /// </summary>
+            private string DirectAssignment(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName, string nullSubject)
+            {
+                var landing = NullabilityLanding.Find(srcType, tgtType);
+                if (landing == NullLanding.None)
+                {
+                    return srcExpr;
+                }
+
+                if (landing != NullLanding.WarnsOnly)
+                {
+                    _diags.Add(new DiagnosticInfo(RegistryDiagnostics.NullableSourceToNonNullableDestination,
+                        _loc,
+                        NullLandingMessage(landing, nullSubject, targetName)));
+                }
+
+                return srcExpr + "!";
+            }
+
+            /// <summary>DWARFR15's text for one landing: the edge named as the consumer would find it, and its remedy.</summary>
+            private static string NullLandingMessage(NullLanding landing, string nullSubject, string targetName)
+            {
+                var (subject, remedy) = landing switch
+                {
+                    NullLanding.Element => ("The source element mapped into '" + targetName + "'",
+                        "make the destination's element type nullable (List<T?>, T?[]), or the source's non-nullable if it never holds null"),
+                    NullLanding.DictionaryValue => ("The source value mapped into '" + targetName + "'",
+                        "make the destination's value type nullable (Dictionary<K, V?>), or the source's non-nullable if it never holds null"),
+                    _ => (nullSubject,
+                        "make the destination nullable, or the source non-nullable if it never holds null; mapping the pair " +
+                        "with the [DwarfMapper] class model instead offers [MapProperty(NullSubstitute = …)] for a fallback value")
+                };
+                return subject + " is a nullable reference but its destination is non-nullable, so a null would be " +
+                       "stored where the type forbids it. The generated assignment is null-forgiven so no CS8601/CS8619 " +
+                       "reaches a file you cannot edit - which means a null at run time is STORED rather than refused. " +
+                       "Fix it at the declaration: " + remedy + ".";
             }
 
             private string? SynthNested(INamedTypeSymbol src, INamedTypeSymbol tgt, string targetName)
@@ -778,7 +827,13 @@ namespace DwarfMapper.Generator.Registry
                     }
 
                     ClearRefusalReported();
-                    var expr = Resolve(sm.Type, w.Type, "s." + Identifiers.Escape(sm.Symbol.Name), w.Name);
+                    // Named with its type: every registry diagnostic is located at the [MapTo] source, so a bare
+                    // "Source member 'Name'" would point at a member that type may not even have.
+                    var expr = Resolve(sm.Type,
+                        w.Type,
+                        "s." + Identifiers.Escape(sm.Symbol.Name),
+                        w.Name,
+                        "Member '" + sm.Symbol.Name + "' of nested type '" + src.Name + "'");
                     if (expr is null)
                     {
                         // Same rule one level down — and the level that made the cascade visible: a recursive
@@ -858,7 +913,7 @@ namespace DwarfMapper.Generator.Registry
                     return null;
                 }
 
-                var elemConv = Resolve(sElem, dElem, "x", targetName);
+                var elemConv = Resolve(sElem, dElem, "x", targetName, "The source element mapped into '" + targetName + "'");
                 if (elemConv is null)
                 {
                     return null;
