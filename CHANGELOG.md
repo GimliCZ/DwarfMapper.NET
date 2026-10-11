@@ -510,6 +510,11 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`DWARF066` no longer fires on a `When`-guarded member that has its own non-null initializer - the remedy its message named.**
+  The Info says a `[MapProperty(When = …)]` guard leaves a non-nullable member at its default when the predicate is false,
+  and its first remedy was "give the member a default initializer" - but nothing looked for one, so `public string Name
+  { get; set; } = "";` still reported, the advice could not be followed, and the next step was a `NoWarn`. A non-null
+  initializer now clears it; `= null!` and `= default!` are nulls in disguise and still report.
 - **A `Dictionary<K, string?>` mapped into a `Dictionary<K, string>` no longer stores the null - a null value throws, like a null collection element.**
   The value type differs only by its annotation, so the value was copied bare: `CS8601` inside the generated dictionary
   helper (a file you cannot edit) and, at run time, a null stored in a dictionary whose value type forbids it. The

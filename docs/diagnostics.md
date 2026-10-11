@@ -577,9 +577,12 @@ if you need to preserve the nested instance, or accept the replacement. (Collect
 ## dwarf066
 **[MapProperty(When=)] can leave a non-nullable member at its default** · Info
 
-A `[MapProperty(When=)]` guards a non-nullable reference target: when the predicate is false the member is not
-assigned and keeps its default (which for a non-nullable reference is `null`). **Fix:** give the member a default
-initializer, make it nullable, or confirm the unset default is intended.
+A `[MapProperty(When=)]` guards a non-nullable reference target with no non-null default: when the predicate is
+false the member is not assigned and keeps its default (which for a non-nullable reference is `null`). A member
+declared with its own non-null initializer (`= ""`, `= string.Empty`, `= new()`) is not reported - the remedy
+this entry has always named, which until round 32 did not actually clear it; `= null!` and `= default!` are nulls
+in disguise and still report. **Fix:** give the member a non-null default initializer, make it nullable, or
+confirm the unset default is intended.
 
 ## dwarf067
 **[GenerateWrapperMap] wrapper is not a single-payload generic** · Error

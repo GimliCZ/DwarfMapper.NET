@@ -4,6 +4,8 @@ using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DwarfMapper.Generator.Pipeline
 {
@@ -19,6 +21,41 @@ namespace DwarfMapper.Generator.Pipeline
     /// </remarks>
     internal static partial class MapperExtractor
     {
+        /// <summary>
+        ///     Whether destination member <paramref name="name" /> of <paramref name="type" /> (or a base) is declared
+        ///     in source with an initializer that is not itself a null - <c>= ""</c>, <c>= string.Empty</c>,
+        ///     <c>= new()</c> - so a member a When guard leaves unassigned still holds a non-null value. <c>= null!</c>
+        ///     and <c>= default!</c> are nulls in disguise and do not count; a member declared in metadata has no syntax
+        ///     to ask and does not count either, so DWARF066 errs towards reporting.
+        /// </summary>
+        private static bool HasNonNullInitializer(ITypeSymbol type, string name)
+        {
+            for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                foreach (var member in t.GetMembers(name))
+                    foreach (var reference in member.DeclaringSyntaxReferences)
+                    {
+                        var initializer = reference.GetSyntax() switch
+                        {
+                            PropertyDeclarationSyntax p => p.Initializer,
+                            VariableDeclaratorSyntax v => v.Initializer,
+                            _ => null
+                        };
+                        if (initializer is null)
+                        {
+                            continue;
+                        }
+
+                        var value = initializer.Value;
+                        while (value is PostfixUnaryExpressionSyntax bang && bang.IsKind(SyntaxKind.SuppressNullableWarningExpression))
+                            value = bang.Operand;
+
+                        return !value.IsKind(SyntaxKind.NullLiteralExpression) &&
+                               !value.IsKind(SyntaxKind.DefaultLiteralExpression) &&
+                               !value.IsKind(SyntaxKind.DefaultExpression);
+                    }
+
+            return false;
+        }
 
         // [DwarfMapper(SkipNullSourceMembers = true)]: a null source member must keep the destination's
         // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
@@ -555,8 +592,12 @@ namespace DwarfMapper.Generator.Pipeline
                                 // Item 14 (DWARF066): a When guard on a non-nullable reference target leaves it at
                                 // its default (null) when the predicate is false — a latent null in a non-null
                                 // contract. Restricted to non-nullable reference targets; Info to limit false
-                                // positives (a member with its own default initializer is fine).
-                                if (tgtType.IsReferenceType && tgtType.NullableAnnotation != NullableAnnotation.Annotated)
+                                // positives. A member with its own non-null initializer is fine - this comment said so
+                                // from the start and the message offers it as the first remedy, but until round 32
+                                // nothing looked for one (WhenGuardInitializerTests).
+                                if (tgtType.IsReferenceType &&
+                                    tgtType.NullableAnnotation != NullableAnnotation.Annotated &&
+                                    !HasNonNullInitializer(req.TargetType, tgtName))
                                 {
                                     acc.Diagnostics.Add(new DiagnosticInfo(
                                         DiagnosticDescriptors.WhenLeavesNonNullableDefault,

@@ -549,6 +549,25 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                      public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
                                                      """, "MapToGenerator");
 
+            // DWARF066 (round 32): two When-guarded members, one with its own non-null default (not reported - the
+            // remedy the message names now works) and one whose default is a null in disguise (reported). No other case
+            // in the corpus reports DWARF066 at all.
+            yield return ("WhenGuardDefaults", """
+                                               #nullable enable
+                                               using DwarfMapper;
+                                               namespace Demo;
+                                               public class A { public string Title { get; set; } = ""; public string Note { get; set; } = ""; public bool Ready { get; set; } }
+                                               public class B { public string Title { get; set; } = "(untitled)"; public string Note { get; set; } = null!; }
+                                               [DwarfMapper]
+                                               public partial class M
+                                               {
+                                                   private static bool IsReady(A a) => a.Ready;
+                                                   [MapProperty(nameof(A.Title), nameof(B.Title), When = nameof(IsReady))]
+                                                   [MapProperty(nameof(A.Note), nameof(B.Note), When = nameof(IsReady))]
+                                                   public partial B Map(A a);
+                                               }
+                                               """, "DwarfGenerator");
+
             // [MapClone] (round 32): a declared clone, accepted - no DWARF076 - beside a statement on a map between
             // two types, which accepts nothing (DWARF116), and a same-type map with no statement, whose DWARF076 names
             // the three ways to accept it. The diagnostics are in the hash, so this pins all three; no other case in
