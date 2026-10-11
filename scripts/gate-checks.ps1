@@ -98,6 +98,37 @@ function Get-LegAdjudication {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The THIRD way a leg lies (after an empty population and an unrunnable config): Stryker counts a Timeout
+# as DETECTED, so a starved machine reports a perfect score. Three local runs did exactly that - the
+# pipeline leg twice on 2026-09-27 (263 and 266 of 284 mutants Timeout, "100.00 %") and the runtime leg on
+# 2026-10-11 (151 of 159) - each while the host was reaping processes for memory. A hand-planted "timed out"
+# mutant from the first of them was killed by one failing test in a normal 1 m 21 s run: the timeouts were
+# the machine, not the mutants.
+#
+# The share is measured, not guessed. Over the 40 local reports on record, every genuine run is at or below
+# 4.5 % Timeout (5 of 110 - the 110-mutant leg's mutants that genuinely do not terminate); the three void
+# runs are 92-94 %. 25 % sits five times above the first and far below the second.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$script:MaxTimeoutShare = 0.25
+
+function Assert-NotTimeoutDominated {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][string]$ReportPath
+    )
+    $raw = Get-Content -Raw -LiteralPath $ReportPath
+    $timeout = ([regex]::Matches($raw, '"status"\s*:\s*"Timeout"')).Count
+    $scoreable = ([regex]::Matches($raw, '"status"\s*:\s*"(Killed|Survived|Timeout|NoCoverage)"')).Count
+    if ($scoreable -gt 0 -and $timeout / $scoreable -gt $script:MaxTimeoutShare) {
+        throw ("mutation ($Leg): $timeout of $scoreable scoreable mutants TIMED OUT ($([math]::Round(100.0 * $timeout / $scoreable, 1)) %, " +
+               "limit $([int](100 * $script:MaxTimeoutShare)) %). Stryker counts a timeout as detected, so this score " +
+               "measures the machine, not the tests - a starved host (memory pressure, a parallel build) times " +
+               "every mutant out. Re-run on a quiet machine; if one mutant genuinely does not terminate, it is " +
+               "one, not most.")
+    }
+}
+
 function Assert-MutationScoreWithinBand {
     param(
         [Parameter(Mandatory)][string]$Leg,
@@ -107,6 +138,9 @@ function Assert-MutationScoreWithinBand {
     if (-not (Test-Path -LiteralPath $ReportPath)) {
         throw "mutation ($Leg): no report at $ReportPath - the R2 band check has nothing to measure"
     }
+    # Before the band: a timeout-dominated score is void, and a void score must not be band-checked - its
+    # "raise the floor" demand would ask for the number the machine invented.
+    Assert-NotTimeoutDominated -Leg $Leg -ReportPath $ReportPath
     $raw = Get-Content -Raw -LiteralPath $ReportPath
     $killed = ([regex]::Matches($raw, '"status"\s*:\s*"Killed"')).Count
     $timeout = ([regex]::Matches($raw, '"status"\s*:\s*"Timeout"')).Count

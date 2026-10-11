@@ -47,6 +47,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 WriteTemp(Path.Combine(dir, "report-within.json"), FakeReport(143, 1, 46, 11));
                 WriteTemp(Path.Combine(dir, "report-above.json"), FakeReport(146, 0, 44, 11));
 
+                // Timeout-dominated scores (Assert-NotTimeoutDominated): a starved host's 90 % Timeout reads as a
+                // "perfect" detection rate and must be refused; the worst GENUINE share on record (5 of 110,
+                // non-terminating mutants) must pass; one over the 25 % limit must be refused. The legit report
+                // sits inside break 71's band (74 Killed + 5 Timeout = 79/110 = 71.8 %) so it reaches "OK".
+                WriteTemp(Path.Combine(dir, "report-void.json"), FakeReport(10, 90, 0, 0));
+                WriteTemp(Path.Combine(dir, "report-legit-timeouts.json"), FakeReport(74, 5, 31, 0));
+                WriteTemp(Path.Combine(dir, "report-edge-timeouts.json"), FakeReport(46, 26, 28, 0));
+
                 // The battery: every scenario prints exactly one "CASE <name>: <OK result|THREW message>" line.
                 // Coverage floors are one-decimal (quantum 1.0 pp): floor 78.3 makes 79.2 the top of the band
                 // and 79.3 the first raise-demanding value.
@@ -60,9 +68,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     Show 'mut-below'  { Assert-MutationScoreWithinBand -Leg 'fake' -ReportPath (Join-Path $WorkDir 'report-below.json') -Break 71 }
                     Show 'mut-within' { Assert-MutationScoreWithinBand -Leg 'fake' -ReportPath (Join-Path $WorkDir 'report-within.json') -Break 71 }
                     Show 'mut-above'  { Assert-MutationScoreWithinBand -Leg 'fake' -ReportPath (Join-Path $WorkDir 'report-above.json') -Break 71 }
+                    Show 'mut-void'   { Assert-MutationScoreWithinBand -Leg 'fake' -ReportPath (Join-Path $WorkDir 'report-void.json') -Break 71 }
+                    Show 'mut-legit-timeouts' { Assert-MutationScoreWithinBand -Leg 'fake' -ReportPath (Join-Path $WorkDir 'report-legit-timeouts.json') -Break 71 }
+                    Show 'mut-edge-timeouts'  { Assert-NotTimeoutDominated -Leg 'fake' -ReportPath (Join-Path $WorkDir 'report-edge-timeouts.json') }
                     """);
 
-                var cases = PwshBattery.Run(dir, 7, "the R2 gate-band functions");
+                var cases = PwshBattery.Run(dir, 10, "the R2 gate-band functions");
 
                 // Below the floor: both gates fail, naming the direction.
                 Assert.Contains("fell below", cases["cov-below"], StringComparison.Ordinal);
@@ -79,6 +90,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 Assert.Contains(raisePhrase, cases["cov-above"], StringComparison.Ordinal);
                 Assert.StartsWith("THREW", cases["mut-above"], StringComparison.Ordinal);
                 Assert.Contains(raisePhrase, cases["mut-above"], StringComparison.Ordinal);
+
+                // A timeout-dominated report is void BEFORE the band is consulted: its 100 % must not reach the
+                // "raise the floor" branch, which would demand the number the starved machine invented.
+                Assert.StartsWith("THREW", cases["mut-void"], StringComparison.Ordinal);
+                Assert.Contains("90 of 100 scoreable mutants TIMED OUT", cases["mut-void"], StringComparison.Ordinal);
+                Assert.DoesNotContain(raisePhrase, cases["mut-void"], StringComparison.Ordinal);
+                Assert.StartsWith("OK", cases["mut-legit-timeouts"], StringComparison.Ordinal);
+                Assert.StartsWith("THREW", cases["mut-edge-timeouts"], StringComparison.Ordinal);
+                Assert.Contains("26 of 100", cases["mut-edge-timeouts"], StringComparison.Ordinal);
             }
             finally
             {
