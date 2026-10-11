@@ -85,11 +85,43 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public void The_audit_runs_online_and_is_off_only_after_it()
         {
             // NuGetAudit needs the network: switched off before the restore, the image would carry no audit at all.
+            // `ENV NuGetAudit=false` did nothing - Directory.Build.props' own property outranks it - and a forced
+            // restore still failed NU1900 offline; the image declares itself instead, and the props make the exception.
             var dockerfile = Dockerfile();
             var restore = dockerfile.IndexOf("dotnet restore", StringComparison.Ordinal);
-            var off = dockerfile.IndexOf("ENV NuGetAudit=false", StringComparison.Ordinal);
+            var off = dockerfile.IndexOf("ENV DWARFMAPPER_OFFLINE_IMAGE=true", StringComparison.Ordinal);
 
-            Assert.True(restore >= 0 && off > restore, "ENV NuGetAudit=false must come after the restore it would otherwise disarm.");
+            Assert.True(restore >= 0 && off > restore, "ENV DWARFMAPPER_OFFLINE_IMAGE=true must come after the restore it would otherwise disarm.");
+            Assert.DoesNotMatch(@"(?m)^\s*ENV\s+NuGetAudit", dockerfile);
+        }
+
+        [Fact]
+        public void The_props_keep_the_audit_on_with_the_offline_image_as_the_one_exception()
+        {
+            var props = Read("Directory.Build.props");
+            var on = props.IndexOf("<NuGetAudit>true</NuGetAudit>", StringComparison.Ordinal);
+            var exception = props.IndexOf("<NuGetAudit Condition=\"'$(DWARFMAPPER_OFFLINE_IMAGE)' == 'true'\">false</NuGetAudit>", StringComparison.Ordinal);
+
+            // After the gate, or the gate would overwrite it; and no other assignment that could switch it off.
+            Assert.True(on >= 0 && exception > on, "Directory.Build.props must set NuGetAudit true, then make the offline-image exception.");
+            Assert.Equal(2, Regex.Matches(props, @"<NuGetAudit[\s>]").Count);
+        }
+
+        [Fact]
+        public void No_workflow_or_script_takes_the_exception_or_switches_the_audit_off()
+        {
+            // The exception exists for the offline image alone. A CI job that took it - or passed NuGetAudit=false,
+            // which outranks the props - would turn the supply-chain gate into a vacuous green.
+            var bypass = new Regex(@"DWARFMAPPER_OFFLINE_IMAGE|NuGetAudit\s*[=:]\s*['""]?false", RegexOptions.IgnoreCase);
+            var files = Directory.GetFiles(Path.Combine(RepoPaths.Root, ".github", "workflows"), "*.yml")
+                .Concat(Directory.GetFiles(Path.Combine(RepoPaths.Root, "scripts"), "*.ps1", SearchOption.AllDirectories))
+                .ToList();
+            var offenders = files.Where(f => bypass.IsMatch(File.ReadAllText(f))).Select(f => Path.GetRelativePath(RepoPaths.Root, f)).ToList();
+
+            Assert.True(files.Count >= 4, $"Only {files.Count} workflow and script files found - the scan is reading the wrong place.");
+            Assert.True(offenders.Count == 0, "A workflow or script switches the NuGet audit off:\n  " + string.Join("\n  ", offenders));
+            Assert.Matches(bypass, "dotnet restore -p:NuGetAudit=false");
+            Assert.Matches(bypass, "env:\n  DWARFMAPPER_OFFLINE_IMAGE: 'true'");
         }
 
         [Fact]

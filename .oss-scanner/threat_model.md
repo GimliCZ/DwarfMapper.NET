@@ -46,8 +46,9 @@ and `src/DwarfMapper.DocTooling`.
 
 ## How to exercise it
 
-The image holds a Release build of the whole solution and has no network. `NuGetAudit` is switched off in it, because
-the audit already ran when the image was built.
+The image holds a Release build of the whole solution and has no network. `NuGetAudit` is off for every build in it -
+`DWARFMAPPER_OFFLINE_IMAGE=true` is the one exception `Directory.Build.props` makes - because the audit already ran,
+online, when the image was built. New projects and test files restore and build offline.
 
 - The push-time suite CI runs:
   `dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf"`.

@@ -77,6 +77,9 @@ so a version with no section here ships with no notes.
   graphs at run time, far above the generator reading your own source), what is out of scope, and how a finding is
   rated. `OssScannerImageTests` holds every pin to its source of truth. Enrolment itself is a request the maintainer
   makes to the scanner's repository; this is only what it needs.
+  The NuGet audit gate (`Directory.Build.props`) gains exactly one exception: `DWARFMAPPER_OFFLINE_IMAGE=true`, which
+  the image sets only after its own online, locked, audited restore - offline, every restore that is not a no-op
+  would otherwise fail `NU1900`. No workflow or script may set it, or pass `NuGetAudit=false`; a test holds that.
 - **`[MapProperty(When = …, KeepDefault = true)]` says a guarded member's unset default is intended, so `DWARF066` never needs a `NoWarn`.**
   `DWARF066` (Info) reports a `When` guard that can leave a non-nullable member at its default, and its only answer for
   an intended default was "confirm the unset default is intended", with nothing to confirm it with. `KeepDefault = true`

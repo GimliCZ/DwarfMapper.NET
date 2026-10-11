@@ -34,9 +34,12 @@ WORKDIR /src
 RUN dotnet restore DwarfMapper.NET.sln --locked-mode
 RUN dotnet build DwarfMapper.NET.sln -c Release --no-restore
 
-# Offline from here on. An implicit restore - a bare `dotnet build` or `dotnet test`, or a new proof-of-concept
-# project - would try to fetch vulnerability data and fail NU1900 under TreatWarningsAsErrors. The audit ran above.
-ENV NuGetAudit=false
+# Offline from here on, and a restore that is not a no-op - a new project, or a project restored on its own rather
+# than through the solution - would try to fetch vulnerability data and fail NU1900 under TreatWarningsAsErrors.
+# Directory.Build.props switches the audit off for this image alone, when it declares itself; the audit ran above,
+# online. (Neither `ENV NuGetAudit=false` - the props' own property outranks it - nor a Directory.Build.rsp - which
+# `dotnet build` does not read - reached every restore; measured.)
+ENV DWARFMAPPER_OFFLINE_IMAGE=true
 
 # CI's push-time suite, so a broken image shows in its own build log, with CI's hang bound so a stuck test cannot
 # stall the image build. A failing test does not fail the image: the audit is still worth running against a red tree.
