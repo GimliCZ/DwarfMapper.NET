@@ -125,6 +125,10 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "AllowNullMember", "Name = a.Name!,"
                 },
                 {
+                    // Only the value null-handling #100's twin selects emits this text.
+                    "DictionaryNullableValueIntoNonNullable", "\"Dictionary entry was null\""
+                },
+                {
                     // The lift the payload edge was missing. Deliberately the FORGIVING spelling: the plain
                     // `is null ? null :` arm is also reachable from several already-pinned shapes, whereas
                     // `is null ? null! :` can only be emitted by the arm where both ends are non-nullable-

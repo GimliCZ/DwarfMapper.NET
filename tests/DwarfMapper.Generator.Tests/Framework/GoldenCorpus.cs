@@ -549,6 +549,18 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                      public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
                                                      """, "MapToGenerator");
 
+            // A dictionary VALUE differing only by its annotation (round 32): #100's value twin - a null value throws,
+            // as a null collection element always has, instead of being copied bare (CS8601) and stored.
+            yield return ("DictionaryNullableValueIntoNonNullable", """
+                                                                    #nullable enable
+                                                                    using DwarfMapper;
+                                                                    using System.Collections.Generic;
+                                                                    namespace Demo;
+                                                                    public class A { public Dictionary<string, string?> Labels { get; set; } = new(); }
+                                                                    public class B { public Dictionary<string, string> Labels { get; set; } = new(); }
+                                                                    [DwarfMapper] public partial class M { public partial B Map(A a); }
+                                                                    """, "DwarfGenerator");
+
             // [MapProperty(AllowNull = true)] (round 32): one statement that accepts a null - no DWARF070, the '!' kept -
             // and one with nothing to accept, which is DWARF116. The diagnostics are in the hash, so this pins both.
             yield return ("AllowNullMember", """

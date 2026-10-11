@@ -1385,6 +1385,24 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // #100's VALUE twin, which the dictionary arm never got: a nullable-annotated REFERENCE value into the
+                // same type non-nullable resolves as identity (SymbolEqualityComparer ignores annotations), so the
+                // value was copied bare - CS8601 inside the generated helper, a file the consumer cannot edit, and
+                // the null STORED in a dictionary whose value type forbids it. Throw on a null value instead, exactly
+                // as the collection arm does for an element: there is no valid non-null reference default to
+                // substitute, and DictionaryConverter.Expr already emits "Dictionary entry was null" for it.
+                if (valConv is null &&
+                    valNull == NullHandling.None &&
+                    srcVal.IsReferenceType &&
+                    srcVal.NullableAnnotation == NullableAnnotation.Annotated &&
+                    tgtVal.NullableAnnotation != NullableAnnotation.Annotated &&
+                    SymbolEqualityComparer.Default.Equals(
+                        srcVal.WithNullableAnnotation(NullableAnnotation.None),
+                        tgtVal.WithNullableAnnotation(NullableAnnotation.None)))
+                {
+                    valNull = NullHandling.ThrowIfNull;
+                }
+
                 // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
                 // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
                 // what lets a cycle routed through a dictionary value break (SetNull) or depth-cap.

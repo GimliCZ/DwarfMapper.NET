@@ -503,6 +503,13 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A `Dictionary<K, string?>` mapped into a `Dictionary<K, string>` no longer stores the null - a null value throws, like a null collection element.**
+  The value type differs only by its annotation, so the value was copied bare: `CS8601` inside the generated dictionary
+  helper (a file you cannot edit) and, at run time, a null stored in a dictionary whose value type forbids it. The
+  collection arm has thrown on exactly this for a list or array element for a long time, and the runtime table in
+  `docs/diagnostics.md` already said a null dictionary entry throws `InvalidOperationException` - the dictionary arm
+  simply never got the rule. It now does: `"Dictionary entry was null"`. A nullable destination value type is copied
+  exactly as before.
 - **The `[MapTo]` registry no longer leaks `CS8601`/`CS8619` into your build for a nullable source - it reports `DWARFR15` instead.**
   `string? Name` mapped into `string Name` was emitted as `Name = source.Name,` inside `__DwarfRegistry_*.g.cs`, so a
   nullable-enabled consumer got `CS8601` from a file they cannot edit, and the same for a nullable element or dictionary
