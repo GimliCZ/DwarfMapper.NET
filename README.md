@@ -113,7 +113,7 @@ Pairing walks the two sorted member lists ordinally. The result is a determinist
 ### 3. Prove (the completeness gate + blit proof)
 
 - **Completeness:** every destination member must be paired or carry `[MapIgnore]`. Otherwise → **build error** (
-  always — suppressing the diagnostic in `.editorconfig` doesn't ship an incomplete map: the method body simply isn't
+  always — even a `.globalconfig` that silences the diagnostic would not ship an incomplete map: the method body simply isn't
   generated, so the build still fails, just with a rawer compiler error; see *Completeness diagnostics* below). Every
   source member must be consumed or explicitly marked source-ignored. *"I forgot to map it" stops compiling.*
 - **Blit proof:** for a whole array member (`TSrc[] → TDst[]`) the generator asks: is the element type unmanaged,
@@ -437,7 +437,7 @@ public partial class CustomerMapper
   to be read by some destination — a source consumed by nothing (incl. via a constructor argument or a `[Flatten]` root)
   surfaces the **`DWARF039`** suggestion (Info), so a forgotten/mis-wired field is never silent. Suppress one with
   `[MapIgnoreSource("Member")]` (class- or method-level, the source-side mirror of `[MapIgnore]`); make it strict with
-  `dotnet_diagnostic.DWARF039.severity = error` in `.editorconfig`.
+  `dotnet_diagnostic.DWARF039.severity = error` in a `.globalconfig` (`is_global = true`).
 
 **Converting between types.** When a source and destination member have different types, DwarfMapper bridges them in one
 of two ways:
@@ -777,7 +777,7 @@ public partial class Mapper
 ### Completeness diagnostics
 
 Unmapped destination members are a `DWARF` build error — always. Completeness is enforced **by construction**, not
-merely by the diagnostic's severity: suppressing the diagnostic in `.editorconfig` doesn't ship an incomplete map — the
+merely by the diagnostic's severity: even a `.globalconfig` that silences the diagnostic would not ship an incomplete map — the
 method body isn't generated, so the build still fails (with a rawer compiler error instead of the helpful `DWARF001`).
 This is the compile-time replacement for the manual "did I wire everything up?" review.
 

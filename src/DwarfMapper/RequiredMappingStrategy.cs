@@ -18,7 +18,7 @@ namespace DwarfMapper
         ///     In addition to the target gate, every <b>source</b> member must be read by some destination — a
         ///     source member consumed by nothing surfaces the <c>DWARF039</c> suggestion (Info). Suppress a
         ///     specific member with <c>[MapIgnoreSource("Member")]</c>. Escalate to a build error with
-        ///     <c>dotnet_diagnostic.DWARF039.severity = error</c> in <c>.editorconfig</c>.
+        ///     <c>dotnet_diagnostic.DWARF039.severity = error</c> in a <c>.globalconfig</c> (<c>is_global = true</c>).
         /// </summary>
         Both = 1
     }

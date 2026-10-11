@@ -256,7 +256,7 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 | Mapperly | DwarfMapper | Note |
 |---|---|---|
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive=true)]` | `DWARF010` on ambiguity |
-| `RequiredMappingStrategy.Target/Both` | `[DwarfMapper(RequiredMapping=Target/Both)]` | `DWARF039` (Info) for unconsumed source; `.editorconfig` to escalate |
+| `RequiredMappingStrategy.Target/Both` | `[DwarfMapper(RequiredMapping=Target/Both)]` | `DWARF039` (Info) for unconsumed source; a `.globalconfig` to escalate |
 | `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **Mapperly defaults ByValue, DwarfMapper ByName** — set explicitly; by-name mismatch → `DWARF015` |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` suggestions into build errors (Mapperly-style strict) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | **DwarfMapper reconstructs full topology** (Mapperly's is partial) |

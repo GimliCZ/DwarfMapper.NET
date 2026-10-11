@@ -493,6 +493,14 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **The docs no longer send you to `.editorconfig` to change a DWARF diagnostic's severity - it never worked.**
+  DwarfMapper reports every `DWARF` id at a location the compiler does not tie to a source file, so a per-file
+  `.editorconfig` severity does not reach it: it neither silences nor escalates it. `docs/diagnostics.md` recommended exactly
+  that, including in its severity table for every id, and DWARF070's own message named the setting without
+  saying where it goes. A **`.globalconfig`** (`is_global = true`, picked up from the project directory) does work,
+  in both directions; the docs, the XML docs and the DWARF070/DWARF107 messages now say so, and the suppression
+  table lists every mechanism with what it actually does (measured in a real build; pinned by
+  `SuppressionPathwayTests` and a docs guard). Per-site statements of intent are the follow-up.
 - **Projection null guards no longer call a user `operator ==`, and a type with two of them no longer breaks the
   build.** A nested member's null guard was written `x == null`, which in an expression tree calls a record's (or any
   type's) `op_Equality` — user code inside every generated projection — and for a type declaring two `==` overloads

@@ -350,7 +350,7 @@ namespace DwarfMapper.Generator.Diagnostics
 
         // Emitted only under [DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]. Info (suggestion)
         // by default — visible, never silent, never build-breaking; escalate via
-        // dotnet_diagnostic.DWARF039.severity = error in .editorconfig.
+        // dotnet_diagnostic.DWARF039.severity = error in a .globalconfig.
         public static readonly DiagnosticDescriptor UnconsumedSourceMember = new(
             "DWARF039",
             "Source member is read by no destination member",
@@ -399,7 +399,7 @@ namespace DwarfMapper.Generator.Diagnostics
         // Warning (item 8): a nullable reference on the interior of a source path can throw
         // NullReferenceException at runtime when dereferenced — a data-integrity hazard, so it is a Warning
         // (consistent with the other runtime-throwing diagnostics), not a mere suggestion. Downgrade via
-        // dotnet_diagnostic.DWARF044.severity = suggestion (or none) in .editorconfig if intentional.
+        // dotnet_diagnostic.DWARF044.severity = suggestion (or none) in a .globalconfig if intentional.
         public static readonly DiagnosticDescriptor PathNullableHop = new(
             "DWARF044",
             "[MapProperty] source path traverses a nullable member",
@@ -428,7 +428,7 @@ namespace DwarfMapper.Generator.Diagnostics
             helpLinkUri: HelpBase + "dwarf046");
 
         // Info: an additional mapping parameter matched no destination member. Suppress via
-        // dotnet_diagnostic.DWARF047.severity = none in .editorconfig.
+        // dotnet_diagnostic.DWARF047.severity = none in a .globalconfig.
         public static readonly DiagnosticDescriptor UnusedMappingParameter = new(
             "DWARF047",
             "Additional mapping parameter is unused",
@@ -466,7 +466,7 @@ namespace DwarfMapper.Generator.Diagnostics
             helpLinkUri: HelpBase + "dwarf050");
 
         // Warning: a forward [MapProperty] could not be auto-inverted for [ReverseMap]; declare the reverse
-        // rename explicitly. Suppress via dotnet_diagnostic.DWARF051.severity = none in .editorconfig.
+        // rename explicitly. Suppress via dotnet_diagnostic.DWARF051.severity = none in a .globalconfig.
         public static readonly DiagnosticDescriptor ReverseMapNonInvertible = new(
             "DWARF051",
             "[ReverseMap] cannot auto-invert this configuration",
@@ -1070,7 +1070,7 @@ namespace DwarfMapper.Generator.Diagnostics
             // {0} is the converter's name, {1} the whole noun phrase for the destination it feeds - built by
             // MapperExtractor.NullSourceLabel, the same place DWARF070's subject is built, so the two cannot
             // drift into naming the same edge differently.
-            "'{0}' is declared to return a nullable reference, and its result is written into {1}, whose type " + "forbids null. The generated call is null-forgiven so no unsuppressible CS8600/CS8601/CS8603/CS8604 " + "reaches a file you cannot edit - which means a null returned at run time is STORED rather than " + "refused, and surfaces as a NullReferenceException somewhere else. Fix it by declaring '{0}' to return " + "a non-nullable reference if it never returns null, or by making the destination nullable if it can. " + "dotnet_diagnostic.DWARF107.severity = none accepts the stored null knowingly - note that " + "DWARF070's suppression does NOT cover this: that one is about a nullable value going IN.",
+            "'{0}' is declared to return a nullable reference, and its result is written into {1}, whose type " + "forbids null. The generated call is null-forgiven so no unsuppressible CS8600/CS8601/CS8603/CS8604 " + "reaches a file you cannot edit - which means a null returned at run time is STORED rather than " + "refused, and surfaces as a NullReferenceException somewhere else. Fix it by declaring '{0}' to return " + "a non-nullable reference if it never returns null, or by making the destination nullable if it can. " + "dotnet_diagnostic.DWARF107.severity = none in a .globalconfig accepts the stored null knowingly - note that " + "DWARF070's suppression does NOT cover this: that one is about a nullable value going IN.",
             Category,
             DiagnosticSeverity.Warning,
             true,
@@ -1086,7 +1086,8 @@ namespace DwarfMapper.Generator.Diagnostics
             // message that calls any of them a "member" names the wrong kind of thing and offers two remedies
             // ([MapProperty(NullSubstitute)], SkipNullSourceMembers) that cannot reach it. Built in one place -
             // MapperExtractor.NullSourceLabel - so the four spellings cannot drift.
-            "{0} is a nullable reference but its destination is non-nullable, so a null " + "would be stored where the type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. For a collection ELEMENT or a dictionary VALUE neither attribute reaches " + "it either — the null is in the element type, not the member: make the destination element type " + "nullable (List<T?>, T?[], Dictionary<K, V?>), or declare the converter's parameter nullable. Either " + "way, dotnet_diagnostic.DWARF070.severity = none accepts the null knowingly.",
+            "{0} is a nullable reference but its destination is non-nullable, so a null " + "would be stored where the type forbids it. For a source MEMBER, fix it with " + "[MapProperty(NullSubstitute = …)] for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] " + "to keep the destination default, or by making the destination member nullable. For a mapping " + "PARAMETER neither attribute reaches it: make the destination member nullable, or declare the " + "parameter non-nullable. For a collection ELEMENT or a dictionary VALUE neither attribute reaches " + "it either — the null is in the element type, not the member: make the destination element type " + "nullable (List<T?>, T?[], Dictionary<K, V?>), or declare the converter's parameter nullable. Either " + "way, dotnet_diagnostic.DWARF070.severity = none in a .globalconfig accepts the null knowingly, project-wide " +
+            "(an .editorconfig does not reach this diagnostic).",
             Category,
             DiagnosticSeverity.Warning,
             true,
