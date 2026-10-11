@@ -537,12 +537,17 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         132. A method-level marker with no argument and no property renders one case, at the two sites that
         ///         declare no mapping method to carry it. Structural, for the fifth time.
         ///     </para>
+        ///     <para>
+        ///         And again (round 32, <c>KeepDefault</c>): registry 50 -> 52, no-mapping-method 82 -> 84, total 132 ->
+        ///         136 - the same four cells <c>AllowNull</c> added, for the same reason: one more writable <c>bool</c> on
+        ///         both <c>[MapProperty]</c> forms. Structural, for the sixth time.
+        ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
-            ["registry-has-no-mapper-class"] = 50,
-            ["no-mapping-method"] = 82
+            ["registry-has-no-mapper-class"] = 52,
+            ["no-mapping-method"] = 84
         };
 
         /// <summary>

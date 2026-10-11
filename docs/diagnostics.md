@@ -52,7 +52,7 @@ So the suppression options are:
 
 | Scope | Mechanism | Availability |
 |---|---|---|
-| One member or method | the statement of intent the id's entry names - `[MapProperty(AllowNull = true)]` for `DWARF070` and `DWARFR15`, `[MapClone]` for `DWARF076` | the ids whose entry names one; a statement that matches nothing is [`DWARF116`](#dwarf116) |
+| One member or method | the statement of intent the id's entry names - `[MapProperty(AllowNull = true)]` for `DWARF070` and `DWARFR15`, `[MapClone]` for `DWARF076`, `[MapProperty(When = …, KeepDefault = true)]` for `DWARF066` | the ids whose entry names one; a statement that matches nothing is [`DWARF116`](#dwarf116) |
 | Whole project | `dotnet_diagnostic.DWARFxxx.severity = none` in a `.globalconfig` (`is_global = true`) | **every** id |
 | Whole project, by the compiler | `<NoWarn>` | every id too - but never the advice: a `.globalconfig` does the same, can also escalate, and leaves the per-site statements as the place a single accepted risk is written |
 | Whole project, per file | the same line under `[*.cs]` in an `.editorconfig` | **never** - DwarfMapper reports at a location the compiler does not tie to the source file, so per-file severities do not reach it |
@@ -584,7 +584,11 @@ this entry has always named, which until round 32 did not actually clear it; `= 
 in disguise and still report. An update-into (`partial void Patch(Src s, Dst d)`) is not reported either: it
 writes into an instance the caller already holds, so a false guard leaves the member at its current value, which
 is the point of a guarded update. **Fix:** give the member a non-null default initializer, make it nullable, or
-confirm the unset default is intended.
+state that the unset default is intended, for that one member:
+`[MapProperty(nameof(Src.Note), nameof(Dst.Note), When = nameof(Ready), KeepDefault = true)]` drops this report and
+changes nothing that is generated. Written where no null default can be left - no `When` beside it, a nullable or
+value-type member, a member with its own non-null default, or an update-into - it accepts nothing and is
+[`DWARF116`](#dwarf116).
 
 ## dwarf067
 **[GenerateWrapperMap] wrapper is not a single-payload generic** · Error
@@ -2638,7 +2642,9 @@ A per-site statement of intent is written where there is nothing for it to accep
 or the null is already handled before it could land (a `NullSubstitute`,
 `[DwarfMapper(SkipNullSourceMembers = true)]`, a conversion). For `[MapClone]`: the method is not a same-type create
 map - its types differ, or it is an update-into, span, stream or projection map, none of which
-[`DWARF076`](#dwarf076) judges. The message names the member or method and the reason.
+[`DWARF076`](#dwarf076) judges. For `[MapProperty(KeepDefault = true)]`: there is no `When` guard beside it, or no
+null default can be left behind - a nullable or value-type member, a member with its own non-null default, or an
+update-into, which keeps the current value. The message names the member or method and the reason.
 
 These statements exist so that no DWARF warning ever needs a project-wide `NoWarn`: each one accepts one risk,
 at the member it is written on. The price of that is that a dead one is reported, because it is not harmless -

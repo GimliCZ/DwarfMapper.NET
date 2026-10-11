@@ -113,7 +113,7 @@ namespace DwarfMapper.Generator.Pipeline
             Dictionary<string, List<(string Name, ITypeSymbol Type)>> SourceGroups,
             List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves, bool NullableHop)> FlattenInfos,
             HashSet<string> ReservedConverters,
-            Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>
+            Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>
                 ExtrasByTarget);
 
         /// <summary>

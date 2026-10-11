@@ -568,6 +568,24 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                }
                                                """, "DwarfGenerator");
 
+            // [MapProperty(When = …, KeepDefault = true)] (round 32): a guarded member whose default IS a null, accepted -
+            // no DWARF066 - beside a KeepDefault with no When guard, which accepts nothing (DWARF116).
+            yield return ("KeepDefault", """
+                                         #nullable enable
+                                         using DwarfMapper;
+                                         namespace Demo;
+                                         public class A { public string Note { get; set; } = ""; public string Code { get; set; } = ""; public bool Ready { get; set; } }
+                                         public class B { public string Note { get; set; } = null!; public string Code { get; set; } = ""; }
+                                         [DwarfMapper]
+                                         public partial class M
+                                         {
+                                             private static bool IsReady(A a) => a.Ready;
+                                             [MapProperty(nameof(A.Note), nameof(B.Note), When = nameof(IsReady), KeepDefault = true)]
+                                             [MapProperty(nameof(A.Code), nameof(B.Code), KeepDefault = true)]
+                                             public partial B Map(A a);
+                                         }
+                                         """, "DwarfGenerator");
+
             // [MapClone] (round 32): a declared clone, accepted - no DWARF076 - beside a statement on a map between
             // two types, which accepts nothing (DWARF116), and a same-type map with no statement, whose DWARF076 names
             // the three ways to accept it. The diagnostics are in the hash, so this pins all three; no other case in

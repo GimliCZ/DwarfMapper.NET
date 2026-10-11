@@ -595,16 +595,34 @@ namespace DwarfMapper.Generator.Pipeline
                                 // positives. A member with its own non-null initializer is fine - this comment said so
                                 // from the start and the message offers it as the first remedy, but until round 32
                                 // nothing looked for one (WhenGuardInitializerTests).
-                                if (tgtType.IsReferenceType &&
-                                    tgtType.NullableAnnotation != NullableAnnotation.Annotated &&
-                                    !HasNonNullInitializer(req.TargetType, tgtName))
+                                // `noNullDefault` is WHY no null can be left behind, or null when one can - which is
+                                // exactly DWARF066's condition, and so exactly what decides whether KeepDefault has
+                                // anything to accept.
+                                var noNullDefault = !tgtType.IsReferenceType
+                                    ? "its destination is a value type, whose default is not a null"
+                                    : tgtType.NullableAnnotation == NullableAnnotation.Annotated
+                                        ? "its destination accepts null"
+                                        : HasNonNullInitializer(req.TargetType, tgtName)
+                                            ? "it has its own non-null default"
+                                            : null;
+                                if (noNullDefault is null && !ex.KeepDefault)
                                 {
                                     acc.Diagnostics.Add(new DiagnosticInfo(
                                         DiagnosticDescriptors.WhenLeavesNonNullableDefault,
                                         req.Location,
                                         tgtName));
                                 }
+                                else if (noNullDefault is not null && ex.KeepDefault)
+                                {
+                                    acc.Diagnostics.Add(KeepDefaultMatchesNothing(tgtName, noNullDefault, req.Location));
+                                }
                             }
+                        }
+                        else if (ex.KeepDefault)
+                        {
+                            acc.Diagnostics.Add(KeepDefaultMatchesNothing(tgtName,
+                                "there is no When guard on it, so nothing leaves it unassigned",
+                                req.Location));
                         }
                     }
 

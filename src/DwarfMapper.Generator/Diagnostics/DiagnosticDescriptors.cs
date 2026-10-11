@@ -650,7 +650,7 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor WhenLeavesNonNullableDefault = new(
             "DWARF066",
             "[MapProperty(When=)] can leave a non-nullable member at its default",
-            "[MapProperty(When=)] guards non-nullable target member '{0}': when the predicate is false the member is not assigned and keeps its default (a non-nullable reference default is null). Give the member a non-null default initializer, make it nullable, or confirm the unset default is intended.",
+            "[MapProperty(When=)] guards non-nullable target member '{0}': when the predicate is false the member is not assigned and keeps its default (a non-nullable reference default is null). Give the member a non-null default initializer, make it nullable, or state that the unset default is intended with [MapProperty(..., When = ..., KeepDefault = true)].",
             Category,
             DiagnosticSeverity.Info,
             true,

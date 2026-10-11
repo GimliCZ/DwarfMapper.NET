@@ -10,8 +10,12 @@ DwarfMapper.MapDenseEnumKeysAttribute.Offset.get -> int
 DwarfMapper.MapDenseEnumKeysAttribute.Offset.set -> void
 DwarfMapper.MapPropertyAttribute.AllowNull.get -> bool
 DwarfMapper.MapPropertyAttribute.AllowNull.set -> void
+DwarfMapper.MapPropertyAttribute.KeepDefault.get -> bool
+DwarfMapper.MapPropertyAttribute.KeepDefault.set -> void
 DwarfMapper.MapPropertyAttribute<TSource, TTarget>.AllowNull.get -> bool
 DwarfMapper.MapPropertyAttribute<TSource, TTarget>.AllowNull.set -> void
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.KeepDefault.get -> bool
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.KeepDefault.set -> void
 DwarfMapper.MapShareAttribute
 DwarfMapper.MapShareAttribute.MapShareAttribute(string! member) -> void
 DwarfMapper.MapShareAttribute.Member.get -> string!

@@ -104,5 +104,15 @@ namespace DwarfMapper
         ///     member that no null can reach, it is itself reported (<c>DWARF116</c>).
         /// </summary>
         public bool AllowNull { get; set; }
+
+        /// <summary>
+        ///     States that the destination member keeping its default when the <see cref="When" /> predicate is false
+        ///     is intended, so <c>DWARF066</c> is not reported for it. The generated code does not change. Meaningful
+        ///     only beside <see cref="When" /> on a map that creates its destination; without <see cref="When" />, on a
+        ///     member <c>DWARF066</c> would not report (a nullable member, a value type, a member with its own non-null
+        ///     default) or on an update-into, which keeps the current value rather than a default, it accepts nothing
+        ///     and is itself reported (<c>DWARF116</c>).
+        /// </summary>
+        public bool KeepDefault { get; set; }
     }
 }

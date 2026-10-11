@@ -32,6 +32,7 @@ namespace DwarfMapper.Generator.Pipeline
     /// <param name="NullSub">The <c>NullSubstitute =</c> value; meaningful only when <paramref name="HasNullSub" />.</param>
     /// <param name="StringFormat">The <c>StringFormat =</c> format string, or null.</param>
     /// <param name="AllowNull">Whether <c>AllowNull = true</c> was written: a null reaching this destination is accepted.</param>
+    /// <param name="KeepDefault">Whether <c>KeepDefault = true</c> was written: a When guard leaving the default is accepted.</param>
     /// <param name="Loc">Where the attribute was written, for a diagnostic that refuses it.</param>
     internal sealed record MemberDirective(
         bool Ignore,
@@ -43,6 +44,7 @@ namespace DwarfMapper.Generator.Pipeline
         TypedConstant NullSub,
         string? StringFormat,
         bool AllowNull,
+        bool KeepDefault,
         LocationInfo? Loc);
 
     /// <summary>
@@ -91,6 +93,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var hasNullSub = false;
                 TypedConstant nullSub = default;
                 var allowNull = false;
+                var keepDefault = false;
                 foreach (var na in a.NamedArguments)
                     switch (na.Key)
                     {
@@ -114,6 +117,10 @@ namespace DwarfMapper.Generator.Pipeline
                         case "AllowNull" when na.Value.Value is true:
                             allowNull = true;
                             break;
+
+                        case "KeepDefault" when na.Value.Value is true:
+                            keepDefault = true;
+                            break;
                     }
 
                 var count = a.ConstructorArguments.Length;
@@ -127,6 +134,7 @@ namespace DwarfMapper.Generator.Pipeline
                     nullSub,
                     format,
                     allowNull,
+                    keepDefault,
                     LocationInfo.FromReference(reference))));
             }
 

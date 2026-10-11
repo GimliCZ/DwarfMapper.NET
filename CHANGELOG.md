@@ -70,6 +70,12 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`[MapProperty(When = …, KeepDefault = true)]` says a guarded member's unset default is intended, so `DWARF066` never needs a `NoWarn`.**
+  `DWARF066` (Info) reports a `When` guard that can leave a non-nullable member at its default, and its only answer for
+  an intended default was "confirm the unset default is intended", with nothing to confirm it with. `KeepDefault = true`
+  beside the `When` drops the report for that member and changes nothing that is generated - on the method-level, pair-scoped
+  and co-located-host forms. One with nothing to accept - no `When` beside it, a nullable or value-type member, a member
+  with its own non-null default, an update-into, a projection - is `DWARF116`.
 - **`[MapClone]` says a same-type map is a deliberate clone, so `DWARF076` never needs a project-wide `NoWarn` - and no DWARF message or doc recommends one any more.**
   `DWARF076` ("source and target are the same type") told you to add it to `<NoWarn>` if the shallow copy was intended -
   project-wide, for every mapper. `[MapClone]` on the method accepts that one method and changes nothing that is generated;

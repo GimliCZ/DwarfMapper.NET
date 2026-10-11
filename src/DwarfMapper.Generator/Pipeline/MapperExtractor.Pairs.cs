@@ -95,6 +95,7 @@ namespace DwarfMapper.Generator.Pipeline
                 TypedConstant nullSub = default;
                 string? when = null;
                 var allowNull = false;
+                var keepDefault = false;
                 foreach (var na in attr.NamedArguments)
                     if (na.Key == "Use" && na.Value.Value is string u)
                     {
@@ -113,6 +114,10 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         allowNull = true;
                     }
+                    else if (na.Key == "KeepDefault" && na.Value.Value is true)
+                    {
+                        keepDefault = true;
+                    }
 
                 result.Add(new PairProp
                 {
@@ -125,6 +130,7 @@ namespace DwarfMapper.Generator.Pipeline
                     NullSub = nullSub,
                     When = when,
                     AllowNull = allowNull,
+                    KeepDefault = keepDefault,
                     Loc = LocationInfo.FromReference(attr.ApplicationSyntaxReference)
                 });
             }
@@ -212,11 +218,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <see cref="AnyPairProp" /> instead, which shares this method's <see cref="IsPairPropMatch" /> rule.
         /// </summary>
         private static (List<(string Source, string Target, string? Use, bool AllowNull)> Explicit,
-            List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)> Extras)
+            List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)> Extras)
             MatchPairProps(List<PairProp> all, ITypeSymbol src, ITypeSymbol tgt)
         {
             var ex = new List<(string Source, string Target, string? Use, bool AllowNull)>();
-            var extras = new List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>();
+            var extras = new List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>();
             foreach (var p in all)
             {
                 if (!IsPairPropMatch(p, src, tgt))
@@ -226,9 +232,9 @@ namespace DwarfMapper.Generator.Pipeline
 
                 p.Consumed = true;
                 ex.Add((p.SrcMember, p.TgtMember, p.Use, p.AllowNull));
-                if (p.HasNullSub || p.When is not null)
+                if (p.HasNullSub || p.When is not null || p.KeepDefault)
                 {
-                    extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When, p.NullSubLiteral));
+                    extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When, p.NullSubLiteral, p.KeepDefault));
                 }
             }
 
@@ -353,6 +359,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             public bool AllowNull;
             public bool Consumed;
+            public bool KeepDefault;
             public bool HasNullSub;
             public LocationInfo? Loc;
             public TypedConstant NullSub;

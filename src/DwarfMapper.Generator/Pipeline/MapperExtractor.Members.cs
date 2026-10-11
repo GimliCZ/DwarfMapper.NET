@@ -123,7 +123,7 @@ namespace DwarfMapper.Generator.Pipeline
             // a set (IgnoredSourcesFor or ClassIgnoredSources), empty when nothing is disowned.
             HashSet<string> ignoredSourceMembers,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
-            IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
+            IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>? mapPropertyExtras = null,
             Dictionary<string, string>? stringFormats = null,
             // True when every `required` destination member is already satisfied without the object initializer
             // having to assign it, so omitting one cannot produce CS9035. Two distinct situations qualify:
@@ -177,12 +177,12 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var extrasByTarget =
-                new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>(
+                new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>(
                     StringComparer.Ordinal);
             if (mapPropertyExtras is not null)
             {
                 foreach (var e in mapPropertyExtras)
-                    extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral);
+                    extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral, e.KeepDefault);
             }
 
             var comparer = options.CaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -956,6 +956,16 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return IntentMatchesNothing(m.TargetName, reason, location);
+        }
+
+        /// <summary>DWARF116's text for a <c>KeepDefault</c> with no unset default to accept.</summary>
+        private static DiagnosticInfo KeepDefaultMatchesNothing(string target, string reason, LocationInfo? location)
+        {
+            return new DiagnosticInfo(DiagnosticDescriptors.IntentMatchesNothing,
+                location,
+                $"[MapProperty(KeepDefault = true)] on '{target}' accepts an unset default that is not there: {reason}. " +
+                "Remove KeepDefault - left in place, it would silently accept a null default introduced here later, one " +
+                "nobody has reviewed.");
         }
 
         /// <summary>DWARF116's text for an <c>AllowNull</c>, shared by every endpoint that judges one.</summary>

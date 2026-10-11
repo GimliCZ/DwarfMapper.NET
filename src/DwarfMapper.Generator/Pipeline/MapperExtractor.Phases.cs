@@ -2572,6 +2572,22 @@ namespace DwarfMapper.Generator.Pipeline
                 var updDense = ReadDenseEnumKeys(method);
                 var updAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
 
+                // KeepDefault accepts DWARF066, and an update-into never reports DWARF066 (taken back below: a false
+                // guard keeps the CURRENT value here, not a default). So the statement accepts nothing on this endpoint
+                // - reported once, here, and cleared before resolution, where it would otherwise read as accepting the
+                // very report this site then drops.
+                for (var i = 0; i < updMapPropExtras.Count; i++)
+                    if (updMapPropExtras[i].KeepDefault)
+                    {
+                        acc.Diagnostics.Add(KeepDefaultMatchesNothing(updMapPropExtras[i].Target,
+                            "this is an update-into, where a false When guard keeps the member's current value rather " +
+                            "than a default",
+                            methodLocation));
+                        var cleared = updMapPropExtras[i];
+                        cleared.KeepDefault = false;
+                        updMapPropExtras[i] = cleared;
+                    }
+
                 var updDiagnosticsStart = acc.Diagnostics.Count;
                 var updMembers = ResolveMembers(
                     updSrc,

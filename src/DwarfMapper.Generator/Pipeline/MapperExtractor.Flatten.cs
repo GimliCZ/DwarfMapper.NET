@@ -327,10 +327,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     (Phase 8), keyed by destination target. Separate from <see cref="ReadExplicitMaps" /> so the shared
         ///     (Source, Target, Use) tuple — also consumed by constructor-argument resolution — is unchanged.
         /// </summary>
-        private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>
+        private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>
             ReadMapPropertyExtras(ISymbol method)
         {
-            var result = new List<(string, bool, TypedConstant, string?, string?)>();
+            var result = new List<(string, bool, TypedConstant, string?, string?, bool)>();
             foreach (var attr in method.GetAttributes())
             {
                 if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn) || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
@@ -341,6 +341,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var hasNullSub = false;
                 TypedConstant nullSub = default;
                 string? when = null;
+                var keepDefault = false;
                 foreach (var na in attr.NamedArguments)
                     if (na.Key == "NullSubstitute")
                     {
@@ -351,10 +352,16 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         when = w;
                     }
+                    else if (na.Key == "KeepDefault" && na.Value.Value is true)
+                    {
+                        keepDefault = true;
+                    }
 
-                if (hasNullSub || when is not null)
+                // KeepDefault alone is kept too: a statement with no When beside it accepts nothing, and the member
+                // pass can only report that if the entry reaches it.
+                if (hasNullSub || when is not null || keepDefault)
                 {
-                    result.Add((target, hasNullSub, nullSub, when, null));
+                    result.Add((target, hasNullSub, nullSub, when, null, keepDefault));
                 }
             }
 

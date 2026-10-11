@@ -137,6 +137,10 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "WhenGuardDefaults", "IsReady("
                 },
                 {
+                    // The guard is still emitted - KeepDefault drops the report, never the guard.
+                    "KeepDefault", "IsReady("
+                },
+                {
                     // The lift the payload edge was missing. Deliberately the FORGIVING spelling: the plain
                     // `is null ? null :` arm is also reachable from several already-pinned shapes, whereas
                     // `is null ? null! :` can only be emitted by the arm where both ends are non-nullable-

@@ -93,9 +93,9 @@ namespace DwarfMapper.Generator.Pipeline
                     // unless every non-ignore one names something — arity one does not imply a name, because
                     // [MapProperty(null)] is a legal application and a half-typed one leaves an error constant.
                     config.Explicit.Add((d.Name!, member.Name, d.Use, d.AllowNull));
-                    if (d.HasNullSub || d.When is not null)
+                    if (d.HasNullSub || d.When is not null || d.KeepDefault)
                     {
-                        config.Extras.Add((member.Name, d.HasNullSub, d.NullSub, d.When, null));
+                        config.Extras.Add((member.Name, d.HasNullSub, d.NullSub, d.When, null, d.KeepDefault));
                     }
 
                     if (d.StringFormat is not null)
@@ -223,8 +223,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             public readonly List<(string Source, string Target, string? Use, bool AllowNull)> Explicit = new();
 
-            public readonly List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When,
-                string? NullSubLiteral)> Extras = new();
+            public readonly List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)> Extras = new();
 
             public readonly List<string> Ignores = new();
             public readonly Dictionary<string, string> StringFormats = new(StringComparer.Ordinal);

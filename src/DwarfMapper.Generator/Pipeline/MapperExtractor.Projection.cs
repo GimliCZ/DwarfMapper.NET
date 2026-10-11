@@ -310,7 +310,7 @@ namespace DwarfMapper.Generator.Pipeline
             List<DiagnosticInfo> diagnostics,
             IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> explicitMaps,
             string paramExpr,
-            IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
+            IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>?
                 mapPropertyExtras,
             // I19: the projection endpoint reads NullCollections like every other endpoint. It used to read it
             // nowhere at all, so a null source collection came back EMPTY through .Map (the documented AsEmpty
@@ -379,10 +379,19 @@ namespace DwarfMapper.Generator.Pipeline
             // Per-member [MapProperty] modifiers, keyed by target — checked against the translatable set below.
             var extrasByTarget =
                 new Dictionary<string, (bool HasNullSub, string? When)>(StringComparer.Ordinal);
+            // KeepDefault with no When beside it accepts nothing at any endpoint; beside When the member is refused
+            // as untranslatable anyway (DWARF028), so only the lone statement is judged here.
+            var keepDefaultAlone = new HashSet<string>(StringComparer.Ordinal);
             if (mapPropertyExtras is not null)
             {
                 foreach (var e in mapPropertyExtras)
+                {
                     extrasByTarget[e.Target] = (e.HasNullSub, e.When);
+                    if (e.KeepDefault && e.When is null)
+                    {
+                        keepDefaultAlone.Add(e.Target);
+                    }
+                }
             }
 
             // NameConvention.Flexible (1) must reach the projection path too, or the SAME mapper resolves members
@@ -525,6 +534,13 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     EmitDwarf028(diagnostics, location, tgtName, modifierReason);
                     continue;
+                }
+
+                if (keepDefaultAlone.Contains(tgtName))
+                {
+                    diagnostics.Add(KeepDefaultMatchesNothing(tgtName,
+                        "there is no When guard on it, so nothing leaves it unassigned",
+                        location));
                 }
 
                 // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
@@ -1979,10 +1995,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///     projection, or <see langword="null" /> when the target has no modifier to refuse.
         /// </summary>
         /// <remarks>
-        ///     <c>ReadMapPropertyExtras</c> records only a target that carries <c>NullSubstitute</c> or <c>When</c>, so an
-        ///     entry with neither never reaches the projection through a mapper. Answering it here states that case once,
-        ///     where a test can ask it, instead of leaving an exit no input takes at the call site. NullSubstitute is
-        ///     named first when both are present, as the inline checks this replaced did.
+        ///     <c>ReadMapPropertyExtras</c> records a target that carries <c>NullSubstitute</c>, <c>When</c> or (since round
+        ///     32) <c>KeepDefault</c>, so an entry with neither of the first two DOES reach the projection now - one
+        ///     carrying <c>KeepDefault</c> alone, which changes nothing a provider translates and is judged by the caller
+        ///     instead. Answering it here states that case once. NullSubstitute is named first when both are present,
+        ///     as the inline checks this replaced did.
         /// </remarks>
         internal static string? UntranslatableModifierReason(IReadOnlyDictionary<string, (bool HasNullSub, string? When)> extrasByTarget, string target)
         {
