@@ -516,6 +516,11 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A `[MapProperty]` argument the `[MapTo]` registry does not apply is reported (`DWARFR16`) instead of discarded in silence.**
+  The registry's member form reads only the destination name and `AllowNull`; `Use`, `When`, `NullSubstitute`,
+  `StringFormat` and `KeepDefault` were accepted and ignored, so a converter you wrote was not run - and `Use = "Nope"`
+  named a method that does not exist with nobody told. Each is now a Warning naming the arguments; map the pair through
+  the `[DwarfMapper]` class model to have them honoured.
 - **`DWARF066` no longer fires on an update-into.** A `When` guard in `partial void Patch(Src s, Dst d)` leaves the
   member at its CURRENT value when the predicate is false - the point of a guarded update - not at a default, so the
   Info's premise did not hold there; it fired anyway, beside the create map over the same pair.

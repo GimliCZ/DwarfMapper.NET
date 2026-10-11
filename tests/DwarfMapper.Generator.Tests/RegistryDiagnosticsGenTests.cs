@@ -789,6 +789,44 @@ namespace DwarfMapper.Generator.Tests
                 r15.GetMessage(CultureInfo.InvariantCulture));
         }
 
+        // ── DWARFR16 — a [MapProperty] named argument the registry does not read ─────────────────────────────
+        // The registry's member form reads the destination name (and, since round 32, AllowNull) and nothing else, so
+        // Use, When, NullSubstitute, StringFormat and KeepDefault were accepted and DISCARDED - `Use = "Nope"` named a
+        // converter that does not exist and nothing said so, and a real converter was silently not applied. The
+        // DWARFR11/DWARFR12 family's rule: a written directive the emitted code does not follow is never silent.
+        [Theory]
+        [InlineData("Use = \"Nope\"", "Use")]
+        [InlineData("When = \"Never\"", "When")]
+        [InlineData("NullSubstitute = \"x\"", "NullSubstitute")]
+        [InlineData("StringFormat = \"D2\"", "StringFormat")]
+        [InlineData("KeepDefault = true", "KeepDefault")]
+        public void A_MapProperty_named_argument_the_registry_does_not_read_reports_DWARFR16(string argument, string named)
+        {
+            var s = "using DwarfMapper;\nnamespace Demo;\n" +
+                    "[MapTo(typeof(Dto))] public class Src { [MapProperty(\"Name\", " + argument + ")] public string Name { get; set; } = \"\"; }\n" +
+                    "public class Dto { public string Name { get; set; } = \"\"; }\n";
+
+            var r16 = Assert.Single(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR16");
+            Assert.Equal(DiagnosticSeverity.Warning, r16.Severity);
+            Assert.Equal(
+                $"[MapProperty(\"Name\", …)] on 'Name' sets {named}, which the [MapTo] registry does not read: the member is " +
+                "mapped as if it were not written. Map the pair with the [DwarfMapper] class model, where [MapProperty] " +
+                "honours it, or remove it.",
+                r16.GetMessage(CultureInfo.InvariantCulture));
+        }
+
+        [Fact]
+        public void The_named_arguments_the_registry_does_read_report_nothing()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             [MapTo(typeof(Dto))] public class Src { [MapProperty("Name", AllowNull = true)] public string? Name { get; set; } }
+                             public class Dto { public string Name { get; set; } = ""; }
+                             """;
+            Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s, NullableContextOptions.Enable), d => d.Id == "DWARFR16");
+        }
+
         // The MESSAGE, not just the id — and this one is the reason the gate two facts below exists. DWARFR11
         // shipped with a literal `{ ... }` in its MessageFormat, which is an unescaped format-specifier brace:
         // string.Format throws FormatException, Roslyn catches it and hands back the UNFORMATTED string, and the

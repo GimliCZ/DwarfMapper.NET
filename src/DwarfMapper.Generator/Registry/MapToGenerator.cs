@@ -197,6 +197,21 @@ namespace DwarfMapper.Generator.Registry
                             "[MapIgnore(\"Member\")] names a destination member to exclude."));
                     }
 
+                // The [MapProperty] half of B15's rule (DWARFR16): the member form's named arguments other than AllowNull
+                // are class-model features this front door does not read, and discarding them in silence meant a
+                // converter, a guard or a substitute the caller wrote simply did not happen.
+                foreach (var d in directives)
+                    if (!d.Ignore && UnreadNamedArguments(d) is { } unread)
+                    {
+                        var one = unread.IndexOf(" and ", StringComparison.Ordinal) < 0;
+                        diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArgumentNotRead,
+                            d.Loc ?? location,
+                            $"[MapProperty(\"{d.Name ?? "…"}\", …)] on '{srcSym.Name}' sets {unread}, which the [MapTo] " +
+                            $"registry does not read: the member is mapped as if {(one ? "it were" : "they were")} not " +
+                            "written. Map the pair with the [DwarfMapper] class model, where [MapProperty] honours " +
+                            $"{(one ? "it" : "them")}, or remove {(one ? "it" : "them")}."));
+                    }
+
                 members.Add((srcSym, srcType, directives));
             }
 
@@ -509,6 +524,47 @@ namespace DwarfMapper.Generator.Registry
         private static string Fq(ITypeSymbol t)
         {
             return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        }
+
+        /// <summary>
+        ///     The named arguments of a member-form <c>[MapProperty]</c> this front door does not read, in the order the
+        ///     attribute declares them ("Use", "Use and When", "Use, When and StringFormat"), or null when there are
+        ///     none. <c>AllowNull</c> is read (it accepts DWARFR15) and is never listed.
+        /// </summary>
+        private static string? UnreadNamedArguments(MemberDirective directive)
+        {
+            var names = new List<string>(5);
+            if (directive.Use is not null)
+            {
+                names.Add("Use");
+            }
+
+            if (directive.HasNullSub)
+            {
+                names.Add("NullSubstitute");
+            }
+
+            if (directive.When is not null)
+            {
+                names.Add("When");
+            }
+
+            if (directive.StringFormat is not null)
+            {
+                names.Add("StringFormat");
+            }
+
+            if (directive.KeepDefault)
+            {
+                names.Add("KeepDefault");
+            }
+
+            return names.Count switch
+            {
+                0 => null,
+                1 => names[0],
+                _ => string.Join(", ", names.Take(names.Count - 1)) + " and " + names[names.Count - 1]
+            };
         }
 
         /// <summary>

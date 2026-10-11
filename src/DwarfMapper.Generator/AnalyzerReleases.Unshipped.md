@@ -142,3 +142,4 @@ DWARFR12 | DwarfMapper.Registry | Warning | [MapIgnore] argument is not read by 
 DWARFR13 | DwarfMapper.Registry | Error | A [MapTo] source type cannot be generic
 DWARFR14 | DwarfMapper.Registry | Error | A [MapTo] target type cannot be an open generic
 DWARFR15 | DwarfMapper.Registry | Warning | A nullable source is assigned where the destination forbids null
+DWARFR16 | DwarfMapper.Registry | Warning | [MapProperty] argument is not read by the [MapTo] registry

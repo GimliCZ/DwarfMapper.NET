@@ -152,6 +152,20 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Warning,
             true);
 
+        // DWARFR12's [MapProperty] twin. The registry's member form reads the destination name and AllowNull (which
+        // accepts DWARFR15) and nothing else, so Use, When, NullSubstitute, StringFormat and KeepDefault were accepted
+        // and discarded: a converter silently not applied, a guard silently not guarded, `Use = "Nope"` naming nothing
+        // with nobody told. A Warning for DWARFR11's reason - the mapping the caller gets is complete and ships; what is
+        // wrong is that the emitted code does not follow what the caller wrote. Message composed at report time ("{0}")
+        // so it names the arguments written.
+        public static readonly DiagnosticDescriptor MapPropertyArgumentNotRead = new(
+            "DWARFR16",
+            "[MapProperty] argument is not read by the [MapTo] registry",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
         // The registry writes its extension methods ON the source type: `ToDto(this Src<T> source)` declares no T, so a
         // generic source failed as CS0246 in a generated file with nothing naming the cause. The class model refuses
         // the same shape as DWARF054. IsGenericType is also true for a type nested in a generic type, which fails the
