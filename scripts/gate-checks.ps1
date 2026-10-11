@@ -1172,3 +1172,57 @@ function Assert-PackageSizeWithinCeiling {
         throw ($failures -join [Environment]::NewLine)
     }
 }
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The Stryker dashboard upload payload. The dashboard refuses a large body with HTTP 413, and from the
+# round-31 merge on the generator and pipeline legs both did: their reports had reached ~10.5-10.9 MB.
+# Measured on four local reports, ~90 % of that is `testFiles` - every test in the solution, with full
+# display names (the theory rows embed their C# source arguments) - while the mutants reference only a
+# few hundred to ~1,500 of the ~8,300 tests. The dashboard renders a test only where a mutant names it
+# (killedBy / coveredBy), so dropping the unreferenced ones loses nothing it shows: 10.5 MB -> 4.7 MB on
+# the largest. `files` (source and every mutant, whatever its status) is passed through untouched.
+# Refuses an empty population, for the same reason "Assert the run was not vacuous" does.
+function Write-DashboardReport {
+    param(
+        [Parameter(Mandatory)] [string] $Report,
+        [Parameter(Mandatory)] [string] $Out
+    )
+
+    $json = Get-Content -Raw -LiteralPath $Report | ConvertFrom-Json -AsHashtable -Depth 100
+    if (-not $json.ContainsKey('files') -or $json['files'].Count -eq 0) {
+        throw "dashboard report: '$Report' has no files - refusing to publish a score over an empty population."
+    }
+
+    $referenced = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $mutants = 0
+    foreach ($file in $json['files'].Values) {
+        foreach ($m in @($file['mutants'])) {
+            $mutants++
+            foreach ($id in @($m['killedBy']) + @($m['coveredBy'])) {
+                if ($id) { [void]$referenced.Add([string]$id) }
+            }
+        }
+    }
+
+    $total = 0; $kept = 0
+    if ($json.ContainsKey('testFiles')) {
+        $slim = [ordered]@{}
+        foreach ($key in $json['testFiles'].Keys) {
+            $testFile = $json['testFiles'][$key]
+            $all = @($testFile['tests'])
+            $total += $all.Count
+            $keep = @($all | Where-Object { $referenced.Contains([string]$_['id']) })
+            if ($keep.Count -gt 0) {
+                $testFile['tests'] = $keep
+                $slim[$key] = $testFile
+                $kept += $keep.Count
+            }
+        }
+        $json['testFiles'] = $slim
+    }
+
+    $text = ConvertTo-Json -InputObject $json -Depth 100 -Compress
+    [System.IO.File]::WriteAllText($Out, $text, [System.Text.UTF8Encoding]::new($false))
+    '{0} -> {1} bytes; kept {2} of {3} tests (the ones a mutant references); {4} mutants passed through' -f `
+        (Get-Item -LiteralPath $Report).Length, (Get-Item -LiteralPath $Out).Length, $kept, $total, $mutants
+}
