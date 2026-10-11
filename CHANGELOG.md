@@ -516,6 +516,11 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`DWARF070` no longer fires for a converter's argument when `[MapNullSkip]` / `SkipNullSourceMembers` guards the member.**
+  `if (src.Tts is not null) dst.Tts = ToChatTts(src.Tts);` never hands the converter a null, but the converter-argument
+  report was made where the conversion is chosen, before the skip guard was decided - so it fired anyway, and had no
+  per-site answer: `AllowNull` is (correctly) reported stale on a guarded member. Found migrating a real consumer off
+  its project-wide `NoWarn`s.
 - **A `[MapProperty]` argument the `[MapTo]` registry does not apply is reported (`DWARFR16`) instead of discarded in silence.**
   The registry's member form reads only the destination name and `AllowNull`; `Use`, `When`, `NullSubstitute`,
   `StringFormat` and `KeepDefault` were accepted and ignored, so a converter you wrote was not run - and `Use = "Nope"`

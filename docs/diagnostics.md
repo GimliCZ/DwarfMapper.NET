@@ -589,7 +589,8 @@ state that the unset default is intended, for that one member:
 `[MapProperty(nameof(Src.Note), nameof(Dst.Note), When = nameof(Ready), KeepDefault = true)]` drops this report and
 changes nothing that is generated. Written where no null default can be left - no `When` beside it, a nullable or
 value-type member, a member with its own non-null default, or an update-into - it accepts nothing and is
-[`DWARF116`](#dwarf116).
+[`DWARF116`](#dwarf116). It is an attribute argument (method-level, pair-scoped, or on a co-located host's member);
+a `MapWhen` in a `MapConfig` convention class cannot carry it, and the `.globalconfig` switch is what remains there.
 
 ## dwarf067
 **[GenerateWrapperMap] wrapper is not a single-payload generic** · Error

@@ -80,6 +80,31 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(without.Generated, with.Generated);
         }
 
+        [Fact]
+        public void A_co_located_host_member_KeepDefault_is_read_off_the_destination_member()
+        {
+            // The member-placement form on a [GenerateMap<S,T>] host reaches the extras through MemberDirective - the
+            // third reader, and the one a pair-scoped test does not exercise.
+            const string template = """
+                                    using DwarfMapper;
+                                    namespace Demo;
+                                    public class A { public string Note { get; set; } = ""; public bool Ready { get; set; } }
+                                    [GenerateMap<A, B>]
+                                    public sealed partial class B
+                                    {
+                                        ATTR public string Note { get; set; } = null!;
+                                        private static bool IsReady(A a) => a.Ready;
+                                    }
+                                    """;
+
+            var without = Run(template.Replace("ATTR", "[MapProperty(\"Note\", When = nameof(IsReady))]", StringComparison.Ordinal));
+            var with = Run(template.Replace("ATTR", "[MapProperty(\"Note\", When = nameof(IsReady), KeepDefault = true)]", StringComparison.Ordinal));
+
+            Assert.Single(without.Diagnostics, d => d.Id == "DWARF066");
+            Assert.DoesNotContain(with.Diagnostics, d => d.Id is "DWARF066" or "DWARF116");
+            Assert.Equal(without.Generated, with.Generated);
+        }
+
         [Theory]
         [InlineData("[MapProperty(\"Note\", \"Note\", KeepDefault = true)]", Types, "there is no When guard on it, so nothing leaves it unassigned")]
         [InlineData("[MapProperty(\"Note\", \"Note\", When = nameof(IsReady), KeepDefault = true)]",

@@ -568,6 +568,24 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                }
                                                """, "DwarfGenerator");
 
+            // A [MapNullSkip]-guarded member through a declared converter (round 32): the guard keeps the null away from
+            // the converter's non-nullable parameter, so no DWARF070 - a false positive found migrating FusedChat.
+            yield return ("SkipGuardedConverterArg", """
+                                                     #nullable enable
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public class Child { public int V { get; set; } }
+                                                     public class ChildDto { public int V { get; set; } }
+                                                     public class A { public Child? Child { get; set; } }
+                                                     public class B { public ChildDto Child { get; set; } = new(); }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         [MapNullSkip] public partial B Map(A a);
+                                                         public partial ChildDto ToChildDto(Child c);
+                                                     }
+                                                     """, "DwarfGenerator");
+
             // [MapProperty(When = …, KeepDefault = true)] (round 32): a guarded member whose default IS a null, accepted -
             // no DWARF066 - beside a KeepDefault with no When guard, which accepts nothing (DWARF116).
             yield return ("KeepDefault", """

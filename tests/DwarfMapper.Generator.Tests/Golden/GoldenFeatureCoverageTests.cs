@@ -141,6 +141,10 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "KeepDefault", "IsReady("
                 },
                 {
+                    // The skip guard around the converter call is what makes the dropped report true.
+                    "SkipGuardedConverterArg", "is not null"
+                },
+                {
                     // The lift the payload edge was missing. Deliberately the FORGIVING spelling: the plain
                     // `is null ? null :` arm is also reachable from several already-pinned shapes, whereas
                     // `is null ? null! :` can only be emitted by the arm where both ends are non-nullable-

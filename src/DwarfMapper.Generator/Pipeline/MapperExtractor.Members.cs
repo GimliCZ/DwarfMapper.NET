@@ -412,6 +412,15 @@ namespace DwarfMapper.Generator.Pipeline
             // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
             ApplySkipNullSourceMembers(req, lookups, acc);
 
+            // A converter-argument DWARF070 (ForgiveNestedNullableArg) is reported where the conversion is chosen -
+            // before the pass above decides whether SkipNullSourceMembers / [MapNullSkip] guards the member. Inside
+            // `if (src.X is not null) dst.X = Conv(src.X);` no null reaches the converter, so that report is a false
+            // positive with no per-site answer: AllowNull is, correctly, stale on a guarded member (found migrating
+            // FusedChat - SkipGuardedConverterArgTests). Taken back here, matched by the label it was made with and
+            // only within this call's own window, so a constructor argument's report for the same source member,
+            // made before this call, is never touched.
+            RetractGuardedConverterArgReports(result, diagnostics, diagnosticsStart, location);
+
             // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a
             // converter, SkipNullSourceMembers), so the diagnostic only fires when the null genuinely survives to
@@ -900,6 +909,35 @@ namespace DwarfMapper.Generator.Pipeline
 
             ctorArgs = args.ToArray();
             return allOk;
+        }
+
+        /// <summary>
+        ///     Removes, for each member the skip pass guards, the one converter-argument DWARF070 its resolution made -
+        ///     the entry with the member's source label and no <see cref="DiagnosticInfo.MemberName" /> (the
+        ///     converter-argument report is the only DWARF070 that carries none) at this call's location, from
+        ///     <paramref name="start" /> on. One per member, so a source member feeding two destinations through two
+        ///     converters loses exactly the reports its guarded members made.
+        /// </summary>
+        private static void RetractGuardedConverterArgReports(List<MemberMap> result, List<DiagnosticInfo> diagnostics, int start, LocationInfo? location)
+        {
+            foreach (var m in result)
+            {
+                if (!m.SkipIfSourceNull || !m.ConverterParamIsNonNullableRef)
+                {
+                    continue;
+                }
+
+                var label = NullSourceLabel(m.SourceName);
+                for (var i = start; i < diagnostics.Count; i++)
+                    if (ReferenceEquals(diagnostics[i].Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
+                        diagnostics[i].MemberName is null &&
+                        diagnostics[i].MessageArg == label &&
+                        Equals(diagnostics[i].Location, location))
+                    {
+                        diagnostics.RemoveAt(i);
+                        break;
+                    }
+            }
         }
 
         /// <summary>

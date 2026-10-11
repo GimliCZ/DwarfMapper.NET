@@ -1,4 +1,4 @@
-# DwarfMapper golden output manifest — 1020 cases.
+# DwarfMapper golden output manifest — 1021 cases.
 # One line per pinned case: <case-id> <sha256 of generated source + full diagnostics>.
 # Regenerate deliberately with DWARF_GOLDEN_UPDATE=1; never edit by hand.
 cmb:Cmb_FlagsEnum|DictStringKey|Identity 5c7416d48daa6302abd2fd4c9502f656bdf1499616d39a6fd2fc2fdfe932e3ca
@@ -975,6 +975,7 @@ feat:RegistryInheritedSource 0fe877a3c63b87acfd6ad29a263290e7821c717b0ef1ed45803
 feat:RegistryNested 9564235e61edf6f7d6424e66939522aaf9fe97991b9ec1fbcba2244dd7bc4d45
 feat:RegistryNullableIntoNonNullable b28f623480443e7e0488c6be7891a5ce118b31a27f0ed35faad96c3d174b77b7
 feat:ReverseMap a204ade02f70af91ba38957b979b372a50b34a0b11b9f2ef284f2814ca9351f9
+feat:SkipGuardedConverterArg 894e14804b5cab8f5b2a98366c291cf8c5699704c287e6aa2804b60d2b0b8c42
 feat:SkipNullSourceMembers 02c6025981eea4e9fa4820c3f66db2b42165a922b9f8a2031adc9942882bfd60
 feat:SpanMap e226f8268b790f6ece5cda34534ce9f7330c2b5cde9f68ed7c0ff76cc50fa1c1
 feat:SpanMapBlit 7dbc6a532e8e8ccc629ec69683001b449708177324434f9ff335ae6a451a13cd
