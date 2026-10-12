@@ -22,7 +22,7 @@ permissions:
   contents: read
 jobs:
   zizmor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # not ubuntu-latest: see the note at the top of ci.yml
     permissions:
       contents: read
       security-events: write   # upload the SARIF to code scanning
@@ -33,7 +33,7 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       # Pinned by version, like every tool whose output feeds a gate here. `|| true` is the reporting mode: zizmor
@@ -52,7 +52,7 @@ jobs:
               raise SystemExit("zizmor.sarif has no runs: the tool did not analyse anything, so no finding count means anything")
           print("zizmor findings:", sum(len(r.get("results") or []) for r in runs))
           PYEOF
-      - uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: zizmor.sarif
           category: zizmor

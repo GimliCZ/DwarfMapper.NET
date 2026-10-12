@@ -59,6 +59,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // this row asserts DECLARATION only and says nothing about the leg's verdict — which is the
             // honest claim for it either way, since a continue-on-error leg cannot fail the workflow.
             yield return ["roslyn-forward-compat", "the generator would stop being built and tested against " + "an unpinned newer SDK (declaration only — the leg is " + "continue-on-error and cannot fail the workflow)"];
+            // continue-on-error: true for the weeks GitHub moves `ubuntu-latest` to 26.04, and meant to be deleted
+            // when the pins follow it (CiRunnerImagePinScanTests). Until then it is the only job that tries 26.04.
+            yield return ["ubuntu-26-canary", "the image ubuntu-latest is moving to would stop being tried before " + "the Linux jobs' pins move onto it (declaration only — the leg is " + "continue-on-error and cannot fail the workflow)"];
 
             // ── Nightly tier: cron on the default branch plus manual dispatch, never on push ──────────────
             // "Declared" is an even weaker claim for these than for the per-push jobs above — but deleting

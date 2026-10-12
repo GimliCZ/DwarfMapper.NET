@@ -1,5 +1,10 @@
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the trailing `# vN` is the
 # human-readable version. When bumping a version, update BOTH the SHA and the comment.
+#
+# Linux jobs name `ubuntu-24.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` to
+# Ubuntu 26.04 over several weeks (2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside that window
+# two jobs of one run can land on different images. `ubuntu-26-canary` below tries 26.04 meanwhile. The pins move
+# once it has been green, in one commit with CiRunnerImagePinScanTests, which holds this rule.
 name: CI
 on:
   push:
@@ -31,17 +36,17 @@ permissions:
   contents: read
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
 
@@ -119,17 +124,21 @@ jobs:
         # !cancelled() rather than always(): a cancelled run has no meaningful results, but a FAILED one has
         # the most meaningful results there are. Paired with continue-on-error on the test step above, a red
         # suite still publishes which tests were red.
+        # codecov-action with report_type: test_results rather than codecov/test-results-action: that action's
+        # own README deprecates it and gives exactly this replacement, and it never shipped a Node 24 release
+        # (v1.2.1, its last, runs on Node 20).
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./TestResults/junit/*.junit.xml
+          report_type: test_results
 
       - name: Upload coverage reports to Codecov
-        # SHA-pinned like all 45 of its neighbours; README's "all GitHub Actions pinned to commit SHAs" is a
-        # claim this file has to keep true, and an unpinned tag is a mutable pointer someone else controls.
+        # SHA-pinned like every other action in this file; README's "all GitHub Actions pinned to commit SHAs" is
+        # a claim this file has to keep true, and an unpinned tag is a mutable pointer someone else controls.
         # The comment carries the human-readable version so the pin can be audited without a lookup.
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           # The token is a REFERENCE, resolved by GitHub at run time from repository secrets. Nothing secret
           # is stored here; add it under Settings > Secrets and variables > Actions as CODECOV_TOKEN.
@@ -160,17 +169,17 @@ jobs:
       # needs: Issues/round27/PLAN-hosted-reports.md.
 
   surface-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
@@ -196,7 +205,7 @@ jobs:
   # load-induced timeouts being credited as detections, and that is fixed per-config by
   # `additional-timeout`, not by running fewer tests. See Issues/ledgers/E3-E1-report.md.
   mutation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -261,10 +270,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       # A mis-ordered config silently disables the leg (H4): Stryker 4.16 refuses to run when
@@ -430,7 +439,7 @@ jobs:
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
       # only thing that distinguishes a real regression from a re-classification.
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: mutation-report-${{ matrix.leg }}
           path: StrykerOutput/**/reports/mutation-report.*
@@ -449,7 +458,7 @@ jobs:
   # now, and the deep tier wants the whole population. The floors inside are MEASURED fast-tier values;
   # deep coverage is a superset, so the gate can only be tighter than its measurement, never looser.
   deep-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -476,10 +485,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       # Pinned for the same reason as Stryker and CycloneDX: both tools' output feeds a gate (the floors
@@ -495,14 +504,14 @@ jobs:
       - run: pwsh scripts/housekeeping.ps1 -Nightly
       # Kept on failure too, same idiom as the mutation reports: a floor failure names its numbers.
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: deep-coverage-report
           path: TestResults/coverage-report/
       # The smoke's full JSON report — the allocation gate's evidence. Same keep-on-failure reason: a
       # pin failure names its numbers, and the report carries the competitor context around them.
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: bench-smoke-results
           path: BenchmarkDotNet.Artifacts/results/
@@ -516,7 +525,7 @@ jobs:
   # The vacuity guard is the second step: a filter that matches nothing makes `dotnet test` exit 0, and a Perf
   # lane that ran no test must read as broken, not as green.
   perf-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -530,10 +539,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
@@ -554,7 +563,7 @@ jobs:
       matrix:
         include:
           - rid: linux-x64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           - rid: win-x64
             runs-on: windows-latest
     runs-on: ${{ matrix.runs-on }}
@@ -564,10 +573,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       # Fails the build on any IL2xxx (trim) or IL3xxx (AOT) warning.
@@ -617,23 +626,23 @@ jobs:
   # commit, or a shrunken assertion count — because a gate that only fails when the run fails still passes
   # when the run never happened, and "skipped" is indistinguishable from "passed" in a green check.
   conformance-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       - run: chmod +x scripts/conformance-gate.sh
       - run: ./scripts/conformance-gate.sh linux-x64
       - name: Publish the dated conformance artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: conformance-results
           path: conformance/results/
@@ -650,7 +659,7 @@ jobs:
   # cannot fail is decoration, and leaving it like this permanently would be exactly the kind of thing the
   # rest of this pipeline exists to prevent.
   roslyn-forward-compat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
@@ -658,10 +667,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.x'   # deliberately NOT the pin: this leg is about a newer host
       - name: Drop the SDK pin for this job only
@@ -727,7 +736,7 @@ jobs:
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   codeql:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write
     steps:
@@ -736,20 +745,20 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
-      - uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: csharp
       - run: dotnet build DwarfMapper.NET.sln -c Release
-      - uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
 
   sbom:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       attestations: write
@@ -760,10 +769,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       - run: dotnet tool install --global CycloneDX --version 6.2.0
@@ -772,7 +781,7 @@ jobs:
       - uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: ./sbom
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: sbom
           path: ./sbom
@@ -809,7 +818,7 @@ jobs:
   # flag now hides nothing. Running validation somewhere nightly — rather than only at a version tag in
   # release.yml — remains open; see I15's DONE row for why it was not folded into this job.
   reproducible-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -836,10 +845,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       # ONE step for both rounds on purpose: if the two rounds' command lines could drift apart, the
@@ -869,7 +878,7 @@ jobs:
       # Kept on failure only, same idiom as the mutation reports and the coverage report: a red here is a
       # claim about specific bytes, and the reader needs the bytes.
       - if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: repro-pack-packages
           path: |
@@ -897,7 +906,7 @@ jobs:
   # verdicts. (It was ALSO broken when this job was written; I15 fixed that in round 23, so the flag no
   # longer masks anything.)
   package-size:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -922,10 +931,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
@@ -943,7 +952,7 @@ jobs:
       # Kept on failure only: a ceiling red is a claim about a specific package's bytes, and diagnosing it
       # means opening that package and finding what started shipping.
       - if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: package-size-packages
           path: ${{ runner.temp }}/pack
@@ -1005,10 +1014,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       # The ISSUE-038 drift assertion, per-runner. build-test proves the pin holds on ubuntu and says
@@ -1062,7 +1071,7 @@ jobs:
   # NIGHTLY, not per-push: the preview channel moves under us continuously, so a per-push leg would turn
   # its own churn into log noise on every PR while never being able to fail anything.
   preview-sdk-canary:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
     # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
@@ -1087,10 +1096,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '11.0.x'
           dotnet-quality: preview   # the point of the leg: the newest preview of the next major
@@ -1147,7 +1156,52 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
-  # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
+  # ── Ubuntu 26.04 canary: does this pipeline survive the `ubuntu-latest` move? ───────────────────────────
+  # Every other Linux job is pinned to ubuntu-24.04 (the note at the top of this file). This one runs the
+  # push-time suite and the linux-x64 NativeAOT gate on the image `ubuntu-latest` is becoming, on every event,
+  # so the move is measured here before it reaches a gate. What that image changes that this repository
+  # touches (runner-images Ubuntu2604-Readme against Ubuntu2404-Readme, read 2026-10-12): clang 16-18 -> 20-22
+  # (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29, Python 3.12 -> 3.14. PowerShell and
+  # the preinstalled .NET SDKs are the same, and the SDK used is the pinned 10.0.101 either way.
+  #
+  # NON-BLOCKING ON PURPOSE, like roslyn-forward-compat: the image's own breakage must not red a PR that
+  # changed nothing. Once it has been green for a few nights, move every pin to ubuntu-26.04 in one commit with
+  # CiRunnerImagePinScanTests, and delete this job.
+  ubuntu-26-canary:
+    runs-on: ubuntu-26.04
+    continue-on-error: true
+    # ESTIMATE from PR #7's last run on ubuntu-24.04 (2026-10-12): build-test 4.5 min, the linux AOT leg 1 min.
+    # 30 leaves room for a slower new image and a cold cache.
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      # build-test's steps, then the linux leg of aot-trim-gate's, so that a red here is the image.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -warnaserror -o aot-out
+      - name: Assert the publish really was NativeAOT, then execute it (aot-trim-gate's two checks)
+        run: |
+          set -euo pipefail
+          if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
+            echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT publish." >&2
+            ls -la aot-out >&2
+            exit 1
+          fi
+          ./aot-out/DwarfMapper.AotSample
+
+  # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2)────────────────────────────
   # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
   # build, and the reason is not squeamishness — it is invariant R4. Wall-clock on a shared runner is a
   # nondeterministic oracle, and this repository's own measurements say so twice over:
@@ -1201,7 +1255,7 @@ jobs:
   # this leg's input is untrustworthy; making the alert conditional on a successful producer keeps a red
   # here meaning "the artifact contract broke".
   bench-wall-time-alert:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: deep-test
     # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
     # reader: this is a nightly leg, exactly like the job it consumes.
@@ -1226,10 +1280,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: bench-smoke-results
           path: bench-results
@@ -1266,7 +1320,7 @@ jobs:
       # Restores the newest previous history file and saves a fresh entry in the post step. The rotating
       # key is load-bearing: actions/cache never overwrites an existing key, so the documented
       # fixed-key recipe would pin the baseline to the first night forever.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: bench-history
           key: bench-wall-time-${{ github.run_id }}
@@ -1298,7 +1352,7 @@ jobs:
       # The history file is the baseline every future night compares against, and the cache can evict it.
       # Keeping a copy per run makes a lost baseline diagnosable instead of merely puzzling.
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: bench-wall-time-history
           path: bench-history/benchmark-data.json

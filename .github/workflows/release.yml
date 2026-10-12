@@ -12,7 +12,8 @@
 # See docs/RELEASING.md.
 #
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the
-# trailing `# vN` is the human-readable version. Bump BOTH when updating.
+# trailing `# vN` is the human-readable version. Bump BOTH when updating. Jobs name
+# `ubuntu-24.04` rather than `ubuntu-latest` for the reason the note atop ci.yml gives.
 name: release
 on:
   push:
@@ -21,7 +22,7 @@ permissions:
   contents: read
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write      # create the GitHub Release
       id-token: write       # OIDC for keyless Sigstore signing (ties to this repo's identity)
@@ -32,10 +33,10 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
 
@@ -103,7 +104,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # Handed to the publish job: the SAME signed packages the Release carries, not a rebuild.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: nuget-packages
           path: |
@@ -135,7 +136,7 @@ jobs:
   publish:
     needs: release
     if: vars.NUGET_TRUSTED_PUBLISHING == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: release
     permissions:
       contents: read
@@ -147,11 +148,11 @@ jobs:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: nuget-packages
           path: artifacts
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.101'
       - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
