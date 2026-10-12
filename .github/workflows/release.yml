@@ -12,7 +12,8 @@
 # See docs/RELEASING.md.
 #
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the
-# trailing `# vN` is the human-readable version. Bump BOTH when updating.
+# trailing `# vN` is the human-readable version. Bump BOTH when updating. Jobs name
+# `ubuntu-24.04` rather than `ubuntu-latest` for the reason the note atop ci.yml gives.
 name: release
 on:
   push:
@@ -21,7 +22,7 @@ permissions:
   contents: read
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write      # create the GitHub Release
       id-token: write       # OIDC for keyless Sigstore signing (ties to this repo's identity)
@@ -135,7 +136,7 @@ jobs:
   publish:
     needs: release
     if: vars.NUGET_TRUSTED_PUBLISHING == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: release
     permissions:
       contents: read

@@ -1,5 +1,10 @@
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the trailing `# vN` is the
 # human-readable version. When bumping a version, update BOTH the SHA and the comment.
+#
+# Linux jobs name `ubuntu-24.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` to
+# Ubuntu 26.04 over several weeks (2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside that window
+# two jobs of one run can land on different images. `ubuntu-26-canary` below tries 26.04 meanwhile. The pins move
+# once it has been green, in one commit with CiRunnerImagePinScanTests, which holds this rule.
 name: CI
 on:
   push:
@@ -31,7 +36,7 @@ permissions:
   contents: read
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -160,7 +165,7 @@ jobs:
       # needs: Issues/round27/PLAN-hosted-reports.md.
 
   surface-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -196,7 +201,7 @@ jobs:
   # load-induced timeouts being credited as detections, and that is fixed per-config by
   # `additional-timeout`, not by running fewer tests. See Issues/ledgers/E3-E1-report.md.
   mutation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -449,7 +454,7 @@ jobs:
   # now, and the deep tier wants the whole population. The floors inside are MEASURED fast-tier values;
   # deep coverage is a superset, so the gate can only be tighter than its measurement, never looser.
   deep-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -516,7 +521,7 @@ jobs:
   # The vacuity guard is the second step: a filter that matches nothing makes `dotnet test` exit 0, and a Perf
   # lane that ran no test must read as broken, not as green.
   perf-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -554,7 +559,7 @@ jobs:
       matrix:
         include:
           - rid: linux-x64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           - rid: win-x64
             runs-on: windows-latest
     runs-on: ${{ matrix.runs-on }}
@@ -617,7 +622,7 @@ jobs:
   # commit, or a shrunken assertion count — because a gate that only fails when the run fails still passes
   # when the run never happened, and "skipped" is indistinguishable from "passed" in a green check.
   conformance-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -650,7 +655,7 @@ jobs:
   # cannot fail is decoration, and leaving it like this permanently would be exactly the kind of thing the
   # rest of this pipeline exists to prevent.
   roslyn-forward-compat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
@@ -727,7 +732,7 @@ jobs:
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   codeql:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write
     steps:
@@ -749,7 +754,7 @@ jobs:
       - uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
 
   sbom:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       attestations: write
@@ -809,7 +814,7 @@ jobs:
   # flag now hides nothing. Running validation somewhere nightly — rather than only at a version tag in
   # release.yml — remains open; see I15's DONE row for why it was not folded into this job.
   reproducible-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -897,7 +902,7 @@ jobs:
   # verdicts. (It was ALSO broken when this job was written; I15 fixed that in round 23, so the flag no
   # longer masks anything.)
   package-size:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -1062,7 +1067,7 @@ jobs:
   # NIGHTLY, not per-push: the preview channel moves under us continuously, so a per-push leg would turn
   # its own churn into log noise on every PR while never being able to fail anything.
   preview-sdk-canary:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
     # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
@@ -1147,7 +1152,52 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
-  # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
+  # ── Ubuntu 26.04 canary: does this pipeline survive the `ubuntu-latest` move? ───────────────────────────
+  # Every other Linux job is pinned to ubuntu-24.04 (the note at the top of this file). This one runs the
+  # push-time suite and the linux-x64 NativeAOT gate on the image `ubuntu-latest` is becoming, on every event,
+  # so the move is measured here before it reaches a gate. What that image changes that this repository
+  # touches (runner-images Ubuntu2604-Readme against Ubuntu2404-Readme, read 2026-10-12): clang 16-18 -> 20-22
+  # (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29, Python 3.12 -> 3.14. PowerShell and
+  # the preinstalled .NET SDKs are the same, and the SDK used is the pinned 10.0.101 either way.
+  #
+  # NON-BLOCKING ON PURPOSE, like roslyn-forward-compat: the image's own breakage must not red a PR that
+  # changed nothing. Once it has been green for a few nights, move every pin to ubuntu-26.04 in one commit with
+  # CiRunnerImagePinScanTests, and delete this job.
+  ubuntu-26-canary:
+    runs-on: ubuntu-26.04
+    continue-on-error: true
+    # ESTIMATE from PR #7's last run on ubuntu-24.04 (2026-10-12): build-test 4.5 min, the linux AOT leg 1 min.
+    # 30 leaves room for a slower new image and a cold cache.
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # build-test's steps, then the linux leg of aot-trim-gate's, so that a red here is the image.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -warnaserror -o aot-out
+      - name: Assert the publish really was NativeAOT, then execute it (aot-trim-gate's two checks)
+        run: |
+          set -euo pipefail
+          if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
+            echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT publish." >&2
+            ls -la aot-out >&2
+            exit 1
+          fi
+          ./aot-out/DwarfMapper.AotSample
+
+  # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2)────────────────────────────
   # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
   # build, and the reason is not squeamishness — it is invariant R4. Wall-clock on a shared runner is a
   # nondeterministic oracle, and this repository's own measurements say so twice over:
@@ -1201,7 +1251,7 @@ jobs:
   # this leg's input is untrustworthy; making the alert conditional on a successful producer keeps a red
   # here meaning "the artifact contract broke".
   bench-wall-time-alert:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: deep-test
     # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
     # reader: this is a nightly leg, exactly like the job it consumes.

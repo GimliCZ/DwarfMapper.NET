@@ -22,7 +22,7 @@ permissions:
   contents: read
 jobs:
   zizmor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # not ubuntu-latest: see the note at the top of ci.yml
     permissions:
       contents: read
       security-events: write   # upload the SARIF to code scanning

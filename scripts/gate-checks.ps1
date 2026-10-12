@@ -665,7 +665,7 @@ function Invoke-DecontaminatedMutationLeg {
 #   DwarfMapper.dll              40,960 /  17,333 ->  42,496 /  18,082
 #   README.md                    73,456 /  24,921 ->  74,062 /  25,089
 #   DwarfMapper.CodeFixes.dll    24,576 unchanged
-# The gate itself runs on ubuntu-latest (ci.yml package-size job), so the same tree was also packed in a
+# The gate itself runs on ubuntu-24.04 (ci.yml package-size job), so the same tree was also packed in a
 # mcr.microsoft.com/dotnet/sdk:10.0.101 container with CI=true and a locked restore, the job's exact recipe:
 #   DwarfMapper.1.0.2-rc.1.nupkg          286,985 B  -> 280 KB   (Windows 287,189: the 204-byte delta is
 #   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,715 B  ->  47 KB    CRLF vs LF in DwarfMapper.xml and the
@@ -944,7 +944,7 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # ── RE-MEASURED 2026-09-09, AND FOR THE FIRST TIME IN THE CONTAINER CI ACTUALLY USES ────────────────
 #
-# The package-size job runs on ubuntu-latest with SDK 10.0.101 (.github/workflows/ci.yml, `package-size`),
+# The package-size job runs on ubuntu-24.04 with SDK 10.0.101 (.github/workflows/ci.yml, `package-size`),
 # nightly-cron only. Every ceiling before this one was measured on Windows and the ubuntu figure was
 # ARGUED - the round-29 ledger says so in as many words: "Ubuntu package size is INFERRED, not measured
 # (no container available)". It is measured now, in mcr.microsoft.com/dotnet/sdk:10.0.101, against a copy
