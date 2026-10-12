@@ -33,12 +33,28 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   3. Re-measure; an emission change, so the whole solution builds (samples included), `GeneratedCodeIsWarningFreeTests`
      passes, and the snapshots move only where the shape moved.
 
+  **Done — `4c9d9a7`.** Baseline 1.48x slower than LINQ at 1,024; after, 1.94x / 2.77x / 2.15x faster than the
+  previous emission (array → List, List → List, List → array) and ahead of LINQ in every shape
+  (`benchmarks/results/2026-10-12-round33-t02-widen-list.md`). Two defects in the paths it sits beside were found on
+  the way and fixed in their own commits — see the next section.
+
 - **T03 Pre-size the Preserve identity map from a collection root.** Round 31 P8 measured a **model** (a
   `Dictionary` with `ReferenceEqualityComparer`, 1,000 nodes): 14.2 → 6.0 µs (2.3x), 102 → 31 KB (−70 %). The emitted
   shape has never been measured. `DwarfRefContext`'s constructor is in `PublicAPI.Shipped.txt`, so sizing the map
   needs an API addition — **the owner signs off on the surface first.**
   1. Benchmark the real Preserve map of a collection root on master.
   2. Build only if that clears the threshold; then the generated entry sizes the map from the root's count.
+
+## Found and fixed during the round
+
+- **`5fc0a13` — CS8604 in generated code for a nullable source on a fast path.** The block-copy and array-widen helpers
+  took a non-nullable source parameter while null-guarding inside; a nullable-annotated member (`int[]?`) therefore
+  warned in the consumer's `.g.cs`, unsuppressible there and a build break under `TreatWarningsAsErrors`. Found
+  because T02's new helper copied the same signature.
+- **Preserve's shared-source identity on the fast paths.** Under `ReferenceHandling = Preserve` one source collection
+  reached twice must be one target (EmitArray's B3 guarantee); the struct and enum block copies, the list block copy
+  and the array widen are static helpers that cannot register, and were reached under Preserve anyway. They are now
+  not taken there, and `DWARF100` is not reported there. Found because T02's list shapes had to be gated off Preserve.
 
 ## Waiting on data or on the owner
 
@@ -63,3 +79,7 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
    reads the file as "Other" today, which the scanner's triage flags.
 3. A public security contact for SECURITY.md and the scanner's `primary_contact`.
 4. T01's shape: pin plus canary, rather than letting `ubuntu-latest` float through the move.
+5. `[Reinterpret]` under Preserve. It forces the block copy as an explicit instruction, before the gates the Preserve
+   fix added, so it still takes the static copy - and a source reached twice becomes two targets. Options: keep
+   honouring it (today), honour it and report the identity it gives up (`180510e`'s shape for `[MapConstructor]`), or
+   refuse it under Preserve.

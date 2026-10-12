@@ -1014,7 +1014,18 @@ namespace DwarfMapper.Generator.Pipeline
                 var elemPairIsCustomized = NestedRegistryMarksPairCustomized(req.NestedRegistry, srcElem, tgtElem);
                 var elemPairKeepsTheLoop = elemHasUserConversion || elemPairIsCustomized;
 
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                // Every fast path below is a STATIC helper - a block copy or a vector widen with no context parameter -
+                // and under Preserve that is a semantic change, not a speed-up: the general helper registers its target
+                // before filling it, so one source collection reached twice is one target collection (EmitArray's B3
+                // guarantee), and a static helper has nowhere to register. So none is taken under Preserve, and neither
+                // is DWARF100, whose advice ("one rename away from a block copy") would point at a path the mode never
+                // takes. Round 33: the four blit/widen gates had reached Preserve since they were written. [Reinterpret]
+                // is not decided here - it forces its block copy before this method runs, as an explicit instruction -
+                // and what it should do under Preserve is an open owner decision (Issues/round33/ROUND33-TASKS.md).
+                var staticHelperMayStandIn = !req.IsPreserve;
+
+                if (staticHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpret(srcElem,
@@ -1029,7 +1040,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // because the question is not layout — the layouts are trivially identical — but whether the
                 // SCALAR path is a reinterpret. Under ByName it is not: its switch throws on a value matching
                 // no member, and an enum may legally hold any value of its underlying type.
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                if (staticHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy))
@@ -1074,7 +1086,8 @@ namespace DwarfMapper.Generator.Pipeline
                         : tgtIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
                         : (CollectionConverter.BlitStorage?)null;
 
-                    if (elementBlits &&
+                    if (staticHelperMayStandIn &&
+                        elementBlits &&
                         srcStorage is { } ss &&
                         tgtStorage is { } ts &&
                         !(ss == CollectionConverter.BlitStorage.Array && ts == CollectionConverter.BlitStorage.Array))
@@ -1093,11 +1106,9 @@ namespace DwarfMapper.Generator.Pipeline
                     // SIMD widen below never reached. A widen pair is never also a blit (the sizes differ), so the
                     // order against the check above does not matter. Not gated on elemPairKeepsTheLoop, for the reason
                     // the array widen is not: the resolver assigns an implicit pair directly, ahead of any user method,
-                    // so the element loop would widen implicitly too (pinned by SimdWidenGeneratorTests).
-                    // Gated off under Preserve: the general helper registers the collection before filling it, so two
-                    // members sharing one source share one target (the B3 guarantee), and a static helper has no
-                    // context to register in. These shapes took that general helper before this path existed.
-                    if (!req.IsPreserve &&
+                    // so the element loop would widen implicitly too (pinned by SimdWidenGeneratorTests). Off under
+                    // Preserve with every other static helper (staticHelperMayStandIn, above).
+                    if (staticHelperMayStandIn &&
                         CollectionConverter.IsWidenPair(srcElem, tgtElem) &&
                         srcStorage is { } ws &&
                         tgtStorage is { } wt &&
@@ -1127,8 +1138,10 @@ namespace DwarfMapper.Generator.Pipeline
                 // BlittableProofNearMissTests.A_name_mismatch_reconciled_by_MapProperty_still_reports_the_near_miss
                 // has pinned since the diagnostic was introduced. A pair directive that is NOT a rename cannot
                 // produce a spurious hint either: TryExplainNearMiss answers false for a pair that already lines
-                // up by name, which is the only shape a [MapIgnore]/[MapValue]/hook refusal leaves behind.
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                // up by name, which is the only shape a [MapIgnore]/[MapValue]/hook refusal leaves behind. Not under
+                // Preserve either, where no rename would reach a block copy (staticHelperMayStandIn, above).
+                if (staticHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     !elemHasUserConversion &&
                     BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
@@ -1143,7 +1156,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // SIMD widening fast-path: array→array of a lossless primitive widen pair (e.g. int[]→long[],
                 // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
                 // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                if (staticHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     CollectionConverter.IsWidenPair(srcElem,
                         tgtElem))

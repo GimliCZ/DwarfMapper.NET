@@ -533,6 +533,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Under `ReferenceHandling = Preserve`, one source collection reached twice is one target collection on every
+  path again.** Preserve registers a collection before filling it, so two members sharing one source array or list
+  share one target - but a blittable struct array, a `ByValue` enum array, a list block copy or an `int[]` → `long[]`
+  widen took a static fast path with nowhere to register, and each member got its own copy. Those fast paths are now
+  not taken under Preserve (the general helper is: correct, and slower), and `DWARF100` is no longer reported there,
+  since no rename would reach a block copy. Outside Preserve nothing changes. `[Reinterpret]` is unchanged.
 - **A nullable source collection on a block-copy or SIMD-widen fast path no longer warns `CS8604` in generated code.**
   `int[]? Values` mapped to `long[]` (the `Vector.Widen` path), or `SrcV[]?` / `List<SrcV>?` to a layout-identical
   `DstV[]` / `List<DstV>` (the block copy), called a helper whose parameter was declared non-nullable while it
