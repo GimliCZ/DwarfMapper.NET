@@ -999,7 +999,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + elem + "[] " + name + "(" + srcFq + " src)"))
+            // FqNullableParam, as every other collection helper: the call site passes the member as declared, and a
+            // nullable-annotated one against a non-nullable parameter was CS8604 in the consumer's .g.cs.
+            using (w.Block("private static " + elem + "[] " + name + "(" + FqNullableParam(srcArrayType) + " src)"))
             {
                 w.Line("if (src is null) return global::System.Array.Empty<" + elem + ">();");
                 w.Line("var __r = new " + elem + "[src.Length];");
@@ -1099,7 +1101,10 @@ namespace DwarfMapper.Generator.Pipeline
             };
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + ret + " " + name + "(" + srcFq + " src)"))
+            // The nullable-aware parameter for a reference storage (SynthesizeBlit's reason); an ImmutableArray is a
+            // struct, and `?` would make it a Nullable<T> without IsDefaultOrEmpty.
+            var param = source == BlitStorage.ImmutableArray ? srcFq : FqNullableParam(srcCollType);
+            using (w.Block("private static " + ret + " " + name + "(" + param + " src)"))
             {
                 // An ImmutableArray<T> is a struct: it is never null, but it CAN be `default`, which wraps a
                 // null array and would fault on AsSpan().
@@ -1185,7 +1190,8 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + dst + "[] " + name + "(" + srcFq + " src)"))
+            // FqNullableParam: see SynthesizeBlit.
+            using (w.Block("private static " + dst + "[] " + name + "(" + FqNullableParam(srcArrayType) + " src)"))
             {
                 w.Line("if (src is null) return global::System.Array.Empty<" + dst + ">();");
                 w.Line("var __r = new " + dst + "[src.Length];");

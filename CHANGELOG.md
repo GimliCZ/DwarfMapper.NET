@@ -526,6 +526,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A nullable source collection on a block-copy or SIMD-widen fast path no longer warns `CS8604` in generated code.**
+  `int[]? Values` mapped to `long[]` (the `Vector.Widen` path), or `SrcV[]?` / `List<SrcV>?` to a layout-identical
+  `DstV[]` / `List<DstV>` (the block copy), called a helper whose parameter was declared non-nullable while it
+  null-guards inside - so the warning landed in your `.g.cs`, where nothing can suppress it, and under
+  `TreatWarningsAsErrors` broke the build. The helpers now take the nullable parameter every other collection helper
+  takes; the mapped values are unchanged.
 - **`DWARF070` no longer fires for a converter's argument when `[MapNullSkip]` / `SkipNullSourceMembers` guards the member.**
   `if (src.Tts is not null) dst.Tts = ToChatTts(src.Tts);` never hands the converter a null, but the converter-argument
   report was made where the conversion is chosen, before the skip guard was decided - so it fired anyway, and had no

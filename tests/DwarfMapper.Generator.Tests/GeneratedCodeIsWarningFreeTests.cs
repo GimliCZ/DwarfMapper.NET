@@ -547,6 +547,44 @@ namespace DwarfMapper.Generator.Tests
                                     }
                                     """
             ];
+
+            // The block-copy and SIMD-widen fast paths — round 33. Their synthesized helpers took the source collection
+            // as a NON-nullable parameter, where every other collection helper takes FqNullableParam's nullable one and
+            // null-guards inside; the call site passes the member as it is, so a NULLABLE-annotated source member
+            // (`int[]?`) produced CS8604 in the consumer's .g.cs. Every fast path and every reference storage it reads,
+            // through a nullable member, plus a non-nullable member of a fast-path pair (one helper serves both) and an
+            // ImmutableArray source, which is a struct and must keep its non-nullable parameter.
+            yield return
+            [
+                "FastPathCollectionHelpers", """
+                                             using System.Collections.Generic;
+                                             using System.Collections.Immutable;
+                                             using DwarfMapper;
+                                             namespace Demo;
+                                             public struct SrcV { public int X; public int Y; }
+                                             public struct DstV { public int X; public int Y; }
+                                             public sealed class Src
+                                             {
+                                                 public SrcV[]? BlitArray { get; set; }
+                                                 public SrcV[]? BlitArrayToList { get; set; }
+                                                 public List<SrcV>? BlitListToArray { get; set; }
+                                                 public ImmutableArray<SrcV> BlitImmutableToList { get; set; }
+                                                 public int[]? WidenArray { get; set; }
+                                                 public int[] WidenArrayNonNull { get; set; } = [];
+                                             }
+                                             public sealed class Dst
+                                             {
+                                                 public DstV[]? BlitArray { get; set; }
+                                                 public List<DstV>? BlitArrayToList { get; set; }
+                                                 public DstV[]? BlitListToArray { get; set; }
+                                                 public List<DstV> BlitImmutableToList { get; set; } = new();
+                                                 public long[]? WidenArray { get; set; }
+                                                 public long[] WidenArrayNonNull { get; set; } = [];
+                                             }
+                                             [DwarfMapper]
+                                             public partial class M { public partial Dst Map(Src s); }
+                                             """
+            ];
         }
 
         [Theory]
