@@ -522,12 +522,32 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         method. Structural, for the third time; the only new information is that a property axis
         ///         adds a case per value where [MapShare] had none.
         ///     </para>
+        ///     <para>
+        ///         Re-measured 2026-10-11 (round 32): registry 48 -> 50, no-mapping-method 78 -> 80, total 126 ->
+        ///         130. <c>AllowNull</c> is a writable <c>bool</c> on both <c>[MapProperty]</c> forms. The
+        ///         pair-scoped <c>[MapProperty&lt;S,T&gt;]</c> renders one case per value (true, false), and a
+        ///         class-placed directive has no mapper class to sit on at the registry front door - the cause its
+        ///         plain cell is already counted under. The method-level form renders
+        ///         <c>[MapProperty("Id", AllowNull = true)]</c> at the two sites that declare no mapping method,
+        ///         beside its <c>NullSubstitute</c>, <c>When</c>, <c>Use</c> and <c>StringFormat</c> cells there.
+        ///         Structural, for the fourth time.
+        ///     </para>
+        ///     <para>
+        ///         Re-measured again 2026-10-11 (round 32, <c>[MapClone]</c>): no-mapping-method 80 -> 82, total 130 ->
+        ///         132. A method-level marker with no argument and no property renders one case, at the two sites that
+        ///         declare no mapping method to carry it. Structural, for the fifth time.
+        ///     </para>
+        ///     <para>
+        ///         And again (round 32, <c>KeepDefault</c>): registry 50 -> 52, no-mapping-method 82 -> 84, total 132 ->
+        ///         136 - the same four cells <c>AllowNull</c> added, for the same reason: one more writable <c>bool</c> on
+        ///         both <c>[MapProperty]</c> forms. Structural, for the sixth time.
+        ///     </para>
         ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
         /// </summary>
         private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
         {
-            ["registry-has-no-mapper-class"] = 48,
-            ["no-mapping-method"] = 78
+            ["registry-has-no-mapper-class"] = 52,
+            ["no-mapping-method"] = 84
         };
 
         /// <summary>

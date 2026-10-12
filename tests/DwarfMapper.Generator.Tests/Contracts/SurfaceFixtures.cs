@@ -251,6 +251,16 @@ namespace DwarfMapper.Generator.Tests.Contracts
                                                                  public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.IReadOnlyList<Badge> Badges { get; set; } = System.Array.Empty<Badge>(); }
                                                                  """;
 
+        // A SELF-map: every template maps `Src` to `Dst`, and an alias makes those one type. [MapClone] states that a
+        // same-type map is deliberate, so on the default pair - two different types - the statement is dead by design
+        // and the cell would measure DWARF116 rather than the directive. A using alias rather than a second type
+        // because the templates spell both names; a file-scoped namespace admits a using directive before its members.
+        [SurfaceProbe("self-map")]
+        private static readonly string SelfMap = """
+                                                 using Dst = Demo.Src;
+                                                 public sealed class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                                 """;
+
         // An enum-keyed dictionary on the source and an [InlineArray] struct on the destination — the one shape
         // [MapDenseEnumKeys] has anything to say about. The default flat DTO pair has neither, so the sampled
         // argument would name a member the directive could never apply to and the cell would measure the

@@ -234,7 +234,10 @@ namespace DwarfMapper.Generator.Tests.Contracts
             // 20 → 21 with `dense-enum-keyed-member` (round 29 T3.2), and the reason is the same a fourth time:
             // [MapDenseEnumKeys] is AttributeTargets.Method, so no Property- or Field-site case demands that
             // fixture and none reads NoSuchSite for want of a slot in it.
-            const int baseline = 21;
+            //
+            // 21 → 22 with `self-map` (round 32), the fifth time: [MapClone] is AttributeTargets.Method, so no
+            // Property- or Field-site case demands that fixture and none reads NoSuchSite for want of a slot in it.
+            const int baseline = 22;
             Assert.True(missing.Count == baseline,
                 $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures carry neither " +
                 $"{nameof(EndpointSources.PropertySlotMarker)} nor {nameof(EndpointSources.FieldSlotMarker)}: " +

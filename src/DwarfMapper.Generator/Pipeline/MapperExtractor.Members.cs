@@ -98,7 +98,7 @@ namespace DwarfMapper.Generator.Pipeline
             ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
             Dictionary<string, SynthesizedMethod> synthesized,
@@ -123,7 +123,7 @@ namespace DwarfMapper.Generator.Pipeline
             // a set (IgnoredSourcesFor or ClassIgnoredSources), empty when nothing is disowned.
             HashSet<string> ignoredSourceMembers,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
-            IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
+            IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>? mapPropertyExtras = null,
             Dictionary<string, string>? stringFormats = null,
             // True when every `required` destination member is already satisfied without the object initializer
             // having to assign it, so omitting one cannot produce CS9035. Two distinct situations qualify:
@@ -177,12 +177,12 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var extrasByTarget =
-                new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>(
+                new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>(
                     StringComparer.Ordinal);
             if (mapPropertyExtras is not null)
             {
                 foreach (var e in mapPropertyExtras)
-                    extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral);
+                    extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral, e.KeepDefault);
             }
 
             var comparer = options.CaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -412,6 +412,15 @@ namespace DwarfMapper.Generator.Pipeline
             // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
             ApplySkipNullSourceMembers(req, lookups, acc);
 
+            // A converter-argument DWARF070 (ForgiveNestedNullableArg) is reported where the conversion is chosen -
+            // before the pass above decides whether SkipNullSourceMembers / [MapNullSkip] guards the member. Inside
+            // `if (src.X is not null) dst.X = Conv(src.X);` no null reaches the converter, so that report is a false
+            // positive with no per-site answer: AllowNull is, correctly, stale on a guarded member (found migrating
+            // FusedChat - SkipGuardedConverterArgTests). Taken back here, matched by the label it was made with and
+            // only within this call's own window, so a constructor argument's report for the same source member,
+            // made before this call, is never touched.
+            RetractGuardedConverterArgReports(result, diagnostics, diagnosticsStart);
+
             // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a
             // converter, SkipNullSourceMembers), so the diagnostic only fires when the null genuinely survives to
@@ -419,13 +428,30 @@ namespace DwarfMapper.Generator.Pipeline
             // SourceAccessExpression first: a Phase 5 extra parameter has no SourceName (it is not a member of
             // the source type), and reporting an empty '{0}' would name nothing at all. It also decides WHICH
             // noun the message uses, and so which remedies it offers — see NullSourceLabel.
-            foreach (var m in result.Where(m => m.NullRefIntoNonNullable)
+            // A member whose [MapProperty] says AllowNull = true has its null DECLARED rather than overlooked: the
+            // report is dropped and nothing else is - the emitter's '!' is driven by NullRefIntoNonNullable, left
+            // exactly as resolved, so the generated assignment is the same with or without the statement.
+            var allowNull = AllowNullTargets(explicitMaps);
+            // MemberName names the destination the report is about - the one AllowNull would be written for - on this
+            // endpoint, the constructor's and the projection's alike.
+            foreach (var m in result.Where(m => m.NullRefIntoNonNullable && !allowNull.Contains(m.TargetName))
                          .OrderBy(m => m.TargetName, StringComparer.Ordinal))
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
                     NullSourceLabel(m.SourceAccessExpression ?? m.SourceName,
-                        m.SourceAccessExpression is not null ? NullSourceKind.MappingParameter : NullSourceKind.SourceMember)));
+                        m.SourceAccessExpression is not null ? NullSourceKind.MappingParameter : NullSourceKind.SourceMember),
+                    MemberName: m.TargetName));
+
+            // ...and one that resolution left nothing to accept is reported (DWARF116) - after every pass above has
+            // had its chance to handle the null, since SkipNullSourceMembers, a NullSubstitute or a converter is
+            // exactly what makes it dead. A target a constructor parameter took was judged in
+            // ResolveConstructorArguments; one that resolved to nothing already carries the diagnostic saying why.
+            foreach (var m in result.Where(m => !m.NullRefIntoNonNullable &&
+                                                allowNull.Contains(m.TargetName) &&
+                                                consumedCtorParams?.Contains(m.TargetName) != true)
+                         .OrderBy(m => m.TargetName, StringComparer.Ordinal))
+                diagnostics.Add(StaleAllowNull(m, location));
 
             ReportUnguardedFlattenHops(flattenInfos, consumedFlattenRoots, location, diagnostics);
 
@@ -611,7 +637,7 @@ namespace DwarfMapper.Generator.Pipeline
             ResolutionSettings settings,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
             Dictionary<string, SynthesizedMethod> synthesized,
@@ -638,8 +664,8 @@ namespace DwarfMapper.Generator.Pipeline
             var comparer = StringComparer.OrdinalIgnoreCase;
 
             // Build explicit-maps index: target (param) name → source name (exact match).
-            var explicitForParams = new Dictionary<string, (string Source, string? Use)>(StringComparer.Ordinal);
-            foreach (var (srcName, tgtName, use) in explicitMaps) explicitForParams[tgtName] = (srcName, use);
+            var explicitForParams = new Dictionary<string, (string Source, string? Use, bool AllowNull)>(StringComparer.Ordinal);
+            foreach (var (srcName, tgtName, use, allowNull) in explicitMaps) explicitForParams[tgtName] = (srcName, use, allowNull);
 
             // Same reservation rule as ResolveMembers: a converter named for one constructor parameter is
             // not offered up for signature-based auto-adoption by the others.
@@ -855,14 +881,143 @@ namespace DwarfMapper.Generator.Pipeline
             // DWARF070 for constructor arguments — the signal the member path has always given. Reported here
             // because constructor arguments never enter ResolveMembers' list, which is where the member-side
             // report lives; ordered by parameter name so generator output stays deterministic.
+            // A parameter whose [MapProperty] says AllowNull = true has its null DECLARED rather than overlooked,
+            // so the report is dropped - and only the report: the '!' the emitter writes is driven by
+            // NullRefIntoNonNullable, which stays exactly as resolved. Keyed by the parameter name, the key
+            // explicitForParams bound the argument with; an auto-matched argument has no entry and is never accepted.
             foreach (var a in args.Where(a => a.NullRefIntoNonNullable).OrderBy(a => a.TargetName, StringComparer.Ordinal))
+            {
+                if (explicitForParams.TryGetValue(a.TargetName, out var e) && e.AllowNull)
+                {
+                    continue;
+                }
+
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
                     location,
-                    NullSourceLabel(a.SourceName)));
+                    NullSourceLabel(a.SourceName),
+                    MemberName: a.TargetName));
+            }
+
+            // ...and an AllowNull the resolved argument gives nothing to accept is reported (DWARF116). A parameter
+            // that failed to resolve is not judged: it already carries the diagnostic that says why.
+            foreach (var a in args.Where(a => !a.NullRefIntoNonNullable).OrderBy(a => a.TargetName, StringComparer.Ordinal))
+                if (explicitForParams.TryGetValue(a.TargetName, out var e) && e.AllowNull)
+                {
+                    diagnostics.Add(StaleAllowNull(a, location));
+                }
 
             ctorArgs = args.ToArray();
             return allOk;
+        }
+
+        /// <summary>
+        ///     Removes, for each member the skip pass guards, the one converter-argument DWARF070 its resolution made -
+        ///     the first DWARF070 from <paramref name="start" /> on with the member's source label. One per member, so a
+        ///     source member feeding two destinations through two converters loses exactly the reports its guarded members
+        ///     made.
+        /// </summary>
+        /// <remarks>
+        ///     Descriptor and label are the whole match because the window holds nothing else to confuse: every entry in
+        ///     it was made by this call (ResolveMembers never runs inside itself, and constructor arguments are resolved
+        ///     before it starts), all at this call's location, and the DWARF070s that name a destination member are made
+        ///     after this pass. Matching on <see cref="DiagnosticInfo.MemberName" /> or the location as well added two
+        ///     conditions no input could make false - removed under the full-coverage ruling, the window's contents pinned
+        ///     by SkipGuardedConverterArgTests instead.
+        /// </remarks>
+        private static void RetractGuardedConverterArgReports(List<MemberMap> result, List<DiagnosticInfo> diagnostics, int start)
+        {
+            foreach (var m in result)
+            {
+                if (!m.SkipIfSourceNull || !m.ConverterParamIsNonNullableRef)
+                {
+                    continue;
+                }
+
+                var label = NullSourceLabel(m.SourceName);
+                for (var i = start; i < diagnostics.Count; i++)
+                    if (ReferenceEquals(diagnostics[i].Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
+                        diagnostics[i].MessageArg == label)
+                    {
+                        diagnostics.RemoveAt(i);
+                        break;
+                    }
+            }
+        }
+
+        /// <summary>
+        ///     The destinations whose <c>[MapProperty]</c> states <c>AllowNull = true</c>. The FIRST entry per target
+        ///     decides, because the first is the one member resolution binds (a second is DWARF011); a method-level
+        ///     entry already outranks a pair-scoped one for the same target, which is merged in only to fill gaps.
+        /// </summary>
+        private static HashSet<string> AllowNullTargets(IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> explicitMaps)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var targets = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var e in explicitMaps)
+                if (seen.Add(e.Target) && e.AllowNull)
+                {
+                    targets.Add(e.Target);
+                }
+
+            return targets;
+        }
+
+        /// <summary>
+        ///     DWARF116 for a <c>[MapProperty(AllowNull = true)]</c> whose member, once resolved, has no null to accept.
+        ///     The reason is part of the message because "remove it" is only actionable when the reader can see why the
+        ///     statement is dead - and one reason (a converter whose own parameter refuses the null) means a DWARF070
+        ///     is still standing beside this one, about something AllowNull was never going to reach.
+        /// </summary>
+        private static DiagnosticInfo StaleAllowNull(MemberMap m, LocationInfo? location)
+        {
+            string reason;
+            if (m.SkipIfSourceNull)
+            {
+                reason = "[DwarfMapper(SkipNullSourceMembers = true)] already keeps the destination's value when the source is null";
+            }
+            else if (m.NullSubstituteLiteral is not null)
+            {
+                reason = "its NullSubstitute already replaces the null";
+            }
+            else if (m.ConverterMethod is { } converter)
+            {
+                // ANY generated helper, collection and dictionary converters included - IsSynthesized deliberately
+                // leaves those two out (it drives the '!'), and a helper's name means nothing to the reader.
+                reason = GeneratedNames.IsAnySynthesized(converter)
+                    ? "its value goes through a generated conversion, which handles a null value itself - a DWARF070 " +
+                      "that remains is about a null INSIDE it (an element or a value), which a statement about the " +
+                      "member does not reach"
+                    : m.ConverterParamIsNonNullableRef
+                        ? $"its value goes through '{converter}', whose parameter is what refuses the null - the DWARF070 " +
+                          $"that remains is about that parameter: declare it nullable if '{converter}' can take a null"
+                        : $"its value goes through '{converter}', which decides what a null becomes";
+            }
+            else
+            {
+                reason = m.SourceIsNullableRef ? "its destination accepts null" : "its source is not a nullable reference";
+            }
+
+            return IntentMatchesNothing(m.TargetName, reason, location);
+        }
+
+        /// <summary>DWARF116's text for a <c>KeepDefault</c> with no unset default to accept.</summary>
+        private static DiagnosticInfo KeepDefaultMatchesNothing(string target, string reason, LocationInfo? location)
+        {
+            return new DiagnosticInfo(DiagnosticDescriptors.IntentMatchesNothing,
+                location,
+                $"[MapProperty(KeepDefault = true)] on '{target}' accepts an unset default that is not there: {reason}. " +
+                "Remove KeepDefault - left in place, it would silently accept a null default introduced here later, one " +
+                "nobody has reviewed.");
+        }
+
+        /// <summary>DWARF116's text for an <c>AllowNull</c>, shared by every endpoint that judges one.</summary>
+        internal static DiagnosticInfo IntentMatchesNothing(string target, string reason, LocationInfo? location)
+        {
+            return new DiagnosticInfo(DiagnosticDescriptors.IntentMatchesNothing,
+                location,
+                $"[MapProperty(AllowNull = true)] on '{target}' accepts a null that cannot reach it: {reason}. Remove " +
+                "AllowNull - left in place, it would silently accept a null introduced here later, one nobody has reviewed.");
         }
 
         /// <summary>

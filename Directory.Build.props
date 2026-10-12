@@ -33,6 +33,13 @@
              provides vulnerability data) stay errors too on purpose — an audit that silently could not
              fetch its database is a vacuous green, the exact genre Assert-MutantsWereTested exists for. -->
         <NuGetAudit>true</NuGetAudit>
+        <!-- The one exception: the offline image Anthropic's OSS Scanner audits in (.oss-scanner/Dockerfile) runs this
+             audit ONLINE while it is built, then declares itself with DWARFMAPPER_OFFLINE_IMAGE=true for an agent that
+             has no network - where every restore that is not a no-op (a new project, or a project restored on its own
+             rather than through the solution) would otherwise fail NU1900. An environment variable reaches every
+             evaluation in every node, which a response file does not. No workflow or script sets it, and no workflow
+             or script switches the audit off any other way; OssScannerImageTests holds both. -->
+        <NuGetAudit Condition="'$(DWARFMAPPER_OFFLINE_IMAGE)' == 'true'">false</NuGetAudit>
         <NuGetAuditMode>all</NuGetAuditMode>
         <NuGetAuditLevel>low</NuGetAuditLevel>
 

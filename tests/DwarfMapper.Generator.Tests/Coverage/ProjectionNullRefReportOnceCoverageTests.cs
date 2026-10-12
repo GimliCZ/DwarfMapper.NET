@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Covers: MapperExtractor.ResolveProjectionExpr — DWARF070 dedup: a nullable source bound twice reports once; unrelated diagnostics don't count
+// Covers: MapperExtractor.SettleProjectionNullReports — DWARF070 dedup: a nullable source bound twice reports once; unrelated diagnostics don't count
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 
-// Coverage suite for MapperExtractor.Projection.cs's ReportProjectionNullRefIntoNonNullable. Projection's DWARF070 is
-// once per source member per method, whichever binding reached it first. The dedup scan was only ever asked with no
+// Coverage suite for projection's DWARF070 dedup. ReportProjectionNullRefIntoNonNullable adds an entry per binding;
+// SettleProjectionNullReports (round 32, once AllowNull could accept a member's entry) keeps one per source member per
+// method, whichever binding reached it first. The dedup scan was only ever asked with no
 // earlier DWARF070 for the same member and no diagnostic of another kind ahead of it:
 //   - one nullable source member feeding TWO non-nullable destinations (an explicit rename and the auto-match) is
 //     reported once, and both assignments are still null-forgiven;

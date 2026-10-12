@@ -711,6 +711,21 @@ namespace DwarfMapper.Generator.Tests
                 }
                 """);
 
+            // ── 14d. [MapClone] — a same-type map declared deliberate (DWARF076 accepted) ────
+
+            yield return new FimMatrixCase("map_clone_self_map",
+                """
+                using DwarfMapper;
+                using System.Collections.Generic;
+                namespace Fim;
+                public sealed class Leaf { public int V { get; set; } }
+                public class Src { public string Name { get; set; } = ""; public Leaf Leaf { get; set; } = new(); public List<int> Numbers { get; set; } = new(); }
+                [DwarfMapper] public partial class M {
+                    [MapClone]
+                    public partial Src Copy(Src s);
+                }
+                """);
+
             // ── 15. Flatten (member-level flatten, distinct from FlattenGraph) ────
 
             yield return new FimMatrixCase("flatten_member",

@@ -53,7 +53,7 @@ namespace DwarfMapper.Generator.Pipeline
             out bool useObjectInitializerOnly,
             bool allowNonPublicConstructors = false,
             ITypeSymbol? sourceType = null,
-            IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps = null)
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)>? explicitMaps = null)
         {
             useObjectInitializerOnly = false;
 
@@ -239,7 +239,7 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool AllParametersHaveASource(
             IMethodSymbol ctor,
             ITypeSymbol sourceType,
-            IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)>? explicitMaps,
             Compilation compilation,
             bool allowNonPublic)
         {

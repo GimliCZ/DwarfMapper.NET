@@ -12,10 +12,14 @@ namespace DwarfMapper.NegativeCases
     /// <remarks>
     ///     <para>
     ///         Every DWARF id is reported by an <c>IIncrementalGenerator</c> through
-    ///         <c>SourceProductionContext.ReportDiagnostic</c>. Roslyn does not route generator diagnostics
-    ///         through the analyzer diagnostic pipeline, so the mechanisms a reader reaches for first —
-    ///         <c>#pragma warning disable</c> and an editorconfig <c>dotnet_diagnostic.X.severity</c> — have no
-    ///         effect on them. Only compilation-level <c>NoWarn</c> does.
+    ///         <c>SourceProductionContext.ReportDiagnostic</c>, at an EXTERNAL-file location
+    ///         (<c>LocationInfo.ToLocation</c>: path + span, no syntax tree - the incremental models cannot hold a
+    ///         <c>Location</c>). The two mechanisms a reader reaches for first have no effect, for two different
+    ///         reasons, both measured 2026-10-11: <c>#pragma warning disable</c> is not applied to a generator
+    ///         diagnostic even at a source-tree location (Roslyn's), and an <c>.editorconfig</c>
+    ///         <c>dotnet_diagnostic.X.severity</c> IS applied to one at a source-tree location but cannot reach
+    ///         an external one (DwarfMapper's). What works is project-wide: <c>NoWarn</c> and a
+    ///         <c>.globalconfig</c>.
     ///     </para>
     ///     <para>
     ///         That is not a footnote. It is the difference between a diagnostic whose message can be acted on
@@ -61,6 +65,12 @@ namespace DwarfMapper.NegativeCases
 
         private static ImmutableArray<Diagnostic> Run(string source, params string[] noWarn)
         {
+            return Run(source, null, noWarn);
+        }
+
+        private static ImmutableArray<Diagnostic> Run(string source, SyntaxTreeOptionsProvider? configOptions,
+            params string[] noWarn)
+        {
             var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
             var options = new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
@@ -70,6 +80,11 @@ namespace DwarfMapper.NegativeCases
             {
                 options = options.WithSpecificDiagnosticOptions(
                     noWarn.ToDictionary(id => id, _ => ReportDiagnostic.Suppress, StringComparer.Ordinal));
+            }
+
+            if (configOptions is not null)
+            {
+                options = options.WithSyntaxTreeOptionsProvider(configOptions);
             }
 
             var compilation = CSharpCompilation.Create(
@@ -129,6 +144,71 @@ namespace DwarfMapper.NegativeCases
             var diagnostics = Run(SelfMapSource, "DWARF055");
 
             Assert.Contains(diagnostics, d => d.Id == "DWARF076");
+        }
+
+        // ── Analyzer config: a GLOBAL config works, a per-file .editorconfig does not (2026-10-11) ───────────
+        //
+        // The compiler hands an `is_global = true` file's severities to the compilation as GLOBAL diagnostic
+        // values, and an .editorconfig's `[*.cs]` severities as PER-FILE values. Measured in a real dotnet build
+        // on 1.1.0-rc14 the same day: a .globalconfig silenced DWARF070 and DWARF076 and escalated both to
+        // errors; the .editorconfig did neither. docs/diagnostics.md had told readers to use .editorconfig for
+        // every id. These two tests drive the same two channels in-process, so the docs cannot drift back.
+
+        [Fact]
+        public void A_global_analyzer_config_suppresses_a_generator_diagnostic()
+        {
+            Assert.DoesNotContain(Run(SelfMapSource, new ConfigOptions(global: ReportDiagnostic.Suppress)),
+                d => d.Id == "DWARF076");
+        }
+
+        [Fact]
+        public void A_global_analyzer_config_escalates_a_generator_diagnostic_to_an_error()
+        {
+            var selfMap = Assert.Single(Run(SelfMapSource, new ConfigOptions(global: ReportDiagnostic.Error)),
+                d => d.Id == "DWARF076");
+
+            Assert.Equal(DiagnosticSeverity.Error, selfMap.Severity);
+        }
+
+        [Fact]
+        public void A_per_file_editorconfig_severity_does_NOT_reach_a_DwarfMapper_diagnostic()
+        {
+            // NOT Roslyn's limitation, unlike the pragma: a per-file severity does reach a generator diagnostic
+            // reported at a source-tree location. DwarfMapper reports at an external file location. If this fails,
+            // the generator started reporting tree-bound locations - then .editorconfig works per file, and
+            // docs/diagnostics.md and SuppressionAdviceTests must say so.
+            var selfMap = Assert.Single(Run(SelfMapSource, new ConfigOptions(perFile: ReportDiagnostic.Suppress)),
+                d => d.Id == "DWARF076");
+
+            Assert.Equal(DiagnosticSeverity.Warning, selfMap.Severity);
+        }
+
+        /// <summary>
+        ///     Analyzer-config severities for every id, through one of the two channels the compiler offers:
+        ///     <paramref name="global" /> (an <c>is_global = true</c> file) or <paramref name="perFile" /> (an
+        ///     <c>.editorconfig</c> section matching the file).
+        /// </summary>
+        private sealed class ConfigOptions(ReportDiagnostic? global = null, ReportDiagnostic? perFile = null)
+            : SyntaxTreeOptionsProvider
+        {
+            public override GeneratedKind IsGenerated(SyntaxTree tree, CancellationToken cancellationToken)
+            {
+                return GeneratedKind.Unknown;
+            }
+
+            public override bool TryGetDiagnosticValue(SyntaxTree tree, string diagnosticId,
+                CancellationToken cancellationToken, out ReportDiagnostic severity)
+            {
+                severity = perFile.GetValueOrDefault();
+                return perFile.HasValue;
+            }
+
+            public override bool TryGetGlobalDiagnosticValue(string diagnosticId, CancellationToken cancellationToken,
+                out ReportDiagnostic severity)
+            {
+                severity = global.GetValueOrDefault();
+                return global.HasValue;
+            }
         }
     }
 }

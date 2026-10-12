@@ -1140,47 +1140,139 @@ namespace DwarfMapper.Generator.Pipeline
         // refresh-an-existing-instance pattern, and the span/async-stream/projection shapes carry their own
         // parameter lists. Auto-synthesized nested pairs never reach `methods`, so a same-type nested member
         // (the graph's shape, not a typo) is exempt by construction.
-        // A deliberate clone says so with [SuppressMessage] on the mapper. #pragma cannot reach a
-        // generator-reported diagnostic (Roslyn does not run these through pragma filtering), so without
-        // honouring the attribute the only escape hatch is an .editorconfig entry that disables the rule
-        // for an entire project — far broader than the one deliberate clone being acknowledged.
+        // A deliberate clone says so: [MapClone] on the method accepts that one method, and [SuppressMessage("DwarfMapper",
+        // "DWARF076")] on the mapper accepts every method of the class. Neither #pragma nor a per-file .editorconfig
+        // severity reaches a DwarfMapper diagnostic, so without these the only escape hatch would be project-wide - a
+        // .globalconfig or <NoWarn> - far broader than the one deliberate clone being acknowledged.
+        //
+        // [MapClone] is joined to its model by LOCATION: ProcessDeclaredMethod records publicMethodLocs from the same
+        // LocationInfo.FromFirst(method.Locations) computed here. The model carries no symbol, and a flag on it would be
+        // a field the emitter never reads. Only three model sites record a location, so a statement on a method the
+        // others model (update-into, span, stream, projection) is judged from its symbol after the walk.
         private static void ReportSelfMapWithoutConfiguration(List<MapMethodModel> methods, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics, INamedTypeSymbol classSymbol)
         {
             var selfMapSuppressed = HasSuppressMessage(classSymbol, "DWARF076");
 
-            for (var i = 0; i < methods.Count && !selfMapSuppressed; i++)
+            var clones = new Dictionary<LocationInfo, IMethodSymbol>();
+            foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
+                if (method.GetAttributes().Any(a => KnownNames.IsAttributeClass(a.AttributeClass, KnownNames.MapCloneFqn)) &&
+                    LocationInfo.FromFirst(method.Locations) is { } cloneLoc)
+                {
+                    clones[cloneLoc] = method;
+                }
+
+            for (var i = 0; i < methods.Count; i++)
             {
                 var m = methods[i];
+                publicMethodLocs.TryGetValue(i, out var selfLoc);
+                // Taken out of the set whatever the verdict below, so what is left after the walk is exactly the
+                // statements no model of this class answered.
+                var cloneDeclared = selfLoc is not null && clones.Remove(selfLoc);
+
+                string? notASelfMap = null;
                 if (!(m.IsPartial || m.EmitAsNonPartial))
                 {
+                    notASelfMap = "DwarfMapper does not generate it - it has a body of its own";
+                }
+                else if (m.IsUpdateInto)
+                {
+                    notASelfMap = "it maps into an existing instance (an update-into), which is never reported as a self-map";
+                }
+                else if (m.IsSpanMap || m.IsAsyncStreamMap || m.IsProjection)
+                {
+                    notASelfMap = "it is a span, stream or projection map, which DWARF076 never judges";
+                }
+                else if (!string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
+                {
+                    notASelfMap = $"its source '{m.ParameterTypeFullName}' and destination '{m.ReturnTypeFullName}' are different types";
+                }
+
+                if (notASelfMap is not null)
+                {
+                    if (cloneDeclared)
+                    {
+                        diagnostics.Add(CloneMatchesNothing(m.MethodName, notASelfMap, selfLoc));
+                    }
+
                     continue;
                 }
 
-                if (m.IsUpdateInto || m.IsSpanMap || m.IsAsyncStreamMap || m.IsProjection)
+                // A genuine self-map. [MapClone] on it accepts it whatever the class says, so the precise statement
+                // is never read as dead merely because the broad class-level one is there too.
+                if (cloneDeclared || selfMapSuppressed)
                 {
                     continue;
                 }
 
-                if (!string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                publicMethodLocs.TryGetValue(i, out var selfLoc);
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.SelfMap,
                     selfLoc,
-                    // The remedy names <NoWarn> and NOT a #pragma on purpose, and the distinction is not
-                    // pedantry: Roslyn filters generator-reported diagnostics at the COMPILATION level only, so
-                    // neither `#pragma warning disable DWARF076` nor an editorconfig
-                    // `dotnet_diagnostic.DWARF076.severity` reaches them. Both were tried against a real consumer
-                    // solution and neither suppressed anything; only NoWarn did. The previous wording said
-                    // "suppress DWARF076 here", which sends the reader to a per-site pragma that silently does
-                    // nothing — a remedy that cannot be followed is worse than no remedy, because the reader
-                    // concludes the diagnostic is broken rather than that the advice was.
-                    $"Source and target are the same type '{m.ParameterTypeFullName}', so '{m.MethodName}' just " + "emits a shallow copy of every member. This is usually a mistyped type argument — did you mean " + "a different target? If a shallow copy IS what you want, add DWARF076 to <NoWarn> in the project " + "to say so — a per-site #pragma does NOT suppress generator diagnostics."));
+                    // The remedies are the three that WORK, narrowest first. #pragma and a per-file .editorconfig are
+                    // not among them: neither reaches a generator-reported diagnostic (measured, SuppressionPathwayTests),
+                    // and naming one sends the reader to a switch that silently does nothing - who then concludes the
+                    // diagnostic is broken rather than the advice.
+                    $"Source and target are the same type '{m.ParameterTypeFullName}', so '{m.MethodName}' just " + "emits a shallow copy of every member. This is usually a mistyped type argument — did you mean " + "a different target? If a shallow copy IS what you want, say so on the method with [MapClone]; " + "[SuppressMessage(\"DwarfMapper\", \"DWARF076\")] on the mapper class says it for every method of the " + "class, and dotnet_diagnostic.DWARF076.severity = none in a .globalconfig for the whole project."));
             }
 
+            // Statements no located model answered. A void method is an update-into (or no map at all) and different
+            // types are different types - dead either way. A same-type method that was never modelled failed for a
+            // reason its own diagnostic already gives, or is a shape DWARF076 does not judge; no stale claim about it
+            // is one this method could stand behind.
+            foreach (var pair in clones.OrderBy(c => c.Value.Name, StringComparer.Ordinal))
+            {
+                var method = pair.Value;
+                string? reason = null;
+                if (IsShapeSelfMapIgnores(method))
+                {
+                    reason = "it is a span, stream or projection map, which DWARF076 never judges";
+                }
+                else if (method.ReturnsVoid)
+                {
+                    reason = "it returns nothing, so it is an update-into or no map at all, which is never reported as a self-map";
+                }
+                else if (method.Parameters.Length > 0 &&
+                         !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, method.ReturnType))
+                {
+                    // The model's spelling, so both halves of this check name a type the same way DWARF076 does.
+                    reason = $"its source '{method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}' " +
+                             $"and destination '{method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}' are different types";
+                }
+
+                if (reason is not null)
+                {
+                    diagnostics.Add(CloneMatchesNothing(method.Name, reason, pair.Key));
+                }
+            }
+        }
+
+        /// <summary>
+        ///     Whether a method is one of the shapes DWARF076 never judges - a span map (a <c>Span</c> or
+        ///     <c>ReadOnlySpan</c> parameter), an async stream (returns <c>IAsyncEnumerable</c>) or a projection
+        ///     (returns <c>IQueryable</c>) - read off its declaration, for a <c>[MapClone]</c> whose model recorded no
+        ///     location to join by. A same-type one of these is exactly where the statement would otherwise be
+        ///     accepted and ignored.
+        /// </summary>
+        private static bool IsShapeSelfMapIgnores(IMethodSymbol method)
+        {
+            foreach (var p in method.Parameters)
+                if (p.Type is INamedTypeSymbol { Name: "Span" or "ReadOnlySpan", TypeArguments.Length: 1 } span &&
+                    KnownNames.IsNamespace(span.ContainingNamespace, "System"))
+                {
+                    return true;
+                }
+
+            return method.ReturnType is INamedTypeSymbol { TypeArguments.Length: 1 } r &&
+                   ((r.Name == "IQueryable" && KnownNames.IsNamespace(r.ContainingNamespace, "System.Linq")) ||
+                    (r.Name == "IAsyncEnumerable" && KnownNames.IsNamespace(r.ContainingNamespace, "System.Collections.Generic")));
+        }
+
+        /// <summary>DWARF116 for a <c>[MapClone]</c> on a method that is not a same-type create map.</summary>
+        private static DiagnosticInfo CloneMatchesNothing(string methodName, string reason, LocationInfo? location)
+        {
+            return new DiagnosticInfo(DiagnosticDescriptors.IntentMatchesNothing,
+                location,
+                $"[MapClone] on '{methodName}' accepts a same-type map that is not there: {reason}. Remove it - left in " +
+                "place, it would silently accept a same-type map introduced here later, one nobody has reviewed.");
         }
 
         /// <summary>
@@ -2265,6 +2357,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var projAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
                 var projConsumedSources = new HashSet<string>(StringComparer.Ordinal);
                 var projExplicitMaps = ReadExplicitMaps(method);
+                var projDiagnosticsStart = acc.Diagnostics.Count;
                 var projMembers = ResolveProjectionMembers(
                     projSource,
                     projTargetNamed,
@@ -2328,6 +2421,10 @@ namespace DwarfMapper.Generator.Pipeline
                     ReadFlattenRoots(method),
                     ReadMapValues(method),
                     IgnoredSourcesFor(decls, method));
+
+                // Here rather than inside the resolver, which has several exits: every one of them leaves its DWARF070
+                // reports in this window, and this is the one place they all pass through.
+                SettleProjectionNullReports(projExplicitMaps, acc.Diagnostics, projDiagnosticsStart, methodLocation);
 
                 // Source-side completeness for projection. The resolver already knows which source members it
                 // read, so this needed tracking rather than new analysis — it was simply never asked.
@@ -2475,6 +2572,23 @@ namespace DwarfMapper.Generator.Pipeline
                 var updDense = ReadDenseEnumKeys(method);
                 var updAutoNest = ReadMethodAutoNest(method, policy.ClassAutoNest);
 
+                // KeepDefault accepts DWARF066, and an update-into never reports DWARF066 (taken back below: a false
+                // guard keeps the CURRENT value here, not a default). So the statement accepts nothing on this endpoint
+                // - reported once, here, and cleared before resolution, where it would otherwise read as accepting the
+                // very report this site then drops.
+                for (var i = 0; i < updMapPropExtras.Count; i++)
+                    if (updMapPropExtras[i].KeepDefault)
+                    {
+                        acc.Diagnostics.Add(KeepDefaultMatchesNothing(updMapPropExtras[i].Target,
+                            "this is an update-into, where a false When guard keeps the member's current value rather " +
+                            "than a default",
+                            methodLocation));
+                        var cleared = updMapPropExtras[i];
+                        cleared.KeepDefault = false;
+                        updMapPropExtras[i] = cleared;
+                    }
+
+                var updDiagnosticsStart = acc.Diagnostics.Count;
                 var updMembers = ResolveMembers(
                     updSrc,
                     updTgt,
@@ -2523,6 +2637,18 @@ namespace DwarfMapper.Generator.Pipeline
                     ignoredSourceMembers: IgnoredSourcesFor(decls, method),
                     shareMembers: updShare,
                     denseEnumMembers: updDense);
+
+                // DWARF066 says a When guard leaves a member at its DEFAULT when the predicate is false - a statement
+                // about a new destination. Here the caller hands over an instance it already holds, so a false guard
+                // leaves the member at its CURRENT value, which is the whole point of a guarded update. The report is
+                // made inside the member resolution every endpoint shares, so it is taken back here, where the
+                // endpoint is known: every DWARF066 in this window comes from this method's own When guards (nested
+                // pairs resolve later, in DrainNestedMappingQueue).
+                for (var i = acc.Diagnostics.Count - 1; i >= updDiagnosticsStart; i--)
+                    if (ReferenceEquals(acc.Diagnostics[i].Descriptor, DiagnosticDescriptors.WhenLeavesNonNullableDefault))
+                    {
+                        acc.Diagnostics.RemoveAt(i);
+                    }
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing

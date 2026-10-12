@@ -120,6 +120,7 @@ DWARF112 | DwarfMapper | Info | Projection expression property was not generated
 DWARF113 | DwarfMapper | Error | Union types are not mapped yet
 DWARF114 | DwarfMapper | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm
 DWARF115 | DwarfMapper | Warning | EF Core cannot precompile a query built by a projection method
+DWARF116 | DwarfMapper | Warning | A statement of intent matches nothing
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a
@@ -140,3 +141,5 @@ DWARFR11 | DwarfMapper.Registry | Warning | [DwarfMapperConstructor] is not read
 DWARFR12 | DwarfMapper.Registry | Warning | [MapIgnore] argument is not read by the [MapTo] registry
 DWARFR13 | DwarfMapper.Registry | Error | A [MapTo] source type cannot be generic
 DWARFR14 | DwarfMapper.Registry | Error | A [MapTo] target type cannot be an open generic
+DWARFR15 | DwarfMapper.Registry | Warning | A nullable source is assigned where the destination forbids null
+DWARFR16 | DwarfMapper.Registry | Warning | [MapProperty] argument is not read by the [MapTo] registry

@@ -548,6 +548,133 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                      public class Src : SrcBase { public string Name { get; set; } = ""; }
                                                      public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
                                                      """, "MapToGenerator");
+
+            // DWARF066 (round 32): two When-guarded members, one with its own non-null default (not reported - the
+            // remedy the message names now works) and one whose default is a null in disguise (reported). No other case
+            // in the corpus reports DWARF066 at all.
+            yield return ("WhenGuardDefaults", """
+                                               #nullable enable
+                                               using DwarfMapper;
+                                               namespace Demo;
+                                               public class A { public string Title { get; set; } = ""; public string Note { get; set; } = ""; public bool Ready { get; set; } }
+                                               public class B { public string Title { get; set; } = "(untitled)"; public string Note { get; set; } = null!; }
+                                               [DwarfMapper]
+                                               public partial class M
+                                               {
+                                                   private static bool IsReady(A a) => a.Ready;
+                                                   [MapProperty(nameof(A.Title), nameof(B.Title), When = nameof(IsReady))]
+                                                   [MapProperty(nameof(A.Note), nameof(B.Note), When = nameof(IsReady))]
+                                                   public partial B Map(A a);
+                                               }
+                                               """, "DwarfGenerator");
+
+            // A [MapNullSkip]-guarded member through a declared converter (round 32): the guard keeps the null away from
+            // the converter's non-nullable parameter, so no DWARF070 - a false positive found migrating FusedChat.
+            yield return ("SkipGuardedConverterArg", """
+                                                     #nullable enable
+                                                     using DwarfMapper;
+                                                     namespace Demo;
+                                                     public class Child { public int V { get; set; } }
+                                                     public class ChildDto { public int V { get; set; } }
+                                                     public class A { public Child? Child { get; set; } }
+                                                     public class B { public ChildDto Child { get; set; } = new(); }
+                                                     [DwarfMapper]
+                                                     public partial class M
+                                                     {
+                                                         [MapNullSkip] public partial B Map(A a);
+                                                         public partial ChildDto ToChildDto(Child c);
+                                                     }
+                                                     """, "DwarfGenerator");
+
+            // [MapProperty(When = …, KeepDefault = true)] (round 32): a guarded member whose default IS a null, accepted -
+            // no DWARF066 - beside a KeepDefault with no When guard, which accepts nothing (DWARF116).
+            yield return ("KeepDefault", """
+                                         #nullable enable
+                                         using DwarfMapper;
+                                         namespace Demo;
+                                         public class A { public string Note { get; set; } = ""; public string Code { get; set; } = ""; public bool Ready { get; set; } }
+                                         public class B { public string Note { get; set; } = null!; public string Code { get; set; } = ""; }
+                                         [DwarfMapper]
+                                         public partial class M
+                                         {
+                                             private static bool IsReady(A a) => a.Ready;
+                                             [MapProperty(nameof(A.Note), nameof(B.Note), When = nameof(IsReady), KeepDefault = true)]
+                                             [MapProperty(nameof(A.Code), nameof(B.Code), KeepDefault = true)]
+                                             public partial B Map(A a);
+                                         }
+                                         """, "DwarfGenerator");
+
+            // [MapClone] (round 32): a declared clone, accepted - no DWARF076 - beside a statement on a map between
+            // two types, which accepts nothing (DWARF116), and a same-type map with no statement, whose DWARF076 names
+            // the three ways to accept it. The diagnostics are in the hash, so this pins all three; no other case in
+            // the corpus reports DWARF076 at all.
+            yield return ("MapClone", """
+                                      using DwarfMapper;
+                                      namespace Demo;
+                                      public class A { public int X { get; set; } public string Name { get; set; } = ""; }
+                                      public class B { public int X { get; set; } public string Name { get; set; } = ""; }
+                                      [DwarfMapper]
+                                      public partial class M
+                                      {
+                                          [MapClone] public partial A Copy(A a);
+                                          [MapClone] public partial B Map(A a);
+                                          public partial B CopyB(B b);
+                                      }
+                                      """, "DwarfGenerator");
+
+            // A dictionary VALUE differing only by its annotation (round 32): #100's value twin - a null value throws,
+            // as a null collection element always has, instead of being copied bare (CS8601) and stored.
+            yield return ("DictionaryNullableValueIntoNonNullable", """
+                                                                    #nullable enable
+                                                                    using DwarfMapper;
+                                                                    using System.Collections.Generic;
+                                                                    namespace Demo;
+                                                                    public class A { public Dictionary<string, string?> Labels { get; set; } = new(); }
+                                                                    public class B { public Dictionary<string, string> Labels { get; set; } = new(); }
+                                                                    [DwarfMapper] public partial class M { public partial B Map(A a); }
+                                                                    """, "DwarfGenerator");
+
+            // [MapProperty(AllowNull = true)] (round 32): one statement that accepts a null - no DWARF070, the '!' kept -
+            // and one with nothing to accept, which is DWARF116. The diagnostics are in the hash, so this pins both.
+            yield return ("AllowNullMember", """
+                                             #nullable enable
+                                             using DwarfMapper;
+                                             namespace Demo;
+                                             public class A { public string? Name { get; set; } public string Code { get; set; } = ""; }
+                                             public class B { public string Name { get; set; } = ""; public string Code { get; set; } = ""; }
+                                             [DwarfMapper]
+                                             public partial class M
+                                             {
+                                                 [MapProperty(nameof(A.Name), nameof(B.Name), AllowNull = true)]
+                                                 [MapProperty(nameof(A.Code), nameof(B.Code), AllowNull = true)]
+                                                 public partial B Map(A a);
+                                             }
+                                             """, "DwarfGenerator");
+
+            // DWARFR15 (2026-10-11): every edge the registry used to emit bare - CS8601/CS8619 in its .g.cs - in one
+            // nullable-enabled source, plus the invariant widening that is forgiven but not reported. The runner
+            // compiles with nullable disabled by default, so the case states its own context.
+            yield return ("RegistryNullableIntoNonNullable", """
+                                                             #nullable enable
+                                                             using DwarfMapper;
+                                                             using System.Collections.Generic;
+                                                             namespace Demo;
+                                                             [MapTo(typeof(Dto))]
+                                                             public class Src
+                                                             {
+                                                                 public string? Name { get; set; }
+                                                                 public List<string?> Tags { get; set; } = new();
+                                                                 public Dictionary<string, string?> Lookup { get; set; } = new();
+                                                                 public List<string> Widened { get; set; } = new();
+                                                             }
+                                                             public class Dto
+                                                             {
+                                                                 public string Name { get; set; } = "";
+                                                                 public List<string> Tags { get; set; } = new();
+                                                                 public Dictionary<string, string> Lookup { get; set; } = new();
+                                                                 public List<string?> Widened { get; set; } = new();
+                                                             }
+                                                             """, "MapToGenerator");
         }
 
         private static string Mapper(string methodDeclaration)

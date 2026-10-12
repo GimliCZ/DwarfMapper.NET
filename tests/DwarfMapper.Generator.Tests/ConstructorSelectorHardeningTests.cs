@@ -442,7 +442,7 @@ namespace DwarfMapper.Generator.Tests
                 null,
                 out _,
                 sourceType: source,
-                explicitMaps: [("Legacy.Code", "code", null)]); // 'Legacy' is not a member of Src
+                explicitMaps: [("Legacy.Code", "code", null, false)]); // 'Legacy' is not a member of Src
 
             Assert.NotNull(selected);
             Assert.Empty(diagnostics);
@@ -465,7 +465,7 @@ namespace DwarfMapper.Generator.Tests
                 null,
                 out _,
                 sourceType: source,
-                explicitMaps: [("Ghost", "code", null)]); // no member 'Ghost' on Src
+                explicitMaps: [("Ghost", "code", null, false)]); // no member 'Ghost' on Src
 
             Assert.NotNull(selected);
             Assert.Empty(diagnostics);

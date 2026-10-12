@@ -152,6 +152,20 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Warning,
             true);
 
+        // DWARFR12's [MapProperty] twin. The registry's member form reads the destination name and AllowNull (which
+        // accepts DWARFR15) and nothing else, so Use, When, NullSubstitute, StringFormat and KeepDefault were accepted
+        // and discarded: a converter silently not applied, a guard silently not guarded, `Use = "Nope"` naming nothing
+        // with nobody told. A Warning for DWARFR11's reason - the mapping the caller gets is complete and ships; what is
+        // wrong is that the emitted code does not follow what the caller wrote. Message composed at report time ("{0}")
+        // so it names the arguments written.
+        public static readonly DiagnosticDescriptor MapPropertyArgumentNotRead = new(
+            "DWARFR16",
+            "[MapProperty] argument is not read by the [MapTo] registry",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
         // The registry writes its extension methods ON the source type: `ToDto(this Src<T> source)` declares no T, so a
         // generic source failed as CS0246 in a generated file with nothing naming the cause. The class model refuses
         // the same shape as DWARF054. IsGenericType is also true for a type nested in a generic type, which fails the
@@ -174,6 +188,21 @@ namespace DwarfMapper.Generator.Registry
             "[MapTo] target {0} is an open generic type; the registry can only map to a closed type — close its type arguments in the typeof(...), or map the pair with the [DwarfMapper] class model",
             Category,
             DiagnosticSeverity.Error,
+            true);
+
+        // The registry twin of DWARF070, and a separate id for DWARFR10's reason: DWARF070's message offers
+        // [MapProperty(NullSubstitute = …)] and [DwarfMapper(SkipNullSourceMembers = true)], and neither exists at this
+        // front door - the registry reads no NullSubstitute and has no mapper class to set an option on. The generated
+        // assignment is null-forgiven because the alternative was CS8601/CS8619 inside __DwarfRegistry_*.g.cs, a file
+        // the consumer cannot edit, with nothing naming the cause; this warning is what they get in exchange, so it
+        // says exactly what was traded. Message composed at the site ("{0}"): the noun differs per edge - a source
+        // member, a member of a nested type, a collection element, a dictionary value - and so does the remedy.
+        public static readonly DiagnosticDescriptor NullableSourceToNonNullableDestination = new(
+            "DWARFR15",
+            "A nullable source is assigned where the destination forbids null",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Warning,
             true);
 
         public static readonly DiagnosticDescriptor RecursiveNesting = new(

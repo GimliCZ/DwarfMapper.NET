@@ -274,7 +274,7 @@ namespace DwarfMapper
         ///     member to be read by some destination; an unconsumed source member then surfaces the
         ///     <c>DWARF039</c> suggestion (Info). Suppress a specific member with
         ///     <c>[MapIgnoreSource("Member")]</c>; escalate to a build error via
-        ///     <c>dotnet_diagnostic.DWARF039.severity = error</c> in <c>.editorconfig</c>.
+        ///     <c>dotnet_diagnostic.DWARF039.severity = error</c> in a <c>.globalconfig</c> (<c>is_global = true</c>).
         /// </summary>
         public RequiredMappingStrategy RequiredMapping { get; set; } = RequiredMappingStrategy.Target;
 

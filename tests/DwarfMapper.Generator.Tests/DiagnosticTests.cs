@@ -281,6 +281,9 @@ namespace DwarfMapper.Generator.Tests
         }
 
         // ── Item 14: DWARF066 — [MapProperty(When=)] leaves a non-nullable member at default ──
+        // D.Note's default is a null in disguise (`= null!`). Until round 32 this fixture said `= ""` - a non-null
+        // default, which leaves nothing to warn about - and pinned DWARF066 firing anyway, the false positive the
+        // message's own "give the member a default initializer" remedy could not clear (WhenGuardInitializerTests).
         [Fact]
         public void When_guard_on_non_nullable_reference_reports_DWARF066()
         {
@@ -288,7 +291,7 @@ namespace DwarfMapper.Generator.Tests
                                using DwarfMapper;
                                #nullable enable
                                public class S { public string Note { get; set; } = ""; }
-                               public class D { public string Note { get; set; } = ""; }
+                               public class D { public string Note { get; set; } = null!; }
                                [DwarfMapper]
                                public partial class M
                                {

@@ -17,13 +17,13 @@ A destination member with no source is a **build error** (`DWARF001`), not a sil
 ship an incomplete map; intentional drops are explicit and auditable via `[MapIgnore]`. Source-side
 coverage is opt-in (`RequiredMapping = Both` → `DWARF039`); note `DWARF039` is an **IDE suggestion** by
 default (not build-breaking) — escalate it with `dotnet_diagnostic.DWARF039.severity = error` in
-`.editorconfig` to make an unconsumed source field fail the build.
+a `.globalconfig` (`is_global = true`) to make an unconsumed source field fail the build.
 
 > **This is a DTO-drift contract gate.** Because the map is resolved at compile time, a DTO or entity that
 > changes shape and breaks a mapping **fails the build** — your two types provably cannot drift apart
 > unnoticed. AutoMapper offers this only as a test-time `AssertConfigurationIsValid()`; Mapster offers no
 > equivalent. *Evidence:* the completeness gate is exercised throughout the generator suite and is enforced
-> by construction — suppressing the diagnostic in `.editorconfig` doesn't help: the incomplete method body
+> by construction — even a `.globalconfig` that silences the diagnostic would not help: the incomplete method body
 > isn't generated, so the build still fails (with a rawer compiler error).
 
 ## 2. The resolved mapping is visible, not inferred

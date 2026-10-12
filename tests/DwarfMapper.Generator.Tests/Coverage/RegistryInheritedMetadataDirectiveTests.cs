@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Covers: MemberDirectives.Read — inherited metadata [MapIgnore] falls back to the [MapTo] source's own location
+// Covers: MemberDirectives.Read — inherited metadata [MapIgnore]/[MapProperty] fall back to the [MapTo] source's own location
 using System.Globalization;
 using DwarfMapper.Generator.Registry;
 using Microsoft.CodeAnalysis;
@@ -46,6 +46,32 @@ namespace DwarfMapper.Generator.Tests.Coverage
             // Pipeline diagnostics travel as LocationInfo and are rebuilt as file locations, so the fallback is
             // checked by its span rather than by IsInSource.
             Assert.NotEqual(Location.None, d.Location);
+            var span = d.Location.GetLineSpan().Span;
+            Assert.Equal(3, span.Start.Line);
+            Assert.Equal("Src", consumer.Split('\n')[3].Substring(span.Start.Character, span.End.Character - span.Start.Character));
+        }
+
+        [Fact]
+        public void An_inherited_metadata_MapProperty_argument_is_reported_at_the_MapTo_source_type()
+        {
+            // DWARFR16's twin of the fact above, with the name a null constant as well: the attribute has no
+            // location of its own and no name to quote, and the report still lands on Src and still reads.
+            var library = Library("""
+                                  namespace Lib;
+                                  public class Base { [global::DwarfMapper.MapProperty(null, Use = "Nope")] public int A { get; set; } }
+                                  """);
+            const string consumer = """
+                                    namespace App;
+                                    public class Dto { public int A { get; set; } public int B { get; set; } }
+                                    [global::DwarfMapper.MapTo(typeof(Dto))]
+                                    public class Src : global::Lib.Base { public int B { get; set; } }
+                                    """;
+            var compilation = GeneratorTestHarness.BuildCompilation("RegistryInheritedMetadataDirective.Consumer", consumer).AddReferences(library);
+
+            CSharpGeneratorDriver.Create(new MapToGenerator()).RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
+
+            var d = Assert.Single(diagnostics, x => x.Id == "DWARFR16");
+            Assert.StartsWith("[MapProperty(\"…\", …)] on 'A' sets Use, which the [MapTo] registry does not read", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
             var span = d.Location.GetLineSpan().Span;
             Assert.Equal(3, span.Start.Line);
             Assert.Equal("Src", consumer.Split('\n')[3].Substring(span.Start.Character, span.End.Character - span.Start.Character));

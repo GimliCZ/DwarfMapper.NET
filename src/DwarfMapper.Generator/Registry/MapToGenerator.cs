@@ -197,6 +197,21 @@ namespace DwarfMapper.Generator.Registry
                             "[MapIgnore(\"Member\")] names a destination member to exclude."));
                     }
 
+                // The [MapProperty] half of B15's rule (DWARFR16): the member form's named arguments other than AllowNull
+                // are class-model features this front door does not read, and discarding them in silence meant a
+                // converter, a guard or a substitute the caller wrote simply did not happen.
+                foreach (var d in directives)
+                    if (!d.Ignore && UnreadNamedArguments(d) is { } unread)
+                    {
+                        var one = unread.IndexOf(" and ", StringComparison.Ordinal) < 0;
+                        diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArgumentNotRead,
+                            d.Loc ?? location,
+                            $"[MapProperty(\"{d.Name ?? "…"}\", …)] on '{srcSym.Name}' sets {unread}, which the [MapTo] " +
+                            $"registry does not read: the member is mapped as if {(one ? "it were" : "they were")} not " +
+                            "written. Map the pair with the [DwarfMapper] class model, where [MapProperty] honours " +
+                            $"{(one ? "it" : "them")}, or remove {(one ? "it" : "them")}."));
+                    }
+
                 members.Add((srcSym, srcType, directives));
             }
 
@@ -237,7 +252,7 @@ namespace DwarfMapper.Generator.Registry
                 var writables = MemberFacts.Writable(target, RegistryCompilation, RegistryAllowNonPublic).ToList();
 
                 // destName -> chosen source member (resolved per target, independently).
-                var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>(StringComparer.Ordinal);
+                var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type, bool AllowNull)>(StringComparer.Ordinal);
                 // Destinations the trust boundary refused below. Kept so the completeness gate does not go on to
                 // report DWARFR02 about them: "has no source member" would be false — it has one, and refusing to
                 // wire it is the entire point. Two diagnostics about one member, one of them a lie, is how a caller
@@ -250,6 +265,9 @@ namespace DwarfMapper.Generator.Registry
                     // That distinction is the trust boundary: an explicit binding is a decision, a by-name match is
                     // the mass-assignment surface.
                     var namedByCaller = false;
+                    // [MapProperty("Dest", AllowNull = true)]: the null this member may carry into its destination is
+                    // declared, so DWARFR15 is not reported for it - read off the directive that binds THIS target.
+                    var allowNull = false;
                     if (m.Directives.Count == 0)
                     {
                         destName = m.Sym.Name;
@@ -261,6 +279,8 @@ namespace DwarfMapper.Generator.Registry
                         {
                             continue;
                         }
+
+                        allowNull = d.AllowNull;
 
                         // A [MapProperty] whose one argument is not a usable constant string names nothing (see
                         // MemberDirectives.Name), so the binding below is still the member's own name — an
@@ -307,7 +327,7 @@ namespace DwarfMapper.Generator.Registry
                     }
                     else
                     {
-                        chosen[destName] = (m.Sym, m.Type);
+                        chosen[destName] = (m.Sym, m.Type, allowNull);
                     }
                 }
 
@@ -332,7 +352,21 @@ namespace DwarfMapper.Generator.Registry
                     }
 
                     resolver.ClearRefusalReported();
-                    var expr = resolver.Resolve(src.Type, w.Type, "source." + Identifiers.Escape(src.Sym.Name), w.Name);
+                    var expr = resolver.Resolve(src.Type,
+                        w.Type,
+                        "source." + Identifiers.Escape(src.Sym.Name),
+                        w.Name,
+                        "Source member '" + src.Sym.Name + "'",
+                        src.AllowNull);
+                    // An AllowNull the member's own value gave nothing to accept is reported, as the class model
+                    // reports one (DWARF116); a member that did not resolve already has the diagnostic saying why.
+                    if (src.AllowNull && expr is not null && !resolver.NullAccepted)
+                    {
+                        diags.Add(MapperExtractor.IntentMatchesNothing(w.Name,
+                            NothingToAccept(NullabilityLanding.Find(src.Type, w.Type), src.Type),
+                            location));
+                    }
+
                     if (expr is null)
                     {
                         // Silent when the refusal already said why (see Resolver.RefusalReported): the types are
@@ -492,6 +526,65 @@ namespace DwarfMapper.Generator.Registry
             return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         }
 
+        /// <summary>
+        ///     The named arguments of a member-form <c>[MapProperty]</c> this front door does not read, in the order the
+        ///     attribute declares them ("Use", "Use and When", "Use, When and StringFormat"), or null when there are
+        ///     none. <c>AllowNull</c> is read (it accepts DWARFR15) and is never listed.
+        /// </summary>
+        private static string? UnreadNamedArguments(MemberDirective directive)
+        {
+            var names = new List<string>(5);
+            if (directive.Use is not null)
+            {
+                names.Add("Use");
+            }
+
+            if (directive.HasNullSub)
+            {
+                names.Add("NullSubstitute");
+            }
+
+            if (directive.When is not null)
+            {
+                names.Add("When");
+            }
+
+            if (directive.StringFormat is not null)
+            {
+                names.Add("StringFormat");
+            }
+
+            if (directive.KeepDefault)
+            {
+                names.Add("KeepDefault");
+            }
+
+            return names.Count switch
+            {
+                0 => null,
+                1 => names[0],
+                _ => string.Join(", ", names.Take(names.Count - 1)) + " and " + names[names.Count - 1]
+            };
+        }
+
+        /// <summary>
+        ///     Why a registry member's <c>AllowNull</c> accepted nothing - the reason DWARF116 prints. A null inside the
+        ///     member is the one case where DWARFR15 still stands beside it, so that reason says so.
+        /// </summary>
+        private static string NothingToAccept(NullLanding landing, ITypeSymbol sourceType)
+        {
+            return landing switch
+            {
+                NullLanding.Element or NullLanding.DictionaryValue =>
+                    "the nullable reference is inside it - an element or a value, which a statement about the member does " +
+                    "not reach; the DWARFR15 beside this names it",
+                NullLanding.Value => "its value is converted rather than assigned, and the conversion decides what a null becomes",
+                _ => sourceType.IsReferenceType && sourceType.NullableAnnotation == NullableAnnotation.Annotated
+                    ? "its destination accepts null"
+                    : "its source is not a nullable reference"
+            };
+        }
+
         private static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
             SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(
                 SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
@@ -648,15 +741,32 @@ namespace DwarfMapper.Generator.Registry
             }
 
             /// <summary>
-            ///     RHS expression assigning <paramref name="srcExpr" /> (of <paramref name="srcType" />) into a member of
-            ///     <paramref name="tgtType" />, or null.
+            ///     Set when the last <see cref="Resolve" /> made with an <c>AllowNull</c> statement accepted a null on
+            ///     its strength. The caller reads it to tell a statement that did something from one that matched
+            ///     nothing (<c>DWARF116</c>); each such call resets it.
             /// </summary>
-            public string? Resolve(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName)
+            public bool NullAccepted { get; private set; }
+
+            /// <summary>
+            ///     RHS expression assigning <paramref name="srcExpr" /> (of <paramref name="srcType" />) into a member of
+            ///     <paramref name="tgtType" />, or null. <paramref name="nullSubject" /> is how <c>DWARFR15</c> names
+            ///     this edge if a null can land through it ("Source member 'Name'", "The source element mapped into
+            ///     'Tags'") - the caller knows which edge it is, this method does not.
+            ///     <paramref name="allowNull" /> is the edge's <c>[MapProperty(AllowNull = …)]</c>: true or false for a
+            ///     [MapTo] source's own member, which is where the registry reads <c>[MapProperty]</c>, and null for an
+            ///     edge no statement can be written on - a nested type's member, a collection element.
+            /// </summary>
+            public string? Resolve(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName, string nullSubject, bool? allowNull)
             {
+                if (allowNull == true)
+                {
+                    NullAccepted = false;
+                }
+
                 var conv = _comp.ClassifyCommonConversion(srcType, tgtType);
                 if (conv.IsIdentity)
                 {
-                    return srcExpr;
+                    return DirectAssignment(srcType, tgtType, srcExpr, targetName, nullSubject, allowNull);
                 }
 
                 if (conv.IsImplicit)
@@ -672,7 +782,7 @@ namespace DwarfMapper.Generator.Registry
                             $"'{srcType.ToDisplayString()}' → '{tgtType.ToDisplayString()}' for '{targetName}'"));
                     }
 
-                    return srcExpr;
+                    return DirectAssignment(srcType, tgtType, srcExpr, targetName, nullSubject, allowNull);
                 }
 
                 var n = NumericConverter.TryCreate(srcType, tgtType, Synth);
@@ -714,6 +824,63 @@ namespace DwarfMapper.Generator.Registry
                 }
 
                 return null;
+            }
+
+            /// <summary>
+            ///     The direct assignment an identity or implicit conversion is, null-forgiven where the two types'
+            ///     annotations disagree in a way C# would warn about inside the generated file, and reported as
+            ///     <c>DWARFR15</c> where that disagreement lets a null land in a destination that forbids one. It used to
+            ///     be the bare <paramref name="srcExpr" /> everywhere - CS8601/CS8619 in a file the consumer cannot edit.
+            /// </summary>
+            private string DirectAssignment(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName, string nullSubject, bool? allowNull)
+            {
+                var landing = NullabilityLanding.Find(srcType, tgtType);
+                if (landing == NullLanding.None)
+                {
+                    return srcExpr;
+                }
+
+                // The member's OWN value only: a statement about the member never accepts a null inside it (an element
+                // or a dictionary value), which the class model's AllowNull cannot reach either.
+                if (landing == NullLanding.Value && allowNull == true)
+                {
+                    NullAccepted = true;
+                }
+                else if (landing != NullLanding.WarnsOnly)
+                {
+                    _diags.Add(new DiagnosticInfo(RegistryDiagnostics.NullableSourceToNonNullableDestination,
+                        _loc,
+                        NullLandingMessage(landing, nullSubject, targetName, allowNull)));
+                }
+
+                return srcExpr + "!";
+            }
+
+            /// <summary>
+            ///     DWARFR15's text for one landing: the edge named as the consumer would find it, and its remedy - which
+            ///     names <c>AllowNull</c> only where one can be written (<paramref name="allowNull" /> not null).
+            /// </summary>
+            private static string NullLandingMessage(NullLanding landing, string nullSubject, string targetName, bool? allowNull)
+            {
+                var (subject, remedy) = landing switch
+                {
+                    NullLanding.Element => ("The source element mapped into '" + targetName + "'",
+                        "make the destination's element type nullable (List<T?>, T?[]), or the source's non-nullable if it never holds null"),
+                    NullLanding.DictionaryValue => ("The source value mapped into '" + targetName + "'",
+                        "make the destination's value type nullable (Dictionary<K, V?>), or the source's non-nullable if it never holds null"),
+                    _ => (nullSubject,
+                        "make the destination nullable, or the source non-nullable if it never holds null" +
+                        (allowNull is null
+                            ? ""
+                            : "; if the null is deliberate, [MapProperty(\"" + targetName + "\", AllowNull = true)] on the " +
+                              "source member accepts it for this member alone") +
+                        "; mapping the pair with the [DwarfMapper] class model instead offers " +
+                        "[MapProperty(NullSubstitute = …)] for a fallback value")
+                };
+                return subject + " is a nullable reference but its destination is non-nullable, so a null would be " +
+                       "stored where the type forbids it. The generated assignment is null-forgiven so no CS8601/CS8619 " +
+                       "reaches a file you cannot edit - which means a null at run time is STORED rather than refused. " +
+                       "Fix it at the declaration: " + remedy + ".";
             }
 
             private string? SynthNested(INamedTypeSymbol src, INamedTypeSymbol tgt, string targetName)
@@ -778,7 +945,14 @@ namespace DwarfMapper.Generator.Registry
                     }
 
                     ClearRefusalReported();
-                    var expr = Resolve(sm.Type, w.Type, "s." + Identifiers.Escape(sm.Symbol.Name), w.Name);
+                    // Named with its type: every registry diagnostic is located at the [MapTo] source, so a bare
+                    // "Source member 'Name'" would point at a member that type may not even have.
+                    var expr = Resolve(sm.Type,
+                        w.Type,
+                        "s." + Identifiers.Escape(sm.Symbol.Name),
+                        w.Name,
+                        "Member '" + sm.Symbol.Name + "' of nested type '" + src.Name + "'",
+                        null);
                     if (expr is null)
                     {
                         // Same rule one level down — and the level that made the cascade visible: a recursive
@@ -858,7 +1032,7 @@ namespace DwarfMapper.Generator.Registry
                     return null;
                 }
 
-                var elemConv = Resolve(sElem, dElem, "x", targetName);
+                var elemConv = Resolve(sElem, dElem, "x", targetName, "The source element mapped into '" + targetName + "'", null);
                 if (elemConv is null)
                 {
                     return null;

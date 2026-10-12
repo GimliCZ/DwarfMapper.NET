@@ -140,7 +140,17 @@ namespace DwarfMapper.Generator.Tests.Contracts
 
             // ── [RoundTrip] — needs a forward/back PAIR of create maps ────────────────────────────────────────
             new("RoundTrip", Endpoint.CreateMap, CellStatus.Honoured),
-            new("ReverseMap", Endpoint.CreateMap, CellStatus.Honoured)
+            new("ReverseMap", Endpoint.CreateMap, CellStatus.Honoured),
+
+            // ── [MapClone] — accepts DWARF076, which only the declared create map ever reports ──────────────
+            // Refused, not NotApplicable, at the other four: the statement IS read there, and what it says - "this
+            // same-type map is deliberate" - has nothing to accept, which is DWARF116. Accepting it in silence is the
+            // shape this round exists to end. The registry and the co-located host declare no method to carry it.
+            new("MapClone", Endpoint.CreateMap, CellStatus.Honoured),
+            new("MapClone", Endpoint.UpdateInto, CellStatus.Refused, "DWARF116"),
+            new("MapClone", Endpoint.SpanMap, CellStatus.Refused, "DWARF116"),
+            new("MapClone", Endpoint.AsyncStream, CellStatus.Refused, "DWARF116"),
+            new("MapClone", Endpoint.Projection, CellStatus.Refused, "DWARF116")
         ];
 
         /// <summary>

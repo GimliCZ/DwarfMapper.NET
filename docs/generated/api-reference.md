@@ -103,7 +103,7 @@ Marks a partial class as a DwarfMapper. The generator implements the partial map
 | `OnCycle` | `OnCycleStrategy` | `Throw` | How a reference cycle in the source data is handled while None is active (the default reference mode). Throw (default): a cycle (or over-deep chain) throws a catchable DwarfMappingDepthException at MaxDepth. SetNull: the re-entrant back-edge is set to null (≡ System.Text.Json IgnoreCycles), producing a finite acyclic projection. Ignored under Preserve (cycles are reconstructed); configuring both reports DWARF037. |
 | `ReferenceHandling` | `ReferenceHandlingStrategy` | `None` | Controls how shared object references and cycles in the source graph are handled. None (default): no identity map. Recursion-capable pairs still get a depth counter — cyclic data throws DwarfMappingDepthException at MaxDepth. Zero allocation overhead. Preserve: full topology reconstruction — every distinct source node mapped once, all edges (shared/cycle) relinked. One small dictionary allocation per top-level Map call (keyed by reference identity via ReferenceEqualityComparer.Instance). |
 | `RegisterCollectionShapes` | `Boolean` | `true` | When true (the default), each declared object map is ALSO registered into the ambient registry under the common collection shapes, so IDwarfMapper.Map<ICollection<TTarget>>(listOfSources) resolves without declaring a separate collection pair. |
-| `RequiredMapping` | `RequiredMappingStrategy` | `Target` | Which side(s) of the mapping must be fully covered. Defaults to Target (today's behaviour — every destination member must be mapped). Set to Both to additionally require every source member to be read by some destination; an unconsumed source member then surfaces the DWARF039 suggestion (Info). Suppress a specific member with [MapIgnoreSource("Member")]; escalate to a build error via dotnet_diagnostic.DWARF039.severity = error in .editorconfig. |
+| `RequiredMapping` | `RequiredMappingStrategy` | `Target` | Which side(s) of the mapping must be fully covered. Defaults to Target (today's behaviour — every destination member must be mapped). Set to Both to additionally require every source member to be read by some destination; an unconsumed source member then surfaces the DWARF039 suggestion (Info). Suppress a specific member with [MapIgnoreSource("Member")]; escalate to a build error via dotnet_diagnostic.DWARF039.severity = error in a .globalconfig (is_global = true). |
 | `SkipNullSourceMembers` | `Boolean` | `false` | When true, a null source member never overwrites the destination's default: for every nullable-source, post-construction-settable member the generator emits if (src.Member is not null) dest.Member = …;, so a default set in the destination's field initializer or constructor survives a null source. Defaults to false. This is the equivalent of AutoMapper's ForAllMembers(o => o.Condition((_, _, srcMember) => srcMember != null)) — the common "don't clobber data with nulls" guard when sanitizing/merging. Non-nullable value-type members (which can never be null) are unaffected; required and init-only members are always assigned (they cannot be deferred) and so are unaffected too. |
 | `TypeId` | `Object` | `DwarfMapper.DwarfMapperAttribute` |  |
 
@@ -272,6 +272,14 @@ Ambient mapper facade: resolves a map from the process-wide DwarfMapperRegistry 
 
 _No public settable surface._
 
+### attribute `MapCloneAttribute`
+
+States that this mapping method's source and destination are the SAME type on purpose: the method is a clone, and DWARF076 ("source and target are the same type") is not reported for it. The generated method is exactly the one it would be without the attribute - a member-by-member copy, in which a nested object is the SAME instance in both (it is not cloned) while a collection or array member is copied into a new one holding the same elements. [DwarfMapper] public partial class OrderMapper { [MapClone] public partial Order Copy(Order source); } It accepts the one method it is written on; [SuppressMessage("DwarfMapper", "DWARF076")] on the mapper class accepts every same-type method of the class at once. Written on a method that is not a same-type create map - its types differ, or it maps into an existing instance, a span, a stream or a query, none of which DWARF076 ever judges - it accepts nothing and is itself reported (DWARF116).
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `TypeId` | `Object` | `DwarfMapper.MapCloneAttribute` |  |
+
 ### attribute `MapCollectionKeyAttribute`
 
 On an update-into mapping method (void Map(TSource src, TTarget dest)), merges a List<T> collection member by key instead of replacing it wholesale. The existing list instance is kept and mutated in place: an element whose key matches an existing one updates that slot, an element with a new key is added, and existing elements whose key is absent from the source are left untouched. Without this, update-into replaces the whole collection with a freshly-built one (see DWARF065) — discarding the existing list's identity and any elements the update did not mention. Key-based upsert is the merge semantics an update usually wants. v1 scope: the collection member must be a List<T> whose element type is the same on source and target (the common Entity↔Entity update), and the key must be a readable member of that element type. Anything else reports DWARF074. The key value is compared with the type's default equality (EqualityComparer<TKey>.Default).
@@ -376,6 +384,8 @@ Explicitly maps a source member to a differently-named destination member, overr
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
+| `AllowNull` | `Boolean` | — | States that the destination member may receive a null from a nullable source although its type forbids one. The generated assignment does not change - the source value is written as it is - and DWARF070 is not reported for this member, because the null is now declared rather than overlooked. Use it where the null is deliberate (for example parity with a mapper that wrote the raw value); where it is not, prefer NullSubstitute or a nullable destination. Stated on a member that no null can reach, it is itself reported (DWARF116). |
+| `KeepDefault` | `Boolean` | — | States that the destination member keeping its default when the When predicate is false is intended, so DWARF066 is not reported for it. The generated code does not change. Meaningful only beside When on a map that creates its destination; without When, on a member DWARF066 would not report (a nullable member, a value type, a member with its own non-null default) or on an update-into, which keeps the current value rather than a default, it accepts nothing and is itself reported (DWARF116). |
 | `NullSubstitute` | `Object` | — | Optional constant value coalesced onto the source — emitted verbatim as source ?? value (so it takes effect when the source member is null; on a non-nullable source the ?? is simply a harmless no-op; on a non-nullable value-type source such as int, ?? is a C# compile error (CS0019) — use it only on a nullable source). The value must be assignable to the destination type (else DWARF049). Direct-assignable members only — not combinable with a Use converter. |
 | `Source` | `String` | — | Name of the source member to read from. |
 | `StringFormat` | `String` | — | Optional .NET format string applied when converting the source to a string destination — emitted as source.ToString(format, CultureInfo.InvariantCulture). E.g. "yyyy-MM-dd" for a DateTime, "F2" for a decimal, "N0" for an int. The provider is always InvariantCulture — by design, so the formatted output is stable across deployments and threads rather than shifting with the ambient culture (the same reason every generated Parse/ToString is invariant). Only valid when the destination member is string and the source is IFormattable, and not combinable with Use; otherwise DWARF073. |
@@ -390,6 +400,8 @@ Configures a member mapping for a specific (TSource → TTarget) pair from the c
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
+| `AllowNull` | `Boolean` | — | States that the destination member may receive a null from a nullable source although its type forbids one: the assignment is unchanged and DWARF070 is not reported for it (same meaning as the method-level twin). Stated on a member that no null can reach, it is DWARF116. |
+| `KeepDefault` | `Boolean` | — | States that the destination member keeping its default when the When predicate is false is intended, so DWARF066 is not reported for it (same meaning as the method-level twin). Without When, or where DWARF066 would not report, it is DWARF116. |
 | `NullSubstitute` | `Object` | — | Optional constant coalesced onto a nullable source — emitted as source ?? value. The value must be assignable to the destination type, else DWARF049 (same validation as the method-level twin). |
 | `Source` | `String` | — | Name of the source member to read from. |
 | `Target` | `String` | — | Name of the destination member to assign. |
@@ -505,7 +517,7 @@ Controls which side(s) of a mapping must be fully covered. Set via RequiredMappi
 
 | Value | Numeric | Summary |
 |---|---|---|
-| `Both` | 1 | In addition to the target gate, every source member must be read by some destination — a source member consumed by nothing surfaces the DWARF039 suggestion (Info). Suppress a specific member with [MapIgnoreSource("Member")]. Escalate to a build error with dotnet_diagnostic.DWARF039.severity = error in .editorconfig. |
+| `Both` | 1 | In addition to the target gate, every source member must be read by some destination — a source member consumed by nothing surfaces the DWARF039 suggestion (Info). Suppress a specific member with [MapIgnoreSource("Member")]. Escalate to a build error with dotnet_diagnostic.DWARF039.severity = error in a .globalconfig (is_global = true). |
 | `Target` | 0 | (Default) Every destination member must be mapped — an unmapped target is the build error DWARF001. Source members that are read by no destination are not flagged. |
 
 ### attribute `RestatesBaseAttribute<TSource, TTarget>`

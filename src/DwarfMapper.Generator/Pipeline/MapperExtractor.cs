@@ -997,7 +997,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                foreach (var (source, target, _) in ReadExplicitMaps(symbol))
+                foreach (var (source, target, _, _) in ReadExplicitMaps(symbol))
                     Report($"[MapProperty(\"{source}\", \"{target}\")] on this {site}",
                         $"[MapProperty<{src}, {tgt}>(\"{source}\", \"{target}\")]",
                         MemberDirectiveElsewhere);
@@ -1548,9 +1548,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
         }
 
-        private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)
+        private static List<(string Source, string Target, string? Use, bool AllowNull)> ReadExplicitMaps(ISymbol method)
         {
-            var maps = new List<(string Source, string Target, string? Use)>();
+            var maps = new List<(string Source, string Target, string? Use, bool AllowNull)>();
             foreach (var attr in method.GetAttributes())
             {
                 if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn))
@@ -1561,13 +1561,18 @@ namespace DwarfMapper.Generator.Pipeline
                 if (attr.ConstructorArguments.Length == 2 && attr.ConstructorArguments[0].Value is string s && attr.ConstructorArguments[1].Value is string t)
                 {
                     string? use = null;
+                    var allowNull = false;
                     foreach (var na in attr.NamedArguments)
                         if (na.Key == "Use" && na.Value.Value is string u)
                         {
                             use = u;
                         }
+                        else if (na.Key == "AllowNull" && na.Value.Value is true)
+                        {
+                            allowNull = true;
+                        }
 
-                    maps.Add((s, t, use));
+                    maps.Add((s, t, use, allowNull));
                 }
             }
 

@@ -125,6 +125,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     (1, "WriteTemp helper: the I4 sweep's fake repo trees + the pwsh battery script, temp " + "directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/IlVerifyExpectationLogicTests.cs"] =
                     (1, "the ILVerify expectation battery script, temp directory only"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/DashboardReportTests.cs"] =
+                    (4, "three fake Stryker reports + the pwsh battery script, temp directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/GeneratedDocsAreCurrentTests.cs"] =
                     (1, "HasGitMarker probe writing a fake .git file into a temp directory"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoLayoutTests.cs"] =
@@ -132,7 +134,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoWriteGuardTests.cs"] =
                     (2, "this file's temp-directory fixtures (backup marker, pre-existing target)"),
                 ["DwarfMapper.Generator.Tests/Round31/AuditSuppressionScanTests.cs"] =
-                    (1, "WriteTemp helper: fake project files under a temp root, incl. a nested .claude/ checkout")
+                    (1, "WriteTemp helper: fake project files under a temp root, incl. a nested .claude/ checkout"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/OssScannerImageTests.cs"] =
+                    (1, "a global.json committed in a temp git repository, then removed from its working copy")
             };
 
             string[] rawWriteApis =

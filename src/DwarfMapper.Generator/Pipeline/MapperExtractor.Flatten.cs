@@ -327,10 +327,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     (Phase 8), keyed by destination target. Separate from <see cref="ReadExplicitMaps" /> so the shared
         ///     (Source, Target, Use) tuple — also consumed by constructor-argument resolution — is unchanged.
         /// </summary>
-        private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>
+        private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral, bool KeepDefault)>
             ReadMapPropertyExtras(ISymbol method)
         {
-            var result = new List<(string, bool, TypedConstant, string?, string?)>();
+            var result = new List<(string, bool, TypedConstant, string?, string?, bool)>();
             foreach (var attr in method.GetAttributes())
             {
                 if (!KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.MapPropertyFqn) || attr.ConstructorArguments.Length < 2 || attr.ConstructorArguments[1].Value is not string target)
@@ -341,6 +341,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var hasNullSub = false;
                 TypedConstant nullSub = default;
                 string? when = null;
+                var keepDefault = false;
                 foreach (var na in attr.NamedArguments)
                     if (na.Key == "NullSubstitute")
                     {
@@ -351,10 +352,16 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         when = w;
                     }
+                    else if (na.Key == "KeepDefault" && na.Value.Value is true)
+                    {
+                        keepDefault = true;
+                    }
 
-                if (hasNullSub || when is not null)
+                // KeepDefault alone is kept too: a statement with no When beside it accepts nothing, and the member
+                // pass can only report that if the entry reaches it.
+                if (hasNullSub || when is not null || keepDefault)
                 {
-                    result.Add((target, hasNullSub, nullSub, when, null));
+                    result.Add((target, hasNullSub, nullSub, when, null, keepDefault));
                 }
             }
 
@@ -498,16 +505,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///     skipped (declare those reverse renames explicitly). A rename whose inverse target the inverse method
         ///     already maps itself is also skipped (the explicit one wins).
         /// </summary>
-        private static List<(string Source, string Target, string? Use)> CollectReverseRenames(
+        private static List<(string Source, string Target, string? Use, bool AllowNull)> CollectReverseRenames(
             INamedTypeSymbol classSymbol,
             IMethodSymbol method,
             ITypeSymbol sourceType,
             ITypeSymbol targetType,
-            IReadOnlyList<(string Source, string Target, string? Use)> ownExplicit,
+            IReadOnlyList<(string Source, string Target, string? Use, bool AllowNull)> ownExplicit,
             List<DiagnosticInfo> diagnostics,
             LocationInfo? location)
         {
-            var added = new List<(string, string, string?)>();
+            var added = new List<(string Source, string Target, string? Use, bool AllowNull)>();
             IMethodSymbol? forward = null;
             foreach (var f in classSymbol.GetMembers().OfType<IMethodSymbol>())
                 if (!SymbolEqualityComparer.Default.Equals(f, method) &&
@@ -531,7 +538,7 @@ namespace DwarfMapper.Generator.Pipeline
             var ownTargets = new HashSet<string>(ownExplicit.Select(e => e.Target), StringComparer.Ordinal);
             var fwdExtraTargets =
                 new HashSet<string>(ReadMapPropertyExtras(forward).Select(e => e.Target), StringComparer.Ordinal);
-            foreach (var (a, b, use) in ReadExplicitMaps(forward))
+            foreach (var (a, b, use, _) in ReadExplicitMaps(forward))
             {
                 var invertible = use is null && a.IndexOf('.') < 0 && b.IndexOf('.') < 0 && !fwdExtraTargets.Contains(b);
                 if (!invertible)
@@ -542,9 +549,11 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
+                // AllowNull is never inverted: the forward's statement is about the FORWARD destination accepting
+                // a null, and says nothing about whether the reverse one may - that is the reverse's own decision.
                 if (!ownTargets.Contains(a))
                 {
-                    added.Add((b, a, null));
+                    added.Add((b, a, null, false));
                 }
             }
 

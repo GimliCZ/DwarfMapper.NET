@@ -61,6 +61,20 @@ namespace DwarfMapper
         ///     invalid predicate is <c>DWARF050</c> (same validation as the method-level twin).
         /// </summary>
         public string? When { get; set; }
+
+        /// <summary>
+        ///     States that the destination member may receive a <c>null</c> from a nullable source although its type
+        ///     forbids one: the assignment is unchanged and <c>DWARF070</c> is not reported for it (same meaning as
+        ///     the method-level twin). Stated on a member that no null can reach, it is <c>DWARF116</c>.
+        /// </summary>
+        public bool AllowNull { get; set; }
+
+        /// <summary>
+        ///     States that the destination member keeping its default when the <see cref="When" /> predicate is false
+        ///     is intended, so <c>DWARF066</c> is not reported for it (same meaning as the method-level twin). Without
+        ///     <see cref="When" />, or where <c>DWARF066</c> would not report, it is <c>DWARF116</c>.
+        /// </summary>
+        public bool KeepDefault { get; set; }
     }
 
     /// <summary>

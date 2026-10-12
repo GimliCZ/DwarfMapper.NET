@@ -98,6 +98,37 @@ function Get-LegAdjudication {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The THIRD way a leg lies (after an empty population and an unrunnable config): Stryker counts a Timeout
+# as DETECTED, so a starved machine reports a perfect score. Three local runs did exactly that - the
+# pipeline leg twice on 2026-09-27 (263 and 266 of 284 mutants Timeout, "100.00 %") and the runtime leg on
+# 2026-10-11 (151 of 159) - each while the host was reaping processes for memory. A hand-planted "timed out"
+# mutant from the first of them was killed by one failing test in a normal 1 m 21 s run: the timeouts were
+# the machine, not the mutants.
+#
+# The share is measured, not guessed. Over the 40 local reports on record, every genuine run is at or below
+# 4.5 % Timeout (5 of 110 - the 110-mutant leg's mutants that genuinely do not terminate); the three void
+# runs are 92-94 %. 25 % sits five times above the first and far below the second.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$script:MaxTimeoutShare = 0.25
+
+function Assert-NotTimeoutDominated {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][string]$ReportPath
+    )
+    $raw = Get-Content -Raw -LiteralPath $ReportPath
+    $timeout = ([regex]::Matches($raw, '"status"\s*:\s*"Timeout"')).Count
+    $scoreable = ([regex]::Matches($raw, '"status"\s*:\s*"(Killed|Survived|Timeout|NoCoverage)"')).Count
+    if ($scoreable -gt 0 -and $timeout / $scoreable -gt $script:MaxTimeoutShare) {
+        throw ("mutation ($Leg): $timeout of $scoreable scoreable mutants TIMED OUT ($([math]::Round(100.0 * $timeout / $scoreable, 1)) %, " +
+               "limit $([int](100 * $script:MaxTimeoutShare)) %). Stryker counts a timeout as detected, so this score " +
+               "measures the machine, not the tests - a starved host (memory pressure, a parallel build) times " +
+               "every mutant out. Re-run on a quiet machine; if one mutant genuinely does not terminate, it is " +
+               "one, not most.")
+    }
+}
+
 function Assert-MutationScoreWithinBand {
     param(
         [Parameter(Mandatory)][string]$Leg,
@@ -107,6 +138,9 @@ function Assert-MutationScoreWithinBand {
     if (-not (Test-Path -LiteralPath $ReportPath)) {
         throw "mutation ($Leg): no report at $ReportPath - the R2 band check has nothing to measure"
     }
+    # Before the band: a timeout-dominated score is void, and a void score must not be band-checked - its
+    # "raise the floor" demand would ask for the number the machine invented.
+    Assert-NotTimeoutDominated -Leg $Leg -ReportPath $ReportPath
     $raw = Get-Content -Raw -LiteralPath $ReportPath
     $killed = ([regex]::Matches($raw, '"status"\s*:\s*"Killed"')).Count
     $timeout = ([regex]::Matches($raw, '"status"\s*:\s*"Timeout"')).Count
@@ -986,10 +1020,35 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (323 KB = 330,752 B) 953 B on Windows, 1,556 B on ubuntu.
 # DwarfMapper.Testing (53 KB = 54,272 B) 493 B on Windows, 720 B on ubuntu.
+#
+# RE-MEASURED 2026-10-11 (round 31 merged as 24a31de; measured at that tree): DwarfMapper 322 -> 353,
+# DwarfMapper.Testing 52 -> 53. The gate had been red on every nightly since before the merge - round 30's own
+# final master (b688bb9) already failed it on 2026-09-27/28 - and nobody re-measured, so this raise covers both
+# rounds' growth; R1 was missed twice, stated rather than backdated.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101 (the gate's platform), git archive of the tree, Release:
+#     DwarfMapper.1.0.2-rc.1.nupkg           361,591 B   floor 353 KB
+#     DwarfMapper.Testing.1.0.2-rc.1.nupkg    54,474 B   floor  53 KB
+#   Windows, SDK 10.0.101, same tree: 362,228 B (+637) and 54,669 B (+195) - floor 353 / 53, so both
+#   platforms agree on the ceiling.
+#
+# ENTRY BY ENTRY, round 30 (b688bb9) -> round 31, compressed bytes, packed on Windows:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll   +12,197   Dwarf.Map interceptors (T26), DWARF112-115, the
+#                                                             projection work (T10/T13/T16/T17)
+#   lib/net10.0/DwarfMapper.xml                      +4,043   docs of the new public API
+#   lib/net10.0/DwarfMapper.dll                      +1,315   Dwarf, RegisterMany, DwarfCollectionMap
+#   build/ and buildTransitive/DwarfMapper.props     +1,080   new: PublishAot visibility (T17), interceptors (T26)
+#   README.md                                          +541   in BOTH packages - the Testing package's whole delta
+#
+# Every row is intended round-31 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (354 KB = 362,496 B) 268 B on Windows, 905 B on ubuntu.
+# DwarfMapper.Testing (54 KB = 55,296 B) 627 B on Windows, 822 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 322
-    'DwarfMapper.Testing' = 52
+    'DwarfMapper'         = 353
+    'DwarfMapper.Testing' = 53
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1146,4 +1205,58 @@ function Assert-PackageSizeWithinCeiling {
     if ($failures.Count -gt 0) {
         throw ($failures -join [Environment]::NewLine)
     }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The Stryker dashboard upload payload. The dashboard refuses a large body with HTTP 413, and from the
+# round-31 merge on the generator and pipeline legs both did: their reports had reached ~10.5-10.9 MB.
+# Measured on four local reports, ~90 % of that is `testFiles` - every test in the solution, with full
+# display names (the theory rows embed their C# source arguments) - while the mutants reference only a
+# few hundred to ~1,500 of the ~8,300 tests. The dashboard renders a test only where a mutant names it
+# (killedBy / coveredBy), so dropping the unreferenced ones loses nothing it shows: 10.5 MB -> 4.7 MB on
+# the largest. `files` (source and every mutant, whatever its status) is passed through untouched.
+# Refuses an empty population, for the same reason "Assert the run was not vacuous" does.
+function Write-DashboardReport {
+    param(
+        [Parameter(Mandatory)] [string] $Report,
+        [Parameter(Mandatory)] [string] $Out
+    )
+
+    $json = Get-Content -Raw -LiteralPath $Report | ConvertFrom-Json -AsHashtable -Depth 100
+    if (-not $json.ContainsKey('files') -or $json['files'].Count -eq 0) {
+        throw "dashboard report: '$Report' has no files - refusing to publish a score over an empty population."
+    }
+
+    $referenced = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $mutants = 0
+    foreach ($file in $json['files'].Values) {
+        foreach ($m in @($file['mutants'])) {
+            $mutants++
+            foreach ($id in @($m['killedBy']) + @($m['coveredBy'])) {
+                if ($id) { [void]$referenced.Add([string]$id) }
+            }
+        }
+    }
+
+    $total = 0; $kept = 0
+    if ($json.ContainsKey('testFiles')) {
+        $slim = [ordered]@{}
+        foreach ($key in $json['testFiles'].Keys) {
+            $testFile = $json['testFiles'][$key]
+            $all = @($testFile['tests'])
+            $total += $all.Count
+            $keep = @($all | Where-Object { $referenced.Contains([string]$_['id']) })
+            if ($keep.Count -gt 0) {
+                $testFile['tests'] = $keep
+                $slim[$key] = $testFile
+                $kept += $keep.Count
+            }
+        }
+        $json['testFiles'] = $slim
+    }
+
+    $text = ConvertTo-Json -InputObject $json -Depth 100 -Compress
+    [System.IO.File]::WriteAllText($Out, $text, [System.Text.UTF8Encoding]::new($false))
+    '{0} -> {1} bytes; kept {2} of {3} tests (the ones a mutant references); {4} mutants passed through' -f `
+        (Get-Item -LiteralPath $Report).Length, (Get-Item -LiteralPath $Out).Length, $kept, $total, $mutants
 }

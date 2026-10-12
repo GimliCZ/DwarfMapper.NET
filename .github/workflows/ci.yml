@@ -323,6 +323,10 @@ jobs:
                  "Check that the config's 'mutate' globs are PROJECT-relative ('**/Name.cs')."
             exit 1
           fi
+          # ...and not a score a starved runner invented: Stryker counts a Timeout as detected, so a run where
+          # most mutants time out reports ~100 %. The same function housekeeping's band check calls, dot-sourced
+          # (GateBandLogicTests), with the measured 25 % limit and its evidence beside it in gate-checks.ps1.
+          LEG='${{ matrix.leg }}' REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Assert-NotTimeoutDominated -Leg $env:LEG -ReportPath $env:REPORT'
       # The doctooling leg once wrote a mutated renderer's output over 2,523 lines of tracked documentation
       # (H1, 2026-08-19): Stryker has no test sandbox, so a mutated writer writes to the REAL tree.
       # RepoWriteGuard's contract since then is that a mutation run leaves the tracked tree byte-clean —
@@ -392,11 +396,15 @@ jobs:
           project=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['name'])" '${{ matrix.config }}')
           module=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['module'])" '${{ matrix.config }}')
           echo "publishing ${{ matrix.leg }} as module '$module' of '$project', version '$REF_NAME'"
+          # The dashboard 413s a ~10 MB body, which the generator and pipeline reports reached after round 31.
+          # Write-DashboardReport keeps only the tests a mutant references - the only ones the dashboard shows -
+          # and passes everything else through (DashboardReportTests).
+          REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Write-DashboardReport -Report $env:REPORT -Out dashboard-report.json'
           status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
             "https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module" \
             -H 'Content-Type: application/json' \
             -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
-            --data-binary @"$report")
+            --data-binary @dashboard-report.json)
           cat dashboard-response.json; echo
           if [ "$status" != "200" ] && [ "$status" != "201" ]; then
             # This step has never run before this workflow first reaches master, and exactly one thing in it is
