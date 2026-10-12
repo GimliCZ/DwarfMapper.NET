@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Tests.Contracts;
 
@@ -40,10 +42,90 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         private static List<string> MissingClasses(IEnumerable<string> names, string sources) =>
             names.Where(c => !Regex.IsMatch(sources, @"\bclass\s+" + Regex.Escape(c) + @"\b")).ToList();
 
+        /// <summary>
+        ///     The SDK <c>global.json</c> pins under <paramref name="root" />: the working copy's, or - when a job removed
+        ///     it - the commit's. roslyn-forward-compat and preview-sdk-canary run this suite after <c>rm -f global.json</c>
+        ///     on purpose, to build on a newer SDK; "the committed pin is untouched", and it is still the pin the image
+        ///     must match. A depth-1 checkout has HEAD's tree, so <c>git show</c> reads it there too.
+        /// </summary>
+        private static string PinnedSdk(string root)
+        {
+            var path = Path.Combine(root, "global.json");
+            var json = File.Exists(path) ? File.ReadAllText(path) : Git(root, "show", "HEAD:global.json");
+            return Regex.Match(json, "\"version\"\\s*:\\s*\"(?<v>[^\"]+)\"").Groups["v"].Value;
+        }
+
+        private static string Git(string workDir, params string[] args)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            psi.ArgumentList.Add("-C");
+            psi.ArgumentList.Add(workDir);
+            foreach (var a in args)
+                psi.ArgumentList.Add(a);
+
+            using var process = new Process();
+            process.StartInfo = psi;
+            try
+            {
+                process.Start();
+            }
+            catch (Win32Exception e)
+            {
+                Assert.Fail("git is not on PATH - the SDK pin a job removed from the working copy cannot be read from " +
+                            "the commit on this machine. " + e.Message);
+            }
+
+            // Async reads before the bounded wait, so neither a full pipe nor a hung git defeats the 60 s ceiling.
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(60_000))
+            {
+                process.Kill(true);
+                Assert.Fail($"git {string.Join(' ', args)} did not finish within 60 s - killed.");
+            }
+
+            Assert.True(process.ExitCode == 0,
+                $"git {string.Join(' ', args)} exited {process.ExitCode} in {workDir}: {stderr.GetAwaiter().GetResult()}");
+            return stdout.GetAwaiter().GetResult();
+        }
+
+        [Fact]
+        public void A_job_that_removes_global_json_still_has_the_committed_pin_to_compare()
+        {
+            // PR #7's roslyn-forward-compat leg: "global.json not found", because that job deletes the working copy's
+            // pin to build on a newer SDK. Modelled here: a repository whose commit has the pin and whose working copy
+            // does not.
+            var repo = Directory.CreateTempSubdirectory("dwarf-sdk-pin-").FullName;
+            try
+            {
+                Git(repo, "-c", "init.defaultBranch=main", "init", "--quiet");
+                File.WriteAllText(Path.Combine(repo, "global.json"), "{ \"sdk\": { \"version\": \"9.9.999\", \"rollForward\": \"disable\" } }");
+                Git(repo, "add", "global.json");
+                Git(repo, "-c", "user.name=pin", "-c", "user.email=pin@example.invalid", "-c", "commit.gpgsign=false",
+                    "commit", "--quiet", "--no-verify", "-m", "pin");
+                File.Delete(Path.Combine(repo, "global.json"));
+
+                Assert.Equal("9.9.999", PinnedSdk(repo));
+            }
+            finally
+            {
+                // git writes its objects read-only, which Directory.Delete refuses on Windows.
+                foreach (var f in Directory.EnumerateFiles(repo, "*", SearchOption.AllDirectories))
+                    File.SetAttributes(f, FileAttributes.Normal);
+                Directory.Delete(repo, recursive: true);
+            }
+        }
+
         [Fact]
         public void The_image_is_the_SDK_global_json_pins()
         {
-            var pinned = Regex.Match(Read("global.json"), "\"version\"\\s*:\\s*\"(?<v>[^\"]+)\"").Groups["v"].Value;
+            var pinned = PinnedSdk(RepoPaths.Root);
             var from = Regex.Match(Dockerfile(), @"^FROM mcr\.microsoft\.com/dotnet/sdk:(?<tag>[^@\s]+)@sha256:[0-9a-f]{64}\s*$", RegexOptions.Multiline);
 
             // By tag AND digest: the digest is what Docker resolves, the tag is what can be compared with global.json.
