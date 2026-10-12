@@ -15,6 +15,13 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **A lossless primitive widen into or out of a `List<T>` or an `ImmutableArray<T>` is vectorised.** `int[]` →
+  `List<long>`, `List<int>` → `long[]` or `List<long>`, and every other storage pairing of the seven `Vector.Widen`
+  pairs now take the loop an array → array widen always had, instead of an element-by-element fill that lost to
+  `Select(x => (long)x).ToList()`. Measured on Windows/AVX2 at 1,024 elements: 1.9-2.8x faster than before, and ahead
+  of the LINQ equivalent in every shape (`benchmarks/results/2026-10-12-round33-t02-widen-list.md`). The values are
+  bit-for-bit those of the scalar widen. (Round 33 T02.)
+
 - **Ambient collection shapes are pre-sized.** The six collection shapes every mapped pair registers now fill through
   one runtime helper that pre-sizes from the source's count (research P1: 1.07-1.95x, and 17-29 % less allocation on
   the array target), reading a `List<T>` source with a version-checked walk so a hook that mutates the list still fails

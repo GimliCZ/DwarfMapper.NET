@@ -571,6 +571,9 @@ namespace DwarfMapper.Generator.Tests
                                                  public ImmutableArray<SrcV> BlitImmutableToList { get; set; }
                                                  public int[]? WidenArray { get; set; }
                                                  public int[] WidenArrayNonNull { get; set; } = [];
+                                                 public int[]? WidenArrayToList { get; set; }
+                                                 public List<int>? WidenListToArray { get; set; }
+                                                 public ImmutableArray<int> WidenImmutableToList { get; set; }
                                              }
                                              public sealed class Dst
                                              {
@@ -580,6 +583,9 @@ namespace DwarfMapper.Generator.Tests
                                                  public List<DstV> BlitImmutableToList { get; set; } = new();
                                                  public long[]? WidenArray { get; set; }
                                                  public long[] WidenArrayNonNull { get; set; } = [];
+                                                 public List<long>? WidenArrayToList { get; set; }
+                                                 public long[]? WidenListToArray { get; set; }
+                                                 public List<long> WidenImmutableToList { get; set; } = new();
                                              }
                                              [DwarfMapper]
                                              public partial class M { public partial Dst Map(Src s); }

@@ -18,12 +18,14 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class ListFillStrategyTests
     {
+        // int → double, not int → long: since round 33 T02 a Vector.Widen pair takes the vector helper
+        // (SimdWidenGeneratorTests), and this pins the general value fill that every other value pair still takes.
         private const string ValueElements = """
                                              using System.Collections.Generic;
                                              using DwarfMapper;
                                              namespace Demo;
                                              public class C { public int[] V { get; set; } = System.Array.Empty<int>(); }
-                                             public class D { public List<long> V { get; set; } = new(); }
+                                             public class D { public List<double> V { get; set; } = new(); }
                                              [DwarfMapper] public partial class M { public partial D Map(C c); }
                                              """;
 

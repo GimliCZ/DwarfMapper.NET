@@ -1088,6 +1088,30 @@ namespace DwarfMapper.Generator.Pipeline
                         resolved = true;
                         return true;
                     }
+
+                    // Round 33 T02: the same storages for a lossless primitive WIDEN pair, which the array → array
+                    // SIMD widen below never reached. A widen pair is never also a blit (the sizes differ), so the
+                    // order against the check above does not matter. Not gated on elemPairKeepsTheLoop, for the reason
+                    // the array widen is not: the resolver assigns an implicit pair directly, ahead of any user method,
+                    // so the element loop would widen implicitly too (pinned by SimdWidenGeneratorTests).
+                    // Gated off under Preserve: the general helper registers the collection before filling it, so two
+                    // members sharing one source share one target (the B3 guarantee), and a static helper has no
+                    // context to register in. These shapes took that general helper before this path existed.
+                    if (!req.IsPreserve &&
+                        CollectionConverter.IsWidenPair(srcElem, tgtElem) &&
+                        srcStorage is { } ws &&
+                        tgtStorage is { } wt &&
+                        !(ws == CollectionConverter.BlitStorage.Array && wt == CollectionConverter.BlitStorage.Array))
+                    {
+                        converterMethod = CollectionConverter.SynthesizeSimdWidenListShape(synthesized,
+                            req.SrcType,
+                            srcElem,
+                            tgtElem,
+                            ws,
+                            wt);
+                        resolved = true;
+                        return true;
+                    }
                 }
 
                 // The blit was not provable. If the pair MISSED it narrowly, say so — the element loop is correct
