@@ -419,7 +419,7 @@ namespace DwarfMapper.Generator.Pipeline
             // FusedChat - SkipGuardedConverterArgTests). Taken back here, matched by the label it was made with and
             // only within this call's own window, so a constructor argument's report for the same source member,
             // made before this call, is never touched.
-            RetractGuardedConverterArgReports(result, diagnostics, diagnosticsStart, location);
+            RetractGuardedConverterArgReports(result, diagnostics, diagnosticsStart);
 
             // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a
@@ -913,12 +913,19 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     Removes, for each member the skip pass guards, the one converter-argument DWARF070 its resolution made -
-        ///     the entry with the member's source label and no <see cref="DiagnosticInfo.MemberName" /> (the
-        ///     converter-argument report is the only DWARF070 that carries none) at this call's location, from
-        ///     <paramref name="start" /> on. One per member, so a source member feeding two destinations through two
-        ///     converters loses exactly the reports its guarded members made.
+        ///     the first DWARF070 from <paramref name="start" /> on with the member's source label. One per member, so a
+        ///     source member feeding two destinations through two converters loses exactly the reports its guarded members
+        ///     made.
         /// </summary>
-        private static void RetractGuardedConverterArgReports(List<MemberMap> result, List<DiagnosticInfo> diagnostics, int start, LocationInfo? location)
+        /// <remarks>
+        ///     Descriptor and label are the whole match because the window holds nothing else to confuse: every entry in
+        ///     it was made by this call (ResolveMembers never runs inside itself, and constructor arguments are resolved
+        ///     before it starts), all at this call's location, and the DWARF070s that name a destination member are made
+        ///     after this pass. Matching on <see cref="DiagnosticInfo.MemberName" /> or the location as well added two
+        ///     conditions no input could make false - removed under the full-coverage ruling, the window's contents pinned
+        ///     by SkipGuardedConverterArgTests instead.
+        /// </remarks>
+        private static void RetractGuardedConverterArgReports(List<MemberMap> result, List<DiagnosticInfo> diagnostics, int start)
         {
             foreach (var m in result)
             {
@@ -930,9 +937,7 @@ namespace DwarfMapper.Generator.Pipeline
                 var label = NullSourceLabel(m.SourceName);
                 for (var i = start; i < diagnostics.Count; i++)
                     if (ReferenceEquals(diagnostics[i].Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
-                        diagnostics[i].MemberName is null &&
-                        diagnostics[i].MessageArg == label &&
-                        Equals(diagnostics[i].Location, location))
+                        diagnostics[i].MessageArg == label)
                     {
                         diagnostics.RemoveAt(i);
                         break;

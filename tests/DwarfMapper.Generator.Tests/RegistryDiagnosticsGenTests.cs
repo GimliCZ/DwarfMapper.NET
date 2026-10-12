@@ -815,6 +815,25 @@ namespace DwarfMapper.Generator.Tests
                 r16.GetMessage(CultureInfo.InvariantCulture));
         }
 
+        // Several on one attribute are ONE report naming them all, in the attribute's declaration order - and the
+        // sentence agrees with the count ("they were", "them"), or the reader is told about one argument of three.
+        [Theory]
+        [InlineData("StringFormat = \"D2\", Use = \"Nope\"", "Use and StringFormat")]
+        [InlineData("KeepDefault = true, When = \"Never\", Use = \"Nope\"", "Use, When and KeepDefault")]
+        public void Several_unread_named_arguments_are_one_DWARFR16_that_names_them_all(string arguments, string named)
+        {
+            var s = "using DwarfMapper;\nnamespace Demo;\n" +
+                    "[MapTo(typeof(Dto))] public class Src { [MapProperty(\"Name\", " + arguments + ")] public string Name { get; set; } = \"\"; }\n" +
+                    "public class Dto { public string Name { get; set; } = \"\"; }\n";
+
+            var r16 = Assert.Single(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR16");
+            Assert.Equal(
+                $"[MapProperty(\"Name\", …)] on 'Name' sets {named}, which the [MapTo] registry does not read: the member is " +
+                "mapped as if they were not written. Map the pair with the [DwarfMapper] class model, where [MapProperty] " +
+                "honours them, or remove them.",
+                r16.GetMessage(CultureInfo.InvariantCulture));
+        }
+
         [Fact]
         public void The_named_arguments_the_registry_does_read_report_nothing()
         {

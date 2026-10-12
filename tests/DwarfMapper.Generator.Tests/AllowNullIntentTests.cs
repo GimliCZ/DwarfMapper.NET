@@ -295,6 +295,19 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("goes through 'Upper', whose parameter is what refuses the null", Message(stale), StringComparison.Ordinal);
         }
 
+        [Fact]
+        public void AllowNull_beside_a_converter_that_takes_a_null_is_stale_because_the_converter_decides()
+        {
+            var source = ClassModel("[MapProperty(\"Name\", \"Name\", Use = nameof(Upper), AllowNull = true)]",
+                mapperBody: "private static string Upper(string? s) => (s ?? \"\").ToUpperInvariant();");
+
+            var diagnostics = Run(source).Diagnostics;
+
+            Assert.DoesNotContain(diagnostics, x => x.Id == "DWARF070");
+            var stale = Assert.Single(diagnostics, x => x.Id == "DWARF116");
+            Assert.Contains("its value goes through 'Upper', which decides what a null becomes.", Message(stale), StringComparison.Ordinal);
+        }
+
         // ── Stale statements ────────────────────────────────────────────────────────────────────────────
 
         [Theory]
@@ -311,6 +324,18 @@ namespace DwarfMapper.Generator.Tests
                 "[MapProperty(AllowNull = true)] on 'Name' accepts a null that cannot reach it: " + reason + ". Remove " +
                 "AllowNull - left in place, it would silently accept a null introduced here later, one nobody has reviewed.",
                 Message(d));
+        }
+
+        [Fact]
+        public void A_stale_AllowNull_on_an_update_into_is_reported_too()
+        {
+            // An update-into constructs nothing, so no constructor parameter can have judged the statement already.
+            var model = ClassModel("[MapProperty(\"Name\", \"Name\", AllowNull = true)]",
+                "public string Name { get; set; } = \"\";",
+                method: "public partial void Refresh(A a, B b);");
+
+            var d = Assert.Single(Run(model).Diagnostics, x => x.Id == "DWARF116");
+            Assert.Contains("on 'Name' accepts a null that cannot reach it: its source is not a nullable reference.", Message(d), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -362,6 +387,27 @@ namespace DwarfMapper.Generator.Tests
 
             var d = Assert.Single(GeneratorTestHarness.RunMapTo(source, NullableContextOptions.Enable), x => x.Id == "DWARF116");
             Assert.Contains("its source is not a nullable reference", Message(d), StringComparison.Ordinal);
+        }
+
+        // Every reason the registry gives, each from the shape that produces it: a nested object (converted, not
+        // assigned), a value type, a nullable destination, and an enumerable the registry copies into a List - a
+        // conversion again, between two types neither of which is a view of the other.
+        [Theory]
+        [InlineData("public Child? Child { get; set; }", "public ChildDto Child { get; set; } = new();", "Child",
+            "its value is converted rather than assigned, and the conversion decides what a null becomes")]
+        [InlineData("public int Count { get; set; }", "public int Count { get; set; }", "Count", "its source is not a nullable reference")]
+        [InlineData("public string? Note { get; set; }", "public string? Note { get; set; }", "Note", "its destination accepts null")]
+        [InlineData("public IEnumerable<string> Tags { get; set; } = new List<string>();", "public List<string> Tags { get; set; } = new();", "Tags",
+            "its source is not a nullable reference")]
+        public void A_registry_AllowNull_with_nothing_to_accept_says_why(string sourceMember, string destinationMember, string name, string reason)
+        {
+            var source = "using System.Collections.Generic;\nusing DwarfMapper;\nnamespace Demo;\n" +
+                         "[MapTo(typeof(Dto))] public class Src { [MapProperty(\"" + name + "\", AllowNull = true)] " + sourceMember + " }\n" +
+                         "public class Dto { " + destinationMember + " }\n" +
+                         "public class Child { public int V { get; set; } }\npublic class ChildDto { public int V { get; set; } }\n";
+
+            var d = Assert.Single(GeneratorTestHarness.RunMapTo(source, NullableContextOptions.Enable), x => x.Id == "DWARF116");
+            Assert.Contains("on '" + name + "' accepts a null that cannot reach it: " + reason + ".", Message(d), StringComparison.Ordinal);
         }
 
         [Fact]

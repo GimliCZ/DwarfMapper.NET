@@ -96,5 +96,37 @@ namespace DwarfMapper.Generator.Tests
             Assert.StartsWith("Source member 'Holder.Child' is a nullable reference", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
             Assert.Contains("HolderChild = ToChildDto(a.Holder.Child!),", generated, StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void Only_the_guarded_members_own_report_is_taken_back_from_a_window_that_holds_others()
+        {
+            // The window the retraction scans holds, ahead of the guarded member's report: Code's DWARF107 (another
+            // descriptor) and the unguarded flatten leaf's DWARF070 for 'Holder.Child' (another label). The match is
+            // descriptor and label alone - MemberName and location could never differ inside the window - so this is
+            // what keeps it from taking a neighbour's report.
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Child { public int V { get; set; } }
+                                  public class ChildDto { public int V { get; set; } }
+                                  public class Holder { public Child? Child { get; set; } }
+                                  public class A { public string Code { get; set; } = ""; public Holder Holder { get; set; } = new(); public Child? Child { get; set; } }
+                                  public class B { public string Code { get; set; } = ""; public ChildDto HolderChild { get; set; } = new(); public ChildDto Child { get; set; } = new(); }
+                                  [DwarfMapper] public partial class M
+                                  {
+                                      [MapProperty("Code", "Code", Use = nameof(Trimmed))] [MapProperty("Holder.Child", "HolderChild")] [MapNullSkip]
+                                      public partial B Map(A a);
+                                      public partial ChildDto ToChildDto(Child c);
+                                      private static string? Trimmed(string s) => s.Length == 0 ? null : s.Trim();
+                                  }
+                                  """;
+
+            var (diagnostics, generated) = Run(source);
+
+            var d = Assert.Single(diagnostics, x => x.Id == "DWARF070");
+            Assert.StartsWith("Source member 'Holder.Child' is a nullable reference", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            Assert.Single(diagnostics, x => x.Id == "DWARF107");
+            Assert.Contains("a.Child is not null", generated, StringComparison.Ordinal);
+        }
     }
 }

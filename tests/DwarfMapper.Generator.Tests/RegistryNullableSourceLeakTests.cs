@@ -93,6 +93,44 @@ namespace DwarfMapper.Generator.Tests
                                                  public class Dst { public List<string?> Tags { get; set; } = new(); }
                                                  """;
 
+        // A null two type arguments deep lands exactly as one does: reported as the member's element, the position the
+        // consumer edits.
+        private const string NestedElement = """
+                                             using System.Collections.Generic;
+                                             using DwarfMapper;
+                                             namespace T;
+                                             [MapTo(typeof(Dst))] public class Src { public List<List<string?>> Tags { get; set; } = new(); }
+                                             public class Dst { public List<List<string>> Tags { get; set; } = new(); }
+                                             """;
+
+        // The destination IS the dictionary interface, not a type implementing it.
+        private const string DictionaryInterfaceValue = """
+                                                        using System.Collections.Generic;
+                                                        using DwarfMapper;
+                                                        namespace T;
+                                                        [MapTo(typeof(Dst))] public class Src { public Dictionary<string, string?> Lookup { get; set; } = new(); }
+                                                        public class Dst { public IReadOnlyDictionary<string, string> Lookup { get; set; } = new Dictionary<string, string>(); }
+                                                        """;
+
+        // A contravariant (in) argument consumes values instead of holding them: a comparer that accepts null is a
+        // comparer of non-null strings, so nothing lands and C# has nothing to say.
+        private const string Contravariant = """
+                                             using System.Collections.Generic;
+                                             using DwarfMapper;
+                                             namespace T;
+                                             [MapTo(typeof(Dst))] public class Src { public IComparer<string?> Order { get; set; } = Comparer<string?>.Default; }
+                                             public class Dst { public IComparer<string> Order { get; set; } = Comparer<string>.Default; }
+                                             """;
+
+        // Value-type arguments carry no reference annotation at all.
+        private const string ValueTypeArguments = """
+                                                  using System.Collections.Generic;
+                                                  using DwarfMapper;
+                                                  namespace T;
+                                                  [MapTo(typeof(Dst))] public class Src { public Dictionary<int, int?> Counts { get; set; } = new(); }
+                                                  public class Dst { public Dictionary<int, int?> Counts { get; set; } = new(); }
+                                                  """;
+
         public static TheoryData<string, string> LeakingShapes() => new()
         {
             { "member", Member },
@@ -102,7 +140,11 @@ namespace DwarfMapper.Generator.Tests
             { "implicit reference conversion", ImplicitToObject },
             { "dictionary value", DictionaryValue },
             { "interface view of a List", InterfaceView },
-            { "invariant widening", InvariantWidening }
+            { "invariant widening", InvariantWidening },
+            { "element of an element", NestedElement },
+            { "dictionary interface value", DictionaryInterfaceValue },
+            { "contravariant argument", Contravariant },
+            { "value-type arguments", ValueTypeArguments }
         };
 
         [Theory]
@@ -133,6 +175,7 @@ namespace DwarfMapper.Generator.Tests
         [InlineData("List", ListElement)]
         [InlineData("array", ArrayElement)]
         [InlineData("interface view", InterfaceView)]
+        [InlineData("element of an element", NestedElement)]
         public void A_nullable_element_is_reported_against_the_element_not_the_member(string shape, string source)
         {
             var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(source, NullableContextOptions.Enable);
@@ -144,10 +187,12 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("Tags = source.Tags!,", generated, StringComparison.Ordinal);
         }
 
-        [Fact]
-        public void A_nullable_dictionary_value_is_reported_against_the_value()
+        [Theory]
+        [InlineData(DictionaryValue)]
+        [InlineData(DictionaryInterfaceValue)]
+        public void A_nullable_dictionary_value_is_reported_against_the_value(string source)
         {
-            var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(DictionaryValue, NullableContextOptions.Enable);
+            var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(source, NullableContextOptions.Enable);
 
             var d = Assert.Single(diagnostics, x => x.Id == "DWARFR15");
             Assert.StartsWith("The source value mapped into 'Lookup' is a nullable reference",
@@ -181,6 +226,17 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain(diagnostics, x => x.Id == "DWARFR15");
             Assert.Contains("Tags = source.Tags,", generated, StringComparison.Ordinal);
             Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(source, includeRegistry: true));
+        }
+
+        [Theory]
+        [InlineData(Contravariant, "Order = source.Order,")]
+        [InlineData(ValueTypeArguments, "Counts = source.Counts,")]
+        public void Where_no_null_can_land_the_assignment_is_neither_forgiven_nor_reported(string source, string assignment)
+        {
+            var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(source, NullableContextOptions.Enable);
+
+            Assert.DoesNotContain(diagnostics, x => x.Id == "DWARFR15");
+            Assert.Contains(assignment, generated, StringComparison.Ordinal);
         }
 
         [Fact]

@@ -56,6 +56,21 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void A_positional_record_member_has_no_initializer_to_read_so_it_is_reported_and_KeepDefault_answers_it()
+        {
+            // Declared by a record's parameter list, the member's value is whatever a constructor passed - not an
+            // initializer the generator can read. It errs towards reporting, as a member declared in metadata does,
+            // and the per-member statement is the answer the message offers.
+            const string types = "public record BaseB(string Name);\npublic record B : BaseB { public B() : base(\"\") { } }\n";
+            var source = Source("").Replace("public class B {  }\n", types, StringComparison.Ordinal);
+
+            var d = Assert.Single(Run(source), x => x.Id == "DWARF066");
+            Assert.Contains("'Name'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            var kept = Run(source.Replace("When = nameof(IsReady))", "When = nameof(IsReady), KeepDefault = true)", StringComparison.Ordinal));
+            Assert.DoesNotContain(kept, x => x.Id is "DWARF066" or "DWARF116");
+        }
+
+        [Fact]
         public void A_nullable_member_is_not_reported_at_all()
         {
             Assert.DoesNotContain(Run(Source("public string? Name { get; set; }")), d => d.Id == "DWARF066");

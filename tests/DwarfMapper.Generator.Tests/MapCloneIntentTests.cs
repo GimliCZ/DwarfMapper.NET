@@ -125,6 +125,39 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("it is a span, stream or projection map, which DWARF076 never judges", Message(d), StringComparison.Ordinal);
         }
 
+        // Classes the generator cannot construct (their only constructor is private), so a map into one is never
+        // modelled, and an interface that merely shares a name with the async stream DWARF076 does not judge.
+        private const string Unmodelled = "public class C { private C() { } public int Id { get; set; } }\n" +
+                                          "public class Box<T> { private Box() { } }\n" +
+                                          "public interface IAsyncEnumerable<T> { }\n";
+
+        [Fact]
+        public void MapClone_on_a_different_type_map_that_was_never_modelled_is_still_DWARF116()
+        {
+            // No model answers it, so the statement is judged from the declaration after the walk - and two different
+            // types are two different types whatever else stopped the map.
+            var d = Assert.Single(Run(Mapper("[MapClone] public partial C Map(A a);") + Unmodelled).Diagnostics, x => x.Id == "DWARF116");
+
+            Assert.Contains("[MapClone] on 'Map' accepts a same-type map that is not there: its source 'global::Demo.A' and " +
+                            "destination 'global::Demo.C' are different types.", Message(d), StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("[MapClone] public partial C Copy(C c);")]
+        [InlineData("[MapClone] public partial Box<A> CopyBox(Box<A> b);")]
+        [InlineData("[MapClone] public partial A Make();")]
+        [InlineData("[MapClone] public partial IAsyncEnumerable<A> Wrap(IAsyncEnumerable<A> s);")]
+        public void MapClone_on_a_never_modelled_method_without_a_different_source_type_is_left_to_its_own_diagnostic(string method)
+        {
+            // The same type (a generic one too), no source at all, or a look-alike IAsyncEnumerable outside
+            // System.Collections.Generic: the method failed for a reason its own diagnostic gives, and DWARF116 has no
+            // claim about it to make.
+            var diagnostics = Run(Mapper(method) + Unmodelled).Diagnostics;
+
+            Assert.DoesNotContain(diagnostics, x => x.Id is "DWARF116" or "DWARF076");
+            Assert.Contains(diagnostics, x => x.Severity == DiagnosticSeverity.Error);
+        }
+
         [Fact]
         public void MapClone_does_not_reach_DWARF030_the_cycle_a_constructor_parameter_cannot_rebuild()
         {
