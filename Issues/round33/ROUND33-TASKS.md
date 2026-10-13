@@ -65,12 +65,16 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   966/966 verdicts byte-identical. Generator.Tests 89/84 s -> 69/76 s, peak memory within noise. Deliberately no
   cross-test cache: Stryker switches mutants per test case inside one test host.
 - **The fast-path axis audit** (a read-only agent asked, of every specialised path, which axes its gate does not
-  read). Two of its cells were real and are fixed:
+  read). Two of its cells were real, and the probe written to confirm the second found two more defects beside it:
   - `2a0b270` — under `NullCollections = AsNull` a null source array became `[]` on the array block-copy, enum
     block-copy and array widen paths (run and observed); they now give way where null is kept.
   - `6cdce1b` — `ImmutableList<string?>`-style targets warned CS8619 in generated code (identity `CreateRange` inferred
     the element; the share's `.Empty` dropped the `?`), and the share passed `ImmutableList<string?>` into
-    `ImmutableList<string>` by reference, skipping the element-null check the copy makes.
+    `ImmutableList<string>` by reference, skipping the element-null check the copy makes. Three defects from one
+    audit cell, the same "probe to confirm, find more" pattern as every earlier corpus hole.
+- **Package-size headroom after those fixes** — re-packed at `6cdce1b` on Windows (SDK 10.0.101): 371,190 B, still
+  362 KB, gate passes. Headroom to the first red byte is now **522 B** (was 937 B at `38ce1a5`); the next generator
+  change of that size needs the two-floor re-measure, not a guess.
 
 ## The audit's cells not yet tested (in its rank order; "read" = gate read, not run)
 
@@ -132,6 +136,13 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   two owner decisions below.
 
 ## Owner decisions
+
+- **`[Reinterpret]` under AsNull** — like `[Reinterpret]` under Preserve, it forces its block copy before the gates
+  above run, so a null source array still maps to `[]` where AsNull would keep null. Same decision, second axis.
+- **`SurfaceProbe.Baselines` under Stryker** — a process-wide memo of GENERATOR OUTPUT, shared across tests by design.
+  Stryker.NET 4.16 activates mutants per test case inside one shared test host (read from its `CoverageCollector`), so
+  in a batched session a baseline computed under one mutant can be read by a test running under another: a possible
+  false kill or masked mutant. Unmeasured; the memo was deliberate, so it is a question, not a fix.
 
 1. T03's API surface: a `DwarfRefContext` constructor overload, or a capacity member.
 2. `LICENSE`: the verbatim GPL-2.0 text alone, with the project notice moved to README or a `NOTICE` file — GitHub
