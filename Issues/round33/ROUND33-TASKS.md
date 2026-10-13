@@ -55,14 +55,33 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   reached twice must be one target (EmitArray's B3 guarantee); the struct and enum block copies, the list block copy
   and the array widen are static helpers that cannot register, and were reached under Preserve anyway. They are now
   not taken there, and `DWARF100` is not reported there. Found because T02's list shapes had to be gated off Preserve.
+- **`38ce1a5` — the package-size gate was red on the first master nightly.** Round 32 grew the main package ~8.4 KB
+  without re-measuring; ceiling 353 -> 362 KB, measured in the gate's container and on Windows.
+- **`63a4f9f` — build time: the `Dwarf.Map` call-site scan bound every `.Map(…)` call.** 793 of 4,216 invocations on
+  IntegrationTests were sent to a semantic bind to find 17 possible call sites; now 95. Generator time on those
+  sources 4.1-4.2 s -> 2.3-2.9 s cold, 0.84-0.98 -> 0.65 s warm.
+
+## Measured, not acted on
+
+- **`2a10fb3` — the array path's null-element cost is the store shape.** Keeping the null test but storing inside it
+  is 11 % faster than the emitted loop (and than Mapperly's test-free loop) with the same behaviour; 1.12x is below the
+  1.3x bar, so it waits for a quiet-machine confirmation at 100 and 10,000 elements and the owner's call.
+- **Generator scaling** — linear, ~0.5 ms per mapped pair warm; this repeats round 23 S3
+  (`CompilerTests/GeneratorCompileCostTests`) and adds nothing to it. Cold runs are two-thirds JIT of the generator
+  itself (IntegrationTests: ~2.3-2.9 s cold against 0.65 s warm) — a candidate lead (ready-to-run), unresearched.
+- **T02b candidate** — a widen span map (`void Map(ReadOnlySpan<int>, Span<long>)`) emits a scalar loop, never
+  `Vector.Widen`; unmeasured.
 
 ## Waiting on data or on the owner
 
-- **The first master nightly on round-32 code** (03:17 UTC, 2026-10-13). PR #7 had no `full-ci` label, so mutation,
-  `preview-sdk-canary`, deep-test, cross-platform, package-size, perf-tests and reproducible-build have never run on
-  this code. Read it before changing anything below.
-- **Generator mutation leg instability** (timeouts, runner starvation) — decided from that nightly. A workflow edit,
-  so it rides the owner's next CI push.
+- **The first master nightly on round-32 code** (2026-10-13, run 38384275767) — READ. Green: preview-sdk-canary
+  (the round-32 global.json fallback proven in its own job), ubuntu-26-canary, deep-test, cross-platform, perf-tests,
+  reproducible-build, AOT, four mutation legs. Red: package-size (fixed, `38ce1a5`) and the generator and pipeline
+  mutation legs, cancelled at their timeouts (126 and 57 min).
+- **Generator mutation leg timeouts.** Round 22's K3 (`Issues/round22/RESEARCH-STATIC-MUTANT-ATTRIBUTION.md`) found
+  static mutants ~99 % of the leg's work, each surviving one running the whole suite, and every direct lever closed
+  by standing rulings; its one ruling-clean option is a per-file split. What no ruling closes: a faster suite cuts the
+  leg in proportion. Being profiled. A timeout raise is a workflow edit the owner pushes.
 - **FusedChat A/B stats** — the round-31 scripts in `Issues/round31/fusedchat-stats/`; the owner's tree and machine
   time, so the owner schedules it.
 - **DWARF066 on a positional record's inherited member** — a known false positive, pinned on purpose by
