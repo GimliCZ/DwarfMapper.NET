@@ -1045,9 +1045,35 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (354 KB = 362,496 B) 268 B on Windows, 905 B on ubuntu.
 # DwarfMapper.Testing (54 KB = 55,296 B) 627 B on Windows, 822 B on ubuntu.
+#
+# RE-MEASURED 2026-10-13 (round 33, at a4efa68): DwarfMapper 353 -> 362, DwarfMapper.Testing unchanged at 53.
+# The first master nightly after round 32 (6abd8c1, 2026-10-13) failed this gate; round 32 (80b5a68) carried
+# the growth and did not re-measure, so R1 was missed a third time - stated rather than backdated.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     80b5a68 (round 32)   DwarfMapper 370,058 B   Testing 54,621 B   floor 361 / 53
+#     6abd8c1 (master)     DwarfMapper 370,053 B   Testing 54,624 B   floor 361 / 53
+#     a4efa68 (round 33)   DwarfMapper 370,598 B   Testing 54,626 B   floor 361 / 53
+#   Windows, SDK 10.0.101, a4efa68: 370,775 B (+177) and 54,653 B - floor 362 / 53. The ceiling is the
+#   higher floor, so both platforms agree on it.
+#
+# ENTRY BY ENTRY, round 31 (24a31de) -> round 33 (a4efa68), compressed bytes, packed on Windows:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll    +7,514   AllowNull / [MapClone] / KeepDefault intents,
+#                                                             DWARF116, DWARFR16, the DWARF070 skip-guard fix
+#                                                             (round 32); the List/ImmutableArray widen and the
+#                                                             Preserve fast-path gates (round 33)
+#   lib/net10.0/DwarfMapper.xml                        +868   docs of the new public attribute surface
+#   lib/net10.0/DwarfMapper.dll                        +227   MapCloneAttribute, the new MapProperty members
+#   README.md                                           +23   in BOTH packages - the Testing package's whole delta
+#
+# Every row is intended round-32/33 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 937 B on Windows, 1,114 B on ubuntu.
+# DwarfMapper.Testing (54 KB = 55,296 B) 643 B on Windows, 670 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 353
+    'DwarfMapper'         = 362
     'DwarfMapper.Testing' = 53
 }
 
