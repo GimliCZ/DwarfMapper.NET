@@ -77,11 +77,29 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
 - **The first master nightly on round-32 code** (2026-10-13, run 38384275767) — READ. Green: preview-sdk-canary
   (the round-32 global.json fallback proven in its own job), ubuntu-26-canary, deep-test, cross-platform, perf-tests,
   reproducible-build, AOT, four mutation legs. Red: package-size (fixed, `38ce1a5`) and the generator and pipeline
-  mutation legs, cancelled at their timeouts (126 and 57 min).
-- **Generator mutation leg timeouts.** Round 22's K3 (`Issues/round22/RESEARCH-STATIC-MUTANT-ATTRIBUTION.md`) found
-  static mutants ~99 % of the leg's work, each surviving one running the whole suite, and every direct lever closed
-  by standing rulings; its one ruling-clean option is a per-file split. What no ruling closes: a faster suite cuts the
-  leg in proportion. Being profiled. A timeout raise is a workflow edit the owner pushes.
+  mutation legs, both **cancelled well short of their timeouts** (126 of 200 and 57 of 350 min).
+- **The generator and pipeline legs die at random, not at their timeouts.** Read from the public jobs and annotations
+  API over the fourteen nightlies 2026-10-02..13:
+  - On `24a31de`, the same commit and config for twelve nights, the generator leg ran 27.8, 54, 56, 66, 126, 151, 177,
+    195, 198, 200 and 200 minutes. Only 10-04 and 10-09 carry GitHub's "exceeded the maximum execution time"
+    annotation; 10-08 says "the hosted runner lost communication with the server"; every other cancellation says only
+    "The operation was canceled." The pipeline leg shows the same spread: 30 to 299 minutes, cancelled at 57, 69, 87
+    and 107. A 7x spread on identical input is the runner, not the suite, so **raising the timeout would not fix it.**
+  - No `concurrency`/`cancel-in-progress` in `ci.yml` explains it, and the two legs died at different times on 10-13
+    (11:31 and 12:40 UTC), so it is not a run-level cancel. The job logs are 403 without auth; **the owner reads the
+    stryker step's log of check-run 115252055645 (generator, 10-13)** for the last lines before the cancel.
+  - Measured locally (2026-10-13, Release, xUnit parallel): Generator.Tests' testhost peaks at **2.56 GB private**,
+    IntegrationTests 98 MB, CompilerTests 197 MB. Two of those at Stryker's cores/2 on a 4-core, 16 GB hosted runner,
+    beside Stryker's own whole-project mutant compile, is the next suspect if the log names nothing. Round 31 already
+    saw this leg family exhaust host memory locally (`ROUND31-CHECKLIST.md`: both 2026-09-27 pipeline runs, 266 and
+    263 timeouts of 284).
+  - The other red, now gone: the **runtime** leg failed its `break <= low` config check in 30 s on every nightly from
+    10-02 to 10-12. Round 32's `3442b4c` fixed it (the config had a UTF-8 BOM), and it passed on 10-13. Earlier nights' generator/pipeline reds that did
+    complete died on the dashboard's HTTP 413, which round 32's `Write-DashboardReport` (`98abd91`, `f7f07de`)
+    addresses. No completed generator or pipeline leg has run since, so that fix is not yet proven on CI.
+  - Separately, round 22's K3 (`Issues/round22/RESEARCH-STATIC-MUTANT-ATTRIBUTION.md`) still holds: static mutants
+    are most of the leg's work, so a faster serial suite shortens it in proportion. That helps, but it does not
+    explain a 7x spread.
 - **FusedChat A/B stats** — the round-31 scripts in `Issues/round31/fusedchat-stats/`; the owner's tree and machine
   time, so the owner schedules it.
 - **DWARF066 on a positional record's inherited member** — a known false positive, pinned on purpose by
