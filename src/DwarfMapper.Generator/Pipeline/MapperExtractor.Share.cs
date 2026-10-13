@@ -100,6 +100,26 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
+            // ...but only at the TOP level. The same comparer ignores the annotations of the type ARGUMENTS too, and
+            // there they are a contract: `ImmutableList<string?>` may hold null where `ImmutableList<string>` says it
+            // does not. The copying helper checks that element by element and throws; a shared reference would hand
+            // the nulls through unchecked, and the assignment itself is CS8619 in a file the consumer cannot edit.
+            // Round 33, from the fast-path axis audit. Refused in both modes, like the proof below.
+            if (TypeArgumentNullabilityConflicts(srcType, tgtType))
+            {
+                if (forced)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ShareInvalid,
+                        location,
+                        $"[MapShare] member '{targetName}' maps '{srcType.ToDisplayString()}' to " +
+                        $"'{tgtType.ToDisplayString()}', whose elements differ in nullability; a shared reference " +
+                        "would pass every element through unchecked, where the copying helper checks each one",
+                        MemberName: targetName));
+                }
+
+                return false;
+            }
+
             var verdict = ImmutabilityProof.Classify(tgtType, out var reason);
             if (verdict == ImmutabilityVerdict.Mutable)
             {
@@ -162,6 +182,33 @@ namespace DwarfMapper.Generator.Pipeline
 
             plan = new SharePlan(empty, ImmutabilityProof.GuardsOnDefault(tgtType));
             return true;
+        }
+
+        /// <summary>
+        ///     Whether a type argument, at any depth, is annotated nullable on one side and not-nullable on the other -
+        ///     the mismatch the compiler reports as CS8619. An oblivious argument (no annotation context) conflicts
+        ///     with nothing, as it does not for the compiler. The two types are already equal ignoring annotations,
+        ///     so their type arguments line up.
+        /// </summary>
+        private static bool TypeArgumentNullabilityConflicts(ITypeSymbol srcType, ITypeSymbol tgtType)
+        {
+            if (srcType is not INamedTypeSymbol src || tgtType is not INamedTypeSymbol tgt)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < src.TypeArguments.Length; i++)
+            {
+                var annotations = (src.TypeArguments[i].NullableAnnotation, tgt.TypeArguments[i].NullableAnnotation);
+                if (annotations is (NullableAnnotation.Annotated, NullableAnnotation.NotAnnotated)
+                        or (NullableAnnotation.NotAnnotated, NullableAnnotation.Annotated) ||
+                    TypeArgumentNullabilityConflicts(src.TypeArguments[i], tgt.TypeArguments[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

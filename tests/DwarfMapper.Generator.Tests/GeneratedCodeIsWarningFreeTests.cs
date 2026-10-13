@@ -591,6 +591,35 @@ namespace DwarfMapper.Generator.Tests
                                              public partial class M { public partial Dst Map(Src s); }
                                              """
             ];
+
+            // Immutable targets whose ELEMENT is annotated nullable - round 33. Two emitters dropped the element's `?`:
+            // the identity copy called `ImmutableX.CreateRange(src)`, inferring the element from a `string` source, and
+            // the share's fallback named `ImmutableList<string>.Empty`; both are CS8619 against the invariant
+            // `ImmutableX<string?>` they are assigned to. The copy for each immutable factory, and the share.
+            yield return
+            [
+                "ImmutableTargetsWithANullableElement", """
+                                                        using System.Collections.Immutable;
+                                                        using DwarfMapper;
+                                                        namespace Demo;
+                                                        public sealed class Src
+                                                        {
+                                                            public ImmutableList<string> CopyList { get; set; } = ImmutableList<string>.Empty;
+                                                            public ImmutableArray<string> CopyArray { get; set; } = ImmutableArray<string>.Empty;
+                                                            public ImmutableHashSet<string> CopySet { get; set; } = ImmutableHashSet<string>.Empty;
+                                                            public ImmutableList<string?> SharedList { get; set; } = ImmutableList<string?>.Empty;
+                                                        }
+                                                        public sealed class Dst
+                                                        {
+                                                            public ImmutableList<string?> CopyList { get; set; } = ImmutableList<string?>.Empty;
+                                                            public ImmutableArray<string?> CopyArray { get; set; } = ImmutableArray<string?>.Empty;
+                                                            public ImmutableHashSet<string?> CopySet { get; set; } = ImmutableHashSet<string?>.Empty;
+                                                            public ImmutableList<string?> SharedList { get; set; } = ImmutableList<string?>.Empty;
+                                                        }
+                                                        [DwarfMapper]
+                                                        public partial class M { public partial Dst Map(Src s); }
+                                                        """
+            ];
         }
 
         [Theory]

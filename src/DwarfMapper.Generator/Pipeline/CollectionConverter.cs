@@ -887,8 +887,10 @@ namespace DwarfMapper.Generator.Pipeline
                 if (e.Identity && !e.ThreadCtx)
                 {
                     // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
+                    // The element type is STATED, not inferred: inferred from an ImmutableArray<string> source it is
+                    // `string`, and the result is CS8619 against an ImmutableArray<string?> return type (round 33).
                     e.Writer.Line("if (src is null) return " + emptyExpr + ";");
-                    e.Writer.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(" + srcExpr + ");");
+                    e.Writer.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange<" + e.Elem + ">(" + srcExpr + ");");
                 }
                 else
                 {
@@ -922,8 +924,10 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 if (e.Identity && !e.ThreadCtx)
                 {
+                    // The element type is STATED, as in EmitImmutableArray: inferring it from the source drops a
+                    // target-only `?` and makes the return CS8619.
                     e.Writer.Line("if (src is null) return " + emptyExpr + ";");
-                    e.Writer.Line("return " + createRange + "(" + srcExpr + ");");
+                    e.Writer.Line("return " + createRange + "<" + e.Elem + ">(" + srcExpr + ");");
                 }
                 else
                 {

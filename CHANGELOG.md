@@ -539,6 +539,12 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Immutable targets whose element is nullable (`ImmutableList<string?>`) no longer warn CS8619 in generated code,
+  and a nullability mismatch between elements is no longer shared.** The identity copy into an `ImmutableList`,
+  `ImmutableArray` or `ImmutableHashSet` inferred its element type from the source, and the automatic share's empty
+  fallback dropped the element's `?`; both broke a `TreatWarningsAsErrors` build in a file the consumer cannot edit.
+  And the share treated `ImmutableList<string?>` and `ImmutableList<string>` as one type, handing a null element
+  through where the copy throws on it. Those members are copied now; `[MapShare]` on one reports `DWARF104`.
 - **Under `NullCollections = AsNull`, a null source array came back as an empty array on the block-copy and widen
   paths.** A nullable `int[]?` → `long[]?`, a struct array that block-copies, or an enum array under `ByValue` mapped a
   null source to `[]`, while every other collection member of the same mapper kept null. Those paths now give way
