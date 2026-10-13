@@ -15,6 +15,12 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **The generator no longer binds every `.Map(…)` call in your project.** To find `Dwarf.Map` call sites it sent every
+  invocation *named* `Map` - above all `mapper.Map(x)`, the commonest call in a DwarfMapper codebase - to a semantic
+  bind on its own compilation, a second binding of each enclosing method on top of the real compile. It now admits
+  only the shapes `Dwarf.Map` can take (`Map<S, D>(…)`, or the inferred update `Map(source, destination)`). On this
+  repository's IntegrationTests (4,216 invocations) the binds fell from 793 to 95 and the generator's time from
+  4.1-4.2 s to 2.3-2.9 s cold, 0.84-0.98 s to 0.65-0.67 s warm. What is bound and intercepted is unchanged.
 - **A lossless primitive widen into or out of a `List<T>` or an `ImmutableArray<T>` is vectorised.** `int[]` →
   `List<long>`, `List<int>` → `long[]` or `List<long>`, and every other storage pairing of the seven `Vector.Widen`
   pairs now take the loop an array → array widen always had, instead of an element-by-element fill that lost to

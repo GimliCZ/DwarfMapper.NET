@@ -51,14 +51,35 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         internal const string InterceptorsNamespace = "DwarfMapper.Generated";
 
-        /// <summary>Cheap syntactic gate: an invocation of something named <c>Map</c>.</summary>
+        /// <summary>
+        ///     Cheap syntactic gate: an invocation that can be a <c>Dwarf.Map</c> call - <c>Map&lt;S, D&gt;(…)</c>, or the
+        ///     update overload with both type arguments inferred, <c>Map(source, destination)</c>.
+        /// </summary>
+        /// <remarks>
+        ///     Every admitted node costs a semantic bind in <see cref="Extract" />, and that bind is paid on the generator's
+        ///     own compilation, separately from the real compile. The gate used to admit every invocation NAMED Map, which
+        ///     in a DwarfMapper codebase is above all <c>mapper.Map(x)</c>: measured on IntegrationTests (round 33), 793 of
+        ///     4,216 invocations were bound and 17 had the shape that can be <c>Dwarf.Map</c>. The create overload's
+        ///     <c>TDestination</c> appears in no parameter, so it is always written with both type arguments; only the
+        ///     update overload can be called without them, and then with exactly two arguments.
+        /// </remarks>
         public static bool IsCandidate(SyntaxNode node, CancellationToken _)
         {
-            return node is InvocationExpressionSyntax inv && inv.Expression switch
+            if (node is not InvocationExpressionSyntax inv)
             {
-                MemberAccessExpressionSyntax member => member.Name.Identifier.Text == "Map",
-                SimpleNameSyntax name => name.Identifier.Text == "Map",
-                _ => false
+                return false;
+            }
+
+            var name = inv.Expression switch
+            {
+                MemberAccessExpressionSyntax member => member.Name,
+                SimpleNameSyntax simple => simple,
+                _ => null
+            };
+            return name?.Identifier.Text == "Map" && name switch
+            {
+                GenericNameSyntax generic => generic.TypeArgumentList.Arguments.Count == 2,
+                _ => inv.ArgumentList.Arguments.Count == 2
             };
         }
 
