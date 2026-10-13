@@ -60,6 +60,28 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
 - **`63a4f9f` — build time: the `Dwarf.Map` call-site scan bound every `.Map(…)` call.** 793 of 4,216 invocations on
   IntegrationTests were sent to a semantic bind to find 17 possible call sites; now 95. Generator time on those
   sources 4.1-4.2 s -> 2.3-2.9 s cold, 0.84-0.98 -> 0.65 s warm.
+- **`2f3b290` — test speed: the surface matrix was Generator.Tests' critical path.** Six ratchet facts re-classified
+  all 966 cells serially, and every cell ran the generator twice; now parallel within each test, one run per cell,
+  966/966 verdicts byte-identical. Generator.Tests 89/84 s -> 69/76 s, peak memory within noise. Deliberately no
+  cross-test cache: Stryker switches mutants per test case inside one test host.
+- **The fast-path axis audit** (a read-only agent asked, of every specialised path, which axes its gate does not
+  read). Two of its cells were real and are fixed:
+  - `2a0b270` — under `NullCollections = AsNull` a null source array became `[]` on the array block-copy, enum
+    block-copy and array widen paths (run and observed); they now give way where null is kept.
+  - `6cdce1b` — `ImmutableList<string?>`-style targets warned CS8619 in generated code (identity `CreateRange` inferred
+    the element; the share's `.Empty` dropped the `?`), and the share passed `ImmutableList<string?>` into
+    `ImmutableList<string>` by reference, skipping the element-null check the copy makes.
+
+## The audit's cells not yet tested (in its rank order; "read" = gate read, not run)
+
+- **`default(ImmutableArray<T>)` source** — the blit/widen and the share answer empty; the general path enumerates
+  `src.GetValueOrDefault()` and should throw. Which one runs depends on Preserve / AsNull / whether the element blits.
+  Needs a decision of what `default` SHOULD map to before a test can pin it.
+- **FlattenGraph leaf under Preserve** — leaves resolve with Preserve off, so a `List<int>` -> `List<long>` or blittable
+  leaf is flattened through a static helper with no tracking, while an Obj/Coll/Dict leaf reports DWARF075 (read).
+- **`Nullable<struct>` wrappers** recurse with `WithoutReferenceTracking()` - a struct carrying references loses
+  Preserve identity through `PsHolder?` (inferred; `PreserveThroughStructRuntimeTests` covers non-nullable holders).
+- **Array blit under SetNull vs a method-level config on the element pair's partial** (inferred).
 
 ## Measured, not acted on
 
