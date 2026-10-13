@@ -539,6 +539,11 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Under `NullCollections = AsNull`, a null source array came back as an empty array on the block-copy and widen
+  paths.** A nullable `int[]?` → `long[]?`, a struct array that block-copies, or an enum array under `ByValue` mapped a
+  null source to `[]`, while every other collection member of the same mapper kept null. Those paths now give way
+  where null is kept; a non-nullable target, which gets an empty array on every path, keeps its block copy. `DWARF100`
+  ("one rename away from a block copy") is no longer reported where no block copy would be taken.
 - **Under `ReferenceHandling = Preserve`, one source collection reached twice is one target collection on every
   path again.** Preserve registers a collection before filling it, so two members sharing one source array or list
   share one target - but a blittable struct array, a `ByValue` enum array, a list block copy or an `int[]` → `long[]`
