@@ -449,6 +449,15 @@ function Invoke-StrykerLeg {
     # this. If any of those three ever appear, this line stops being free.
     $stArgs += @('--configuration', 'Release')
 
+    # --- break-on-initial-test-failure: a red suite measures nothing --------------------------------
+    # A test failing BEFORE mutation is not one lost test. Stryker 4.16 then gives every static mutant an
+    # explicit list of every other test instead of "every test", sends it to VsTest run after run, and the leg
+    # bloats: measured 2026-10-26, Stryker itself held 6.8-8.2 GB against ~1.1 GB - the likeliest cause of the
+    # CI legs dying on 16 GB runners for weeks (ci.yml, the ilverify step). With the flag the leg stops after
+    # its initial run and prints the failing tests by name. CI's Stryker step passes it too;
+    # MutationLaunchContractTests holds both.
+    $stArgs += @('--break-on-initial-test-failure')
+
     # --- concurrency: DELIBERATELY NOT SET, and this comment is the correction ----------------------
     # This launcher briefly raised concurrency to cores-2, on the theory that Stryker's default of half the
     # logical processors was leaving the machine idle. MEASURED, and wrong: the generator leg, whose recorded
@@ -1242,6 +1251,12 @@ function Assert-PackageSizeWithinCeiling {
 # (killedBy / coveredBy), so dropping the unreferenced ones loses nothing it shows: 10.5 MB -> 4.7 MB on
 # the largest. `files` (source and every mutant, whatever its status) is passed through untouched.
 # Refuses an empty population, for the same reason "Assert the run was not vacuous" does.
+# CORRECTED 2026-10-26: CI's reports were not those local ones. The CI legs ran with two tests failing
+# Stryker's initial run (no ilverify), which gives every static mutant an explicit `coveredBy` list of all
+# ~7,040 tests: the 2026-10-16 pipeline report was 119 MB, 108.7 MB of it those lists, so every test counted
+# as referenced and this kept 7,042 of 7,042. The dashboard refused that at 116 MB and accepted 87.8 MB the
+# same night, so its limit is not ~10 MB either. The fix is upstream (ci.yml installs ilverify and breaks on
+# an initial failure); this function is unchanged.
 function Write-DashboardReport {
     param(
         [Parameter(Mandatory)] [string] $Report,
