@@ -98,6 +98,14 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
     floors were measured with. They cover 27-37 mutants a leg (local reports), so installing the tool costs minutes.
   Both launch sites now also pass `--break-on-initial-test-failure` (verified: the leg stops after 3.5 min and prints
   both test names and messages), so the next initial failure is a named red in minutes, not a death in hours.
+- **`aad3cd8` — the Perf ratio inside Stryker's initial run.** On PR #9's re-run (head `1ca6232`) the flag stopped the
+  pipeline leg 5 min in, naming its one failing test: `InterfaceBucketTests`' ratio, 255.1 -> 394.8 ns. That is T19's
+  noisy neighbour inside the mutation legs. Stryker 4.16 reads a test filter only from its config file
+  (`test-case-filter`; the command line has none), so all six configs carry `Category!=Perf`. A local run accepted the
+  key, and its coverage pass ran the class's two guard facts but not the ratio. No score cost: in the last complete
+  local runtime report the test killed 11 mutants and was the sole killer of none. The same re-run was otherwise the
+  first evidence on CI: ilverify installed and no ILVerify failure in any leg, deep-test green, the generator leg past
+  its initial run and mutating, and the pipeline leg's trace showing Stryker at 0.4 GB through its initial run.
 
 ## The audit's cells not yet tested (in its rank order; "read" = gate read, not run)
 
@@ -130,8 +138,9 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
 - **The generator and pipeline legs die at random, not at their timeouts.** ROOT-CAUSED 2026-10-26, see `eae75be`
   under "Found and fixed"; what follows is the record that led there. What the next full-ci run must show: no
   "tests are failing" line, the resource trace bounded well under 16 GB, both legs completing, and on the next
-  nightly no 413. Still unidentified: the THIRD test failing the 2026-10-25 generator leg's initial run (its pipeline
-  leg that night had the usual two); with the flag, the next such run stops and names it.
+  nightly no 413. The THIRD test failing the 2026-10-25 generator leg's initial run (its pipeline leg that night had
+  the usual two) was most likely the Perf ratio, which failed PR #9's re-run the same way (`aad3cd8`). If it was
+  something else, the flag will now stop the leg and name it.
   Read from the public jobs and annotations API over the fourteen nightlies 2026-10-02..13:
   - On `24a31de`, the same commit and config for twelve nights, the generator leg ran 27.8, 54, 56, 66, 126, 151, 177,
     195, 198, 200 and 200 minutes. Only 10-04 and 10-09 carry GitHub's "exceeded the maximum execution time"
