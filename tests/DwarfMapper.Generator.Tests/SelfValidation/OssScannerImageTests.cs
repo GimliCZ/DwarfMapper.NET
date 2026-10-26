@@ -19,6 +19,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///         longer resolves sends an auditor to nothing, so those are held the way <c>SecurityDocIsCurrentTests</c>
     ///         holds SECURITY.md's citations.
     ///     </para>
+    ///     <para>
+    ///         <c>.oss-scanner/project.yaml</c> is the enrolment entry's canonical text, and its <c>primary_contact</c> is
+    ///         the project's ONE security contact: the documents that tell a reporter where to go are held to it.
+    ///     </para>
     /// </summary>
     public class OssScannerImageTests
     {
@@ -36,6 +40,31 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         private static string ThreatModel() => Read(".oss-scanner", "threat_model.md");
 
         private static string Ci() => Read(".github", "workflows", "ci.yml");
+
+        private static string Enrolment() => Read(".oss-scanner", "project.yaml");
+
+        /// <summary>An address as the scanner's own validator reads one (tools/validate.py's EMAIL), tightened to word characters.</summary>
+        private const string EmailPattern = @"[\w.+-]+@[\w-]+(?:\.[\w-]+)+";
+
+        /// <summary>
+        ///     A top-level <c>key: value</c> of the enrolment entry; the comment lines never match. The value runs to the
+        ///     first whitespace, not the first <c>#</c>: YAML starts a comment only after whitespace, and <c>repo</c>'s
+        ///     <c>#master</c> is part of the value.
+        /// </summary>
+        private static string EnrolmentField(string key) =>
+            Regex.Match(Enrolment(), "(?m)^" + Regex.Escape(key) + @":[ \t]*(?<v>\S+)").Groups["v"].Value;
+
+        /// <summary>The body of the markdown section headed exactly <paramref name="heading" />, up to the next heading at its level or above.</summary>
+        private static string Section(string doc, string heading)
+        {
+            var level = heading.TakeWhile(c => c == '#').Count();
+            var match = Regex.Match(doc, "(?m)^" + Regex.Escape(heading) + @"[ \t]*\r?$");
+            Assert.True(match.Success, $"No '{heading}' section.");
+
+            var rest = doc[(match.Index + match.Length)..];
+            var next = Regex.Match(rest, "(?m)^#{1," + level + "} ");
+            return next.Success ? rest[..next.Index] : rest;
+        }
 
         private static string AllTestSources() => string.Join('\n', RepoPaths.SourceFiles(RepoPaths.Tests).Select(File.ReadAllText));
 
@@ -234,6 +263,50 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             Assert.True(named.Count >= 5, $"The threat model names only {named.Count} repository paths.");
             Assert.True(missing.Count == 0, "threat_model.md names a path that does not exist:\n  " + string.Join("\n  ", missing));
+        }
+
+        /// <summary>
+        ///     Found 2026-10-26: SECURITY.md and docs/SECURITY.md both sent reporters to GitHub's "Report a vulnerability"
+        ///     button, and the repository had private vulnerability reporting switched OFF - there was no private channel
+        ///     at all. The contact now lives in ONE place, the scanner enrolment's <c>primary_contact</c>, and every section
+        ///     that tells a reporter where to go must name it.
+        /// </summary>
+        [Fact]
+        public void Every_document_that_tells_a_reporter_where_to_go_names_the_enrolment_contact()
+        {
+            var contact = EnrolmentField("primary_contact");
+            Assert.Matches("^" + EmailPattern + "$", contact);
+
+            Assert.Contains(contact, Section(Read("SECURITY.md"), "## Reporting a vulnerability"), StringComparison.Ordinal);
+            Assert.Contains(contact, Section(Read("docs", "SECURITY.md"), "## Reporting"), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void No_other_email_address_is_published_beside_the_contact()
+        {
+            // The contact is public by design. Any OTHER address in these files is one nobody chose to publish.
+            var contact = EnrolmentField("primary_contact");
+            var others = new[] { Read("SECURITY.md"), Read("docs", "SECURITY.md"), Enrolment(), ThreatModel(), Dockerfile() }
+                .SelectMany(text => Regex.Matches(text, EmailPattern).Select(m => m.Value))
+                .Where(address => !string.Equals(address, contact, StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            Assert.True(others.Count == 0, "An address other than the enrolment contact is published:\n  " + string.Join("\n  ", others));
+        }
+
+        [Fact]
+        public void The_enrolment_entry_points_at_this_repository_and_its_own_files()
+        {
+            // The scanner clones `repo` and builds the `dockerfile` it finds there, so a stale URL or path audits nothing.
+            var repositoryUrl = Regex.Match(Read("Directory.Build.props"), "<RepositoryUrl>(?<u>[^<]+)</RepositoryUrl>").Groups["u"].Value;
+            Assert.StartsWith("https://github.com/", repositoryUrl, StringComparison.Ordinal);
+
+            Assert.Equal(repositoryUrl + "#master", EnrolmentField("repo"));
+            Assert.Equal(repositoryUrl, EnrolmentField("homepage"));
+            Assert.Equal(".oss-scanner/Dockerfile", EnrolmentField("dockerfile"));
+            Assert.Equal(".oss-scanner/threat_model.md", EnrolmentField("threat_model"));
+            Assert.Equal("false", EnrolmentField("disabled"));
         }
 
         [Fact]

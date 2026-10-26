@@ -9,9 +9,10 @@ is where security fixes land. Once releases begin, this section will name the su
 as unsupported — there is nothing published to compare it against.)
 
 ## Reporting a vulnerability
-Please report security issues privately via GitHub Security Advisories
-("Report a vulnerability" on the repository Security tab). Do **not** open a
-public issue for undisclosed vulnerabilities.
+Please report security issues privately by email to **dwarfmapper@seznam.cz**. Do **not** open a public issue
+for an undisclosed vulnerability.
+
+Say which version or commit you found it on. A reproducer helps most, and the most useful form is a failing test.
 
 We aim to acknowledge reports within 72 hours and to provide a remediation
 timeline within 7 days.
