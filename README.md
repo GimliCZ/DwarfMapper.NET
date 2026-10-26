@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/GimliCZ/DwarfMapper.NET/graph/badge.svg?branch=master)](https://codecov.io/gh/GimliCZ/DwarfMapper.NET)
+[![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2FGimliCZ%2FDwarfMapper.NET%2Fmaster)](https://dashboard.stryker-mutator.io/reports/github.com/GimliCZ/DwarfMapper.NET/master)
 [![NuGet prerelease](https://img.shields.io/nuget/vpre/DwarfMapper?logo=nuget&label=NuGet%20prerelease)](https://www.nuget.org/packages/DwarfMapper)
 [![downloads](https://img.shields.io/nuget/dt/DwarfMapper?label=downloads)](https://www.nuget.org/packages/DwarfMapper)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![license](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
-
 [![last commit](https://img.shields.io/github/last-commit/GimliCZ/DwarfMapper.NET)](https://github.com/GimliCZ/DwarfMapper.NET/commits)
 
 > A compile-time object mapper for .NET where **an unmapped member is a build error**, maps are **round-trip-verifiable
@@ -1151,10 +1151,8 @@ welcome.
 
 ### Quality gates
 
-Published by CI and read live, not committed numbers.
-
-[![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2FGimliCZ%2FDwarfMapper.NET%2Fmaster)](https://dashboard.stryker-mutator.io/reports/github.com/GimliCZ/DwarfMapper.NET/master)
-[![codecov](https://codecov.io/gh/GimliCZ/DwarfMapper.NET/branch/master/graph/badge.svg)](https://codecov.io/gh/GimliCZ/DwarfMapper.NET)
+The mutation and coverage badges at the top of this page are published by CI and read live, not committed
+numbers.
 
 <sub>The mutation badge is the Stryker dashboard's AGGREGATE over all six legs of `master` — generator, doctooling, runtime, code fixes, pipeline and testing — each uploaded as its own module by the nightly `mutation` matrix, and only after that leg's report has passed the vacuity, tree-cleanliness and decontamination checks. Read it as one number over six differently-scoped populations: each leg names only a minority of `src/`, and [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there. It is also the RAW score — the dashboard has no notion of a proven-equivalent mutant, so where a leg carries adjudicated rows its raw figure sits above the score the project holds itself to. The per-leg breaks, the measurement each came from and every equivalence proof are in [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md) and the [`stryker-config*.json`](stryker-config.json) files, which are what actually fail a build. Coverage is Codecov's live figure for `master`; the enforced per-assembly floors live in [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1).</sub>
 
