@@ -311,7 +311,9 @@ jobs:
       # higher number must not be "restored": the runtime leg's 66 counted load-induced timeouts on mutants
       # that cannot hang as detections). If a leg reports Timeouts on mutants that cannot hang, the runner
       # is slower than the timeout cushion assumes: raise `additional-timeout` in that config. Do NOT add a
-      # test filter to make it fit.
+      # test filter to make it fit. The configs' one filter, "test-case-filter": "Category!=Perf", is not a fit:
+      # it is round 31 T19's rule that no leg but perf-tests runs a wall-clock ratio, and PR #9's pipeline leg
+      # broke its initial run on one (PerfCategoryIsolationScanTests holds every config to it).
       #
       # --break-on-initial-test-failure: a test failing BEFORE mutation is never just one lost test, it puts
       # every static mutant on the explicit lists above. So any initial failure now stops the leg within minutes
