@@ -75,6 +75,29 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
 - **Package-size headroom after those fixes** — re-packed at `6cdce1b` on Windows (SDK 10.0.101): 371,190 B, still
   362 KB, gate passes. Headroom to the first red byte is now **522 B** (was 937 B at `38ce1a5`); the next generator
   change of that size needs the two-floor re-measure, not a guess.
+- **`daff726` — deep-test timed a Perf ratio inside the parallel suite.** Round 31 T19 took `Category=Perf` out of
+  every ci.yml and release.yml test step but not out of `housekeeping.ps1`'s stage 1, which is what deep-test runs.
+  The 2026-10-24 master nightly and PR #9 went red on `InterfaceBucketTests`' 1.5x bound (787.8 -> 1383.4 and
+  857.2 -> 1394.0 ns). Stage 1 filters the category now, stage 1c runs it alone (not under `-Nightly`, where the
+  perf-tests job owns it), and `PerfCategoryIsolationScanTests` holds every `dotnet test` the workflows reach,
+  scripts included — the sentence CiGateScanTests' perf-tests row only asserted.
+- **`eae75be` — the mutation legs' deaths, the dashboard 413 and CI's scores had one cause: no ilverify in the job.**
+  Every leg's initial test run failed `EmittedIlIsVerifiableTests`' two facts ("2 tests are failing" in every log
+  read, 2026-10-04 to PR #9; a local reproduction's trace named them). Read in Stryker 4.16's binary, an initial
+  failure moves every static mutant from "every test" to an explicit list of the ~7,040 others (`CoverageAnalyser`),
+  which `VsTestRunner` sends as `TestCase` objects on every run:
+  - A local A/B shaped like CI (`DOTNET_PROCESSOR_COUNT=4`, Debug, generator leg, one worktree, only ilverify
+    differing): Stryker held **6.8-8.2 GB without the tool, ~1.1 GB with it**, at the same phase (tree peaks 9.4 vs
+    4.8 GB). On a 16 GB runner that is the likeliest cause of 21 of the 26 nightly generator/pipeline legs on
+    `6abd8c1` ending in "The runner has received a shutdown signal" (3 left no log, 1 timed out, 1 completed). The
+    Stryker step now writes memory, disk and top processes into its live log every 30 s, to confirm it there.
+  - The lists were 108.7 MB of the 119 MB 2026-10-16 pipeline report. The dashboard refused it (413) and accepted
+    the testing leg's 87.8 MB that night, so round 32's `Write-DashboardReport` could never fit it (every test was
+    "referenced"), and its "~10 MB" premise came from local reports, which carry no such lists. Comments corrected.
+  - Stryker drops an initially failing test from the tests that may kill, so CI scored without two facts the local
+    floors were measured with. They cover 27-37 mutants a leg (local reports), so installing the tool costs minutes.
+  Both launch sites now also pass `--break-on-initial-test-failure` (verified: the leg stops after 3.5 min and prints
+  both test names and messages), so the next initial failure is a named red in minutes, not a death in hours.
 
 ## The audit's cells not yet tested (in its rank order; "read" = gate read, not run)
 
@@ -104,8 +127,12 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   (the round-32 global.json fallback proven in its own job), ubuntu-26-canary, deep-test, cross-platform, perf-tests,
   reproducible-build, AOT, four mutation legs. Red: package-size (fixed, `38ce1a5`) and the generator and pipeline
   mutation legs, both **cancelled well short of their timeouts** (126 of 200 and 57 of 350 min).
-- **The generator and pipeline legs die at random, not at their timeouts.** Read from the public jobs and annotations
-  API over the fourteen nightlies 2026-10-02..13:
+- **The generator and pipeline legs die at random, not at their timeouts.** ROOT-CAUSED 2026-10-26, see `eae75be`
+  under "Found and fixed"; what follows is the record that led there. What the next full-ci run must show: no
+  "tests are failing" line, the resource trace bounded well under 16 GB, both legs completing, and on the next
+  nightly no 413. Still unidentified: the THIRD test failing the 2026-10-25 generator leg's initial run (its pipeline
+  leg that night had the usual two); with the flag, the next such run stops and names it.
+  Read from the public jobs and annotations API over the fourteen nightlies 2026-10-02..13:
   - On `24a31de`, the same commit and config for twelve nights, the generator leg ran 27.8, 54, 56, 66, 126, 151, 177,
     195, 198, 200 and 200 minutes. Only 10-04 and 10-09 carry GitHub's "exceeded the maximum execution time"
     annotation; 10-08 says "the hosted runner lost communication with the server"; every other cancellation says only
@@ -122,7 +149,8 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   - The other red, now gone: the **runtime** leg failed its `break <= low` config check in 30 s on every nightly from
     10-02 to 10-12. Round 32's `3442b4c` fixed it (the config had a UTF-8 BOM), and it passed on 10-13. Earlier nights' generator/pipeline reds that did
     complete died on the dashboard's HTTP 413, which round 32's `Write-DashboardReport` (`98abd91`, `f7f07de`)
-    addresses. No completed generator or pipeline leg has run since, so that fix is not yet proven on CI.
+    was meant to address. It did not: the 2026-10-16 pipeline leg completed (98.41 %) and was still refused, at
+    116 MB after trimming 3 MB (see `eae75be`).
   - Separately, round 22's K3 (`Issues/round22/RESEARCH-STATIC-MUTANT-ATTRIBUTION.md`) still holds: static mutants
     are most of the leg's work, so a faster serial suite shortens it in proportion. That helps, but it does not
     explain a 7x spread.
