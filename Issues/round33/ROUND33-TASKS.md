@@ -145,9 +145,13 @@ reachable and tested or removed (2026-09-10 full-coverage ruling).
   false kill or masked mutant. Unmeasured; the memo was deliberate, so it is a question, not a fix.
 
 1. T03's API surface: a `DwarfRefContext` constructor overload, or a capacity member.
-2. `LICENSE`: the verbatim GPL-2.0 text alone, with the project notice moved to README or a `NOTICE` file — GitHub
-   reads the file as "Other" today, which the scanner's triage flags.
-3. A public security contact for SECURITY.md and the scanner's `primary_contact`.
+2. ~~`LICENSE`: the verbatim GPL-2.0 text alone, with the project notice moved to README or a `NOTICE` file.~~
+   **Decided 2026-10-26: keep LICENSE as it is** ("the original is good"). The notice carries the explicit
+   version-2-only grant; GitHub's "Other" costs a warning row in the scanner triage comment, which quotes the
+   file's licence line to the reviewer. Round 23 had left it untouched for the same reason.
+3. ~~A public security contact for SECURITY.md and the scanner's `primary_contact`.~~ **Decided 2026-10-26:**
+   `dwarfmapper@seznam.cz`, a new project address (`152f286`). GitHub private vulnerability reporting is OFF on
+   the repository, so SECURITY.md names only the email until the owner switches it on.
 4. T01's shape: pin plus canary, rather than letting `ubuntu-latest` float through the move.
 5. `[Reinterpret]` under Preserve. It forces the block copy as an explicit instruction, before the gates the Preserve
    fix added, so it still takes the static copy - and a source reached twice becomes two targets. Options: keep

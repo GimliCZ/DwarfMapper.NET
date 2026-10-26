@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 #
-# The enrolment entry for Anthropic's OSS Scanner (https://github.com/anthropics/oss-scanner): the exact text of
-# projects/dwarfmapper/project.yaml in that repository, kept here so it is reviewed and tested with the files it names.
-# The scanner reads THEIR copy, never this one, and enrolment is a pull request there - until it merges, this file
-# claims nothing. OssScannerImageTests holds it to SECURITY.md (one contact, everywhere a reporter is told where to
-# go), to the repository URL the packages declare, and to the Dockerfile and threat model it points at.
+# DwarfMapper's enrolment in Anthropic's OSS Scanner (https://github.com/anthropics/oss-scanner). The scanner reads
+# projects/dwarfmapper/project.yaml in ITS repository, which carries the key: value lines below verbatim and nothing
+# else; this copy is the one reviewed and tested here, with the files it names. Enrolment is a pull request there -
+# until it merges, this file claims nothing. OssScannerImageTests holds it to SECURITY.md (one contact, everywhere a
+# reporter is told where to go), to the repository URL the packages declare, and to the Dockerfile and threat model.
 
 # The ONE repository to scan; pinned to master, where the Dockerfile and threat model below must already be.
 repo: https://github.com/GimliCZ/DwarfMapper.NET#master
