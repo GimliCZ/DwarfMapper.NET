@@ -42,6 +42,12 @@ is still open under its own name.
     facts were RED before the change (the function missing, the step still sending its own PUT); SelfValidation
     632/632 after. The step's comment that the `?module=` spelling was unverified is corrected: the six badges read
     six separate scores.
+
+    **Then the real transport.** The battery's scripted transport left curl's own failed-connection path untested.
+    With PowerShell's native-command preference on, curl's non-zero exit throws before the policy sees the 000 it
+    exists to retry: a case running the real curl against a closed local port read `Program "curl.exe" ended with a
+    non-zero exit code` (RED). The default transport now turns that preference off for itself (GREEN): pause, a
+    second send, then `HTTP 000 after 2 attempt(s)`.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
 
   **Inventory taken** (`Issues/round34/SILENCED-CHECKS-INVENTORY.md`, agent-produced, headline claims spot-checked).

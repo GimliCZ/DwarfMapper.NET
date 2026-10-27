@@ -1322,6 +1322,9 @@ function Send-DashboardReport {
         [int] $RetryDelaySeconds = 120,
         [scriptblock] $Send = {
             param($url, $payload, $response)
+            # A failed connection is curl exiting non-zero with 000 written, which is exactly the answer the policy
+            # below retries. With PowerShell's native-command preference on, that exit would throw first.
+            $PSNativeCommandUseErrorActionPreference = $false
             curl -sS -o $response -w '%{http_code}' -X PUT $url `
                 -H 'Content-Type: application/json' `
                 -H "X-Api-Key: $env:STRYKER_DASHBOARD_API_KEY" `

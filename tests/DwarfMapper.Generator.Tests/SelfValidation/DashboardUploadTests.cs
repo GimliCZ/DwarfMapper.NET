@@ -51,10 +51,26 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     Show 'refused' { Upload @('413') }
                     Show 'down-twice' { Upload @('503', '502') }
                     Show 'no-status' { Upload @('') }
+                    # The REAL transport against a port nothing listens on: curl exits non-zero and writes 000. With
+                    # PowerShell's native-command preference on, that exit would throw before the policy saw the 000.
+                    Show 'real-curl-no-connection' {
+                        $PSNativeCommandUseErrorActionPreference = $true
+                        $seen = [System.Collections.Generic.List[string]]::new()
+                        $pause = { param($seconds) $seen.Add("pause $seconds") }.GetNewClosure()
+                        $payload = Join-Path $WorkDir 'payload.json'
+                        Set-Content -LiteralPath $payload -Value '{}'
+                        try {
+                            $null = Send-DashboardReport -Url 'http://127.0.0.1:9/api/reports/p/v?module=m' `
+                                -Payload $payload -Response (Join-Path $WorkDir 'response.json') -Pause $pause
+                            'published'
+                        } catch {
+                            ($seen -join ', ') + ' -> failed: ' + $_.Exception.Message
+                        }
+                    }
                     """,
                     new UTF8Encoding(false));
 
-                var cases = PwshBattery.Run(dir, 7, "the dashboard upload's retry");
+                var cases = PwshBattery.Run(dir, 8, "the dashboard upload's retry");
 
                 Assert.Equal("OK send -> published", cases["ok"]);
                 Assert.Equal("OK send -> published", cases["created"]);
@@ -70,6 +86,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 Assert.Contains("HTTP 502", cases["down-twice"], StringComparison.Ordinal);
                 // No status at all means the transport itself did not run, which a retry would only hide.
                 Assert.StartsWith("OK send -> failed: ", cases["no-status"], StringComparison.Ordinal);
+                // The case the retry exists for, through curl itself: no connection is a 000, paused for and sent again.
+                Assert.Equal("OK pause 120 -> failed: dashboard upload: HTTP 000 after 2 attempt(s).",
+                    cases["real-curl-no-connection"]);
             }
             finally
             {
