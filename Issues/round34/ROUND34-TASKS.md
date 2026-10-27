@@ -14,6 +14,24 @@ is still open under its own name.
   - **A1. Memory headroom on the mutation legs** (see "Next steps — CI"): in round 33's Docker rig and in Stryker's
     serial mode, the mode the legs run in, find what the test host holds at its peak (a gcdump), then try the fix
     the dump points at. Any heap-limit arm reports the suite's time as well as its peak.
+
+    **Done — `3144bab`; the evidence is in `benchmarks/results/2026-10-27-round34-a1-testhost-memory.md`.**
+    - **Not the GC heap.** The host's working set reached 6.8 GB while the GC's committed heap never passed 0.41 GB,
+      and the gcdump found 214 MB of live objects at 4.2 GB RSS.
+    - **Native memory.** The rest was anonymous memory in glibc malloc arenas. It rose in steps while the
+      symbol-level unit tests ran: about fifty sites called `MetadataReference.CreateFromFile` on every compile.
+      That call copies the whole image into native memory, and the copy is freed only at finalization.
+    - **The fix.** `GeneratorTestHarness.ReferenceTo` creates one reference per file for the host.
+      `MetadataReferenceReuseScanTests` holds the rest of the project to it: 52 sites before, RED; none after.
+    - **A/B in Stryker's serial mode** (three trials per arm, alternating):
+      - peak host 5.63 / 6.92 / 8.33 GB before, against 0.83 / 0.85 / 0.82 GB after (8.3x lower at the median);
+      - lowest available memory 5.97-8.38 GB before, 13.26-13.48 GB after;
+      - suite 1 m 43 s - 2 m 1 s before, 1 m 28 s every time after.
+    - **The GC heap limit is moot.** It would not have touched memory outside the GC heap.
+    - **The `2f3b290` PLINQ arm** measured default mode, which build-test and deep-test already have headroom for.
+      It is not pursued.
+    - **Open: CI.** The first nightly after this reaches master has to show the mutation legs' largest host near
+      1 GB. That is a prediction from the rig, not yet a measurement.
   - **A2. The dashboard upload retries once** on a 5xx or a failed connection, after a pause; never on a 4xx, which
     the step already explains as configuration.
 
