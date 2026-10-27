@@ -1301,3 +1301,47 @@ function Write-DashboardReport {
     '{0} -> {1} bytes; kept {2} of {3} tests (the ones a mutant references); {4} mutants passed through' -f `
         (Get-Item -LiteralPath $Report).Length, (Get-Item -LiteralPath $Out).Length, $kept, $total, $mutants
 }
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The upload itself, sent once more when the dashboard gave no answer about the report. On 2026-10-27
+# the first nightly on round 33's code measured and gated all six legs, and two still went red here: the
+# dashboard answered the runtime and codefixes PUTs (09:09:41 and 09:09:59 UTC) with HTTP 504 four
+# minutes later, while the uploads at 09:08 and 09:28 went through. A 5xx, or no status at all (curl
+# writes 000 when the connection fails), says nothing about the request, so it is sent again after a
+# pause. A 4xx is the dashboard's answer about the request - the key, the project name, the size (413) -
+# and the same request cannot get a different one, so it fails at once. One retry, not a loop: a
+# dashboard down for longer fails the leg as before, and the next nightly publishes. PUT replaces the
+# module's report, so a second send of a report the first one delivered after all changes nothing.
+# -Send and -Pause are the transport and the clock, injectable so a battery can drive the policy with
+# neither (DashboardUploadTests); -Send returns the HTTP status and leaves the body in -Response.
+function Send-DashboardReport {
+    param(
+        [Parameter(Mandatory)] [string] $Url,
+        [Parameter(Mandatory)] [string] $Payload,
+        [Parameter(Mandatory)] [string] $Response,
+        [int] $RetryDelaySeconds = 120,
+        [scriptblock] $Send = {
+            param($url, $payload, $response)
+            curl -sS -o $response -w '%{http_code}' -X PUT $url `
+                -H 'Content-Type: application/json' `
+                -H "X-Api-Key: $env:STRYKER_DASHBOARD_API_KEY" `
+                --data-binary "@$payload"
+        },
+        [scriptblock] $Pause = { param($seconds) Start-Sleep -Seconds $seconds }
+    )
+
+    $attempt = 1
+    $status = ([string](& $Send $Url $Payload $Response)).Trim()
+    if (Test-Path -LiteralPath $Response) { Get-Content -Raw -LiteralPath $Response }
+    if ($status -match '^(5\d\d|000)$') {
+        "dashboard: HTTP $status, which says nothing about the report - sending it again in $RetryDelaySeconds s"
+        & $Pause $RetryDelaySeconds
+        $attempt = 2
+        $status = ([string](& $Send $Url $Payload $Response)).Trim()
+        if (Test-Path -LiteralPath $Response) { Get-Content -Raw -LiteralPath $Response }
+    }
+    if ($status -ne '200' -and $status -ne '201') {
+        throw "dashboard upload: HTTP $status after $attempt attempt(s)."
+    }
+    "dashboard: HTTP $status (attempt $attempt)"
+}

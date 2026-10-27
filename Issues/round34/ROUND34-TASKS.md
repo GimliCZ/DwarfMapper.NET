@@ -16,6 +16,14 @@ is still open under its own name.
     the dump points at. Any heap-limit arm reports the suite's time as well as its peak.
   - **A2. The dashboard upload retries once** on a 5xx or a failed connection, after a pause; never on a 4xx, which
     the step already explains as configuration.
+
+    **Done.** The PUT moved out of the workflow into `Send-DashboardReport` (`scripts/gate-checks.ps1`), with its
+    transport and its clock injectable. `DashboardUploadTests` drives the real function through a pwsh battery
+    (200 and 201 once; 504 then 200, and 000 then 201, once more after 120 s; 413 once and fails; 503 then 502 twice
+    and fails; no status once and fails), and holds the mutation job to calling it with no `curl` of its own. Both
+    facts were RED before the change (the function missing, the step still sending its own PUT); SelfValidation
+    632/632 after. The step's comment that the `?module=` spelling was unverified is corrected: the six badges read
+    six separate scores.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the

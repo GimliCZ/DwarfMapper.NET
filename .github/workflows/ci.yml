@@ -456,25 +456,20 @@ jobs:
           # 2026-10-16 it accepted the testing leg's 87.8 MB and refused the pipeline leg's 116 MB with 413. That
           # 116 MB was the explicit `coveredBy` lists an initial test failure causes (see the ilverify step).
           REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Write-DashboardReport -Report $env:REPORT -Out dashboard-report.json'
-          status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
-            "https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module" \
-            -H 'Content-Type: application/json' \
-            -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
-            --data-binary @dashboard-report.json)
-          cat dashboard-response.json; echo
-          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
-            # This step has never run before this workflow first reaches master, and exactly one thing in it is
-            # unverified: `?module=`. The endpoint and the X-Api-Key header are documented; the module
-            # parameter's SPELLING is not, so a first-contact 4xx most likely means that name is wrong rather
-            # than that anything is broken. Say so here, with the pieces needed to fix it in one edit, instead
-            # of leaving six red legs reporting an opaque status code.
-            echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
-            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
-            echo "Response body is above. The URL SHAPE is documentation-verified - the dashboard's HTTP API"
-            echo "documents exactly '\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx"
-            echo "suspect the API KEY or the project name before the parameter. The report itself was measured"
-            echo "and gated before this step ran and is attached as an artifact, so a failed upload loses no"
-            echo "measurement: fix the credential or the name and the next nightly publishes."
+          url="https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
+          # Send-DashboardReport sends the report once more, after a pause, when the dashboard gave no answer
+          # about it (a 5xx or no connection), and fails at once on a 4xx (DashboardUploadTests). On 2026-10-27
+          # two legs that had measured and gated everything went red on a 504 here.
+          if ! URL="$url" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Send-DashboardReport -Url $env:URL -Payload dashboard-report.json -Response dashboard-response.json'; then
+            # The module parameter's spelling is proven: on 2026-10-27 the dashboard's badges read a separate
+            # score for each of the six modules. So a 4xx points at the key or the project name.
+            echo "::error::${{ matrix.leg }}: the dashboard upload failed; the status and the response body are above."
+            echo "PUT $url"
+            echo "The URL SHAPE is documentation-verified - the dashboard's HTTP API documents exactly"
+            echo "'\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx suspect the API KEY"
+            echo "or the project name. A 5xx or a failed connection was already sent twice. The report itself was"
+            echo "measured and gated before this step ran and is attached as an artifact, so a failed upload loses"
+            echo "no measurement: the next nightly publishes."
             exit 1
           fi
           # NOT asserted: anything about the response BODY. The dashboard documents the endpoint and the module
