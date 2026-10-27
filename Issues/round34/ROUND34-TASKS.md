@@ -184,6 +184,17 @@ is still open under its own name.
   - package-size: the `DwarfMapper.Testing` package went from 53 to 56 KB, and B5 did not re-measure: invariant R1
     missed a fourth time, stated rather than backdated. Re-measured in its own commit (B5c).
 
+  **B5c done — the package-size ceiling re-measured** (`scripts/gate-checks.ps1`).
+  - `DwarfMapper.Testing` goes from 53 to 56 KB; `DwarfMapper` stays at 362.
+  - Measured in `sdk:10.0.101` with the job's own pack commands and `CI=true`:
+    - master (`4a169a4`): 370,900 and 54,598 B;
+    - round 34 (`a3b135d`): 371,023 and 57,883 B;
+    - Windows, at the same commit: 371,224 and 57,934 B.
+  - Entry by entry, the Testing package grew only in its own DLL (+2,732 B compressed) and its XML docs (+557):
+    B5's metadata reader. Nothing new ships.
+  - The real gate function against those packages: RED with the old ceiling, GREEN with the new one.
+  - `DwarfMapper`'s headroom is down to 488 B on Windows.
+
   **B10 done — the complete fuzz proof and the ISA matrix run in CI** (inventory item 13). Until now both ran only
   on a maintainer's machine.
   - `FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path` returns at once unless

@@ -1084,10 +1084,32 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 937 B on Windows, 1,114 B on ubuntu.
 # DwarfMapper.Testing (54 KB = 55,296 B) 643 B on Windows, 670 B on ubuntu.
+#
+# RE-MEASURED 2026-10-27 (round 34, at a3b135d): DwarfMapper unchanged at 362, DwarfMapper.Testing 53 -> 56.
+# B5 (5ed2f45) grew the Testing package and did not re-measure, so R1 was missed a fourth time: the first full-ci
+# run on PR #11 (fc0ae37, run 40558858454) failed this gate at 56 KB. Stated rather than backdated.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     4a169a4 (master)     DwarfMapper 370,900 B   Testing 54,598 B   floor 362 / 53
+#     a3b135d (round 34)   DwarfMapper 371,023 B   Testing 57,883 B   floor 362 / 56
+#   Windows, SDK 10.0.101, CI=true, a3b135d: 371,224 B (+201) and 57,934 B (+51) - floor 362 / 56. The ceiling
+#   is the higher floor, so both platforms agree on it.
+#
+# ENTRY BY ENTRY, master (4a169a4) -> round 34 (a3b135d), compressed bytes, packed in the container:
+#
+#   lib/net10.0/DwarfMapper.Testing.dll              +2,732   B5: an interface whose only implementation did
+#                                                             not load is reported, read from metadata
+#   lib/net10.0/DwarfMapper.Testing.xml                +557   its documentation
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll      +125   DWARFR17 and null directive names (B1, B2)
+#
+# Every row is intended round-34 content; nothing started shipping that should not. README.md is unchanged.
+#
+# Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 488 B on Windows, 689 B on ubuntu.
+# DwarfMapper.Testing (57 KB = 58,368 B) 434 B on Windows, 485 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper'         = 362
-    'DwarfMapper.Testing' = 53
+    'DwarfMapper.Testing' = 56
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
