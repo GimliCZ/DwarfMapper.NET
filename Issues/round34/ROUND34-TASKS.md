@@ -144,6 +144,15 @@ is still open under its own name.
     merge only where master requires it, which today it does not.
   - CONTRIBUTING.md declares `pwsh` and Python 3 (standard library only), and that `full-ci` takes effect from the
     next push.
+
+  **B9 done — two scans that passed over nothing, and ReSharper suppressions held to a reason** (items 19, 20):
+  - `ConformanceArtifactScanTests` returned when `conformance/results/` was missing ("the gate creates it on first
+    run"), which stopped being true on 2026-07-26: six artifacts are committed. Both tests now fail on a missing or
+    empty directory (checked by moving it away: 2 of 3 red; restored: 3/3 green).
+  - Round 30's Task 30.6 asked for the 19 InconsistentNaming headers in one reasoned place. Each already carries its
+    own specific reason line; one place would have traded 19 reasons for one generic one. Instead
+    `SuppressionReasonScanTests` holds every `// ReSharper disable` and `disable once` (40 today, all reasoned) to
+    a reason line directly above, with a positive control.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

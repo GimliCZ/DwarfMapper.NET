@@ -40,6 +40,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // directives.
         private const string Disable = "#pragma warning " + "disable";
 
+        private const string ReSharperDisable = "ReSharper " + "disable";
+
+        private static readonly Regex ReSharperSuppression =
+            new(@"^\s*//\s*ReSharper disable(?:\s+once)?\s+\w", RegexOptions.CultureInvariant);
+
         private static readonly Regex DiagnosticId =
             new(@"\b(?:CA|CS|IDE|MA|RS|IL|NU|SYSLIB|DWARF)\d{3,5}\b", RegexOptions.CultureInvariant);
 
@@ -165,6 +170,58 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.Equal(2, findings.Count);
             Assert.Contains(findings, f => f.StartsWith("3:", StringComparison.Ordinal));
             Assert.Contains(findings, f => f.StartsWith("13:", StringComparison.Ordinal));
+        }
+
+        // ── // ReSharper disable ─────────────────────────────────────────────────
+
+        /// <summary>
+        ///     A ReSharper suppression is a silence too, if only in the IDE: every <c>// ReSharper disable</c>, and
+        ///     every <c>disable once</c>, sits directly under a <c>//</c> line saying why. All 40 did when this was
+        ///     written. The inventory's alternative for the 19 InconsistentNaming headers (round 30's Task 30.6:
+        ///     one central place) would have traded 19 specific reasons for one generic one, so the rule is this
+        ///     instead.
+        /// </summary>
+        [Fact]
+        public void Every_ReSharper_disable_sits_under_its_reason_line()
+        {
+            var suppressions = 0;
+            var findings = new List<string>();
+            foreach (var file in SourceFiles())
+            {
+                var text = File.ReadAllText(file);
+                if (!text.Contains(ReSharperDisable, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var found = ReSharperFindings(text, out var count);
+                suppressions += count;
+                findings.AddRange(found.Select(x => Relative(file) + ":" + x));
+            }
+
+            Assert.True(suppressions >= 30, $"found only {suppressions} ReSharper suppression(s); this scan is reading the wrong thing.");
+            Assert.True(findings.Count == 0,
+                "ReSharper suppressions with no // reason on the line directly above:\n  " + string.Join("\n  ", findings));
+        }
+
+        [Fact]
+        public void The_ReSharper_rule_flags_a_suppression_with_no_reason_above_it()
+        {
+            var source = $$"""
+                           // the members carry the BCL names they classify
+                           // {{ReSharperDisable}} InconsistentNaming
+                           enum A { IList }
+
+                           // {{ReSharperDisable}} once UnusedMember.Global
+                           // {{ReSharperDisable}} once UnusedType.Global
+                           class B { }
+                           """;
+
+            var findings = ReSharperFindings(source, out var suppressions);
+
+            Assert.Equal(3, suppressions);
+            // The first sits under a reason; the second has no line above; the third sits under another suppression.
+            Assert.Equal(2, findings.Count);
         }
 
         // ── [SuppressMessage] ────────────────────────────────────────────────────
@@ -300,6 +357,33 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 if (!reasonAbove && !reasonOnLine)
                 {
                     findings.Add($"{line + 1}: {lines[line].Trim()}");
+                }
+            }
+
+            return findings;
+        }
+
+        /// <summary>The 1-based lines of ReSharper suppressions with no reason line directly above them.</summary>
+        private static List<string> ReSharperFindings(string text, out int suppressions)
+        {
+            var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+            var findings = new List<string>();
+            suppressions = 0;
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (!ReSharperSuppression.IsMatch(lines[i]))
+                {
+                    continue;
+                }
+
+                suppressions++;
+                var above = i > 0 ? lines[i - 1].Trim() : "";
+                var reasonAbove = above.StartsWith("//", StringComparison.Ordinal) &&
+                                  !above.StartsWith("///", StringComparison.Ordinal) &&
+                                  !ReSharperSuppression.IsMatch(above);
+                if (!reasonAbove)
+                {
+                    findings.Add($"{i + 1}: {lines[i].Trim()}");
                 }
             }
 

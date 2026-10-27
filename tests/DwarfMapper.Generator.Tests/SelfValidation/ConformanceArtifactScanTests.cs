@@ -63,12 +63,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             // Artifacts are the gate's EVIDENCE. One that cannot be parsed cannot be ratcheted against, so a
             // malformed file would silently disable the "count may only grow" rule in conformance-gate.sh.
-            if (!Directory.Exists(ResultsDir))
-            {
-                return; // nothing published yet — the gate creates it on first run
-            }
-
-            var artifacts = Directory.EnumerateFiles(ResultsDir, "*.md").ToList();
+            var artifacts = Artifacts();
             foreach (var artifact in artifacts)
             {
                 var text = File.ReadAllText(artifact);
@@ -88,18 +83,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void The_latest_artifact_agrees_with_the_sample()
         {
-            if (!Directory.Exists(ResultsDir))
-            {
-                return;
-            }
-
-            var latest = Directory.EnumerateFiles(ResultsDir, "*.md")
-                .OrderBy(p => p, StringComparer.Ordinal)
-                .LastOrDefault();
-            if (latest is null)
-            {
-                return;
-            }
+            var latest = Artifacts().OrderBy(p => p, StringComparer.Ordinal).Last();
 
             var recorded = Regex.Match(File.ReadAllText(latest), @"- \*\*Assertions:\*\* (?<n>\d+)");
             Assert.True(recorded.Success, $"Could not read the assertion count from {Path.GetFileName(latest)}.");
@@ -107,6 +91,21 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.Equal(
                 ActualAssertionCount(),
                 int.Parse(recorded.Groups["n"].Value, CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>
+        ///     The committed artifacts. Both tests above used to RETURN when there were none ("nothing published yet -
+        ///     the gate creates it on first run"), which stopped being the case on 2026-07-26: six are committed. A
+        ///     missing directory or an empty one now means it moved or was deleted, and passing over nothing would hide
+        ///     that, so it fails (round 34's silenced-checks inventory).
+        /// </summary>
+        private static List<string> Artifacts()
+        {
+            Assert.True(Directory.Exists(ResultsDir),
+                $"{ResultsDir} is missing; the conformance gate's committed artifacts live there.");
+            var artifacts = Directory.EnumerateFiles(ResultsDir, "*.md").ToList();
+            Assert.True(artifacts.Count > 0, $"{ResultsDir} holds no artifact; the conformance gate's evidence is gone.");
+            return artifacts;
         }
 
         private static string FindRepoRoot()
