@@ -59,6 +59,23 @@ is still open under its own name.
     exists to retry: a case running the real curl against a closed local port read `Program "curl.exe" ended with a
     non-zero exit code` (RED). The default transport now turns that preference off for itself (GREEN): pause, a
     second send, then `HTTP 000 after 2 attempt(s)`.
+  - **A3. The Perf lane's one test timed the JIT, not the registry** (found by PR #11's first full-ci run).
+    `InterfaceBucketTests.Collection_dispatch_cost_does_not_grow_with_unrelated_registrations` failed `perf-tests`
+    five times, every time on that test: on the master nightlies of 2026-10-04, 10-09, 10-16 and 10-20, with no
+    code change between them, and on `fc0ae37`. After over before was 2.60x, 3.01x, 2.10x, 1.61x and 2.00x,
+    against a 1.5x bound.
+
+    **Done — `deb63df` makes it report every run, the next commit fixes it.** Measured on 6 cores / 12 threads:
+    - The project alone, ten runs: before 192-218 ns every time; after either 205-227 ns or 279-293 ns, so the
+      ratio was 1.00-1.11x or 1.34-1.41x.
+    - Interleaved with ten default runs, `DOTNET_TieredCompilation=0`: 39-46 ns, 0.89-1.01x, ten of ten. The
+      rounds had been timing unoptimised code (~200 ns a call against ~40 ns), and the JIT tier each phase caught
+      decided the ratio. The registry is flat.
+    - The fix: before each phase the test calls the path until the JIT has compiled nothing for 500 ms
+      (`JitInfo.GetCompiledMethodCount`), five times the runtime's call-counting delay, and fails loudly after 30 s.
+      Ten runs alone: 26-37 ns, 0.97-1.00x.
+    - The bound stays at 1.5x. The defect the test exists for, a scan over every interface-keyed entry, cost 272 ns
+      → 6.3 µs at 1,000 extra pairs (round 31): far outside it.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
 
   **Inventory taken** (`Issues/round34/SILENCED-CHECKS-INVENTORY.md`, agent-produced, headline claims spot-checked).
