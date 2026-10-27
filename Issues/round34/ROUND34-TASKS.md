@@ -43,6 +43,12 @@ is still open under its own name.
     632/632 after. The step's comment that the `?module=` spelling was unverified is corrected: the six badges read
     six separate scores.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
+
+  **Inventory taken** (`Issues/round34/SILENCED-CHECKS-INVENTORY.md`, agent-produced, headline claims spot-checked).
+  Round 30's de-silencing plan, including Task 30.4's reason-required scans, was never built. Its 23 proposed tasks
+  wait for the owner's pick; the top three are shipped code: four directive readers drop a `null` name without a
+  diagnostic, a probe for a misspelled `[MapProperty]` destination under `[MapTo]`, and Task 30.5. Also verified:
+  the AOT sample's two checks cannot fail the gate, and master requires no status checks (owner's setting).
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
