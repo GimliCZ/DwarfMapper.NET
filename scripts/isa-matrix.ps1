@@ -39,8 +39,16 @@ try {
     )
 
     Write-Host "== Building once (Release); each configuration then runs --no-build ==" -ForegroundColor Cyan
-    dotnet build DwarfMapper.NET.sln -c Release --nologo | Out-Null
-    if ($LASTEXITCODE) { throw "isa-matrix: the Release build failed before any configuration ran" }
+    # Captured, and shown when the build fails. Piped to Out-Null it said only THAT the build failed, never why
+    # (IsaMatrixScriptTests). The "error" keyword is MSBuild's own and is not localised; when no line carries it,
+    # the end of the output is shown instead.
+    $build = & dotnet build DwarfMapper.NET.sln -c Release --nologo 2>&1
+    if ($LASTEXITCODE) {
+        $errors = @($build | Where-Object { $_ -match ': error ' })
+        $shown = if ($errors) { $errors } else { $build | Select-Object -Last 20 }
+        $shown | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
+        throw "isa-matrix: the Release build failed before any configuration ran"
+    }
 
     $failures = @()
     foreach ($cfg in $configs) {
@@ -57,7 +65,9 @@ try {
                 # Capture first, filter after. Piping `dotnet test` straight into Out-String/Select-String
                 # swallowed BOTH the output and the exit code, so the matrix reported PASS while running
                 # nothing — the exact vacuity these tests exist to prevent, in the harness meant to prevent it.
-                $out = & dotnet test $p -c Release --no-build --nologo 2>&1
+                # Category=Perf stays out, as from every test run CI reaches (PerfCategoryIsolationScanTests):
+                # a timing ratio measured under a restricted instruction set measures the restriction.
+                $out = & dotnet test $p -c Release --no-build --nologo --filter "Category!=Perf" 2>&1
                 $code = $LASTEXITCODE
                 # ASCII-only pattern on purpose: the summary line is localised (Czech on this host) and
                 # matching its accented words depends on the console encoding surviving the capture, which

@@ -601,6 +601,82 @@ jobs:
             exit 1
           fi
 
+  # ── The complete feature-combination proof (round 34) ──────────────────────────────────────────────────
+  # FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path compiles every subset of the
+  # feature set (2^16) on every member-assigning emit path, ~262k compilations. It is gated behind
+  # DWARF_FUZZ_FULL=1 so routine runs stay fast, and until round 34 no CI job set it: housekeeping -Nightly
+  # skips the exhaustion stage (deep-test's 45-minute budget has no room for it) while the test's own comment
+  # said CI ran it. Its own job now: nightly, dispatch, or a `full-ci` PR, like the rest of the expensive tier.
+  #
+  # The vacuity guard reads the line the test writes only after the whole set compiled: without the variable
+  # the test returns at once, and that reads as a pass.
+  fuzz-exhaustion:
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement on a hosted runner. Measured locally on 2026-10-27: the whole set in 10.5 min
+    # on 6 cores / 12 threads. The compilations run in parallel, so a 4-vCPU runner should take about three times
+    # that, plus ~4 min of restore and build. 90 leaves room for a cold cache and a slow runner; the first full-ci
+    # run pins it. The hang timeout sits below the job's, so a real hang still leaves a dump.
+    timeout-minutes: 90
+    env:
+      DWARF_FUZZ_FULL: '1'
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-restore
+      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path" --blame-hang --blame-hang-timeout 75m --logger "trx" --results-directory FuzzResults
+      - name: Assert the whole power set compiled
+        run: |
+          set -euo pipefail
+          if ! grep -ho 'power set: [0-9]* subsets x [0-9]* emit paths = [0-9]* compilations' FuzzResults/*.trx; then
+            echo "::error::the power-set test reported no complete run: DWARF_FUZZ_FULL did not reach it, or the filter matched nothing." >&2
+            exit 1
+          fi
+
+  # ── Instruction-set matrix (round 34) ──────────────────────────────────────────────────────────────────
+  # scripts/isa-matrix.ps1 runs the runtime suites under five instruction-set configurations (the host's,
+  # 256-bit, 128-bit, SSE only, and no hardware intrinsics at all), so the scalar tails behind the SIMD fast
+  # paths execute under test. It ran only by hand until round 34. InstructionSetMatrixTests asserts that each
+  # configuration really applied, so the matrix cannot pass as five runs of one configuration, and the script
+  # fails when any configuration does.
+  isa-matrix:
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement on a hosted runner: restore and build ~4 min, then two runtime suites five times
+    # over, which took 50 s together on 6 cores / 12 threads (2026-10-27). 30 leaves room for a cold cache.
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - shell: pwsh
+        run: ./scripts/isa-matrix.ps1
+
   aot-trim-gate:
     strategy:
       matrix:

@@ -48,6 +48,43 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private const string PerfOnly = "Category=Perf";
 
+        private static readonly Regex FilterOf = new(@"--filter\s+""(?<filter>[^""]*)""", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
+
+        private static readonly Regex SelectedName = new(@"^FullyQualifiedName[~=](?<name>[^&|!~=()]+)$", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
+
+        /// <summary>
+        ///     True only when <paramref name="filter" /> selects tests by name and none of the names can select an ILVerify
+        ///     test: every <c>|</c>-separated term is a <c>FullyQualifiedName~</c> or <c>=</c> selection whose name neither
+        ///     falls inside <see cref="EmittedIlIsVerifiableTests" />' full name (a namespace, the class) nor names the
+        ///     class or a member of it. Any other term (a category, another property, an <c>&amp;</c>) counts as reaching
+        ///     them. Its first version looked for "IlVerif", which the class name does not contain, so it waived the install
+        ///     for a job selecting the ILVerify tests by name.
+        /// </summary>
+        internal static bool NameSelectionCannotReachIlVerify(string filter)
+        {
+            var ilVerify = typeof(EmittedIlIsVerifiableTests).Namespace + "." + nameof(EmittedIlIsVerifiableTests);
+            return filter.Split('|').All(term => SelectedName.Match(term) is { Success: true } selected &&
+                                                 !ilVerify.Contains(selected.Groups["name"].Value, StringComparison.Ordinal) &&
+                                                 !selected.Groups["name"].Value.Contains(nameof(EmittedIlIsVerifiableTests), StringComparison.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path", true)]
+        [InlineData("FullyQualifiedName=DwarfMapper.Generator.Tests.FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path", true)]
+        [InlineData("FullyQualifiedName~" + nameof(EmittedIlIsVerifiableTests), false)]
+        [InlineData("FullyQualifiedName~" + nameof(EmittedIlIsVerifiableTests) + "." + nameof(EmittedIlIsVerifiableTests.Every_method_the_generator_emits_over_the_golden_corpus_is_verifiable), false)]
+        [InlineData("FullyQualifiedName~SelfValidation", false)]
+        [InlineData("FullyQualifiedName~DwarfMapper.Generator.Tests", false)]
+        [InlineData("FullyQualifiedName~FeatureCombinationFuzzTests|FullyQualifiedName~" + nameof(EmittedIlIsVerifiableTests), false)]
+        [InlineData("FullyQualifiedName~FeatureCombinationFuzzTests&Category!=Perf", false)]
+        [InlineData("Category!=Perf", false)]
+        public void A_name_filter_is_exempt_only_when_no_name_it_selects_can_be_an_ILVerify_test(string filter, bool exempt)
+        {
+            ArgumentNullException.ThrowIfNull(filter);
+
+            Assert.Equal(exempt, NameSelectionCannotReachIlVerify(filter));
+        }
+
         private static string Workflow()
         {
             return File.ReadAllText(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"));
@@ -101,6 +138,16 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             {
                 // Exempt: filtered to the surface matrix, so the ILVerify tests are out of scope for it.
                 if (body.Contains(SurfaceMatrixOnly, StringComparison.Ordinal) || body.Contains(PerfOnly, StringComparison.Ordinal)) { continue; }
+
+                // Exempt: every test run in it selects tests BY NAME, and none of the names can be an ILVerify test
+                // (since round 34, fuzz-exhaustion runs one fact this way). A filter on a continuation line is not
+                // read, so such a job is not exempt: the error this can make is demanding an install, never waiving one.
+                var filters = Regex.Matches(body, @"dotnet test[^\n]*").Select(m => FilterOf.Match(m.Value)).ToList();
+                if (!body.Contains("dotnet stryker", StringComparison.Ordinal) && filters.Count > 0 &&
+                    filters.All(f => f.Success && NameSelectionCannotReachIlVerify(f.Groups["filter"].Value)))
+                {
+                    continue;
+                }
 
                 if (!body.Contains("dotnet-ilverify", StringComparison.Ordinal))
                 {

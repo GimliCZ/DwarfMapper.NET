@@ -166,6 +166,28 @@ is still open under its own name.
     line or branch of the new code uncovered.
   - package-size: the `DwarfMapper.Testing` package went from 53 to 56 KB, and B5 did not re-measure: invariant R1
     missed a fourth time, stated rather than backdated. Re-measured in its own commit (B5c).
+
+  **B10 done — the complete fuzz proof and the ISA matrix run in CI** (inventory item 13). Until now both ran only
+  on a maintainer's machine.
+  - `FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path` returns at once unless
+    `DWARF_FUZZ_FULL=1`, and no CI job set it: housekeeping `-Nightly`, which deep-test runs, skips the exhaustion
+    stage. Its own comment said CI ran it. A nightly job, `fuzz-exhaustion`, now sets the variable and runs that one
+    fact. The test asserts that every subset compiled on every path, then writes a line that the job's vacuity step
+    requires. Measured 2026-10-27: 65,536 subsets × 4 emit paths = 262,144 compilations, 0 failures, 10.5 min on
+    6 cores / 12 threads. The job's 90-minute limit is an estimate for the first full-ci run to pin. The old
+    "~6 min" figures in the test and in housekeeping were corrected.
+  - `scripts/isa-matrix.ps1` ran by hand only. A nightly job, `isa-matrix`, now runs it. The script leaves out
+    `Category=Perf`, like every other test run CI reaches, and it shows a failed build's errors. Piped to `Out-Null`,
+    its first run for this item said only that the build had failed (two analyzer errors in an edited test file).
+    `IsaMatrixScriptTests` drives the real script with a planted failing `dotnet`: RED, the error is not shown;
+    GREEN, it is. Locally all five configurations pass, 1,017 integration and 70 differential tests each, in 50 s.
+  - Two scans had to learn about the new jobs:
+    - `CiGateScanTests` gained two rows.
+    - `CiToolPrerequisiteScanTests` now exempts a job whose every test run selects tests by name, provided none of
+      the names can reach the ILVerify tests. The first version of that check looked for "IlVerif", which
+      `EmittedIlIsVerifiableTests` does not contain, so it would have waived the install for a job that selects
+      those tests by name. Review caught it. A theory over nine filters failed 6 of 9 against that version.
+  - CONTRIBUTING's list of the expensive tier gained `perf-tests` (missing since round 31) and the two new jobs.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

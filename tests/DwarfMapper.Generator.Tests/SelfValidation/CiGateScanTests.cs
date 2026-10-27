@@ -74,6 +74,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             yield return ["cross-platform", "Windows and macOS would stop being tested at all, leaving ubuntu " + "as the only platform any suite has ever run on in CI"];
             // continue-on-error: true by design (a preview SDK's own breakage must not red the nightly).
             yield return ["perf-tests", "the wall-clock ratio tests (Category=Perf) would stop running anywhere, since " + "every other leg excludes them — the ambient collection path could go back to " + "growing with the application and nothing would say so"];
+            yield return ["fuzz-exhaustion", "the complete feature-combination proof (every subset of the feature set on " + "every member-assigning emit path) would stop running anywhere but a maintainer's machine, " + "as it did until round 34"];
+            yield return ["isa-matrix", "the scalar tails behind the SIMD fast paths would stop executing under test, " + "since every runner has AVX2 and nothing else restricts the instruction set"];
             yield return ["preview-sdk-canary", "the next major SDK would stop being tried against this repo " + "before it ships (declaration only — the leg is " + "continue-on-error and cannot fail the workflow)"];
             // The ALERT STEP is continue-on-error; the job's input-sanity step is not. So this row, too,
             // asserts declaration and nothing about a verdict.

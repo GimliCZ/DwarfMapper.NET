@@ -4,7 +4,7 @@
 # Run before a release or a large push. Each stage fails fast.
 #
 #   pwsh scripts/housekeeping.ps1                 # suite + Perf ratio tests alone + exhaustion + AOT execute
-#   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~6 min full power-set
+#   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~10 min full power-set
 #   pwsh scripts/housekeeping.ps1 -Mutation       # also run Stryker mutation testing (very slow)
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
@@ -57,8 +57,8 @@ if ($unknown.Count) {
 
 # -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
 # (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
-# cannot drift apart. It skips exhaustion, AOT and stage 1c (exhaustion is a default local stage; AOT and
-# the Perf ratio tests have their own CI jobs, aot-trim-gate and perf-tests) and deliberately does NOT imply
+# cannot drift apart. It skips exhaustion, AOT and stage 1c, because each has a CI job of its own:
+# fuzz-exhaustion (since round 34), aot-trim-gate and perf-tests. It deliberately does NOT imply
 # -Mutation — the mutation legs are their own cost class and their own nightly CI jobs (the 'mutation' matrix).
 if ($Nightly) {
     # -BenchSmoke rides the nightly per the T8 placement rule: its measured wall-clock (6:36/6:44 across
@@ -453,7 +453,7 @@ try {
     }
 
     if (-not $SkipExhaustion) {
-        Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~6 min) ==" -ForegroundColor Cyan
+        Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~10 min) ==" -ForegroundColor Cyan
         $env:DWARF_FUZZ_FULL = '1'
         dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --nologo `
             --filter "FullyQualifiedName~FeatureCombinationFuzzTests"
