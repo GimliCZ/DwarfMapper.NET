@@ -30,11 +30,23 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
         private const int MaxDepth = 32;
 
         /// <summary>Every collection instance reachable from <paramref name="root" />, by reference identity.</summary>
+        /// <remarks>
+        ///     A walk that could not examine part of the graph fails instead of returning what it saw: a member whose
+        ///     getter threw, or a branch deeper than <see cref="MaxDepth" />. Until round 34 both were skipped quietly, so
+        ///     "no shared collection" could pass for parts of a graph nobody looked at. GeneratorCacheAssert's symbol-leak
+        ///     walk fails on both for the same reason.
+        /// </remarks>
         public static HashSet<object> CollectCollections(object? root)
         {
             var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
             var collections = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            Walk(root, seen, collections, 0);
+            var unexamined = new List<string>();
+            Walk(root, "root", seen, collections, 0, unexamined);
+            if (unexamined.Count > 0)
+            {
+                Assert.Fail($"The independence walk could not examine {unexamined.Count} part(s) of the graph, so it cannot say " + "they share no collection with the other side:\n  " + string.Join("\n  ", unexamined));
+            }
+
             return collections;
         }
 
@@ -61,9 +73,9 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             return sb.ToString();
         }
 
-        private static void Walk(object? o, HashSet<object> seen, HashSet<object> collections, int depth)
+        private static void Walk(object? o, string path, HashSet<object> seen, HashSet<object> collections, int depth, List<string> unexamined)
         {
-            if (o is null || depth > MaxDepth)
+            if (o is null)
             {
                 return;
             }
@@ -80,16 +92,24 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 return;
             }
 
-            if (!seen.Add(o))
+            if (seen.Contains(o))
             {
-                return; // already visited — also breaks cycles
+                return; // already visited — also breaks cycles, so a cycle is never mistaken for depth
             }
 
+            if (depth > MaxDepth)
+            {
+                unexamined.Add($"{path}: deeper than {MaxDepth} levels");
+                return;
+            }
+
+            seen.Add(o);
             if (o is IEnumerable enumerable)
             {
                 collections.Add(o);
+                var index = 0;
                 foreach (var item in enumerable)
-                    Walk(item, seen, collections, depth + 1);
+                    Walk(item, path + "[" + index++.ToString(CultureInfo.InvariantCulture) + "]", seen, collections, depth + 1, unexamined);
 
                 return;
             }
@@ -106,12 +126,13 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 {
                     value = p.GetValue(o);
                 }
-                catch (TargetInvocationException)
+                catch (TargetInvocationException ex)
                 {
+                    unexamined.Add($"{path}.{p.Name}: its getter threw {ex.InnerException?.GetType().Name}: {ex.InnerException?.Message}");
                     continue;
                 }
 
-                Walk(value, seen, collections, depth + 1);
+                Walk(value, path + "." + p.Name, seen, collections, depth + 1, unexamined);
             }
         }
     }

@@ -298,6 +298,17 @@ is still open under its own name.
   - It now runs under housekeeping's `-Deep`, and so in the nightly deep-test job (15-16 min against 45). It runs after
     the stages that read Release output, because its forced rebuilds replace that output.
   - `SuppressionReasonScanTests` holds the wiring: RED before it, GREEN.
+
+  **B17 done — the independence oracle fails on what it could not examine** (inventory item 16).
+  `IndependenceOracle` used to skip a member whose getter threw, and stopped at depth 32. Either way it returned what
+  it had seen, so "the mapped graph shares no collection with the source" could pass for parts of a graph it never
+  looked at.
+  - It now records both, naming the path, and fails, as `GeneratorCacheAssert`'s symbol-leak walk does.
+  - An object already visited is checked before the depth cap, so a cycle is never mistaken for depth.
+  - Two facts are RED against the old walk (no failure for a throwing getter, none for a 40-link chain) and GREEN now;
+    a self-loop still passes.
+  - The fuzz theory stays green with the stricter walk: 60 seeds in the fast tier and 600 in the deep tier, so no real
+    graph hits either case.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

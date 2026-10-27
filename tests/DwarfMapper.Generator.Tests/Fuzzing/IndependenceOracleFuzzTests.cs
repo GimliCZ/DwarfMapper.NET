@@ -2,6 +2,7 @@
 
 using DwarfMapper.Testing;
 using DwarfMapper.TestInfrastructure;
+using Xunit.Sdk;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing
 {
@@ -94,9 +95,54 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             Assert.Empty(IndependenceOracle.SharedCollections(source, copied));
         }
 
+        /// <summary>
+        ///     Round 34 (the silenced-checks inventory): the walk skipped a member whose getter threw and stopped at depth
+        ///     32, returning what it had seen either way, so "shares no collection" could pass for parts of a graph it never
+        ///     examined. Now the walk fails and names the part.
+        /// </summary>
+        [Fact]
+        public void A_member_the_walk_could_not_read_fails_it_instead_of_reading_as_clean()
+        {
+            var failure = Assert.Throws<FailException>(() => IndependenceOracle.SharedCollections(new ThrowingProbe(), new AliasProbe()));
+
+            Assert.Contains("root.Hidden: its getter threw InvalidOperationException: not readable in this state", failure.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_graph_deeper_than_the_walk_fails_it_instead_of_reading_as_clean()
+        {
+            var head = new Link();
+            var tail = head;
+            for (var i = 0; i < 40; i++)
+            {
+                tail.Next = new Link();
+                tail = tail.Next;
+            }
+
+            var failure = Assert.Throws<FailException>(() => IndependenceOracle.SharedCollections(head, new AliasProbe()));
+
+            Assert.Contains("deeper than 32 levels", failure.Message, StringComparison.Ordinal);
+            // A cycle is not depth: a node that points back at itself is examined once and passes.
+            var loop = new Link();
+            loop.Next = loop;
+            Assert.Empty(IndependenceOracle.SharedCollections(loop, new AliasProbe()));
+        }
+
         private sealed class AliasProbe
         {
             public List<int> Items { get; set; } = new();
+        }
+
+        private sealed class ThrowingProbe
+        {
+            private readonly string _state = "not readable in this state";
+
+            public List<int> Hidden => throw new InvalidOperationException(_state);
+        }
+
+        private sealed class Link
+        {
+            public Link? Next { get; set; }
         }
     }
 }
