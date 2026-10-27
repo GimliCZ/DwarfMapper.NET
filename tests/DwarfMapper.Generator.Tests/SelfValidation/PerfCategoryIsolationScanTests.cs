@@ -34,6 +34,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private static readonly Regex ScriptRun = new(@"scripts/[A-Za-z0-9_.-]+\.(?:ps1|sh)", RegexOptions.CultureInvariant);
 
+        private static readonly Regex SelectsPerf = new(@"--filter\s+[""']?Category=Perf[""'\s]", RegexOptions.CultureInvariant);
+
+        private static readonly Regex OneProjectAtATime = new(@"(?<![\w-])(?:-m|-maxcpucount|--maxcpucount|/m)[:=]1(?!\d)", RegexOptions.CultureInvariant);
+
         [Fact]
         public void Every_test_run_CI_reaches_keeps_the_Perf_category_out_unless_it_selects_by_name()
         {
@@ -52,6 +56,29 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "test run(s) CI reaches would time the Category=Perf ratio tests inside the parallel suite, where " +
                 "a neighbour's load decides the verdict: [" + string.Join(" | ", offenders) + "]. Add --filter \"" +
                 ExcludesPerf + "\" (or join it to the existing filter with &); the perf-tests job runs them alone.");
+        }
+
+        /// <summary>
+        ///     The runs that DO time them select <c>Category=Perf</c> from the whole solution, and for that
+        ///     <c>dotnet test</c> starts every test project's host at once: ten hosts discovering their tests on a
+        ///     four-CPU runner while the one ratio test runs. Round 34 (A3) measured it in the perf-tests job's own shape
+        ///     (sdk:10.0.101, four CPUs): with the dispatch path settled, a phase still moved 1.75x when a neighbour's
+        ///     start-up landed on it. So each such run, in the workflows and in the scripts they run (housekeeping's
+        ///     stage 1c among them), takes one project at a time.
+        /// </summary>
+        [Fact]
+        public void Every_run_that_times_the_Perf_category_takes_one_test_project_at_a_time()
+        {
+            var perfRuns = TestInvocations().Where(i => SelectsPerf.IsMatch(i.Command)).ToList();
+
+            // Non-vacuity: the perf-tests job and housekeeping's stage 1c.
+            Assert.True(perfRuns.Count >= 2, $"found only {perfRuns.Count} run(s) selecting Category=Perf; the perf-tests job and housekeeping's stage 1c both should.");
+
+            var offenders = perfRuns.Where(i => !OneProjectAtATime.IsMatch(i.Command)).Select(i => i.Source + ": " + i.Command).ToList();
+
+            Assert.True(offenders.Count == 0,
+                "run(s) timing the Category=Perf ratio tests start every test project's host at once, so the neighbours' " +
+                "start-up decides the verdict: [" + string.Join(" | ", offenders) + "]. Add -m:1.");
         }
 
         /// <summary>

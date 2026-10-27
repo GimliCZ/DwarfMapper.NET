@@ -591,7 +591,10 @@ jobs:
           dotnet-version: '10.0.101'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
+      # One test project at a time (-m:1). Otherwise the solution starts every project's test host at once, ten of them
+      # discovering their tests on four CPUs while the one ratio test runs, and their start-up lands on a timed phase:
+      # measured in this job's shape in round 34 (A3), a phase moved 1.7x that way with the dispatch path settled.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build -m:1 --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
       - name: Assert the Perf lane ran at least one test
         run: |
           set -euo pipefail

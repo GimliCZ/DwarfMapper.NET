@@ -446,9 +446,10 @@ try {
 
     if (-not $Nightly) {
         Write-Host "== 1c Wall-clock ratio tests (Category=Perf), alone ==" -ForegroundColor Cyan
-        # After the parallel suite has finished, so the only load beside the timed loop is the machine's own.
-        # Skipped under -Nightly for the reason AOT is: CI runs these in their own job, perf-tests.
-        dotnet test DwarfMapper.NET.sln -c Release --nologo --no-build --filter "Category=Perf"
+        # After the parallel suite has finished, and one test project at a time (-m:1), so the only load beside the
+        # timed loop is the machine's own: without it the solution starts every project's test host at once (round 34,
+        # A3). Skipped under -Nightly for the reason AOT is: CI runs these in their own job, perf-tests.
+        dotnet test DwarfMapper.NET.sln -c Release --nologo --no-build -m:1 --filter "Category=Perf"
         if ($LASTEXITCODE) { throw "wall-clock ratio tests (Category=Perf) failed" }
     }
 

@@ -76,6 +76,12 @@ is still open under its own name.
       Ten runs alone: 26-37 ns, 0.97-1.00x.
     - The bound stays at 1.5x. The defect the test exists for, a scan over every interface-keyed entry, cost 272 ns
       → 6.3 µs at 1,000 extra pairs (round 31): far outside it.
+    - Then the lane itself. In the perf-tests job's own shape (`sdk:10.0.101`, four CPUs, the job's command), the
+      fixed test passed 16 runs of 16. In 3 of them a phase still moved by 1.45-1.76x, each time while another
+      project's test host was starting: `dotnet test` on the solution starts all ten at once. The same command with
+      `-m:1` runs one project at a time: 8 of 8 at 0.91-1.02x, about six seconds slower. The perf-tests job and
+      housekeeping's stage 1c now pass `-m:1`, and `PerfCategoryIsolationScanTests` requires it of every run that
+      selects the category (RED on both, then GREEN).
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
 
   **Inventory taken** (`Issues/round34/SILENCED-CHECKS-INVENTORY.md`, agent-produced, headline claims spot-checked).
