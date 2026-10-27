@@ -108,6 +108,21 @@ is still open under its own name.
   sample suppresses CA1050 was corrected: CA1050 fires on none of them. The six pragmas got reasons; one
   file-header pragma suppressing five ids, IDE0079 included, shrank to the two that fire, scoped to the two types
   that raise them. Whole solution 0 warnings; every test project green.
+
+  **B5 done — `DwarfMapper.Testing`** (inventory item 4, the owner's choice of record-and-report for SafeTypes):
+  - CA1510 is fixed rather than suppressed: fourteen `if (x is null) throw new ArgumentNullException(nameof(x))`
+    became `ArgumentNullException.ThrowIfNull(x)` (same exception, same parameter name), and the id left the
+    project's `<NoWarn>`.
+  - `GraphOracleComparer`'s two catch blocks were not swallows; each now says why: an overflow falls back to the
+    scalar comparison and still records a difference, and an element whose ToString throws can only cause a loud
+    false difference, never a false pass.
+  - `ObjectFactoryV2.SafeTypes` records what did not load instead of dropping it. When no loadable type implements
+    an abstract type and an assembly loaded from a file declares one that failed to load (read through its
+    metadata), the factory throws, naming the type, its assembly and the loader's reason, instead of leaving the
+    member null. An assembly loaded from memory stays recorded but unreported: naming it on a guess would fail
+    tests that have nothing to do with it (`IUnimplemented` and the dangling test's own assembly showed how).
+    `DanglingDependencyTests` holds it: RED (no exception), GREEN after; Testing.Tests 140/140.
+  - The mutation-scope audit table is re-measured in the same commit: the testing leg's share fell 18.2 % -> 17.0 %.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

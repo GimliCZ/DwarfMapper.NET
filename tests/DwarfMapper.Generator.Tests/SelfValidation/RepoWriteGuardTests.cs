@@ -140,7 +140,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 ["DwarfMapper.Generator.Tests/Round31/AuditSuppressionScanTests.cs"] =
                     (1, "WriteTemp helper: fake project files under a temp root, incl. a nested .claude/ checkout"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/OssScannerImageTests.cs"] =
-                    (1, "a global.json committed in a temp git repository, then removed from its working copy")
+                    (1, "a global.json committed in a temp git repository, then removed from its working copy"),
+                ["DwarfMapper.Testing.Tests/DanglingDependencyTests.cs"] =
+                    (1, "a probe assembly written to a temp directory, so it loads from a file the factory can read")
             };
 
             string[] rawWriteApis =

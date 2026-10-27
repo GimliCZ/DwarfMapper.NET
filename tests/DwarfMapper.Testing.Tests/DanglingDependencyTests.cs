@@ -16,6 +16,12 @@ namespace DwarfMapper.Testing.Tests
         int Probe { get; }
     }
 
+    /// <summary>Implemented only by a type whose base class lives in an assembly the test below never loads.</summary>
+    public interface IOnlyBrokenProbe
+    {
+        int Probe { get; }
+    }
+
     /// <summary>
     ///     The factory scans every loaded assembly for concrete candidates, and an assembly whose dependency cannot be
     ///     resolved throws <see cref="ReflectionTypeLoadException" /> from <c>GetTypes()</c>. Its loadable types must still
@@ -54,6 +60,36 @@ namespace DwarfMapper.Testing.Tests
             var made = ObjectFactoryV2.Create(typeof(IDanglingProbe), new Random(30), 0, false);
 
             Assert.Equal("Dangling.Fine", made?.GetType().FullName);
+        }
+
+        /// <summary>
+        ///     Record and report (owner ruling 2026-10-27). When the only implementation of an interface is a type that
+        ///     failed to load, the factory used to drop the loader's error and build the member as null, so a fixture
+        ///     quietly lost the subtype it was meant to exercise. It now fails, naming the type that did not load, its
+        ///     assembly and the loader's reason. The assembly is loaded from a FILE: that is what lets the factory read
+        ///     which types it declares, so it names only an implementation it can prove is missing.
+        /// </summary>
+        [Fact]
+        public void An_interface_whose_only_implementation_failed_to_load_is_reported_not_left_null()
+        {
+            var missing = Compile("OnlyBrokenBase", "namespace OnlyBroken { public class MissingBase { } }", []);
+            var probe = Compile("OnlyBrokenProbe",
+                "namespace OnlyBroken { public sealed class Broken : MissingBase, DwarfMapper.Testing.Tests.IOnlyBrokenProbe { public int Probe => 3; } }",
+                [MetadataReference.CreateFromImage(missing)]);
+            var path = Path.Combine(Path.GetTempPath(), "dwarfmapper-only-broken-" + Guid.NewGuid().ToString("N"), "OnlyBrokenProbe.dll");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, probe);
+            var loaded = new AssemblyLoadContext("only-broken", isCollectible: false).LoadFromAssemblyPath(path);
+            Assert.Throws<ReflectionTypeLoadException>(() => loaded.GetTypes());
+
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                ObjectFactoryV2.Create(typeof(IOnlyBrokenProbe), new Random(31), 0, false));
+
+            Assert.Contains(typeof(IOnlyBrokenProbe).FullName!, ex.Message, StringComparison.Ordinal);
+            Assert.Contains("OnlyBroken.Broken", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("OnlyBrokenProbe", ex.Message, StringComparison.Ordinal);
+            // The loader's own reason, in whatever language the runtime speaks, names the dependency it could not find.
+            Assert.Contains("OnlyBrokenBase", ex.Message, StringComparison.Ordinal);
         }
 
         private static byte[] Compile(string assemblyName, string source, MetadataReference[] extra)

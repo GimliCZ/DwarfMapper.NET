@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 
 namespace DwarfMapper.Testing
 {
@@ -115,15 +118,9 @@ namespace DwarfMapper.Testing
         /// <returns>A populated instance, or <c>null</c> when a nullable position was drawn as null.</returns>
         public static object? Create(Type type, Random rng, int depth, bool allowNull)
         {
-            if (rng is null)
-            {
-                throw new ArgumentNullException(nameof(rng));
-            }
+            ArgumentNullException.ThrowIfNull(rng);
 
-            if (type is null)
-            {
-                throw new ArgumentNullException(nameof(type));
-            }
+            ArgumentNullException.ThrowIfNull(type);
 
             // Nullable<T> → sometimes null, else unwrap and recurse. Nullable<T> may be null at ANY depth
             // (including a root `Create(typeof(int?), …)`), since that is the whole point of the type.
@@ -551,10 +548,25 @@ namespace DwarfMapper.Testing
                 }
             }
 
+            if (candidates.Length == 0 && UnloadedImplementations(abstractType) is { Length: > 0 } report)
+            {
+                throw new InvalidOperationException(report);
+            }
+
             return candidates.Length == 0 ? null : candidates[rng.Next(candidates.Length)];
         }
 
-        /// <summary>A half-loadable assembly must not take the whole scan down.</summary>
+        /// <summary>
+        ///     What a half-loadable assembly could not load: the loader's reasons, and the names of the types that did
+        ///     load. Recorded by <see cref="SafeTypes" /> rather than dropped (owner ruling 2026-10-27: record and report),
+        ///     so a scan that finds no concrete type can say when one was declared but did not load.
+        /// </summary>
+        private static readonly ConcurrentDictionary<Assembly, (string[] Reasons, HashSet<string> Loaded)> LoadFailures = new();
+
+        /// <summary>
+        ///     A half-loadable assembly must not take the whole scan down: its loadable types are still offered. What did
+        ///     not load is recorded in <see cref="LoadFailures" />.
+        /// </summary>
         private static IEnumerable<Type> SafeTypes(Assembly assembly)
         {
             try
@@ -563,9 +575,102 @@ namespace DwarfMapper.Testing
             }
             catch (ReflectionTypeLoadException ex)
             {
-                return ex.Types.Where(t => t is not null)!;
+                var loaded = ex.Types.Where(t => t is not null).ToArray();
+                LoadFailures[assembly] = (
+                    ex.LoaderExceptions.OfType<Exception>().Select(e => e.Message).Distinct(StringComparer.Ordinal).ToArray(),
+                    loaded.Select(t => t!.FullName ?? t.Name).ToHashSet(StringComparer.Ordinal));
+                return loaded!;
             }
         }
+
+        /// <summary>
+        ///     Why no concrete <paramref name="abstractType" /> was found, when the cause is a declared implementation that
+        ///     did not load; empty when there is none. Each assembly that failed to load types is read through its
+        ///     metadata for a type naming <paramref name="abstractType" /> as its base or as an interface, which is not
+        ///     among the types that loaded. Only an assembly loaded from a file can be read that way. One loaded from
+        ///     memory stays recorded but unreported, because naming it on a guess would fail tests that have nothing to
+        ///     do with it: an interface nobody implements is still a null member.
+        /// </summary>
+        private static string UnloadedImplementations(Type abstractType)
+        {
+            var target = (abstractType.IsGenericType ? abstractType.GetGenericTypeDefinition() : abstractType).FullName;
+            var found = new List<string>();
+            foreach (var (assembly, failure) in LoadFailures.OrderBy(f => f.Key.FullName, StringComparer.Ordinal))
+            {
+                if (string.IsNullOrEmpty(assembly.Location))
+                {
+                    continue;
+                }
+
+                using var stream = File.OpenRead(assembly.Location);
+                using var pe = new PEReader(stream);
+                var md = pe.GetMetadataReader();
+                var missing = md.TypeDefinitions
+                    .Select(md.GetTypeDefinition)
+                    .Where(def => DeclaredSupertypes(md, def).Contains(target, StringComparer.Ordinal))
+                    .Select(def => TypeName(md, def))
+                    .Where(name => !failure.Loaded.Contains(name))
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToList();
+                if (missing.Count > 0)
+                {
+                    found.Add($"{string.Join(", ", missing)} in {assembly.GetName().Name} ({string.Join(" ", failure.Reasons)})");
+                }
+            }
+
+            return found.Count == 0
+                ? ""
+                : $"No loadable concrete type implements {abstractType.FullName}, and its implementations did not load: " +
+                  string.Join("; ", found) + ". Without them the fixture would have used null for every member of this type.";
+        }
+
+        /// <summary>The full names a type definition declares as its base type and its interfaces.</summary>
+        private static IEnumerable<string> DeclaredSupertypes(MetadataReader md, TypeDefinition def)
+        {
+            var supertypes = def.GetInterfaceImplementations().Select(i => TypeName(md, md.GetInterfaceImplementation(i).Interface));
+            return def.BaseType.IsNil ? supertypes : supertypes.Append(TypeName(md, def.BaseType));
+        }
+
+        /// <summary>
+        ///     The reflection-style full name a metadata handle refers to (<c>Ns.Outer+Inner</c>, a generic definition as
+        ///     <c>Ns.Name`1</c>); a generic instantiation answers with its definition's name.
+        /// </summary>
+        private static string TypeName(MetadataReader md, EntityHandle handle)
+        {
+            switch (handle.Kind)
+            {
+                case HandleKind.TypeDefinition:
+                    return TypeName(md, md.GetTypeDefinition((TypeDefinitionHandle)handle));
+                case HandleKind.TypeReference:
+                    var reference = md.GetTypeReference((TypeReferenceHandle)handle);
+                    var name = md.GetString(reference.Name);
+                    return reference.ResolutionScope.Kind == HandleKind.TypeReference
+                        ? TypeName(md, (EntityHandle)reference.ResolutionScope) + "+" + name
+                        : Qualified(md.GetString(reference.Namespace), name);
+                case HandleKind.TypeSpecification:
+                    var blob = md.GetBlobReader(md.GetTypeSpecification((TypeSpecificationHandle)handle).Signature);
+                    if (blob.ReadSignatureTypeCode() != SignatureTypeCode.GenericTypeInstance)
+                    {
+                        return "";
+                    }
+
+                    blob.ReadSignatureTypeCode(); // class or value type
+                    return TypeName(md, blob.ReadTypeHandle());
+                default:
+                    return "";
+            }
+        }
+
+        private static string TypeName(MetadataReader md, TypeDefinition def)
+        {
+            var name = md.GetString(def.Name);
+            var declaring = def.GetDeclaringType();
+            return declaring.IsNil
+                ? Qualified(md.GetString(def.Namespace), name)
+                : TypeName(md, md.GetTypeDefinition(declaring)) + "+" + name;
+        }
+
+        private static string Qualified(string ns, string name) => ns.Length == 0 ? name : ns + "." + name;
 
         // ── Graph fixture builders ───────────────────────────────────────────────────
 
@@ -576,10 +681,7 @@ namespace DwarfMapper.Testing
         /// </summary>
         public static object MakeSelfLoop(Type nodeType, string selfPropName, Random rng)
         {
-            if (nodeType is null)
-            {
-                throw new ArgumentNullException(nameof(nodeType));
-            }
+            ArgumentNullException.ThrowIfNull(nodeType);
 
             var node = Create(nodeType, rng, 0)!;
             var prop = nodeType.GetProperty(selfPropName, BindingFlags.Public | BindingFlags.Instance) ?? throw new ArgumentException($"Property '{selfPropName}' not found on {nodeType.Name}", nameof(selfPropName));
@@ -593,10 +695,7 @@ namespace DwarfMapper.Testing
         /// </summary>
         public static (object A, object B) MakeTwoNodeCycle(Type nodeType, string nextPropName, Random rng)
         {
-            if (nodeType is null)
-            {
-                throw new ArgumentNullException(nameof(nodeType));
-            }
+            ArgumentNullException.ThrowIfNull(nodeType);
 
             var a = Create(nodeType, rng, 0)!;
             var b = Create(nodeType, rng, 0)!;
