@@ -198,6 +198,13 @@ done
 # doc regenerated under a mutant would be committed as fact.
 git checkout -- src/ 2>/dev/null || true
 git checkout -- docs/ 2>/dev/null || true
+# ...and verified. Each restore above swallows its own failure, and this run started from a clean tree, so a
+# tree that is not clean now means a restore failed and a mutation is still applied.
+if ! git diff --quiet -- src docs; then
+  echo "FAIL: src/ or docs/ is not back to its committed state after the battery - a mutation is still applied:" >&2
+  git diff --stat -- src docs >&2
+  exit 1
+fi
 
 echo "== killed $KILLED/${#MUTANTS[@]} =="
 

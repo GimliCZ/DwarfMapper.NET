@@ -80,6 +80,10 @@ function Get-LegAdjudication {
     $fence = [regex]::Match($text, '(?s)```json\s*(\{.*?\})\s*```')
     if (-not $fence.Success) { return $null }
 
+    # A json block that does not parse reads as no ledger, so every leg gates on the band alone, as a leg the
+    # ledger has never adjudicated does. That cannot pass a regression, because the break check in
+    # Assert-MutationScoreWithinBand does not read the ledger. It can turn a leg with recorded phantom kills into a
+    # "raise the floor" failure, which is loud and names the leg; the fix is then the ledger's json, not the floor.
     try { $doc = $fence.Groups[1].Value | ConvertFrom-Json } catch { return $null }
     # The leg key is the config's own name for it; 'doc tooling' and 'code fixes' carry a space in the
     # housekeeping switch but not in the ledger, which keys them as one word.

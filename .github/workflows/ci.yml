@@ -111,15 +111,16 @@ jobs:
         id: tests
 
       # ── Publish coverage to Codecov ─────────────────────────────────────────
-      # PREPARATION, not yet the gate. The inline gate below still runs, deliberately: a replacement gate is
-      # not proven until it has produced a verdict on a real push, and removing enforcement before that is
-      # how a repository ends up with neither. The cutover — what to delete, and the evidence required first
-      # — is written down in Issues/round27/PLAN-hosted-reports.md.
+      # Codecov IS the coverage gate now. The inline gate this step once prepared to replace was deleted after
+      # Codecov had produced verdicts on real pushes (see "Coverage is gated by Codecov" below, and
+      # Issues/round27/PLAN-hosted-reports.md for the cutover and its evidence).
       #
       # fail_ci_if_error is FALSE on purpose. An upload failure means Codecov was unreachable; a coverage
       # regression means the code got worse. Conflating them teaches everyone to re-run red builds, which is
-      # the habit that makes a gate worthless. The blocking verdict is the STATUS CHECK, configured in
-      # codecov.yml, which simply does not appear if the upload never arrived.
+      # the habit that makes a gate worthless. The verdict is the STATUS CHECK, configured in codecov.yml,
+      # which simply does not appear if the upload never arrived. It blocks a merge only where the branch
+      # requires it: as of 2026-10-27 master requires no status check at all (round 34's inventory), which is
+      # the owner's setting to change.
       - name: Upload test results to Codecov
         # !cancelled() rather than always(): a cancelled run has no meaningful results, but a FAILED one has
         # the most meaningful results there are. Paired with continue-on-error on the test step above, a red

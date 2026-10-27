@@ -25,7 +25,11 @@ dotnet test  DwarfMapper.NET.sln -c Release
 
 Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hooks` (heavier pre-release checks live in `scripts/housekeeping.ps1`).
 
-**Running the expensive CI tier on a pull request.** `mutation`, `deep-test`, `reproducible-build`, `package-size`, `cross-platform`, `preview-sdk-canary` and `bench-wall-time-alert` are nightly-only by default and show as *Skipped* on a PR — the mutation matrix alone budgets up to 350 minutes per leg across six legs. **Label the PR `full-ci` to run them all**, which is what a round-closing or release PR wants: the same checks the nightly runs, before the merge rather than the night after it. A label is used rather than `workflow_dispatch` because a dispatch runs against a branch, not against the merge result the reviewer is approving.
+**Two more tools on your PATH**, beyond the SDK:
+- **PowerShell 7 (`pwsh`).** `scripts/housekeeping.ps1` and the gate functions in `scripts/gate-checks.ps1` are PowerShell, and the test suite drives those functions through `pwsh`, so a machine without it fails those tests rather than skipping them.
+- **Python 3**, standard library only. `extracted-reach.py`, `seam-reach.py`, `repro-pack-check.py`, `verify-extraction-bodies.py` and `verify-extraction-sites.py` in `scripts/` are called by their PowerShell wrappers, and several CI steps run `python3` inline.
+
+**Running the expensive CI tier on a pull request.** `mutation`, `deep-test`, `reproducible-build`, `package-size`, `cross-platform`, `preview-sdk-canary` and `bench-wall-time-alert` are nightly-only by default and show as *Skipped* on a PR — the mutation matrix alone budgets up to 350 minutes per leg across six legs. **Label the PR `full-ci` to run them all**, which is what a round-closing or release PR wants: the same checks the nightly runs, before the merge rather than the night after it. A label is used rather than `workflow_dispatch` because a dispatch runs against a branch, not against the merge result the reviewer is approving. The label takes effect from the next push: CI runs on a pull request's `opened`, `synchronize` and `reopened` events, not on `labeled`, so `gh pr create --label full-ci`, which adds the label just after opening, runs the cheap tier first.
 
 ## Ground rules
 - Every source file starts with `// SPDX-License-Identifier: GPL-2.0-only`.

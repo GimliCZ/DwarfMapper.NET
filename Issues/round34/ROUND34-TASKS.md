@@ -132,6 +132,18 @@ is still open under its own name.
   re-tested on SDK 10.0.101: per-rule `none` under that section silences nothing a generator emitted (1,404 CA1822
   and 32 others, identical with and without it), so the always-on gate stays blocked. The two FILED findings,
   CA1852 (4) and CA1508 (2), stand; CA1019 (8) is new. Recorded in `Issues/round24/ROUND24-GENERATED-CODE-AUDIT.md`.
+
+  **B8 done — scripts and the tools they need** (inventory items 14 and 15):
+  - `mutation-battery.sh` ends by proving src/ and docs/ are clean again: every restore swallowed its own failure.
+    `MutationMethodologyScanTests.M1c` holds it (RED without the check, GREEN with it).
+  - `corpus-diagnostic-density.ps1` prints "revision UNKNOWN" when git fails, instead of an empty revision
+    labelled "(src/ clean)". Not under test: it is the provenance line of a manual measurement script.
+  - `gate-checks.ps1`'s ledger reader says what a json block that does not parse costs: the band alone, never a
+    passed regression.
+  - ci.yml's Codecov comment no longer says the deleted inline gate still runs, and says the status check blocks a
+    merge only where master requires it, which today it does not.
+  - CONTRIBUTING.md declares `pwsh` and Python 3 (standard library only), and that `full-ci` takes effect from the
+    next push.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
