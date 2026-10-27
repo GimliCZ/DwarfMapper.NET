@@ -56,6 +56,13 @@ is still open under its own name.
   build, which decides whether compile-time work earns a round. No earlier FusedChat build timing exists in
   `benchmarks/results` or `Issues/`; ReportAnalyzer was used before only on this repository's own analyzers
   (rounds 21-22).
+
+  **Done — `benchmarks/results/2026-10-27-round34-c-fusedchat-build-share.md`.** Six `--no-incremental` Release builds
+  of a fresh copy (SDK 10.0.400, `1.1.0-r34val.1`), cold and warm alternating. DwarfMapper's generators run in 20
+  compiler calls per build, summing 2.75-2.94 s cold and 1.93-2.19 s warm: about 5 % of the compiler's 40-57 s.
+  Cold start is worth ~0.8 s a build, which is everything ReadyToRun could recover, so the cold-JIT lead is closed.
+  In the same builds `Microsoft.VisualStudio.Threading.Analyzers` costs 12.1 s and Razor 8.3 s: a slow FusedChat
+  build is mostly not DwarfMapper.
 - **D. Mutation-testing accuracy** (owner decision 4): can `SurfaceProbe.Baselines`, a process-wide memo of generator
   output, make Stryker credit a kill to the wrong mutant or hide one? Stryker 4.16's source first (how mutants are
   grouped into a session, whether a test host outlives one), a narrowed Stryker A/B only if that leaves it open. The
@@ -142,10 +149,7 @@ is still open under its own name.
   identity; an array blit under SetNull against a method-level config on the element pair's partial.
 - **`2a10fb3`** — the null-element store shape, 1.12x: below the bar, waiting for a quiet-machine confirmation at 100
   and 10,000 elements and the owner's call.
-- **Generator cold start** — cold runs are two-thirds JIT of the generator itself (IntegrationTests: 2.3-2.9 s cold,
-  0.65 s warm). ReadyToRun is a lead, not a task: the generator stays netstandard2.0, ReadyToRun code is specific to a
-  runtime, and the compiler host differs between `dotnet build`, Rider and Visual Studio. Task C measures whether it
-  matters.
+- **Generator cold start** — closed by task C: ~0.8 s per cold FusedChat build, not worth ReadyToRun's costs.
 - **T02b** — a widen span map (`void Map(ReadOnlySpan<int>, Span<long>)`) emits a scalar loop, never `Vector.Widen`;
   unmeasured.
 - **DWARF066 on a positional record's inherited member** — a known false positive, pinned on purpose by
