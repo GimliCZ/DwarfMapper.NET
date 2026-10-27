@@ -43,6 +43,13 @@ ENV DWARFMAPPER_OFFLINE_IMAGE=true
 
 # CI's push-time suite, so a broken image shows in its own build log, with CI's hang bound so a stuck test cannot
 # stall the image build. A failing test does not fail the image: the audit is still worth running against a red tree.
+# But the agent never reads the build log, so the outcome stays in the image, at /suite-outcome.txt: GREEN, or RED and
+# the tests that were already failing. threat_model.md sends the agent there first. Until round 34 a red tree said so
+# only in an echo here.
 RUN dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" \
-        --blame-hang --blame-hang-timeout 5m \
-    || echo "WARNING: dotnet test reported failures"
+        --blame-hang --blame-hang-timeout 5m > /tmp/suite.log 2>&1; \
+    code=$?; cat /tmp/suite.log; \
+    { if [ "$code" -eq 0 ]; then echo "GREEN: the push-time suite passed when this image was built."; \
+      else echo "RED: the push-time suite failed when this image was built (dotnet test exit $code). Already failing:"; fi; \
+      grep -E '^(Passed|Failed)! |^  Failed ' /tmp/suite.log; } > /suite-outcome.txt; \
+    cat /suite-outcome.txt

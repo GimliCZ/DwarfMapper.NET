@@ -52,6 +52,9 @@ online, when the image was built. New projects and test files restore and build 
 
 - The push-time suite CI runs:
   `dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf"`.
+  The image's build ran it once and does not fail on a red result, because an audit of a red tree is still worth
+  running. Read `/suite-outcome.txt` before anything else: it says GREEN, or RED and names the tests that were already
+  failing when the image was built, so none of them is mistaken for a finding of yours.
 - What the generator emits for a shape: a test in `tests/DwarfMapper.Generator.Tests` calling
   `GeneratorTestHarness.Run(source, NullableContextOptions.Enable)` returns the diagnostics and the generated source.
 - Emitted code run against hostile values: a mapper and a test in `tests/DwarfMapper.IntegrationTests`, which compiles

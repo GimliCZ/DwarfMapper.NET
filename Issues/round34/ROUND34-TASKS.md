@@ -246,6 +246,17 @@ is still open under its own name.
   - The SARIF upload runs even when the gate fails, so the findings that failed it show in code scanning.
   - `ZizmorGateTests` drives the real function over seven fixtures: RED, the function missing; GREEN, 7 of 7.
     zizmor 1.30.1 run locally over the changed workflows: exit 0, 0 findings.
+
+  **B13 done — the scanner image tells the agent whether its suite was red** (inventory item 9).
+  `.oss-scanner/Dockerfile` runs the push-time suite and must not fail on a red result, because an audit of a red tree
+  is still worth running. Until now it said so only with `|| echo WARNING` in the build log, which the scanning agent
+  never reads. It could audit a red tree as green, and take a test that was already failing for its own finding.
+  - The image now keeps the outcome in `/suite-outcome.txt`: GREEN, or RED with the exit code and the tests that were
+    failing.
+  - `threat_model.md` tells the agent to read that file before anything else.
+  - `OssScannerImageTests` pins both, and that no `|| echo` is left: RED against the old pair, GREEN.
+  - The instruction itself, joined as Docker joins it, ran under the SDK image's `/bin/sh` with a stub `dotnet`. Green
+    wrote GREEN; red wrote RED and the failing test. Both left the build step at exit 0.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
