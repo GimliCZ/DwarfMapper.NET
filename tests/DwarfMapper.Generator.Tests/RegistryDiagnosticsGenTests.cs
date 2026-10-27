@@ -789,6 +789,50 @@ namespace DwarfMapper.Generator.Tests
                 r15.GetMessage(CultureInfo.InvariantCulture));
         }
 
+        // ── DWARFR17 — a [MapProperty] naming a destination member the target does not have ──────────────────
+        // The registry's DWARF008. The binding loop skipped such a name in silence, so the misspelled directive itself
+        // was never named: DWARFR02 at most, at the destination it was meant for, and NOTHING when another source member
+        // already satisfies that destination - the shape below, where Name maps by name and Alias's "Nmae" binds nothing.
+        // Found by round 34's silenced-checks inventory (MapToGenerator's `if (w.Symbol is null) continue;`).
+        [Fact]
+        public void A_MapProperty_naming_no_destination_member_reports_DWARFR17_at_the_directive()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             [MapTo(typeof(Dto))]
+                             public class Src
+                             {
+                                 public string Name { get; set; } = "";
+                                 [MapProperty("Nmae")] public string Alias { get; set; } = "";
+                             }
+                             public class Dto { public string Name { get; set; } = ""; }
+                             """;
+
+            var r17 = Assert.Single(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR17");
+            Assert.Equal(DiagnosticSeverity.Error, r17.Severity);
+            Assert.Equal("[MapProperty] destination member 'Nmae' on 'Dto' does not exist or is not writable (names match " +
+                         "exactly, including case)",
+                r17.GetMessage(CultureInfo.InvariantCulture));
+            // At the attribute the caller wrote (line 7), not at the [MapTo] that declared the pair (line 3).
+            Assert.Equal(6, r17.Location.GetLineSpan().StartLinePosition.Line);
+        }
+
+        // A member's OWN name finding nothing on the target is an unused source member, not a directive gone wrong.
+        [Fact]
+        public void A_source_member_without_a_directive_that_matches_nothing_is_not_DWARFR17()
+        {
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             [MapTo(typeof(Dto))]
+                             public class Src { public string Name { get; set; } = ""; public int Unused { get; set; } }
+                             public class Dto { public string Name { get; set; } = ""; }
+                             """;
+
+            Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR17");
+        }
+
         // ── DWARFR16 — a [MapProperty] named argument the registry does not read ─────────────────────────────
         // The registry's member form reads the destination name (and, since round 32, AllowNull) and nothing else, so
         // Use, When, NullSubstitute, StringFormat and KeepDefault were accepted and DISCARDED - `Use = "Nope"` named a

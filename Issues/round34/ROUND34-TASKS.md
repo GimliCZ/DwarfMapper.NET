@@ -64,6 +64,13 @@ is still open under its own name.
   pinned the silence (`PairScopedIgnoreReaderCoverageTests`, `FlattenAndMapValueReachTests`,
   `DirectiveEndpointReachTests`); they now assert the report, and `MethodDirectiveNullNameTests` is new: RED before,
   GREEN after. Whole solution 0 warnings; every test project green.
+
+  **B2 done — DWARFR17.** Under `[MapTo]`, a `[MapProperty("Nmae")]` naming a destination member the target does not
+  have was skipped in silence (`MapToGenerator`'s `if (w.Symbol is null) continue;`). The probe confirmed the
+  inventory's inference: with `Name` mapped by name, nothing at all was reported. DWARFR17 is the registry's DWARF008,
+  an Error at the directive; a member's own name matching nothing is still just an unused source member.
+  `RegistryDiagnosticsGenTests` holds both (RED before, GREEN after); documented in `docs/diagnostics.md` and
+  release-tracked. Whole solution 0 warnings; every test project green.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

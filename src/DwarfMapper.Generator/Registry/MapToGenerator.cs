@@ -265,6 +265,8 @@ namespace DwarfMapper.Generator.Registry
                     // That distinction is the trust boundary: an explicit binding is a decision, a by-name match is
                     // the mass-assignment surface.
                     var namedByCaller = false;
+                    // Where the caller named it, for DWARFR17 when the name binds nothing.
+                    LocationInfo? namedAt = null;
                     // [MapProperty("Dest", AllowNull = true)]: the null this member may carry into its destination is
                     // declared, so DWARFR15 is not reported for it - read off the directive that binds THIS target.
                     var allowNull = false;
@@ -289,6 +291,7 @@ namespace DwarfMapper.Generator.Registry
                         {
                             destName = d.Name!;
                             namedByCaller = true;
+                            namedAt = d.Loc;
                         }
                         else
                         {
@@ -299,6 +302,16 @@ namespace DwarfMapper.Generator.Registry
                     var w = writables.FirstOrDefault(x => x.Name == destName);
                     if (w.Symbol is null)
                     {
+                        // A name the caller wrote binds nothing: DWARFR17, at the directive. A member's OWN name finding
+                        // nothing is only a source member the target does not use.
+                        if (namedByCaller)
+                        {
+                            diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyUnknownTarget,
+                                namedAt ?? location,
+                                $"'{destName}' on '{target.Name}'"));
+                            hasError = true;
+                        }
+
                         continue;
                     }
 
