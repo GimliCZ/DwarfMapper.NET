@@ -257,6 +257,25 @@ is still open under its own name.
   - `OssScannerImageTests` pins both, and that no `|| echo` is left: RED against the old pair, GREEN.
   - The instruction itself, joined as Docker joins it, ran under the SDK image's `/bin/sh` with a stub `dotnet`. Green
     wrote GREEN; red wrote RED and the failing test. Both left the build step at exit 0.
+
+  **B14 done — the mutation configs stop denying their filter, and its cost is measured** (inventory item 11).
+  Round 33 gave every leg `test-case-filter: Category!=Perf`. The generator config's comment still said no
+  `test-case-filter` "appear[s] here, deliberately", and the runtime config's was headed "WHY THERE IS NO TEST FILTER".
+  Both now name the one filter they carry and what it cost. `PerfCategoryIsolationScanTests` fails if a comment denies
+  the filter beside it: RED on those two, GREEN.
+
+  The cost was measured from CI's reports: run 40299439526 (`1ca6232`, the last before the filter) against the
+  filtered nightly, run 40477294097 (`b58c6e3`).
+  - The reports name only `Generator.Tests`' 7,101 tests; every other project's killers are bare ids. A test id is a
+    stable GUID of name and path, and the ratio test is the only id absent from the filtered run that covers anything
+    (22 registry mutants).
+  - doctooling, codefixes and testing: it killed nothing.
+  - runtime: it is the only recorded killer of three `DwarfMapperRegistry.Map` mutants (both `ThrowIfNull`
+    deletions and the base-type loop condition). Those were bail artifacts: Stryker stops a session at its first
+    failing test, and the flaky ratio test failed first. The filtered run kills all three with other tests.
+  - generator: one static `BlittableProof` mutant, in code the ratio test never runs, so a timing failure. It reads
+    Survived since, which is honest.
+  - pipeline has no report in the old run; it mutates generator code, which the ratio test does not run.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

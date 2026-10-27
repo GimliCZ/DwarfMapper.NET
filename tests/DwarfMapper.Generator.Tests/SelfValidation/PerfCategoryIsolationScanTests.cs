@@ -87,7 +87,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         ///     stopped exactly so, on <c>InterfaceBucketTests</c>' ratio (255.1 to 394.8 ns). Stryker 4.16 takes a test
         ///     filter only from its config file (<c>test-case-filter</c>; its command line has no such option), so
         ///     every config carries it. It costs no score: in the last complete local runtime-leg report the test
-        ///     killed 11 mutants and was the sole killer of none.
+        ///     killed 11 mutants and was the sole killer of none. Round 34 checked all six legs against CI's reports from
+        ///     before the filter (run 40299439526) and after it (run 40477294097). The ratio test was the only recorded
+        ///     killer of three runtime mutants, but each was a bail artifact: Stryker stops a session at its first failing
+        ///     test, the flaky ratio test came first, and the filtered run kills all three with other tests. Its one
+        ///     generator kill was a static mutant in code it never runs. In the other legs it killed nothing.
         /// </summary>
         [Fact]
         public void Every_mutation_leg_keeps_the_Perf_category_out_of_its_runs()
@@ -107,6 +111,31 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "Stryker config(s) let the Category=Perf ratio tests into the leg's runs, where a timing oracle under " +
                 "mutation load fails the initial run and --break-on-initial-test-failure stops the leg: [" +
                 string.Join(", ", offenders) + "]. Add \"test-case-filter\": \"" + ExcludesPerf + "\" to the stryker-config object.");
+        }
+
+        /// <summary>
+        ///     Until round 34 two configs carried that filter under comments that denied it: the generator leg's "No
+        ///     'test-case-filter' and no 'test-projects' key appear here, deliberately", the runtime leg's "WHY THERE IS NO
+        ///     TEST FILTER". Whoever reads a comment to decide whether a filter may be added must not be told there is none.
+        /// </summary>
+        [Fact]
+        public void No_mutation_config_comment_denies_the_filter_it_carries()
+        {
+            var denial = new Regex(@"\bno\s+'?test-case-filter\b|\bno\s+test\s+filter\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            var configs = Directory.GetFiles(RepoPaths.Root, "stryker-config*.json");
+            Assert.True(configs.Length >= 6, $"found {configs.Length} Stryker config(s); each of the six legs has one.");
+
+            var offenders = new List<string>();
+            foreach (var path in configs)
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var carries = doc.RootElement.GetProperty("stryker-config").TryGetProperty("test-case-filter", out _);
+                var comment = doc.RootElement.TryGetProperty("comment", out var c) ? c.GetString() ?? "" : "";
+                if (carries && denial.Match(comment) is { Success: true } said) { offenders.Add(Path.GetFileName(path) + ": \"" + said.Value + "\""); }
+            }
+
+            Assert.True(offenders.Count == 0,
+                "Stryker config comment(s) say there is no test filter while the config carries one: [" + string.Join(", ", offenders) + "].");
         }
 
         /// <summary>
