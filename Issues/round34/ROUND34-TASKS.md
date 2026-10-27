@@ -55,6 +55,15 @@ is still open under its own name.
   wait for the owner's pick; the top three are shipped code: four directive readers drop a `null` name without a
   diagnostic, a probe for a misspelled `[MapProperty]` destination under `[MapTo]`, and Task 30.5. Also verified:
   the AOT sample's two checks cannot fail the gate, and master requires no status checks (owner's setting).
+
+  **B1 done — null directive names are reported.** `[MapIgnore<T>(null)]`, method-level `[MapValue(null!, …)]`,
+  `[Flatten(null!)]` and `[FlattenGraph(null!, …)]` vanished with a green build while an empty name was reported.
+  Their readers now read null as the empty name, as `d474e9f` and `fc58fb0` did for the three pair-scoped siblings
+  on 2026-09-13, so each reports what an empty name does (DWARF095/056, DWARF042, DWARF016, DWARF034; DWARF090 and
+  DWARF092 at element-wise and update-into endpoints), and no message renders the argument as null. Three tests had
+  pinned the silence (`PairScopedIgnoreReaderCoverageTests`, `FlattenAndMapValueReachTests`,
+  `DirectiveEndpointReachTests`); they now assert the report, and `MethodDirectiveNullNameTests` is new: RED before,
+  GREEN after. Whole solution 0 warnings; every test project green.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
