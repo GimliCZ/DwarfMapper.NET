@@ -228,6 +228,18 @@ is still open under its own name.
   - `CiGateScanTests`: the three rows no longer say "declaration only". A new theory fails if a job-level
     `continue-on-error` comes back on any of them: planted on `ubuntu-26-canary`, 1 of 3 red; removed, green.
     Step-level ones (`bench-wall-time-alert`, `build-test`'s test-analytics step) are out of its scope by design.
+
+  **B12 done — zizmor blocks** (inventory item 7). `actions-security.yml` was authored in reporting mode, to become
+  blocking once the owner had triaged a first baseline. Every run read, six on master and PR #11 on 2026-10-27,
+  reported 0 findings: the baseline was empty and there was nothing to triage.
+  - What fails the job now is `Assert-ZizmorReportClean` (`scripts/gate-checks.ps1`) instead of inline Python. It
+    fails on any open finding, annotating each on its file and line. A finding suppressed in the workflow's text
+    (`# zizmor: ignore[...]`) does not count. A missing, empty or run-less report fails, and so does a run without a
+    results array, which SARIF reserves for a tool that produced none (the latest code-scanning analysis and a local
+    run both carry `results: []`).
+  - The SARIF upload runs even when the gate fails, so the findings that failed it show in code scanning.
+  - `ZizmorGateTests` drives the real function over seven fixtures: RED, the function missing; GREEN, 7 of 7.
+    zizmor 1.30.1 run locally over the changed workflows: exit 0, 0 findings.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

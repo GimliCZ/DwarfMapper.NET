@@ -1393,3 +1393,43 @@ function Send-DashboardReport {
     }
     "dashboard: HTTP $status (attempt $attempt)"
 }
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# zizmor's report read as a gate (actions-security.yml). The job was authored in reporting mode: findings
+# could not fail it until the owner had triaged the first run's (the baseline). Every run read for the flip,
+# six on master and PR #11 on 2026-10-27, reported none, so the baseline was empty, and since round 34 an
+# open finding fails the job. A finding suppressed in the workflow's own text (`# zizmor: ignore[rule]`)
+# carries a SARIF suppression and does not count: that decision is in the diff where review sees it. No
+# report, an empty one, one with no runs, or a run with no results array (SARIF's way of saying the tool
+# produced none) fails too, because no analysis is not no findings. Each open finding is printed as an
+# error annotation on its file and line before the throw (ZizmorGateTests).
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-ZizmorReportClean {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "zizmor: no report was written, so no finding count means anything."
+    }
+    $text = Get-Content -Raw -LiteralPath $Path
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        throw "zizmor: the report is empty, so no finding count means anything."
+    }
+    $runs = @(($text | ConvertFrom-Json).runs | Where-Object { $null -ne $_ })
+    if ($runs.Count -eq 0) {
+        throw "zizmor: the report has no runs, so the tool analysed nothing and no finding count means anything."
+    }
+    if (@($runs | Where-Object { $null -eq $_.results }).Count) {
+        throw "zizmor: a run in the report has no results array, which SARIF reserves for a tool that produced none."
+    }
+
+    $results = @($runs | ForEach-Object { $_.results })
+    $open = @($results | Where-Object { -not $_.suppressions })
+    foreach ($finding in $open) {
+        $at = $finding.locations[0].physicalLocation
+        "::error file=$($at.artifactLocation.uri),line=$($at.region.startLine)::zizmor $($finding.ruleId): $($finding.message.text)"
+    }
+    "zizmor findings: $($open.Count) open, $($results.Count - $open.Count) suppressed in source"
+    if ($open.Count) {
+        throw "zizmor: $($open.Count) open finding(s). Fix each one, or suppress it in the workflow's text with '# zizmor: ignore[<rule>]' and the reason beside it."
+    }
+}
