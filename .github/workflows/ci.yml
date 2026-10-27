@@ -303,13 +303,59 @@ jobs:
       # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
       # runtimes 7/9/10.
       - run: dotnet tool install --global dotnet-stryker --version 4.16.0
+      # ilverify, because without it every leg's INITIAL test run fails: EmittedIlIsVerifiableTests' two facts
+      # fail loudly when the tool is absent, by design. With any test failing there, Stryker 4.16 stops giving a
+      # static mutant "every test" and hands it an explicit list of all ~7,040 others (CoverageAnalyser), which
+      # its runner then sends to VsTest as TestCase objects, run after run. Measured 2026-10-26 on a CI-shaped
+      # local run (DOTNET_PROCESSOR_COUNT=4, Debug, generator leg), at the same phase: Stryker held 6.8-8.2 GB
+      # without the tool and ~1.1 GB with it. On a 16 GB runner that is the likeliest cause of the shutdown
+      # signal the generator and pipeline legs kept dying of (the resource trace below is there to confirm it),
+      # and the same lists made the 2026-10-16 pipeline report 119 MB (108.7 MB of it `coveredBy`), which the
+      # dashboard refused with HTTP 413. The two facts were lost to the score as well - Stryker drops
+      # an initially failing test from the tests that may kill. Missing since round 29; CiToolPrerequisiteScanTests
+      # now counts `dotnet stryker` as running the suite.
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       # Exits non-zero when the score falls below the config's thresholds.break — each leg keeps its own
       # measured floor (see each config's comment for the measurement it came from, and for why an older,
       # higher number must not be "restored": the runtime leg's 66 counted load-induced timeouts on mutants
       # that cannot hang as detections). If a leg reports Timeouts on mutants that cannot hang, the runner
       # is slower than the timeout cushion assumes: raise `additional-timeout` in that config. Do NOT add a
-      # test filter to make it fit.
-      - run: dotnet stryker --config-file ${{ matrix.config }}
+      # test filter to make it fit. The configs' one filter, "test-case-filter": "Category!=Perf", is not a fit:
+      # it is round 31 T19's rule that no leg but perf-tests runs a wall-clock ratio, and PR #9's pipeline leg
+      # broke its initial run on one (PerfCategoryIsolationScanTests holds every config to it).
+      #
+      # --break-on-initial-test-failure: a test failing BEFORE mutation is never just one lost test, it puts
+      # every static mutant on the explicit lists above. So any initial failure now stops the leg within minutes
+      # with the failing tests NAMED in this log (verified 2026-10-26: both ILVerify facts and their messages
+      # printed at exit) instead of degrading it into an hours-long run that dies unexplained. Invoke-StrykerLeg
+      # passes the same flag; MutationLaunchContractTests holds both.
+      #
+      # RESOURCE TRACE, diagnostic only. Of the 26 nightly generator and pipeline legs on 6abd8c1 (2026-10-13 to
+      # 10-25), 21 ended in "The runner has received a shutdown signal" well short of their timeouts, 3 left no
+      # log at all, 1 timed out and 1 completed, and no log said why: Stryker's progress output is buffered and
+      # no later step runs after that signal. This step's live log is the one record that survives, so a
+      # background loop writes memory, disk and the largest processes into it every 30 s. It reads and prints,
+      # never fails the step, and stops with Stryker.
+      - name: Run Stryker (with a resource trace)
+        env:
+          CONFIG: ${{ matrix.config }}
+        run: |
+          ( set +e
+            trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+            while :; do
+              echo "--- resources $(date -u +%H:%M:%S)"
+              free -m | head -n 2
+              df -h / /tmp | tail -n +2
+              ps -eo rss,etime,args --sort=-rss | head -n 6 | cut -c1-150
+              sleep 30 & nap=$!
+              wait "$nap"
+            done ) &
+          trace=$!
+          rc=0
+          dotnet stryker --config-file "$CONFIG" --break-on-initial-test-failure || rc=$?
+          kill "$trace" 2>/dev/null || true
+          wait "$trace" 2>/dev/null || true
+          exit "$rc"
       # The exit code is necessary but NOT sufficient: Stryker exits 0 when its `mutate` globs match nothing.
       # Every mutant comes back "Removed by mutate filter", no score is calculated, and a leg that tested
       # NOTHING passes. That is not hypothetical — it is what stryker-config.runtime.json did on 2026-08-16,
@@ -405,9 +451,10 @@ jobs:
           project=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['name'])" '${{ matrix.config }}')
           module=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['stryker-config']['project-info']['module'])" '${{ matrix.config }}')
           echo "publishing ${{ matrix.leg }} as module '$module' of '$project', version '$REF_NAME'"
-          # The dashboard 413s a ~10 MB body, which the generator and pipeline reports reached after round 31.
           # Write-DashboardReport keeps only the tests a mutant references - the only ones the dashboard shows -
-          # and passes everything else through (DashboardReportTests).
+          # and passes everything else through (DashboardReportTests). The dashboard's limit is not ~10 MB: on
+          # 2026-10-16 it accepted the testing leg's 87.8 MB and refused the pipeline leg's 116 MB with 413. That
+          # 116 MB was the explicit `coveredBy` lists an initial test failure causes (see the ilverify step).
           REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Write-DashboardReport -Report $env:REPORT -Out dashboard-report.json'
           status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
             "https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module" \

@@ -281,5 +281,35 @@ namespace DwarfMapper.Generator.Tests.Round31
                     registration.IndexOf(' ', at + declaration.Length) - at - declaration.Length);
             return (interceptors, errors);
         }
+
+        // ── Round 33: the call-site gate admits only what can be Dwarf.Map ──────────────────────────────────────────
+        // Every admitted invocation costs a semantic bind on the generator's own compilation. The gate admitted every
+        // invocation NAMED Map - above all mapper.Map(x) - and on IntegrationTests bound 793 of 4,216 invocations to
+        // find the 17 that had a shape Dwarf.Map can take. These pin both directions; the binding tests above pin that
+        // every real call shape (create, update, inferred update, using static) is still bound.
+        [Theory]
+        [InlineData("Dwarf.Map<Order, OrderDto>(o)")]
+        [InlineData("Map<Order, OrderDto>(o)")]
+        [InlineData("global::DwarfMapper.Dwarf.Map<Order, OrderDto>(o)")]
+        [InlineData("Dwarf.Map(o, d)")]
+        [InlineData("Map(o, d)")]
+        public void The_call_site_gate_admits_every_shape_a_Dwarf_Map_call_can_take(string call)
+        {
+            Assert.True(Pipeline.DwarfCallSites.IsCandidate(SyntaxFactory.ParseExpression(call), default), call);
+        }
+
+        [Theory]
+        [InlineData("mapper.Map(o)")]
+        [InlineData("Map(o)")]
+        [InlineData("mapper.Map<OrderDto>(o)")]
+        [InlineData("mapper.Map<Order, OrderDto, Extra>(o)")]
+        [InlineData("mapper.Map(o, d, e)")]
+        [InlineData("mapper.Merge(o, d)")]
+        [InlineData("o?.Map(o, d)")]
+        [InlineData("o.Name")]
+        public void The_call_site_gate_refuses_what_cannot_be_a_Dwarf_Map_call(string expression)
+        {
+            Assert.False(Pipeline.DwarfCallSites.IsCandidate(SyntaxFactory.ParseExpression(expression), default), expression);
+        }
     }
 }

@@ -3,7 +3,7 @@
 # DwarfMapper LOCAL housekeeping — the heavy integrity checks kept OUT of CI on purpose (time/cost).
 # Run before a release or a large push. Each stage fails fast.
 #
-#   pwsh scripts/housekeeping.ps1                 # suite + exhaustion + AOT execute
+#   pwsh scripts/housekeeping.ps1                 # suite + Perf ratio tests alone + exhaustion + AOT execute
 #   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~6 min full power-set
 #   pwsh scripts/housekeeping.ps1 -Mutation       # also run Stryker mutation testing (very slow)
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
@@ -57,9 +57,9 @@ if ($unknown.Count) {
 
 # -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
 # (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
-# cannot drift apart. It skips exhaustion and AOT (exhaustion is a default local stage, AOT has its own
-# aot-trim-gate CI job) and deliberately does NOT imply -Mutation — the mutation legs are their own cost
-# class and their own nightly CI jobs (the 'mutation' matrix).
+# cannot drift apart. It skips exhaustion, AOT and stage 1c (exhaustion is a default local stage; AOT and
+# the Perf ratio tests have their own CI jobs, aot-trim-gate and perf-tests) and deliberately does NOT imply
+# -Mutation — the mutation legs are their own cost class and their own nightly CI jobs (the 'mutation' matrix).
 if ($Nightly) {
     # -BenchSmoke rides the nightly per the T8 placement rule: its measured wall-clock (6:36/6:44 across
     # the two pin-verification runs, 12-core machine) is proportionate to the deep tier now that the
@@ -404,7 +404,11 @@ try {
         if (Test-Path $covDir) { Remove-Item -Recurse -Force $covDir }
         $testArgs += @('--collect:XPlat Code Coverage', '--results-directory', $covDir)
     }
-    dotnet test DwarfMapper.NET.sln -c Release --nologo @testArgs
+    # Category!=Perf (round 31 T19): a wall-clock ratio test timed beside every other test class is reading
+    # its neighbours' load, not the code. T19 took the category out of every ci.yml and release.yml step but
+    # not out of this one, which is what CI's deep-test job runs - and deep-test went red on it on 2026-10-24
+    # (787.8 -> 1383.4 ns) and on PR #9 (857.2 -> 1394.0 ns), against a 1.5x bound. Stage 1c runs them alone.
+    dotnet test DwarfMapper.NET.sln -c Release --nologo --filter "Category!=Perf" @testArgs
     if ($Deep) { Remove-Item Env:DWARF_DEEP }
     if ($LASTEXITCODE) { throw "self-test suite failed" }
 
@@ -438,6 +442,14 @@ try {
             if ($bandFailure) { $failures += $bandFailure }
         }
         if ($failures) { throw ($failures -join [Environment]::NewLine) }
+    }
+
+    if (-not $Nightly) {
+        Write-Host "== 1c Wall-clock ratio tests (Category=Perf), alone ==" -ForegroundColor Cyan
+        # After the parallel suite has finished, so the only load beside the timed loop is the machine's own.
+        # Skipped under -Nightly for the reason AOT is: CI runs these in their own job, perf-tests.
+        dotnet test DwarfMapper.NET.sln -c Release --nologo --no-build --filter "Category=Perf"
+        if ($LASTEXITCODE) { throw "wall-clock ratio tests (Category=Perf) failed" }
     }
 
     if (-not $SkipExhaustion) {

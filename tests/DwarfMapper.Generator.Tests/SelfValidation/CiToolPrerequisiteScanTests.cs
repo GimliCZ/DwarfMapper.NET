@@ -27,6 +27,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///         The fix was three lines of YAML. The reason this test exists rather than only those three lines is
     ///         that nothing else would notice the FOURTH job, whenever someone adds one.
     ///     </para>
+    ///     <para>
+    ///         <b>Round 33: the next one did not say <c>dotnet test</c>.</b> The <c>mutation</c> matrix runs the suite
+    ///         through <c>dotnet stryker</c>, whose initial test run reaches the same two facts, and this scan only
+    ///         recognised the suite by the other spelling. That job never installed the tool, so every leg log read,
+    ///         from the generator leg's on 2026-10-04 to all six of PR #9's, logged "2 tests are failing. Stryker will
+    ///         continue but outcome will be impacted." Stryker drops a test that fails before mutation from the tests
+    ///         that may kill, so CI scored the legs without the two ILVerify facts, against floors measured with them.
+    ///     </para>
     /// </summary>
     public class CiToolPrerequisiteScanTests
     {
@@ -66,6 +74,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             return jobs;
         }
 
+        /// <summary>
+        ///     <c>dotnet test</c>, or <c>dotnet stryker</c>: a mutation leg's initial test run is the whole suite,
+        ///     run before a single mutant is tested, and a test that fails there is lost to the leg's score.
+        /// </summary>
+        private static bool RunsTheSuite(string jobBody)
+        {
+            return jobBody.Contains("dotnet test", StringComparison.Ordinal) || jobBody.Contains("dotnet stryker", StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Every_job_that_can_reach_the_ILVerify_tests_installs_ilverify()
         {
@@ -75,7 +92,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // make the loop below pass by iterating over nothing.
             Assert.True(jobs.Count >= 10, $"parsed only {jobs.Count} CI job(s); the workflow has many more.");
 
-            var runners = jobs.Where(j => j.Value.Contains("dotnet test", StringComparison.Ordinal)).ToList();
+            var runners = jobs.Where(j => RunsTheSuite(j.Value)).ToList();
             Assert.True(runners.Count >= 4,
                 $"only {runners.Count} job(s) appear to run `dotnet test`; this scan is looking at the wrong thing.");
 

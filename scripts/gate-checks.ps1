@@ -449,6 +449,15 @@ function Invoke-StrykerLeg {
     # this. If any of those three ever appear, this line stops being free.
     $stArgs += @('--configuration', 'Release')
 
+    # --- break-on-initial-test-failure: a red suite measures nothing --------------------------------
+    # A test failing BEFORE mutation is not one lost test. Stryker 4.16 then gives every static mutant an
+    # explicit list of every other test instead of "every test", sends it to VsTest run after run, and the leg
+    # bloats: measured 2026-10-26, Stryker itself held 6.8-8.2 GB against ~1.1 GB - the likeliest cause of the
+    # CI legs dying on 16 GB runners for weeks (ci.yml, the ilverify step). With the flag the leg stops after
+    # its initial run and prints the failing tests by name. CI's Stryker step passes it too;
+    # MutationLaunchContractTests holds both.
+    $stArgs += @('--break-on-initial-test-failure')
+
     # --- concurrency: DELIBERATELY NOT SET, and this comment is the correction ----------------------
     # This launcher briefly raised concurrency to cores-2, on the theory that Stryker's default of half the
     # logical processors was leaving the machine idle. MEASURED, and wrong: the generator leg, whose recorded
@@ -1045,9 +1054,35 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (354 KB = 362,496 B) 268 B on Windows, 905 B on ubuntu.
 # DwarfMapper.Testing (54 KB = 55,296 B) 627 B on Windows, 822 B on ubuntu.
+#
+# RE-MEASURED 2026-10-13 (round 33, at a4efa68): DwarfMapper 353 -> 362, DwarfMapper.Testing unchanged at 53.
+# The first master nightly after round 32 (6abd8c1, 2026-10-13) failed this gate; round 32 (80b5a68) carried
+# the growth and did not re-measure, so R1 was missed a third time - stated rather than backdated.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     80b5a68 (round 32)   DwarfMapper 370,058 B   Testing 54,621 B   floor 361 / 53
+#     6abd8c1 (master)     DwarfMapper 370,053 B   Testing 54,624 B   floor 361 / 53
+#     a4efa68 (round 33)   DwarfMapper 370,598 B   Testing 54,626 B   floor 361 / 53
+#   Windows, SDK 10.0.101, a4efa68: 370,775 B (+177) and 54,653 B - floor 362 / 53. The ceiling is the
+#   higher floor, so both platforms agree on it.
+#
+# ENTRY BY ENTRY, round 31 (24a31de) -> round 33 (a4efa68), compressed bytes, packed on Windows:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll    +7,514   AllowNull / [MapClone] / KeepDefault intents,
+#                                                             DWARF116, DWARFR16, the DWARF070 skip-guard fix
+#                                                             (round 32); the List/ImmutableArray widen and the
+#                                                             Preserve fast-path gates (round 33)
+#   lib/net10.0/DwarfMapper.xml                        +868   docs of the new public attribute surface
+#   lib/net10.0/DwarfMapper.dll                        +227   MapCloneAttribute, the new MapProperty members
+#   README.md                                           +23   in BOTH packages - the Testing package's whole delta
+#
+# Every row is intended round-32/33 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 937 B on Windows, 1,114 B on ubuntu.
+# DwarfMapper.Testing (54 KB = 55,296 B) 643 B on Windows, 670 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 353
+    'DwarfMapper'         = 362
     'DwarfMapper.Testing' = 53
 }
 
@@ -1216,6 +1251,12 @@ function Assert-PackageSizeWithinCeiling {
 # (killedBy / coveredBy), so dropping the unreferenced ones loses nothing it shows: 10.5 MB -> 4.7 MB on
 # the largest. `files` (source and every mutant, whatever its status) is passed through untouched.
 # Refuses an empty population, for the same reason "Assert the run was not vacuous" does.
+# CORRECTED 2026-10-26: CI's reports were not those local ones. The CI legs ran with two tests failing
+# Stryker's initial run (no ilverify), which gives every static mutant an explicit `coveredBy` list of all
+# ~7,040 tests: the 2026-10-16 pipeline report was 119 MB, 108.7 MB of it those lists, so every test counted
+# as referenced and this kept 7,042 of 7,042. The dashboard refused that at 116 MB and accepted 87.8 MB the
+# same night, so its limit is not ~10 MB either. The fix is upstream (ci.yml installs ilverify and breaks on
+# an initial failure); this function is unchanged.
 function Write-DashboardReport {
     param(
         [Parameter(Mandatory)] [string] $Report,

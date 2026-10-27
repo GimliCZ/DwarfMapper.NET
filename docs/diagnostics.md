@@ -2009,7 +2009,9 @@ callers will not care about an array of four elements. A warning here would beco
 silent — except a member that is `Nullable<T>` on one side only whose unwrapped types are
 layout-identical, which is the near-miss listed above. Those are not missed fast paths, they are
 ordinary mappings, and a hint common enough to appear on every struct mapping would be suppressed
-wholesale — taking the cases worth reading down with it.
+wholesale — taking the cases worth reading down with it. Nor does it fire for an array member under
+`ReferenceHandling = Preserve`: Preserve keeps every collection on the helper that registers it — one source
+reached twice is one target — so no rename would reach a block copy there.
 ---
 
 ## dwarf101

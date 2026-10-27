@@ -15,6 +15,19 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **The generator no longer binds every `.Map(…)` call in your project.** To find `Dwarf.Map` call sites it sent every
+  invocation *named* `Map` - above all `mapper.Map(x)`, the commonest call in a DwarfMapper codebase - to a semantic
+  bind on its own compilation, a second binding of each enclosing method on top of the real compile. It now admits
+  only the shapes `Dwarf.Map` can take (`Map<S, D>(…)`, or the inferred update `Map(source, destination)`). On this
+  repository's IntegrationTests (4,216 invocations) the binds fell from 793 to 95 and the generator's time from
+  4.1-4.2 s to 2.3-2.9 s cold, 0.84-0.98 s to 0.65-0.67 s warm. What is bound and intercepted is unchanged.
+- **A lossless primitive widen into or out of a `List<T>` or an `ImmutableArray<T>` is vectorised.** `int[]` →
+  `List<long>`, `List<int>` → `long[]` or `List<long>`, and every other storage pairing of the seven `Vector.Widen`
+  pairs now take the loop an array → array widen always had, instead of an element-by-element fill that lost to
+  `Select(x => (long)x).ToList()`. Measured on Windows/AVX2 at 1,024 elements: 1.9-2.8x faster than before, and ahead
+  of the LINQ equivalent in every shape (`benchmarks/results/2026-10-12-round33-t02-widen-list.md`). The values are
+  bit-for-bit those of the scalar widen. (Round 33 T02.)
+
 - **Ambient collection shapes are pre-sized.** The six collection shapes every mapped pair registers now fill through
   one runtime helper that pre-sizes from the source's count (research P1: 1.07-1.95x, and 17-29 % less allocation on
   the array target), reading a `List<T>` source with a version-checked walk so a hook that mutates the list still fails
@@ -526,6 +539,29 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Immutable targets whose element is nullable (`ImmutableList<string?>`) no longer warn CS8619 in generated code,
+  and a nullability mismatch between elements is no longer shared.** The identity copy into an `ImmutableList`,
+  `ImmutableArray` or `ImmutableHashSet` inferred its element type from the source, and the automatic share's empty
+  fallback dropped the element's `?`; both broke a `TreatWarningsAsErrors` build in a file the consumer cannot edit.
+  And the share treated `ImmutableList<string?>` and `ImmutableList<string>` as one type, handing a null element
+  through where the copy throws on it. Those members are copied now; `[MapShare]` on one reports `DWARF104`.
+- **Under `NullCollections = AsNull`, a null source array came back as an empty array on the block-copy and widen
+  paths.** A nullable `int[]?` → `long[]?`, a struct array that block-copies, or an enum array under `ByValue` mapped a
+  null source to `[]`, while every other collection member of the same mapper kept null. Those paths now give way
+  where null is kept; a non-nullable target, which gets an empty array on every path, keeps its block copy. `DWARF100`
+  ("one rename away from a block copy") is no longer reported where no block copy would be taken.
+- **Under `ReferenceHandling = Preserve`, one source collection reached twice is one target collection on every
+  path again.** Preserve registers a collection before filling it, so two members sharing one source array or list
+  share one target - but a blittable struct array, a `ByValue` enum array, a list block copy or an `int[]` → `long[]`
+  widen took a static fast path with nowhere to register, and each member got its own copy. Those fast paths are now
+  not taken under Preserve (the general helper is: correct, and slower), and `DWARF100` is no longer reported there,
+  since no rename would reach a block copy. Outside Preserve nothing changes. `[Reinterpret]` is unchanged.
+- **A nullable source collection on a block-copy or SIMD-widen fast path no longer warns `CS8604` in generated code.**
+  `int[]? Values` mapped to `long[]` (the `Vector.Widen` path), or `SrcV[]?` / `List<SrcV>?` to a layout-identical
+  `DstV[]` / `List<DstV>` (the block copy), called a helper whose parameter was declared non-nullable while it
+  null-guards inside - so the warning landed in your `.g.cs`, where nothing can suppress it, and under
+  `TreatWarningsAsErrors` broke the build. The helpers now take the nullable parameter every other collection helper
+  takes; the mapped values are unchanged.
 - **`DWARF070` no longer fires for a converter's argument when `[MapNullSkip]` / `SkipNullSourceMembers` guards the member.**
   `if (src.Tts is not null) dst.Tts = ToChatTts(src.Tts);` never hands the converter a null, but the converter-argument
   report was made where the conversion is chosen, before the skip guard was decided - so it fired anyway, and had no

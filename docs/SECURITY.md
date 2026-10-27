@@ -100,6 +100,7 @@ remain fully reflection-free.
 
 ## Reporting
 
-Security issues: please open a private advisory on the repository rather than a public issue. The shipped
+Security issues: please report them privately by email to **dwarfmapper@seznam.cz** (the policy is in the root
+[SECURITY.md](../SECURITY.md)) rather than as a public issue. The shipped
 surface is small (a build-time generator + a dependency-free runtime library), which is itself the primary
 mitigation.

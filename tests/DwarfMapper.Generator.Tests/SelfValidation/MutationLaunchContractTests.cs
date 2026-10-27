@@ -155,5 +155,33 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.Contains("-RedirectStandardInput", body, StringComparison.Ordinal);
             Assert.DoesNotContain("-RedirectStandardInput 'NUL'", body, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     Round 33. A test failing Stryker's INITIAL run is not one lost test: it puts every static mutant on
+        ///     an explicit list of every other test, and Stryker then held 6.8-8.2 GB instead of ~1.1 GB (measured
+        ///     2026-10-26): the likeliest cause of CI's generator and pipeline legs dying for weeks, and the cause of
+        ///     the 119 MB report the dashboard refused. So both launch sites stop on such a failure, which also
+        ///     prints the failing tests by name, rather than letting the leg degrade.
+        /// </summary>
+        [Fact]
+        public void Every_launch_site_breaks_on_an_initial_test_failure()
+        {
+            const string Flag = "--break-on-initial-test-failure";
+
+            var body = Regex.Match(Gate(),
+                @"function Invoke-StrykerLeg \{(?<body>[\s\S]*?)\n\}",
+                RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(10)).Groups["body"].Value;
+
+            // The ARGUMENT, not the prose: the comment above it names the flag too.
+            Assert.Matches(@"(?m)^\s*\$stArgs \+= @\('" + Regex.Escape(Flag) + @"'\)", body);
+
+            var ciLaunches = File.ReadAllLines(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"))
+                                 .Where(l => !l.TrimStart().StartsWith('#') && Regex.IsMatch(l, @"\bdotnet\s+stryker\b"))
+                                 .ToList();
+
+            // Non-vacuity: a workflow that stopped launching Stryker would pass the check below over nothing.
+            Assert.NotEmpty(ciLaunches);
+            Assert.All(ciLaunches, l => Assert.Contains(Flag, l, StringComparison.Ordinal));
+        }
     }
 }

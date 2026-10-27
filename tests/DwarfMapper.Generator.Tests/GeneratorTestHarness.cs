@@ -206,6 +206,37 @@ namespace DwarfMapper.Generator.Tests
             return (genDiagnostics, generated);
         }
 
+        /// <summary>
+        ///     <see cref="RunAll" /> and <see cref="RunAndGetCompilationErrors" /> from ONE generator run: the
+        ///     generator's diagnostics, the generated source, and the final compilation's errors.
+        ///     <para>
+        ///         For a caller that needs all three of the same source. Two separate calls run both generators and
+        ///         bind the output twice, and the surface matrix asks for all three on every cell — twice per cell,
+        ///         with its baseline.
+        ///     </para>
+        /// </summary>
+        public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource,
+            ImmutableArray<Diagnostic> CompilationErrors) RunAllWithCompilationErrors(string source)
+        {
+            var compilation = BuildCompilation("DwarfMapperTestAsm", source, NullableContextOptions.Disable);
+
+            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
+                new MapToGenerator());
+            driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
+            AssertGeneratedSourceParses(output);
+
+            var generated = string.Join("\n",
+                output.SyntaxTrees
+                    .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+                    .OrderBy(t => t.FilePath, StringComparer.Ordinal)
+                    .Select(t => t.ToString()));
+            var errors = output.GetDiagnostics()
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .ToImmutableArray();
+
+            return (genDiagnostics, generated, errors);
+        }
+
 
         /// <summary>
         ///     As <see cref="RunMapTo" />, but also returns the generated registry extension source — needed to

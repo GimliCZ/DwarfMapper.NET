@@ -547,6 +547,79 @@ namespace DwarfMapper.Generator.Tests
                                     }
                                     """
             ];
+
+            // The block-copy and SIMD-widen fast paths — round 33. Their synthesized helpers took the source collection
+            // as a NON-nullable parameter, where every other collection helper takes FqNullableParam's nullable one and
+            // null-guards inside; the call site passes the member as it is, so a NULLABLE-annotated source member
+            // (`int[]?`) produced CS8604 in the consumer's .g.cs. Every fast path and every reference storage it reads,
+            // through a nullable member, plus a non-nullable member of a fast-path pair (one helper serves both) and an
+            // ImmutableArray source, which is a struct and must keep its non-nullable parameter.
+            yield return
+            [
+                "FastPathCollectionHelpers", """
+                                             using System.Collections.Generic;
+                                             using System.Collections.Immutable;
+                                             using DwarfMapper;
+                                             namespace Demo;
+                                             public struct SrcV { public int X; public int Y; }
+                                             public struct DstV { public int X; public int Y; }
+                                             public sealed class Src
+                                             {
+                                                 public SrcV[]? BlitArray { get; set; }
+                                                 public SrcV[]? BlitArrayToList { get; set; }
+                                                 public List<SrcV>? BlitListToArray { get; set; }
+                                                 public ImmutableArray<SrcV> BlitImmutableToList { get; set; }
+                                                 public int[]? WidenArray { get; set; }
+                                                 public int[] WidenArrayNonNull { get; set; } = [];
+                                                 public int[]? WidenArrayToList { get; set; }
+                                                 public List<int>? WidenListToArray { get; set; }
+                                                 public ImmutableArray<int> WidenImmutableToList { get; set; }
+                                             }
+                                             public sealed class Dst
+                                             {
+                                                 public DstV[]? BlitArray { get; set; }
+                                                 public List<DstV>? BlitArrayToList { get; set; }
+                                                 public DstV[]? BlitListToArray { get; set; }
+                                                 public List<DstV> BlitImmutableToList { get; set; } = new();
+                                                 public long[]? WidenArray { get; set; }
+                                                 public long[] WidenArrayNonNull { get; set; } = [];
+                                                 public List<long>? WidenArrayToList { get; set; }
+                                                 public long[]? WidenListToArray { get; set; }
+                                                 public List<long> WidenImmutableToList { get; set; } = new();
+                                             }
+                                             [DwarfMapper]
+                                             public partial class M { public partial Dst Map(Src s); }
+                                             """
+            ];
+
+            // Immutable targets whose ELEMENT is annotated nullable - round 33. Two emitters dropped the element's `?`:
+            // the identity copy called `ImmutableX.CreateRange(src)`, inferring the element from a `string` source, and
+            // the share's fallback named `ImmutableList<string>.Empty`; both are CS8619 against the invariant
+            // `ImmutableX<string?>` they are assigned to. The copy for each immutable factory, and the share.
+            yield return
+            [
+                "ImmutableTargetsWithANullableElement", """
+                                                        using System.Collections.Immutable;
+                                                        using DwarfMapper;
+                                                        namespace Demo;
+                                                        public sealed class Src
+                                                        {
+                                                            public ImmutableList<string> CopyList { get; set; } = ImmutableList<string>.Empty;
+                                                            public ImmutableArray<string> CopyArray { get; set; } = ImmutableArray<string>.Empty;
+                                                            public ImmutableHashSet<string> CopySet { get; set; } = ImmutableHashSet<string>.Empty;
+                                                            public ImmutableList<string?> SharedList { get; set; } = ImmutableList<string?>.Empty;
+                                                        }
+                                                        public sealed class Dst
+                                                        {
+                                                            public ImmutableList<string?> CopyList { get; set; } = ImmutableList<string?>.Empty;
+                                                            public ImmutableArray<string?> CopyArray { get; set; } = ImmutableArray<string?>.Empty;
+                                                            public ImmutableHashSet<string?> CopySet { get; set; } = ImmutableHashSet<string?>.Empty;
+                                                            public ImmutableList<string?> SharedList { get; set; } = ImmutableList<string?>.Empty;
+                                                        }
+                                                        [DwarfMapper]
+                                                        public partial class M { public partial Dst Map(Src s); }
+                                                        """
+            ];
         }
 
         [Theory]

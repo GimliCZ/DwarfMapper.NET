@@ -1014,7 +1014,35 @@ namespace DwarfMapper.Generator.Pipeline
                 var elemPairIsCustomized = NestedRegistryMarksPairCustomized(req.NestedRegistry, srcElem, tgtElem);
                 var elemPairKeepsTheLoop = elemHasUserConversion || elemPairIsCustomized;
 
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                // Every fast path below is a STATIC helper - a block copy or a vector widen with no context parameter -
+                // and under Preserve that is a semantic change, not a speed-up: the general helper registers its target
+                // before filling it, so one source collection reached twice is one target collection (EmitArray's B3
+                // guarantee), and a static helper has nowhere to register. So none is taken under Preserve, and neither
+                // is DWARF100, whose advice ("one rename away from a block copy") would point at a path the mode never
+                // takes. Round 33: the four blit/widen gates had reached Preserve since they were written. [Reinterpret]
+                // is not decided here - it forces its block copy before this method runs, as an explicit instruction -
+                // and what it should do under Preserve is an open owner decision (Issues/round33/ROUND33-TASKS.md).
+                var staticHelperMayStandIn = !req.IsPreserve;
+
+                // A3: determine effective null-as-null for the OUTER collection helper based on target nullability.
+                // Reference-type collections: fall back to AsEmpty when target is non-nullable to prevent CS8601.
+                // ImmutableArray<T>?: CollectionConverter.TryResolve already handles Nullable<ImmutableArray<T>>
+                // by unwrapping it and setting req.NullAsNull=true in the shape, so collShape.NullAsNull is already
+                // correct and we just need to preserve it.
+                var collEffectiveNullAsNull = collShape.Target == CollectionConverter.TargetKind.ImmutableArray
+                    // ImmutableArray: shape.NullAsNull is authoritative (set by TryResolve for Nullable<> unwrapping).
+                    ? collShape.NullAsNull
+                    // Reference-type collections: only AsNull when target field is nullable ref type.
+                    : req.NullAsNull && IsNullableReferenceType(req.TgtType);
+
+                // The array → array block copies and widen answer an EMPTY array for a null source; the general helper
+                // answers null wherever the rule above keeps null. So where it does, they give way, as the list shapes
+                // below always have (!collShape.NullAsNull). A non-nullable target gets an empty array on every path,
+                // and keeps its block copy. Round 33: these three gates had never asked (FastPathsUnderNullAsNullTests).
+                var arrayHelperMayStandIn = staticHelperMayStandIn && !collEffectiveNullAsNull;
+
+                if (arrayHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpret(srcElem,
@@ -1029,7 +1057,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // because the question is not layout — the layouts are trivially identical — but whether the
                 // SCALAR path is a reinterpret. Under ByName it is not: its switch throws on a value matching
                 // no member, and an enum may legally hold any value of its underlying type.
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                if (arrayHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy))
@@ -1074,7 +1103,8 @@ namespace DwarfMapper.Generator.Pipeline
                         : tgtIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
                         : (CollectionConverter.BlitStorage?)null;
 
-                    if (elementBlits &&
+                    if (staticHelperMayStandIn &&
+                        elementBlits &&
                         srcStorage is { } ss &&
                         tgtStorage is { } ts &&
                         !(ss == CollectionConverter.BlitStorage.Array && ts == CollectionConverter.BlitStorage.Array))
@@ -1085,6 +1115,28 @@ namespace DwarfMapper.Generator.Pipeline
                             tgtElem,
                             ss,
                             ts);
+                        resolved = true;
+                        return true;
+                    }
+
+                    // Round 33 T02: the same storages for a lossless primitive WIDEN pair, which the array → array
+                    // SIMD widen below never reached. A widen pair is never also a blit (the sizes differ), so the
+                    // order against the check above does not matter. Not gated on elemPairKeepsTheLoop, for the reason
+                    // the array widen is not: the resolver assigns an implicit pair directly, ahead of any user method,
+                    // so the element loop would widen implicitly too (pinned by SimdWidenGeneratorTests). Off under
+                    // Preserve with every other static helper (staticHelperMayStandIn, above).
+                    if (staticHelperMayStandIn &&
+                        CollectionConverter.IsWidenPair(srcElem, tgtElem) &&
+                        srcStorage is { } ws &&
+                        tgtStorage is { } wt &&
+                        !(ws == CollectionConverter.BlitStorage.Array && wt == CollectionConverter.BlitStorage.Array))
+                    {
+                        converterMethod = CollectionConverter.SynthesizeSimdWidenListShape(synthesized,
+                            req.SrcType,
+                            srcElem,
+                            tgtElem,
+                            ws,
+                            wt);
                         resolved = true;
                         return true;
                     }
@@ -1103,8 +1155,10 @@ namespace DwarfMapper.Generator.Pipeline
                 // BlittableProofNearMissTests.A_name_mismatch_reconciled_by_MapProperty_still_reports_the_near_miss
                 // has pinned since the diagnostic was introduced. A pair directive that is NOT a rename cannot
                 // produce a spurious hint either: TryExplainNearMiss answers false for a pair that already lines
-                // up by name, which is the only shape a [MapIgnore]/[MapValue]/hook refusal leaves behind.
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                // up by name, which is the only shape a [MapIgnore]/[MapValue]/hook refusal leaves behind. Not under
+                // Preserve either, where no rename would reach a block copy (staticHelperMayStandIn, above).
+                if (arrayHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     !elemHasUserConversion &&
                     BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
@@ -1119,7 +1173,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // SIMD widening fast-path: array→array of a lossless primitive widen pair (e.g. int[]→long[],
                 // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
                 // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                if (arrayHelperMayStandIn &&
+                    collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
                     CollectionConverter.IsWidenPair(srcElem,
                         tgtElem))
@@ -1128,17 +1183,6 @@ namespace DwarfMapper.Generator.Pipeline
                     resolved = true;
                     return true;
                 }
-
-                // A3: determine effective null-as-null for the OUTER collection helper based on target nullability.
-                // Reference-type collections: fall back to AsEmpty when target is non-nullable to prevent CS8601.
-                // ImmutableArray<T>?: CollectionConverter.TryResolve already handles Nullable<ImmutableArray<T>>
-                // by unwrapping it and setting req.NullAsNull=true in the shape, so collShape.NullAsNull is already
-                // correct and we just need to preserve it.
-                var collEffectiveNullAsNull = collShape.Target == CollectionConverter.TargetKind.ImmutableArray
-                    // ImmutableArray: shape.NullAsNull is authoritative (set by TryResolve for Nullable<> unwrapping).
-                    ? collShape.NullAsNull
-                    // Reference-type collections: only AsNull when target field is nullable ref type.
-                    : req.NullAsNull && IsNullableReferenceType(req.TgtType);
 
                 // A1: propagate req.NullAsNull to the element converter so nullable elements
                 // (e.g. element type List<int>? inside List<List<int>?>) generate helpers

@@ -887,8 +887,10 @@ namespace DwarfMapper.Generator.Pipeline
                 if (e.Identity && !e.ThreadCtx)
                 {
                     // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
+                    // The element type is STATED, not inferred: inferred from an ImmutableArray<string> source it is
+                    // `string`, and the result is CS8619 against an ImmutableArray<string?> return type (round 33).
                     e.Writer.Line("if (src is null) return " + emptyExpr + ";");
-                    e.Writer.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(" + srcExpr + ");");
+                    e.Writer.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange<" + e.Elem + ">(" + srcExpr + ");");
                 }
                 else
                 {
@@ -922,8 +924,10 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 if (e.Identity && !e.ThreadCtx)
                 {
+                    // The element type is STATED, as in EmitImmutableArray: inferring it from the source drops a
+                    // target-only `?` and makes the return CS8619.
                     e.Writer.Line("if (src is null) return " + emptyExpr + ";");
-                    e.Writer.Line("return " + createRange + "(" + srcExpr + ");");
+                    e.Writer.Line("return " + createRange + "<" + e.Elem + ">(" + srcExpr + ");");
                 }
                 else
                 {
@@ -999,7 +1003,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + elem + "[] " + name + "(" + srcFq + " src)"))
+            // FqNullableParam, as every other collection helper: the call site passes the member as declared, and a
+            // nullable-annotated one against a non-nullable parameter was CS8604 in the consumer's .g.cs.
+            using (w.Block("private static " + elem + "[] " + name + "(" + FqNullableParam(srcArrayType) + " src)"))
             {
                 w.Line("if (src is null) return global::System.Array.Empty<" + elem + ">();");
                 w.Line("var __r = new " + elem + "[src.Length];");
@@ -1099,7 +1105,10 @@ namespace DwarfMapper.Generator.Pipeline
             };
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + ret + " " + name + "(" + srcFq + " src)"))
+            // The nullable-aware parameter for a reference storage (SynthesizeBlit's reason); an ImmutableArray is a
+            // struct, and `?` would make it a Nullable<T> without IsDefaultOrEmpty.
+            var param = source == BlitStorage.ImmutableArray ? srcFq : FqNullableParam(srcCollType);
+            using (w.Block("private static " + ret + " " + name + "(" + param + " src)"))
             {
                 // An ImmutableArray<T> is a struct: it is never null, but it CAN be `default`, which wraps a
                 // null array and would fault on AsSpan().
@@ -1185,7 +1194,8 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + dst + "[] " + name + "(" + srcFq + " src)"))
+            // FqNullableParam: see SynthesizeBlit.
+            using (w.Block("private static " + dst + "[] " + name + "(" + FqNullableParam(srcArrayType) + " src)"))
             {
                 w.Line("if (src is null) return global::System.Array.Empty<" + dst + ">();");
                 w.Line("var __r = new " + dst + "[src.Length];");
@@ -1206,6 +1216,116 @@ namespace DwarfMapper.Generator.Pipeline
                 // Scalar tail (and full path when not hardware-accelerated): the implicit widening cast.
                 w.Line("for (; __i < src.Length; __i++) __r[__i] = src[__i];");
                 w.Line("return __r;");
+            }
+
+            synth[name] = new SynthesizedMethod(name, w.ToString());
+            return name;
+        }
+
+        /// <summary>
+        ///     Synthesizes the <see cref="SynthesizeSimdWiden" /> loop for the List- and ImmutableArray-involved shapes
+        ///     — every <see cref="BlitStorage" /> pairing but array → array — reading and writing the storages
+        ///     <see cref="SynthesizeBlitListShape" /> does (round 33 T02).
+        ///     <para>
+        ///         Before this, a widen pair into a <c>List&lt;T&gt;</c> took the general value-element fill, and that
+        ///         lost to <c>Select(x =&gt; (long)x).ToList()</c>: 1.48x slower at 1,024 <c>int → long</c> elements on
+        ///         the baseline measured for this change, because <c>foreach … __d[__i++] = __item</c> is an index the
+        ///         JIT cannot prove in range. Both halves of this body are spans: the vector loop, and a scalar tail
+        ///         that is an indexed loop over two spans — which alone is the shape LINQ's fill has.
+        ///     </para>
+        ///     <para>
+        ///         The <c>SetCount</c> hazard is closed by construction, as in <see cref="SynthesizeBlitListShape" />:
+        ///         nothing between <c>SetCount</c> and the last write can throw. <c>Vector&lt;T&gt;(ReadOnlySpan&lt;T&gt;)</c>
+        ///         and <c>CopyTo(Span&lt;T&gt;)</c> throw only on a short span, and the loop bound
+        ///         <c>__i + __w &lt;= __s.Length</c> with <c>__w == 2 * __half</c> (every widen pair doubles the element
+        ///         size, so the destination vector holds half as many) keeps every slice long enough; the widening itself
+        ///         is lossless and cannot throw.
+        ///     </para>
+        /// </summary>
+        public static string SynthesizeSimdWidenListShape(
+            Dictionary<string, SynthesizedMethod> synth,
+            ITypeSymbol srcCollType,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            BlitStorage source,
+            BlitStorage target)
+        {
+            var elem = Fq(tgtElem);
+            var srcE = Fq(srcElem);
+            var srcFq = Fq(srcCollType);
+            var listFq = "global::System.Collections.Generic.List<" + elem + ">";
+            var iaFq = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
+            var ret = target switch
+            {
+                BlitStorage.Array => elem + "[]",
+                BlitStorage.List => listFq,
+                _ => iaFq,
+            };
+
+            var name = "__DwarfWidenL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            if (synth.ContainsKey(name))
+            {
+                return name;
+            }
+
+            var srcSpan = source switch
+            {
+                BlitStorage.Array => "src",
+                BlitStorage.List => "global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(src)",
+                _ => "src.AsSpan()",
+            };
+
+            var emptyReturn = target switch
+            {
+                BlitStorage.Array => "global::System.Array.Empty<" + elem + ">()",
+                BlitStorage.List => "new " + listFq + "()",
+                _ => iaFq + ".Empty",
+            };
+
+            var w = new CodeWriter(1);
+            // The nullable-aware parameter for a reference storage, as SynthesizeBlitListShape and for its reason.
+            var param = source == BlitStorage.ImmutableArray ? srcFq : FqNullableParam(srcCollType);
+            using (w.Block("private static " + ret + " " + name + "(" + param + " src)"))
+            {
+                // An ImmutableArray<T> is a struct: never null, but `default` wraps a null array and faults on AsSpan().
+                w.Line(source == BlitStorage.ImmutableArray
+                    ? "if (src.IsDefaultOrEmpty) return " + emptyReturn + ";"
+                    : "if (src is null) return " + emptyReturn + ";");
+                w.Line("global::System.ReadOnlySpan<" + srcE + "> __s = " + srcSpan + ";");
+
+                if (target == BlitStorage.List)
+                {
+                    w.Line("var __r = new " + listFq + "(__s.Length);");
+                    w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __s.Length);");
+                    w.Line("var __d = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r);");
+                }
+                else
+                {
+                    // For an ImmutableArray target the array is fresh and wrapped once, below — re-wrapping the
+                    // source's storage would give two immutable values one buffer (SynthesizeBlitListShape's reason).
+                    w.Line("var __r = new " + elem + "[__s.Length];");
+                    w.Line("global::System.Span<" + elem + "> __d = __r;");
+                }
+
+                w.Line("int __i = 0;");
+                using (w.Block("if (global::System.Numerics.Vector.IsHardwareAccelerated)"))
+                {
+                    w.Line("int __w = global::System.Numerics.Vector<" + srcE + ">.Count;");
+                    w.Line("int __half = global::System.Numerics.Vector<" + elem + ">.Count;");
+                    using (w.Block("for (; __i + __w <= __s.Length; __i += __w)"))
+                    {
+                        w.Line("var __v = new global::System.Numerics.Vector<" + srcE + ">(__s.Slice(__i));");
+                        w.Line("global::System.Numerics.Vector.Widen(__v, out var __lo, out var __hi);");
+                        w.Line("__lo.CopyTo(__d.Slice(__i));");
+                        w.Line("__hi.CopyTo(__d.Slice(__i + __half));");
+                    }
+                }
+
+                // Scalar tail (and the whole path when not hardware-accelerated): the implicit widening cast.
+                w.Line("for (; __i < __s.Length; __i++) __d[__i] = __s[__i];");
+                w.Line(target == BlitStorage.ImmutableArray
+                    ? "return global::System.Runtime.InteropServices.ImmutableCollectionsMarshal.AsImmutableArray(__r);"
+                    : "return __r;");
             }
 
             synth[name] = new SynthesizedMethod(name, w.ToString());

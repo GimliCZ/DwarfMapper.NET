@@ -180,7 +180,11 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (memberType is not null && SymbolEqualityComparer.Default.Equals(memberType, named))
                 {
-                    return Fqn(named) + ".Empty";
+                    // With the type ARGUMENTS' annotations: `ImmutableList<string>.Empty` assigned to an
+                    // `ImmutableList<string?>` member is CS8619 in the generated file (the classes are invariant).
+                    // Never with the type's own - `ImmutableList<string?>?.Empty` is not an expression.
+                    return named.WithNullableAnnotation(NullableAnnotation.NotAnnotated)
+                        .ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat) + ".Empty";
                 }
             }
 

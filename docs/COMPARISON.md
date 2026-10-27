@@ -373,10 +373,14 @@ DwarfMapper has **two** SIMD fast-paths that no competitor offers:
    `Vector.IsHardwareAccelerated` guard and a scalar tail. The result is **bit-for-bit identical to the
    scalar implicit widen** (verified by adversary/fuzz tests over every length around the vector boundary
    and the full value range, plus an AOT gate) — it is purely a throughput win and stays reflection-free /
-   NativeAOT-safe. Competitors copy these element-by-element.
+   NativeAOT-safe. Like the bulk copy it is not limited to arrays: since round 33, **`List<T>` on either side**
+   (with the list-family interfaces that materialise to it) and **`ImmutableArray<T>` in both directions** take
+   the same vector loop. Competitors copy these element-by-element.
 
-Both are emitted only when provably safe; everything else falls back to the element loop (with
-`CreateChecked` for narrowing). See the `Blit` and `Widen` benchmark categories.
+Both are emitted only when provably safe, and never under `ReferenceHandling = Preserve`: there one source
+collection reached twice must be one target collection, which takes the helper that registers it, and a static
+block copy has nowhere to register. Everything else falls back to the element loop (with `CreateChecked` for
+narrowing). See the `Blit` and `Widen` benchmark categories.
 
 ### NativeAOT benchmarking & stability
 

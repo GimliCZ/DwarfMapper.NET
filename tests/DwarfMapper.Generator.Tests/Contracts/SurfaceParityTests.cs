@@ -1242,18 +1242,35 @@ namespace DwarfMapper.Generator.Tests.Contracts
             return slugs;
         }
 
-        /// <summary>Every cell, classified once, for the ratchets that count a whole population.</summary>
-        private static IEnumerable<(SurfaceCase Case, Endpoint Endpoint, SurfaceEffect Effect, string Detail,
+        /// <summary>
+        ///     Every cell, classified once per call, for the ratchets that count a whole population.
+        ///     <para>
+        ///         Classified in parallel, in catalogue order. Each ratchet is one serial test in this class, and the
+        ///         class is the longest serial chain in the assembly: classified one cell at a time, six ratchets
+        ///         re-reading the whole matrix were ~48 s of the run's wall-clock, with every other test finished.
+        ///     </para>
+        ///     <para>
+        ///         Deliberately NOT memoized across tests. Stryker activates a mutant per TEST CASE inside one shared
+        ///         test host (its data collector maps test ids to mutants and switches at each test's start), so a
+        ///         verdict cached by one test would be read by the next under a different mutant, and its failure
+        ///         credited to the wrong one.
+        ///     </para>
+        /// </summary>
+        private static List<(SurfaceCase Case, Endpoint Endpoint, SurfaceEffect Effect, string Detail,
             string Rendered)> AllCells()
         {
-            foreach (var element in SurfaceCatalog.CrossProductElements)
-            foreach (var c in SurfaceCatalog.CasesFor(element))
-            foreach (var endpoint in EndpointSources.All)
-            {
-                var (effect, detail) = SurfaceProbe.Classify(c, endpoint);
-                yield return (c, endpoint, effect, detail,
-                    c.Rendered.Replace("\n", " + ", StringComparison.Ordinal));
-            }
+            return SurfaceCatalog.CrossProductElements
+                .SelectMany(SurfaceCatalog.CasesFor)
+                .SelectMany(_ => EndpointSources.All, (c, endpoint) => (c, endpoint))
+                .AsParallel()
+                .AsOrdered()
+                .Select(x =>
+                {
+                    var (effect, detail) = SurfaceProbe.Classify(x.c, x.endpoint);
+                    return (x.c, x.endpoint, effect, detail,
+                        x.c.Rendered.Replace("\n", " + ", StringComparison.Ordinal));
+                })
+                .ToList();
         }
 
         /// <summary>

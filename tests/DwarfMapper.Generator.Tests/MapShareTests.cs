@@ -203,6 +203,86 @@ namespace DwarfMapper.Generator.Tests
                          .Contains("same type", StringComparison.Ordinal));
         }
 
+        [Theory]
+        [InlineData("ImmutableList<string?>", "ImmutableList<string>")]
+        [InlineData("ImmutableList<string>", "ImmutableList<string?>")]
+        [InlineData("ImmutableArray<string?>", "ImmutableArray<string>")]
+        [InlineData("ImmutableDictionary<string, string?>", "ImmutableDictionary<string, string>")]
+        // Agreeing at the first level, differing one level down.
+        [InlineData("ImmutableDictionary<string, ImmutableList<string?>>", "ImmutableDictionary<string, ImmutableList<string>>")]
+        public void Elements_that_differ_in_nullability_are_not_shared(string srcT, string dstT)
+        {
+            // The same type ignoring annotations, so the share used to assign the reference: CS8619 in the generated
+            // file, and a null element handed through where the copying helper throws on it.
+            var src = "#nullable enable\n" + Shapes + "\n" +
+                      "public sealed class A { public " + srcT + " Items { get; init; } = default!; }\n" +
+                      "public sealed class B { public " + dstT + " Items { get; init; } = default!; }\n" +
+                      "[DwarfMapper] public partial class M { public partial B Map(A a); }\n";
+
+            Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
+            Assert.DoesNotContain("Items = a.Items", GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable), StringComparison.Ordinal);
+        }
+
+        [Theory]
+        // The control: the same annotations on both sides still share.
+        [InlineData("#nullable enable", "ImmutableList<string?>", "ImmutableList<string?>")]
+        // An oblivious element (no annotation context on the source) conflicts with nothing, as for the compiler.
+        [InlineData("#nullable disable", "ImmutableList<string>", "ImmutableList<string>")]
+        public void Elements_that_agree_in_nullability_are_still_shared(string sourceContext, string srcT, string dstT)
+        {
+            var src = Shapes + "\n" + sourceContext + "\n" +
+                      "public sealed class A { public " + srcT + " Items { get; init; } = default!; }\n" +
+                      "#nullable enable\n" +
+                      "public sealed class B { public " + dstT + " Items { get; init; } = default!; }\n" +
+                      "[DwarfMapper] public partial class M { public partial B Map(A a); }\n";
+
+            Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
+            Assert.Contains("Items = a.Items ??", GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_null_element_into_a_non_nullable_element_collection_throws_as_the_copy_does()
+        {
+            // What the share used to skip, observed: the copying helper's element-null rule, on the shape the share
+            // stood in for, gives the same answer as a plain List<string?> → List<string> member.
+            const string src = """
+                               #nullable enable
+                               using DwarfMapper;
+                               using System.Collections.Immutable;
+                               namespace Demo;
+                               public sealed class A { public ImmutableList<string?> Items { get; init; } = ImmutableList<string?>.Empty; }
+                               public sealed class B { public ImmutableList<string> Items { get; init; } = ImmutableList<string>.Empty; }
+                               [DwarfMapper] public partial class M { public partial B Map(A a); }
+                               public static class Probe
+                               {
+                                   public static string Run()
+                                   {
+                                       try { new M().Map(new A { Items = ImmutableList.Create<string?>("x", null) }); return "mapped"; }
+                                       catch (System.InvalidOperationException) { return "threw"; }
+                                   }
+                               }
+                               """;
+
+            var (asm, errors) = GeneratorTestHarness.EmitAssembly(src);
+            Assert.True(asm is not null, string.Join(", ", errors.Select(e => e.Id)));
+            Assert.Equal("threw", (string)asm.GetType("Demo.Probe")!.GetMethod("Run")!.Invoke(null, null)!);
+        }
+
+        [Fact]
+        public void MapShare_across_an_element_nullability_mismatch_reports_DWARF104()
+        {
+            var (diagnostics, _) = GeneratorTestHarness.Run("#nullable enable\n" + Shapes + """
+
+                                                                     public sealed class A { public ImmutableList<string?> Items { get; init; } = null!; }
+                                                                     public sealed class B { public ImmutableList<string> Items { get; init; } = null!; }
+                                                                     [DwarfMapper] public partial class M { [MapShare("Items")] public partial B Map(A a); }
+                                                                     """, NullableContextOptions.Enable);
+
+            Assert.Contains(diagnostics,
+                d => d.Id == "DWARF104" &&
+                     d.GetMessage(CultureInfo.InvariantCulture).Contains("differ in nullability", StringComparison.Ordinal));
+        }
+
         [Fact]
         public void An_array_member_is_never_shared()
         {

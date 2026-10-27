@@ -173,15 +173,16 @@ namespace DwarfMapper.Generator.Tests.Contracts
             // read below. See "THE DISCRIMINATION".
             // The diagnostic OBJECTS are kept, not just the counts, because the id alone cannot answer the
             // question below: the same CS id means opposite things depending on which file it is reported in.
-            var withCompilerErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source)
+            // One generator run answers both questions (RunAllWithCompilationErrors): two runs of the same source
+            // cost the matrix a second generator pass and a second bind of its output on every cell.
+            var (diagnostics, generated, finalErrors) = GeneratorTestHarness.RunAllWithCompilationErrors(source);
+            var withCompilerErrors = finalErrors
                 .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("CS", StringComparison.Ordinal))
                 .ToList();
             var withCompilerErrorCounts = withCompilerErrors
                 .GroupBy(d => d.Id, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
             var newCompilerErrorIds = NewOccurrences(withCompilerErrorCounts, baseCompilerErrorCounts);
-
-            var (diagnostics, generated) = GeneratorTestHarness.RunAll(source);
 
             var addedDiagnostics = diagnostics
                 .Where(d => !baseDwarfKeys.Contains(d.Id + ":" + d.Severity, StringComparer.Ordinal))
@@ -342,8 +343,8 @@ namespace DwarfMapper.Generator.Tests.Contracts
                 _ =>
                 {
                     var baselineSource = EndpointSources.Build(endpoint, types: types, options: options ?? "");
-                    var (d, g) = GeneratorTestHarness.RunAll(baselineSource);
-                    var compilerErrorCounts = GeneratorTestHarness.RunAndGetCompilationErrors(baselineSource)
+                    var (d, g, errors) = GeneratorTestHarness.RunAllWithCompilationErrors(baselineSource);
+                    var compilerErrorCounts = errors
                         .Where(x => x.Severity == DiagnosticSeverity.Error && x.Id.StartsWith("CS", StringComparison.Ordinal))
                         .GroupBy(x => x.Id, StringComparer.Ordinal)
                         .ToDictionary(g2 => g2.Key, g2 => g2.Count(), StringComparer.Ordinal);

@@ -18,6 +18,8 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class ListFillNestedTests
     {
+        // The value-element fixtures pair int with double, not long: since round 33 T02 a Vector.Widen pair takes the
+        // vector helper, which SimdWidenGeneratorTests pins at depth; these pin the general fill at depth.
         [Fact]
         public void A_value_element_list_three_levels_down_still_fills_through_the_span()
         {
@@ -28,7 +30,7 @@ namespace DwarfMapper.Generator.Tests
                              public class Leaf    { public int[] Amounts { get; set; } = System.Array.Empty<int>(); }
                              public class Middle  { public Leaf Inner { get; set; } = new(); }
                              public class Root    { public Middle M { get; set; } = new(); }
-                             public class LeafD   { public List<long> Amounts { get; set; } = new(); }
+                             public class LeafD   { public List<double> Amounts { get; set; } = new(); }
                              public class MiddleD { public LeafD Inner { get; set; } = new(); }
                              public class RootD   { public MiddleD M { get; set; } = new(); }
                              [DwarfMapper] public partial class Mp { public partial RootD Map(Root r); }
@@ -50,7 +52,7 @@ namespace DwarfMapper.Generator.Tests
                              namespace Demo;
                              public class Line   { public int[] Qty { get; set; } = System.Array.Empty<int>(); }
                              public class Order  { public List<Line> Lines { get; set; } = new(); }
-                             public class LineD  { public List<long> Qty { get; set; } = new(); }
+                             public class LineD  { public List<double> Qty { get; set; } = new(); }
                              public class OrderD { public List<LineD> Lines { get; set; } = new(); }
                              [DwarfMapper] public partial class Mp { public partial OrderD Map(Order o); }
                              """;
