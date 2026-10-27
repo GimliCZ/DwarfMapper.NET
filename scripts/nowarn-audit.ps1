@@ -45,6 +45,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'gate-checks.ps1')
 Push-Location $root
 try {
     $projects = Get-ChildItem -Path $root -Recurse -Filter '*.csproj' -File |
@@ -85,9 +86,9 @@ try {
         $output = & dotnet build $project.FullName -c Release --nologo -v n --no-incremental `
                                  -p:NoWarn= -p:TreatWarningsAsErrors=false 2>&1 | Out-String
 
-        $fired = @([regex]::Matches($output, 'warning\s+([A-Z]+[0-9]+)') |
-                   ForEach-Object { $_.Groups[1].Value } |
-                   Select-Object -Unique)
+        # Only the warnings MSBuild attributes to THIS project: -p:NoWarn= also clears every referenced
+        # project's list, and their warnings are in the same output (Get-OwnWarningCodes, round 34).
+        $fired = @(Get-OwnWarningCodes -BuildOutput $output -Project $project.FullName)
 
         $stale = @($declared | Where-Object { $fired -notcontains $_ })
 

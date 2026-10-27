@@ -1303,6 +1303,25 @@ function Write-DashboardReport {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The warning codes a build raised in ONE project, for scripts/nowarn-audit.ps1. The audit clears NoWarn
+# with a GLOBAL property (-p:NoWarn=), and a global property reaches every ProjectReference as well, so the
+# output also holds the referenced projects' warnings. Counting all of them credited DwarfMapper.Testing's
+# own CA5394 (System.Random in ObjectFactoryV2) to Benchmarks, Conformance and Gallery, whose CA5394
+# suppressed nothing (round 34). MSBuild ends every warning line with the project it belongs to, in
+# brackets, the location-less `CSC : warning ...` ones included; only this project's lines count.
+function Get-OwnWarningCodes {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $BuildOutput,
+        [Parameter(Mandatory)] [string] $Project
+    )
+
+    $mine = [regex]::Escape($Project)
+    @([regex]::Matches($BuildOutput, "(?im)\bwarning\s+([A-Z]+[0-9]+):[^\r\n]*\[$mine\]\s*$") |
+        ForEach-Object { $_.Groups[1].Value.ToUpperInvariant() } |
+        Select-Object -Unique)
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # The upload itself, sent once more when the dashboard gave no answer about the report. On 2026-10-27
 # the first nightly on round 33's code measured and gated all six legs, and two still went red here: the
 # dashboard answered the runtime and codefixes PUTs (09:09:41 and 09:09:59 UTC) with HTTP 504 four
