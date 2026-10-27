@@ -276,6 +276,19 @@ is still open under its own name.
   - generator: one static `BlittableProof` mutant, in code the ratio test never runs, so a timing failure. It reads
     Survived since, which is honest.
   - pipeline has no report in the old run; it mutates generator code, which the ratio test does not run.
+
+  **B15 done — Task 30.5, the widening-primitive near-miss, measured** (inventory item 1). Round 30 asked whether
+  `BlittableProof.TryExplainNearMiss` should report a pair whose field names line up and whose differing field is a
+  widening primitive (`int` against `long`). It said: measure the noise first; ship only if the count is small and
+  every new report is a genuine mistake; otherwise put the number in the doc comment.
+  - Measured with temporary instrumentation placed after the method's field-count gate, never committed. It recorded
+    every pair asked about, every pair with equal field counts, and every pair whose names line up with a type
+    differing (widening, or any other difference).
+  - Golden corpus (`GoldenCorpus.Cases()`, 1,021 cases): 59 distinct pairs asked about, none with equal field counts.
+  - Gallery (its 50 files plus its implicit usings): 2 asked about, none with equal field counts.
+  - So it is 0 new reports either way. The silence stays: zero reports means no noise, but also no evidence that a
+    report would name a mistake rather than a width chosen on purpose. And a wider field changes the bytes, unlike a
+    rename or a `?`. The numbers and that reasoning are now in the doc comment; reporting it stays the owner's call.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

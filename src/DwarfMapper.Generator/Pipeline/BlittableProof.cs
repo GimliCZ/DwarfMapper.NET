@@ -198,6 +198,15 @@ namespace DwarfMapper.Generator.Pipeline
         ///         once the optional wrapper is stripped the two sides are byte-identical, so the pair is one
         ///         <c>?</c> away from the fast path in exactly the sense the name-mismatch case is one rename away.
         ///     </para>
+        ///     <para>
+        ///         A widening primitive (<c>int</c> on one side, <c>long</c> on the other, same member name) stays silent,
+        ///         MEASURED rather than assumed (round 30 Task 30.5, done in round 34): over the whole golden corpus (1,021
+        ///         cases) this method is asked about 59 distinct pairs, and over the Gallery's 50 files about 2. None has
+        ///         equal field counts, so none has names lined up with a type differing, widening or not. Zero new reports
+        ///         is no noise, but it is also no evidence that a report would name a mistake rather than a width chosen on
+        ///         purpose. And unlike a rename or a <c>?</c>, the two sides do not hold the same bytes: making the pair
+        ///         blit means changing a width, not a name. Reporting it stays the owner's call.
+        ///     </para>
         /// </summary>
         public static bool TryExplainNearMiss(ITypeSymbol src, ITypeSymbol dst, out string reason)
         {
