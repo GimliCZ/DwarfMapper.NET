@@ -111,6 +111,25 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "site, or downgrade the id in that project's .globalconfig with its reason above it.");
         }
 
+        /// <summary>
+        ///     The other direction of the same lists: an id that no longer fires. <c>scripts/nowarn-audit.ps1</c> finds
+        ///     those, and its help said housekeeping would turn <c>-FailOnStale</c> on once the lists had been trimmed. Round
+        ///     34 trimmed them (B4) and wires it, under <c>-Deep</c>, which CI's nightly deep-test job runs.
+        /// </summary>
+        [Fact]
+        public void Housekeeping_deep_fails_on_a_NoWarn_id_that_suppresses_nothing()
+        {
+            var lines = File.ReadAllLines(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
+            var call = Array.FindIndex(lines, l => !l.TrimStart().StartsWith('#') &&
+                                                   l.Contains("nowarn-audit.ps1", StringComparison.Ordinal) &&
+                                                   l.Contains("-FailOnStale", StringComparison.Ordinal));
+            Assert.True(call >= 0, "housekeeping.ps1 never runs scripts/nowarn-audit.ps1 -FailOnStale, so an id that stopped firing stays on its <NoWarn> list unnoticed.");
+
+            // The block that holds the call is the nearest `if` above it at the stages' own indentation.
+            var opener = lines.Take(call).Reverse().First(l => l.StartsWith("    if", StringComparison.Ordinal));
+            Assert.Equal("    if ($Deep) {", opener.TrimEnd());
+        }
+
         // ── #pragma warning disable ──────────────────────────────────────────────
 
         [Fact]

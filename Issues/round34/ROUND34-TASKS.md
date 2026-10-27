@@ -289,6 +289,15 @@ is still open under its own name.
   - So it is 0 new reports either way. The silence stays: zero reports means no noise, but also no evidence that a
     report would name a mistake rather than a width chosen on purpose. And a wider field changes the bytes, unlike a
     rename or a `?`. The numbers and that reasoning are now in the doc comment; reporting it stays the owner's call.
+
+  **B16 done — the NoWarn audit fails a stale id every night** (inventory item 5b). `scripts/nowarn-audit.ps1` rebuilds
+  every project that declares a `<NoWarn>` with the list cleared. Its help said housekeeping would turn `-FailOnStale`
+  on once the lists were trimmed; B4 trimmed them, and nothing turned it on.
+  - Measured first: 140 s on 6 cores / 12 threads, and 187 s in `sdk:10.0.101` on four CPUs. 0 of 93 declared
+    suppressions are stale on either platform, so Linux and Windows agree on what fires.
+  - It now runs under housekeeping's `-Deep`, and so in the nightly deep-test job (15-16 min against 45). It runs after
+    the stages that read Release output, because its forced rebuilds replace that output.
+  - `SuppressionReasonScanTests` holds the wiring: RED before it, GREEN.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

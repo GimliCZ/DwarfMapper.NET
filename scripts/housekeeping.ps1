@@ -640,6 +640,17 @@ try {
             -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/blit-ratio-baseline.json')
     }
 
+    if ($Deep) {
+        Write-Host "== NoWarn audit: every declared suppression still suppresses something ==" -ForegroundColor Cyan
+        # Round 34. scripts/nowarn-audit.ps1 rebuilds each project that declares a <NoWarn> with the list cleared and,
+        # under -FailOnStale, fails on an id that no longer fires. Its help said housekeeping would turn that on once
+        # the lists had been trimmed; B4 trimmed them and nothing turned it on. Under -Deep, so CI's nightly deep-test
+        # runs it. After the stages that read Release output, because its forced rebuilds replace that output.
+        # Measured 2026-10-27: 140 s on 6 cores / 12 threads, 187 s in sdk:10.0.101 on four CPUs; 0 of 93 declared
+        # suppressions stale on either.
+        & (Join-Path $PSScriptRoot 'nowarn-audit.ps1') -FailOnStale
+    }
+
     if ($Mutation -or $MutationLeg) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
         # ALL SIX configs sanity-checked up front — every leg's, not only the ones this invocation will
