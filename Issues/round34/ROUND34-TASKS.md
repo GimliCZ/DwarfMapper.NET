@@ -30,8 +30,19 @@ is still open under its own name.
     - **The GC heap limit is moot.** It would not have touched memory outside the GC heap.
     - **The `2f3b290` PLINQ arm** measured default mode, which build-test and deep-test already have headroom for.
       It is not pursued.
-    - **Open: CI.** The first nightly after this reaches master has to show the mutation legs' largest host near
-      1 GB. That is a prediction from the rig, not yet a measurement.
+    - **Confirmed on CI** — PR #11's full-ci run 40538713221 (`71908b0`), all 23 jobs green, scores unchanged:
+
+      | Leg | Largest test host | Lowest available | Leg time |
+      |---|---|---|---|
+      | generator | 8.1 → **0.9 GB** | 1.5 → 11.3 GB | 1:33:45 → 1:15:33 |
+      | pipeline | 8.7 → **0.9 GB** | 0.6 → 11.3 GB | 1:36:38 → 1:11:26 |
+      | runtime | 6.8 → 1.0 GB | 3.2 → 11.7 GB | 0:10:52 → 0:16:09 |
+      | doctooling | 6.6 → 0.8 GB | 6.3 → 11.9 GB | 0:08:03 → 0:10:05 |
+      | testing | 5.9 → 0.8 GB | 7.5 → 12.1 GB | 0:27:09 → 0:29:01 |
+      | codefixes | 4.7 → 0.9 GB | 8.8 → 12.1 GB | 0:10:32 → 0:09:51 |
+
+      Before is the 2026-10-27 nightly (run 40477294097, `b58c6e3`). The two long legs are 19 % and 26 % faster;
+      the short legs' times moved by single minutes, both ways, which is runner noise at their length.
   - **A2. The dashboard upload retries once** on a 5xx or a failed connection, after a pause; never on a 4xx, which
     the step already explains as configuration.
 
