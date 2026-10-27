@@ -88,6 +88,26 @@ is still open under its own name.
   the gate. Both return 1 now. `AotSampleGateScanTests` holds every `ERROR:` line to a non-zero return (RED on
   `Program.cs:32` and `:54`, GREEN after). The stale "36 `return 1` sites" in ci.yml and CORRECTNESS.md (39 now)
   became the rule the scan holds.
+
+  **B4 done — round 30's Task 30.4, the reason-required scans** (the owner asked on 2026-10-27 for the whole
+  inventory in this PR). `SuppressionReasonScanTests` holds five rules, each with a positive control:
+  - every `<NoWarn>` id is named by the comment directly above it, and that comment names no id the element
+    does not suppress;
+  - no project suppresses a DWARF id in `<NoWarn>` (the 2026-09-27 ruling);
+  - every real `#pragma warning disable` (parsed, so string literals and doc comments do not count) has a `//`
+    reason on its line or the line above, as Task 30.4 specified;
+  - every `[SuppressMessage]` has a non-empty Justification;
+  - every `.globalconfig` downgrade has a comment directly above it.
+
+  They found 60 `<NoWarn>` findings, 5 DWARF ids, and 6 pragmas. Before writing reasons, `nowarn-audit.ps1`
+  (fixed first, `dd47ae2`) separated live suppressions from dead ones: 8 of 105 suppressed nothing and were
+  deleted (CA5394 in Benchmarks, Conformance and Gallery; DWARF044 in AotSample and IntegrationTests; CA2227 in
+  ProviderA; CA1002 and CA2227 in ProviderB). Every surviving id got its reason from the sites that raise it.
+  DWARF038 moved from three `<NoWarn>` lists to per-project `.globalconfig` files with their reasons. Stale
+  comment ids went (the empty CodeFixes `<NoWarn>` among them), and `samples/.globalconfig`'s premise that every
+  sample suppresses CA1050 was corrected: CA1050 fires on none of them. The six pragmas got reasons; one
+  file-header pragma suppressing five ids, IDE0079 included, shrank to the two that fire, scoped to the two types
+  that raise them. Whole solution 0 warnings; every test project green.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

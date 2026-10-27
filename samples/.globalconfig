@@ -5,10 +5,10 @@
 # A sample exists to be read: a rule that makes an example less clear loses, and says so here.
 is_global = true
 
-# MA0047 (declare type in a namespace): 91 sites. All four samples are top-level-statement programs whose
-# DTOs sit in the global namespace so the example reads the way a consumer would write it in a scratch file.
-# This is the Meziantou twin of CA1050, which all four sample csprojs already NoWarn for exactly that reason
-# ("top-level-statement file has types not in a namespace") — one ruling, stated once.
+# MA0047 (declare type in a namespace): 91 sites. The samples are top-level-statement programs whose DTOs sit in
+# the global namespace, so each example reads the way a consumer would write it in a scratch file. CA1050, the
+# .NET analyzers' counterpart, does not fire on any sample (round 34 built each with NoWarn cleared), so no
+# sample project suppresses it.
 dotnet_diagnostic.MA0047.severity = none
 
 # MA0008 (add StructLayoutAttribute): 8 sites — the blittable/reinterpret demo structs (Gallery 21 and 22,

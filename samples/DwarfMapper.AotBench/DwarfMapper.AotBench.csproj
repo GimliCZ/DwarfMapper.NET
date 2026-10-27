@@ -11,8 +11,10 @@
              refuses NU1004 any graph the committed packages.lock.json does not carry — declaring the
              RIDs here writes both graphs into the lock file at generation time. -->
         <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
-        <!-- Single-file sample: top-level types outside a namespace (CA1050) and public types in an exe
-             with no public API (CA1515); fixed UI strings (CA1303); intentional perf-loop shapes. -->
+        <!-- Single-file sample. CA1515: its types are public in an exe that exposes no API. CA1303: the
+             report lines it prints are fixed strings, not localizable UI. CA1819: the payloads expose arrays,
+             the SIMD widen/blit shape being timed. CA1815: Vec3Src/Vec3Dst are blit payload structs;
+             equality members would change nothing measured. -->
         <NoWarn>$(NoWarn);CA1515;CA1303;CA1819;CA1815</NoWarn>
     </PropertyGroup>
     <ItemGroup>

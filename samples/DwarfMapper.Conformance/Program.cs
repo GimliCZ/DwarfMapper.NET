@@ -684,6 +684,8 @@ new F47M().Patch(new F47S
         Name = "new"
     },
     f47);
+// CA1508: as for F34 above, the analyzer sees into the generated Patch body and proves the two values; the check is
+// what the conformance run is for, not dead code.
 #pragma warning disable CA1508
 R.Check("F47 class-scoped patch keeps", f47 is { Name: "new", Note: "kept" });
 #pragma warning restore CA1508

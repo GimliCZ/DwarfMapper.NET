@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Project-scoped global analyzer config for the conformance sample. Additive to the repo-root and samples/ files
+# (the SDK discovers every .globalconfig above a compiled file); never repeat a key either of them sets, because an
+# equal global_level conflict DROPS the key from both. A DWARF diagnostic is downgraded here rather than in the
+# project's <NoWarn> (owner ruling 2026-09-27): this is the mechanism the docs give consumers, and the one that can
+# also escalate.
+is_global = true
+
+# DWARF038 (implicit conversion applied): the conformance run checks that the SUPPORTED implicit conversions map
+# correctly at runtime, so it has to apply them: string -> int parse (Features.cs:134 and :823) and long -> int
+# narrowing (:806). The diagnostic is right to flag each one; making them explicit would stop the run from checking
+# the implicit path at all.
+dotnet_diagnostic.DWARF038.severity = none

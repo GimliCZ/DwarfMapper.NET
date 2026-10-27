@@ -8,7 +8,21 @@
              with runtime asserts. Relax the repo's maximum analyzer profile like the Gallery does — these are
              teaching/verification POCOs, not production hygiene models. -->
         <AnalysisMode>Recommended</AnalysisMode>
-        <NoWarn>$(NoWarn);CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA5394;CA1051;CA1062;CA1031;CA1707;CA1815;CA1008;DWARF038</NoWarn>
+        <!-- CA1515: the feature fixtures in Features.cs are public types in an exe that exposes no API.
+             CA1303: the run's report lines are fixed strings, not localizable UI. -->
+        <!-- CA1002/CA2227/CA1819: fixture DTOs expose List<T>, settable collections and arrays exactly as a
+             consumer's do; the collection features are checked on those shapes. CA1861: one constant array
+             argument in a one-shot check. -->
+        <!-- CA1051/CA1815: Px/Qx and their siblings are the blittable-struct fixtures - public fields in a plain
+             unmanaged struct are the shape the bulk-copy proof is about, and equality members would obscure it. -->
+        <!-- CA1031/CA1062: the R.Throws and R.NoThrow assertion helpers run the action they are handed, unchecked,
+             and catch every exception, so a failing check reports false instead of ending the run. -->
+        <!-- CA1707: F22S.user_name is snake_case on purpose; the naming-convention feature maps it.
+             CA1008: Src4 and two other enum fixtures omit a zero member, which the enum checks depend on. -->
+        <NoWarn>$(NoWarn);CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1051;CA1062;CA1031;CA1707;CA1815;CA1008</NoWarn>
+        <!-- DWARF038 is downgraded in this project's .globalconfig, with its reason, per the 2026-09-27 ruling.
+             CA5394 was here too and suppressed nothing: the System.Random it answered is DwarfMapper.Testing's
+             own (round 34's audit). -->
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

@@ -12,7 +12,12 @@
              the blittable example: public fields in a plain unmanaged struct are exactly the shape the
              bulk-copy proof is about, and adding Equals/operators would obscure the layout being
              demonstrated. -->
-        <NoWarn>$(NoWarn);CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA5394;CA1822;CA1051;CA1815</NoWarn>
+        <!-- A gallery of examples to read. CA1515: each example's types are public, as a consumer's are.
+             CA1303: the few lines it prints are fixed strings. CA1819/CA2227/CA1002: the collection examples use
+             arrays, settable collections and List<T> exactly as the consumer DTOs they illustrate do.
+             CA1861: one constant array argument in 05_Collections. CA1822: 40_BeforeAfterHooks declares its
+             [BeforeMap] hook as an instance method on the mapper, the way a consumer writes one. -->
+        <NoWarn>$(NoWarn);CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1822;CA1051;CA1815</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
