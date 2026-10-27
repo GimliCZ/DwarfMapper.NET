@@ -5,7 +5,29 @@ rule stands: a performance change becomes a task at **≥ 1.3x or ≥ 20 % alloc
 emitted shape**, not on a model of it. Every fix ships its RED→GREEN regression test in the same commit, and every new
 branch is reachable and tested or removed (2026-09-10 full-coverage ruling).
 
-The round's scope is the owner's pick from "Candidate tasks" below.
+## Tasks
+
+The owner's pick on 2026-10-27, out of five candidates: all of them, as four tasks. Lettered, because round 33's T03
+is still open under its own name.
+
+- **A. Nightly reliability.**
+  - **A1. Memory headroom on the mutation legs** (see "Next steps — CI"): in round 33's Docker rig and in Stryker's
+    serial mode, the mode the legs run in, find what the test host holds at its peak (a gcdump), then try the fix
+    the dump points at. Any heap-limit arm reports the suite's time as well as its peak.
+  - **A2. The dashboard upload retries once** on a 5xx or a failed connection, after a pause; never on a 4xx, which
+    the step already explains as configuration.
+- **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
+- **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
+  validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
+  generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
+  (round 23 S3, repeated in round 33: linear, ~0.5 ms per mapped pair warm); what is new is its share of a real
+  build, which decides whether compile-time work earns a round. No earlier FusedChat build timing exists in
+  `benchmarks/results` or `Issues/`; ReportAnalyzer was used before only on this repository's own analyzers
+  (rounds 21-22).
+- **D. Mutation-testing accuracy** (owner decision 4): can `SurfaceProbe.Baselines`, a process-wide memo of generator
+  output, make Stryker credit a kill to the wrong mutant or hide one? Stryker 4.16's source first (how mutants are
+  grouped into a session, whether a test host outlives one), a narrowed Stryker A/B only if that leaves it open. The
+  deliverable is the answer and a proposal; the memo's design stays the owner's call.
 
 ## Next steps — the owner's
 
@@ -67,8 +89,8 @@ The round's scope is the owner's pick from "Candidate tasks" below.
   and 10,000 elements and the owner's call.
 - **Generator cold start** — cold runs are two-thirds JIT of the generator itself (IntegrationTests: 2.3-2.9 s cold,
   0.65 s warm). ReadyToRun is a lead, not a task: the generator stays netstandard2.0, ReadyToRun code is specific to a
-  runtime, and the compiler host differs between `dotnet build`, Rider and Visual Studio. Candidate 5 measures whether
-  it matters.
+  runtime, and the compiler host differs between `dotnet build`, Rider and Visual Studio. Task C measures whether it
+  matters.
 - **T02b** — a widen span map (`void Map(ReadOnlySpan<int>, Span<long>)`) emits a scalar loop, never `Vector.Widen`;
   unmeasured.
 - **DWARF066 on a positional record's inherited member** — a known false positive, pinned on purpose by
@@ -81,21 +103,6 @@ The round's scope is the owner's pick from "Candidate tasks" below.
   `ExcludeFromCodeCoverage`, Stryker ignores, skipped tests, swallowed catches and unreported generator conditions.
   Each item without a stated reason becomes a task.
 
-## Candidate tasks
-
-Ranked by whether they need an owner decision first; none of them does.
-
-1. **Memory headroom** (above): the three experiments, under the heavy-test lock, reproduced the way round 33 did.
-2. **Dashboard upload retry on 5xx** (above): small.
-3. **The de-silencing inventory** (above): it produces the rest of the round's task list.
-4. **`SurfaceProbe.Baselines` under Stryker** (owner decision 4): a mutant planted under one test case and read
-   by another in the same host settles whether the memo can cause a false kill or mask a mutant.
-5. **DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` binlog of FusedChat's validation copy (32
-   projects, 8 mappers, at `ef93781`): the generator's time, cold and warm, against the whole build. The generator
-   alone is measured (round 23 S3, repeated in round 33: linear, ~0.5 ms per mapped pair warm); what is new is its
-   share of a real build, which decides whether compile-time work earns a round. ReportAnalyzer was used before only on this
-   repository's own analyzers (rounds 21-22).
-
 ## Owner decisions
 
 1. T03's API surface: a `DwarfRefContext` constructor overload, or a capacity member.
@@ -104,7 +111,7 @@ Ranked by whether they need an owner decision first; none of them does.
    (`180510e`'s shape for `[MapConstructor]`), or refuse it under Preserve.
 3. `[Reinterpret]` under AsNull: the same decision on a second axis; a null source array still maps to `[]`.
 4. `SurfaceProbe.Baselines` under Stryker: a process-wide memo of generator output, shared across tests by design.
-   A question, not a fix; candidate 4 measures it.
+   A question, not a fix; task D answers it.
 5. What a `default(ImmutableArray<T>)` source maps to. The block copy, the widen and the share answer empty; the
    general path enumerates `src.GetValueOrDefault()` and should throw.
 
