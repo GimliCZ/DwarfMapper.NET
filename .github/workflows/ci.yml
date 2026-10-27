@@ -648,7 +648,8 @@ jobs:
           fi
           echo "NativeAOT confirmed: no managed assembly, no runtimeconfig.json in aot-out."
       # Publishing proves it COMPILES trim/AOT-clean; it says nothing about behaviour. The sample is written
-      # as a behavioural gate (36 `return 1` sites) and was never executed, so CORRECTNESS.md's "runs a
+      # as a behavioural gate (every check returns 1 on failure; AotSampleGateScanTests holds that, after two
+      # printed an ERROR and exited 0) and was never executed, so CORRECTNESS.md's "runs a
       # behavioural gate over the published native binary" was untrue until this step existed.
       - name: Execute the published AOT binary (behavioural gate)
         shell: bash

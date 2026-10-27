@@ -30,6 +30,7 @@ try
         V = int.MaxValue + 1L
     });
     Console.WriteLine("ERROR: expected OverflowException");
+    return 1;
 }
 catch (OverflowException)
 {
@@ -52,6 +53,7 @@ try
         V = "not-a-number"
     });
     Console.WriteLine("ERROR: expected FormatException");
+    return 1;
 }
 catch (FormatException)
 {

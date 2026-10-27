@@ -71,6 +71,12 @@ is still open under its own name.
   an Error at the directive; a member's own name matching nothing is still just an unused source member.
   `RegistryDiagnosticsGenTests` holds both (RED before, GREEN after); documented in `docs/diagnostics.md` and
   release-tracked. Whole solution 0 warnings; every test project green.
+
+  **B3 done — the AOT gate's two blind checks.** CI judges the published NativeAOT binary by its exit code alone,
+  and the sample's narrow-overflow and string-to-int checks printed `ERROR:` and carried on, so they could never fail
+  the gate. Both return 1 now. `AotSampleGateScanTests` holds every `ERROR:` line to a non-zero return (RED on
+  `Program.cs:32` and `:54`, GREEN after). The stale "36 `return 1` sites" in ci.yml and CORRECTNESS.md (39 now)
+  became the rule the scan holds.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
@@ -200,3 +206,21 @@ is still open under its own name.
 Decided and not carried: LICENSE stays as it is; the public contact is `dwarfmapper@seznam.cz`; T01's pin plus canary
 landed (`c142578`, `17c5c28`); private vulnerability reporting is on; scanner reports go by email and GitHub advisory
 at every severity (PR #10).
+
+## Round 35 carry-forward (from the inventory)
+
+The inventory's other proposed tasks, in its rank order, are in `SILENCED-CHECKS-INVENTORY.md`. The first one
+round 35 should build is the ratchet that keeps the rest fixed: round 30's Task 30.4 scans, never built. They
+would require a reason for every `<NoWarn>` id and every `#pragma`, both directions, plus a `Justification` on
+every `[SuppressMessage]`, a comment on every `.globalconfig` downgrade, and no DWARF id in a project `NoWarn`.
+Then Task 30.5 (the widening-primitive near-miss, measured), the `DwarfMapper.Testing` items, and the stale
+comments.
+
+**The owner's settings, not code:**
+- `master` requires no status checks, so every CI gate, Codecov included, is advisory at merge time;
+- three non-blocking jobs (roslyn-forward-compat, preview-sdk-canary, ubuntu-26-canary) are past their own
+  "make blocking once green" criteria, and zizmor reports with 0 findings but blocks nothing;
+- harden-runner audits all 19 jobs and blocks none; its egress baseline is what block mode would need;
+- three projects suppress DWARF038/DWARF044 in `NoWarn`, against the 2026-09-27 ruling;
+- `.oss-scanner/Dockerfile` runs the suite with `|| echo WARNING`: stated, but the scanning agent is never told the
+  suite may have been red.

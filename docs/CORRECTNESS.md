@@ -71,7 +71,8 @@ mappers structurally cannot go.
   `MakeGenericType`, `dynamic`, …) across 64 fuzz seeds + every advanced feature.
 - *Evidence (end to end):* the CI AOT gate (`aot-trim-gate`, `linux-x64` and `win-x64`) publishes
   `samples/DwarfMapper.AotSample` with **zero** IL2xxx/IL3xxx warnings, asserts the output is a native image,
-  and executes it — the behavioural gate in its `Program.cs` (36 `return 1` sites) runs in CI, not only locally.
+  and executes it — the behavioural gate in its `Program.cs` (every check returns 1 on failure, held by
+  `AotSampleGateScanTests`) runs in CI, not only locally.
 - *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run
   **locally** as a native binary (not a CI job) — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
   deterministic over 100 000 runs, and the depth/SetNull guards hold over tens of thousands of runs. Timing
