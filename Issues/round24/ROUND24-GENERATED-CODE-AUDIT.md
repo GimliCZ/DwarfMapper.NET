@@ -105,6 +105,13 @@ MA0192 and CA2255 are correctly silenced by the same bulk setting. So the sectio
 honoured — some rules resist it. Under `TreatWarningsAsErrors` that means enabling the override
 repo-wide turns 1,066 intent findings into build errors.
 
+**Re-tested 2026-10-27 (round 34), SDK 10.0.101: still blocked, and more plainly.** Two Release builds of the solution
+with `-p:EmitCompilerGeneratedFiles=true` and the section added: with `generated_code = false` alone, and with per-rule
+`dotnet_diagnostic.CA1822/CA1859/MA0192/CA2255.severity = none` added under it (no bulk setting). The generated files
+reported the same warnings both times: 1,404 CA1822, 12 CA1859, 8 CA1019, 4 CA2255, 4 CA1852, 2 CA1707 and 2 CA1508.
+Per-rule severity in that section reaches nothing a generator emitted, CA2255 included. The two FILED findings (CA1852,
+CA1508) are unchanged, and CA1019 (8) is new since this audit.
+
 Until that is solved, the audit is **on demand, not always-on**, and reproducible:
 
 1. add the `[**/generated/DwarfMapper.Generator/**/*.cs]` section with `generated_code = false`

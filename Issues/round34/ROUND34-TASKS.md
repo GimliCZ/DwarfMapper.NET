@@ -123,6 +123,15 @@ is still open under its own name.
     tests that have nothing to do with it (`IUnimplemented` and the dangling test's own assembly showed how).
     `DanglingDependencyTests` holds it: RED (no exception), GREEN after; Testing.Tests 140/140.
   - The mutation-scope audit table is re-measured in the same commit: the testing leg's share fell 18.2 % -> 17.0 %.
+
+  **B6 done — the emitted pragma documented** (`docs/CORRECTNESS.md`), and DocTooling's swallowed catch states its
+  reason (`fc0ae37`).
+
+  **B7 done — `Directory.Build.targets` no longer claims an `.editorconfig` section that does not exist.** The
+  `generated_code = false` section is deliberately not committed (round 24, `d38cda1`). Round 24's blocker was
+  re-tested on SDK 10.0.101: per-rule `none` under that section silences nothing a generator emitted (1,404 CA1822
+  and 32 others, identical with and without it), so the always-on gate stays blocked. The two FILED findings,
+  CA1852 (4) and CA1508 (2), stand; CA1019 (8) is new. Recorded in `Issues/round24/ROUND24-GENERATED-CODE-AUDIT.md`.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured
