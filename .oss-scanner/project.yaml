@@ -12,6 +12,13 @@ repo: https://github.com/GimliCZ/DwarfMapper.NET#master
 # PUBLIC: published in the scanner's repository. Reports, build failures and the scanner team's questions go here.
 primary_contact: dwarfmapper@seznam.cz
 
+# Every report ALSO opens a private security advisory on the repository, through GitHub's private vulnerability
+# reporting (switched on 2026-10-27). Email keeps upstream's default, low, so both channels receive every report; this
+# channel's own default is none.
+output_format:
+  github_security_advisory:
+    min_severity: low
+
 homepage: https://github.com/GimliCZ/DwarfMapper.NET
 
 disabled: false
