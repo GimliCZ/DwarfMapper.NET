@@ -384,6 +384,8 @@ is still open under its own name.
 
 ## Next steps — CI
 
+Both items below were the state when the round opened; this PR answered them as A2 (the retry) and A1 (the memory).
+
 - **The first nightly on round 33's code was red only on the dashboard.** Run 40477294097 (`b58c6e3`) started at
   08:58 UTC, 5 h 41 min after its 03:17 cron. Everything round 33 targeted passed: package-size, deep-test, and the
   initial run of all six mutation legs, with scores identical to PR #9's. The pipeline report uploaded, so the 413 is
@@ -449,20 +451,26 @@ Decided and not carried: LICENSE stays as it is; the public contact is `dwarfmap
 landed (`c142578`, `17c5c28`); private vulnerability reporting is on; scanner reports go by email and GitHub advisory
 at every severity (PR #10).
 
-## Round 35 carry-forward (from the inventory)
+## Done in PR #11, and what is left
 
-The inventory's other proposed tasks, in its rank order, are in `SILENCED-CHECKS-INVENTORY.md`. The first one
-round 35 should build is the ratchet that keeps the rest fixed: round 30's Task 30.4 scans, never built. They
-would require a reason for every `<NoWarn>` id and every `#pragma`, both directions, plus a `Justification` on
-every `[SuppressMessage]`, a comment on every `.globalconfig` downgrade, and no DWARF id in a project `NoWarn`.
-Then Task 30.5 (the widening-primitive near-miss, measured), the `DwarfMapper.Testing` items, and the stale
-comments.
+The round opened with four tasks (A-D). The owner then asked for the whole silenced-checks inventory in the same
+PR. Everything that is code landed here:
+- tasks A1-A3, B1-B18, C and D above, each commit carrying its RED and GREEN in its message;
+- the three reds of the PR's first full-ci run (`fc0ae37`): the Testing package's coverage (B5b), its size (B5c), and
+  the Perf lane's ratio test, which had been red on four master nightlies too (A3).
 
-**The owner's settings, not code:**
-- `master` requires no status checks, so every CI gate, Codecov included, is advisory at merge time;
-- three non-blocking jobs (roslyn-forward-compat, preview-sdk-canary, ubuntu-26-canary) are past their own
-  "make blocking once green" criteria, and zizmor reports with 0 findings but blocks nothing;
-- harden-runner audits all 19 jobs and blocks none; its egress baseline is what block mode would need;
-- three projects suppress DWARF038/DWARF044 in `NoWarn`, against the 2026-09-27 ruling;
-- `.oss-scanner/Dockerfile` runs the suite with `|| echo WARNING`: stated, but the scanning agent is never told the
-  suite may have been red.
+**Left, and why. The owner's settings, not code:**
+- **Required status checks** (inventory item 8). `master` requires none, so every gate in this PR, Codecov's
+  included, is advisory at merge time. Branch protection is the owner's setting. The checks every pull request runs,
+  which a required list would name:
+  - CI: `build-test`, `codeql`, `conformance-gate`, `surface-matrix`, `sbom`, `roslyn-forward-compat`,
+    `ubuntu-26-canary`, `aot-trim-gate (linux-x64, ubuntu-24.04)`, `aot-trim-gate (win-x64, windows-latest)`;
+  - actions-security: `zizmor`;
+  - code scanning: `CodeQL`.
+
+  The expensive tier runs only on a `full-ci` PR. A job skipped by its condition reports success, so requiring one
+  costs an unlabelled PR nothing.
+- **harden-runner block mode** (inventory item 10). Every job audits its egress and none blocks. Block mode needs an
+  allow-list built from StepSecurity's recorded baseline, which only the owner's StepSecurity view shows.
+
+Also open, above: owner decisions 1-5, and what was carried from round 33.
