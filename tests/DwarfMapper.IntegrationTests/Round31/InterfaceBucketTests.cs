@@ -3,9 +3,11 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using DwarfMapper;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace DwarfMapper.IntegrationTests.Round31
 {
@@ -20,6 +22,13 @@ namespace DwarfMapper.IntegrationTests.Round31
     /// </remarks>
     public sealed class InterfaceBucketTests
     {
+        private readonly ITestOutputHelper _output;
+
+        public InterfaceBucketTests(ITestOutputHelper output)
+        {
+            _output = output;
+        }
+
         /// <summary>GUARD: bucketing must not change ambiguity, which is always an intra-destination question.</summary>
         [Fact]
         public void Two_interfaces_accepting_one_source_for_one_destination_still_throw_naming_both()
@@ -85,6 +94,9 @@ namespace DwarfMapper.IntegrationTests.Round31
 
             var after = NanosPerCall(source);
 
+            // Written on every run, so a red can be read against the passes before it.
+            _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"collection dispatch: {before:F1} ns before, {after:F1} ns after 6,000 unrelated registrations ({after / before:F2}x, bound 1.5x)"));
             Assert.True(after <= before * 1.5,
                 $"collection dispatch went from {before:F1} ns to {after:F1} ns per call after 6,000 unrelated registrations");
         }
