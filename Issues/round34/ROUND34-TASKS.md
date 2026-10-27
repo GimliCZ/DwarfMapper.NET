@@ -309,6 +309,16 @@ is still open under its own name.
     a self-loop still passes.
   - The fuzz theory stays green with the stricter walk: 60 seeds in the fast tier and 600 in the deep tier, so no real
     graph hits either case.
+
+  **B18 done — the samples' analyzer "downgrade" never existed** (round 30's Task 30.2, the rest of inventory item 18).
+  The Gallery and Conformance samples set `AnalysisMode=Recommended`, explained as relaxing the repository's profile.
+  - The SDK takes the analysis mode from `AnalysisLevel`'s suffix first, and reads `AnalysisMode` only when there is
+    none (`Microsoft.CodeAnalysis.NetAnalyzers.targets`, SDK 10.0.101). `Directory.Build.props` sets `latest-all`.
+  - Built with their `NoWarn` cleared, both samples raised exactly the same ids under either mode (Gallery 9 ids,
+    Conformance 12), every one already on its reasoned `NoWarn` list.
+  - The inert line and the comment claiming a relaxation are gone. `SuppressionReasonScanTests` keeps any project below
+    the root from setting its own mode or level: RED on the two samples, GREEN. Both samples build clean with
+    warnings as errors.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

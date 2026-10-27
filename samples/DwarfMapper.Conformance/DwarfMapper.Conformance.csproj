@@ -4,10 +4,9 @@
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
         <IsPackable>false</IsPackable>
-        <!-- Conformance sample: one runnable app exercising every DwarfMapper feature + adversarial paths
-             with runtime asserts. Relax the repo's maximum analyzer profile like the Gallery does — these are
-             teaching/verification POCOs, not production hygiene models. -->
-        <AnalysisMode>Recommended</AnalysisMode>
+        <!-- Conformance sample: one runnable app exercising every DwarfMapper feature + adversarial paths with
+             runtime asserts. It builds under the repository's full analyzer profile; the ids below are the ones its
+             fixture shapes raise on purpose. -->
         <!-- CA1515: the feature fixtures in Features.cs are public types in an exe that exposes no API.
              CA1303: the run's report lines are fixed strings, not localizable UI. -->
         <!-- CA1002/CA2227/CA1819: fixture DTOs expose List<T>, settable collections and arrays exactly as a

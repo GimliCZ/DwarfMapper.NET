@@ -112,6 +112,30 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         /// <summary>
+        ///     Round 30's Task 30.2 asked the Gallery and Conformance samples to stop downgrading to
+        ///     <c>AnalysisMode=Recommended</c>. The downgrade never took effect. The SDK takes the analysis mode from
+        ///     <c>AnalysisLevel</c>'s suffix first and reads <c>AnalysisMode</c> only when there is none
+        ///     (Microsoft.CodeAnalysis.NetAnalyzers.targets, SDK 10.0.101), and Directory.Build.props sets
+        ///     <c>latest-all</c>. Built with their <c>NoWarn</c> cleared, both samples raised the same ids under either
+        ///     mode. Below the root, a project's own <c>AnalysisMode</c> or <c>AnalysisLevel</c> only reads as a downgrade,
+        ///     so none sets one; a project relaxes the profile through its reasoned <c>NoWarn</c>.
+        /// </summary>
+        [Fact]
+        public void No_project_below_the_root_sets_its_own_analysis_mode_or_level()
+        {
+            var setters = ProjectFiles()
+                .Where(f => !string.Equals(Path.GetDirectoryName(f), RepoPaths.Root, StringComparison.OrdinalIgnoreCase))
+                .Where(f => Regex.IsMatch(File.ReadAllText(f), @"<Analysis(?:Mode|Level)\b"))
+                .Select(Relative)
+                .ToList();
+
+            Assert.True(setters.Count == 0,
+                "project file(s) below the root set their own AnalysisMode or AnalysisLevel: [" + string.Join(", ", setters) + "]. " +
+                "Under Directory.Build.props' AnalysisLevel=latest-all a project's AnalysisMode is ignored, so it reads as a " +
+                "downgrade that never happened. Relax a rule through the project's NoWarn, with its reason above it.");
+        }
+
+        /// <summary>
         ///     The other direction of the same lists: an id that no longer fires. <c>scripts/nowarn-audit.ps1</c> finds
         ///     those, and its help said housekeeping would turn <c>-FailOnStale</c> on once the lists had been trimmed. Round
         ///     34 trimmed them (B4) and wires it, under <c>-Deep</c>, which CI's nightly deep-test job runs.

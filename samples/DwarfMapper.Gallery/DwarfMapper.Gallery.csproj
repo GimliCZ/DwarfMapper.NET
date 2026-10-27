@@ -4,10 +4,6 @@
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
         <IsPackable>false</IsPackable>
-        <!-- Gallery/sample code: relax the repo's maximum analyzer profile so the examples stay readable
-             (Console output literals, public sample POCOs in an exe, per-file namespaces, etc.). The point of
-             these files is to teach the DwarfMapper API, not to model production analyzer hygiene. -->
-        <AnalysisMode>Recommended</AnalysisMode>
         <!-- CA1051 (visible instance fields) and CA1815 (struct should override Equals) are suppressed for
              the blittable example: public fields in a plain unmanaged struct are exactly the shape the
              bulk-copy proof is about, and adding Equals/operators would obscure the layout being
