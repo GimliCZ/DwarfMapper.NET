@@ -27,7 +27,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                                 [DwarfMapper.DwarfMapper] public partial class M { public partial D Map(S s); }
                                             }
                                             """)],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)],
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
             CSharpGeneratorDriver.Create(new DwarfGenerator())

@@ -21,7 +21,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                          public sealed class ProbeAttribute : System.Attribute { public int First { get; set; } public string? Second { get; set; } }
                          """ + "\n" + application + "\npublic class C { }\n";
             var compilation = CSharpCompilation.Create("TryGetNamedArgument", [CSharpSyntaxTree.ParseText(source)],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             return Assert.Single(compilation.GetTypeByMetadataName("C")!.GetAttributes());
         }
 

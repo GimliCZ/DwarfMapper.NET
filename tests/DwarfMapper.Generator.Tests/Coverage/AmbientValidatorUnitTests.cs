@@ -22,7 +22,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("AmbientValidatorUnit",
                 [CSharpSyntaxTree.ParseText("[assembly: System.Reflection.AssemblyTitle(\"x\")]", path: path)],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             return Assert.Single(compilation.Assembly.GetAttributes()).ApplicationSyntaxReference!;
         }
 

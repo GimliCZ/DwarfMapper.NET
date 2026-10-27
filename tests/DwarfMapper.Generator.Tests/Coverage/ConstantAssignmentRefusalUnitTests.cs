@@ -15,7 +15,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
     {
         private static readonly Compilation Compilation = CSharpCompilation.Create("ConstantAssignmentRefusal",
             [CSharpSyntaxTree.ParseText("namespace Demo { public enum Kind { A, B } }")],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         private static ITypeSymbol Int32 => Compilation.GetSpecialType(SpecialType.System_Int32);
 

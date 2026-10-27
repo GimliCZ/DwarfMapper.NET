@@ -16,6 +16,13 @@ namespace DwarfMapper.Generator.Tests
     internal static class GeneratorTestHarness
     {
         /// <summary>
+        ///     <see cref="ReferenceTo(string)" />'s cache: one reference per assembly file, for the life of the test host.
+        ///     Declared first so that it exists before any other static initializer could ask for a reference.
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, PortableExecutableReference> ReferencesByPath =
+            new(StringComparer.Ordinal);
+
+        /// <summary>
         ///     The metadata reference set, built ONCE and reused across every compilation. Each
         ///     <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" /> reads assembly metadata from disk under a
         ///     lock — rebuilding it per call (~50 references) serialised parallel compilations on metadata I/O and
@@ -72,6 +79,46 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         internal static IReadOnlyList<MetadataReference> ReferenceSet => References.Value;
 
+        /// <summary>
+        ///     The reference to one assembly FILE, created once for the whole test host and shared by every
+        ///     compilation that names it.
+        ///     <para>
+        ///         <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" />
+        ///         copies the whole image into native memory so that it can close the file, and the copy is freed only
+        ///         when the reference is finalized. About twenty helpers built their references inline on every compile,
+        ///         from the corlib alone or from every assembly the host had loaded. On Linux, in Stryker's serial mode,
+        ///         the host reached 5-7 GB while the GC's committed heap stayed under 0.41 GB: a GC with a small managed
+        ///         heap has no reason to run the finalizers, and glibc keeps what is freed (round 34 A1). The instances
+        ///         are immutable and thread-safe, which <see cref="ReferenceSet" /> already relies on, and sharing them
+        ///         also lets Roslyn reuse the assembly symbols it built for them. <c>MetadataReferenceReuseScanTests</c>
+        ///         holds every other file in this project to calling this rather than the API.
+        ///     </para>
+        /// </summary>
+        internal static PortableExecutableReference ReferenceTo(string path)
+        {
+            return ReferencesByPath.GetOrAdd(path, static p => MetadataReference.CreateFromFile(p));
+        }
+
+        /// <inheritdoc cref="ReferenceTo(string)" />
+        internal static PortableExecutableReference ReferenceTo(Assembly assembly)
+        {
+            ArgumentNullException.ThrowIfNull(assembly);
+            return ReferenceTo(assembly.Location);
+        }
+
+        /// <summary>
+        ///     Every assembly the host has loaded from a file, in load order, each through
+        ///     <see cref="ReferenceTo(string)" />. It is the set the symbol-level helpers have always swept inline, read
+        ///     at the call as before, so a helper compiles against exactly what it did; only the per-call copies are
+        ///     gone.
+        /// </summary>
+        internal static IEnumerable<MetadataReference> LoadedAssemblyReferences()
+        {
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => (MetadataReference)ReferenceTo(a.Location));
+        }
+
         private static MetadataReference[] BuildReferences()
         {
             var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -122,7 +169,7 @@ namespace DwarfMapper.Generator.Tests
                     }
             }
 
-            return byName.Values.Select(p => (MetadataReference)MetadataReference.CreateFromFile(p)).ToArray();
+            return byName.Values.Select(p => (MetadataReference)ReferenceTo(p)).ToArray();
         }
 
         public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(

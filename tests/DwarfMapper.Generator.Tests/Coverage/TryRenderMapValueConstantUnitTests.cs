@@ -20,7 +20,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                         [Probe(7)]
                                         public class C { }
                                         """)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         private static TypedConstant Seven => Assert.Single(Compilation.GetTypeByMetadataName("C")!.GetAttributes()).ConstructorArguments[0];
 
@@ -53,7 +53,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                             [Probe(null)]
                                             public class G<T> { }
                                             """)],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var generic = compilation.GetTypeByMetadataName("G`1")!;
             var nullConstant = Assert.Single(generic.GetAttributes()).ConstructorArguments[0];
 
