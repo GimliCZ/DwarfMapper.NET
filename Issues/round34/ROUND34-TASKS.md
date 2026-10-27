@@ -37,6 +37,29 @@ is still open under its own name.
   grouped into a session, whether a test host outlives one), a narrowed Stryker A/B only if that leaves it open. The
   deliverable is the answer and a proposal; the memo's design stays the owner's call.
 
+  **Answered: no, not with today's coverage.**
+  - How Stryker 4.16 runs mutants, read from its source:
+    - A session tests several mutants only when no test covers two of them (`MutationTestProcess.BuildMutantGroupsForTest`,
+      `!assessingTests.ContainsAny(…)`).
+    - A mutant whose tests are "every test" (the static ones) gets a session to itself.
+    - Every session starts its own test host: `StrykerVsTestHostLauncher` starts a process per `RunTestsWithCustomTestHost`.
+    - xUnit runs serially in Stryker's settings.
+
+    So the memo lives for one session, and each key is filled by the first test, in a fixed order, that needs it,
+    under that test's mutant. A test reads a baseline computed under another mutant only if two conditions hold. A
+    mutant covered by one memo test shares a session with a mutant covered by another memo test. And the second test
+    does not cover the first mutant.
+  - Measured on the six legs' reports of run 40477294097 (`b58c6e3`):
+    - 1,003 tests read the memo: the per-cell theory's 966 rows, plus 37 others.
+    - They cover 13 non-static mutants in the generator leg, 25 in the pipeline leg, and none in the other four.
+    - No such pair exists in any leg.
+    - The screen is not blind: two planted mutants, each covered by a single cell row, give 810 pairs.
+  - The memo's key leaves out `types`, but both callers derive it from the key's `probeKey` (`SurfaceFixtures.Get`).
+    So no two cases share a baseline they should not.
+  - **Proposal (owner decision 4):** keep the memo, which roughly halves the matrix. What protects it is today's
+    coverage, not a rule: a new memo-reading test whose coverage shares nothing with another's would open the hazard.
+    The same screen could run over every nightly's reports and fail, naming the pair.
+
 ## Next steps — the owner's
 
 1. **Enrol in Anthropic's OSS Scanner.** Nothing blocks it now. Since PR #10, master's `.oss-scanner/project.yaml`
@@ -119,7 +142,8 @@ is still open under its own name.
    (`180510e`'s shape for `[MapConstructor]`), or refuse it under Preserve.
 3. `[Reinterpret]` under AsNull: the same decision on a second axis; a null source array still maps to `[]`.
 4. `SurfaceProbe.Baselines` under Stryker: a process-wide memo of generator output, shared across tests by design.
-   A question, not a fix; task D answers it.
+   Task D answered the question: with today's coverage no test can read a baseline built under another mutant. Left
+   to decide: whether a nightly gate should hold that.
 5. What a `default(ImmutableArray<T>)` source maps to. The block copy, the widen and the share answer empty; the
    general path enumerates `src.GetValueOrDefault()` and should throw.
 
