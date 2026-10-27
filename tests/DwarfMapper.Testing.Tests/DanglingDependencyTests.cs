@@ -16,7 +16,7 @@ namespace DwarfMapper.Testing.Tests
         int Probe { get; }
     }
 
-    /// <summary>Implemented only by a type whose base class lives in an assembly the test below never loads.</summary>
+    /// <summary>Implemented only by types whose base class lives in an assembly the test below never loads.</summary>
     public interface IOnlyBrokenProbe
     {
         int Probe { get; }
@@ -72,9 +72,24 @@ namespace DwarfMapper.Testing.Tests
         [Fact]
         public void An_interface_whose_only_implementation_failed_to_load_is_reported_not_left_null()
         {
-            var missing = Compile("OnlyBrokenBase", "namespace OnlyBroken { public class MissingBase { } }", []);
+            var missing = Compile("OnlyBrokenBase",
+                "namespace OnlyBroken { public class MissingBase { } public static class Holder { public interface INested { } } }", []);
+            // Broken and Outer.Inner are the only implementations, and neither can load. FromGlobal and FromLocal cannot
+            // load either: they implement an interface of the missing assembly. The factory reads the supertypes of every
+            // type that did not load, so theirs are the shapes its metadata reader has to name: a base type in the same
+            // assembly, in the global namespace or not, a generic instantiation, and an interface nested in a type of
+            // another assembly.
             var probe = Compile("OnlyBrokenProbe",
-                "namespace OnlyBroken { public sealed class Broken : MissingBase, DwarfMapper.Testing.Tests.IOnlyBrokenProbe { public int Probe => 3; } }",
+                "public class GlobalBase { }\n" +
+                "public sealed class FromGlobal : GlobalBase, OnlyBroken.Holder.INested { }\n" +
+                "namespace OnlyBroken\n" +
+                "{\n" +
+                "    public sealed class Broken : MissingBase, DwarfMapper.Testing.Tests.IOnlyBrokenProbe { public int Probe => 3; }\n" +
+                "    public static class Outer { public sealed class Inner : MissingBase, DwarfMapper.Testing.Tests.IOnlyBrokenProbe { public int Probe => 4; } }\n" +
+                "    public class LocalBase { }\n" +
+                "    public interface IGeneric<T> { }\n" +
+                "    public sealed class FromLocal : LocalBase, IGeneric<int>, Holder.INested { }\n" +
+                "}\n",
                 [MetadataReference.CreateFromImage(missing)]);
             var path = Path.Combine(Path.GetTempPath(), "dwarfmapper-only-broken-" + Guid.NewGuid().ToString("N"), "OnlyBrokenProbe.dll");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -82,12 +97,17 @@ namespace DwarfMapper.Testing.Tests
             var loaded = new AssemblyLoadContext("only-broken", isCollectible: false).LoadFromAssemblyPath(path);
             Assert.Throws<ReflectionTypeLoadException>(() => loaded.GetTypes());
 
+            // The same image loaded from memory as well: it has no file to read, so it is recorded but never named.
+            using var image = new MemoryStream(probe);
+            var inMemory = new AssemblyLoadContext("only-broken-in-memory", isCollectible: false).LoadFromStream(image);
+            Assert.Throws<ReflectionTypeLoadException>(() => inMemory.GetTypes());
+
             var ex = Assert.Throws<InvalidOperationException>(() =>
                 ObjectFactoryV2.Create(typeof(IOnlyBrokenProbe), new Random(31), 0, false));
 
             Assert.Contains(typeof(IOnlyBrokenProbe).FullName!, ex.Message, StringComparison.Ordinal);
-            Assert.Contains("OnlyBroken.Broken", ex.Message, StringComparison.Ordinal);
-            Assert.Contains("OnlyBrokenProbe", ex.Message, StringComparison.Ordinal);
+            // Both, sorted, and the nested one under the name reflection gives it.
+            Assert.Contains("OnlyBroken.Broken, OnlyBroken.Outer+Inner in OnlyBrokenProbe", ex.Message, StringComparison.Ordinal);
             // The loader's own reason, in whatever language the runtime speaks, names the dependency it could not find.
             Assert.Contains("OnlyBrokenBase", ex.Message, StringComparison.Ordinal);
         }

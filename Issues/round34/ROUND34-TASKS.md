@@ -153,6 +153,19 @@ is still open under its own name.
     own specific reason line; one place would have traded 19 reasons for one generic one. Instead
     `SuppressionReasonScanTests` holds every `// ReSharper disable` and `disable once` (40 today, all reasoned) to
     a reason line directly above, with a positive control.
+
+  **B5, what the first full-ci run caught (`fc0ae37`, run 40558858454).** Two of its three reds were B5's. The third,
+  `perf-tests`, was not (A3).
+  - deep-test: `DwarfMapper.Testing` line coverage fell to 99 % against its 100 % floor. The run's coverage report
+    put every gap in B5's metadata reader. No test made it name a type definition, a generic instantiation, a
+    nested definition, a type nested in another assembly's type or a global-namespace type, or list two missing
+    implementations at once. One fallback, `FullName ?? Name`, could not be taken. Loaded types are now matched by
+    metadata token, which drops that fallback and compares exactly, and `TypeName` lost its default branch, which no
+    base type or interface can reach. `DanglingDependencyTests`' probe declares every shape, all in sources compiled
+    at run time (as test-assembly types they tripped CA1040 and CA1034). Measured: `Testing.Tests` alone leaves no
+    line or branch of the new code uncovered.
+  - package-size: the `DwarfMapper.Testing` package went from 53 to 56 KB, and B5 did not re-measure: invariant R1
+    missed a fourth time, stated rather than backdated. Re-measured in its own commit (B5c).
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

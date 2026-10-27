@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 
 namespace DwarfMapper.Testing
@@ -557,11 +558,11 @@ namespace DwarfMapper.Testing
         }
 
         /// <summary>
-        ///     What a half-loadable assembly could not load: the loader's reasons, and the names of the types that did
-        ///     load. Recorded by <see cref="SafeTypes" /> rather than dropped (owner ruling 2026-10-27: record and report),
-        ///     so a scan that finds no concrete type can say when one was declared but did not load.
+        ///     What a half-loadable assembly could not load: the loader's reasons, and the metadata tokens of the types that
+        ///     did load. Recorded by <see cref="SafeTypes" /> rather than dropped (owner ruling 2026-10-27: record and
+        ///     report), so a scan that finds no concrete type can say when one was declared but did not load.
         /// </summary>
-        private static readonly ConcurrentDictionary<Assembly, (string[] Reasons, HashSet<string> Loaded)> LoadFailures = new();
+        private static readonly ConcurrentDictionary<Assembly, (string[] Reasons, HashSet<int> Loaded)> LoadFailures = new();
 
         /// <summary>
         ///     A half-loadable assembly must not take the whole scan down: its loadable types are still offered. What did
@@ -578,7 +579,7 @@ namespace DwarfMapper.Testing
                 var loaded = ex.Types.Where(t => t is not null).ToArray();
                 LoadFailures[assembly] = (
                     ex.LoaderExceptions.OfType<Exception>().Select(e => e.Message).Distinct(StringComparer.Ordinal).ToArray(),
-                    loaded.Select(t => t!.FullName ?? t.Name).ToHashSet(StringComparer.Ordinal));
+                    loaded.Select(t => t!.MetadataToken).ToHashSet());
                 return loaded!;
             }
         }
@@ -606,10 +607,10 @@ namespace DwarfMapper.Testing
                 using var pe = new PEReader(stream);
                 var md = pe.GetMetadataReader();
                 var missing = md.TypeDefinitions
+                    .Where(handle => !failure.Loaded.Contains(MetadataTokens.GetToken(handle)))
                     .Select(md.GetTypeDefinition)
                     .Where(def => DeclaredSupertypes(md, def).Contains(target, StringComparer.Ordinal))
                     .Select(def => TypeName(md, def))
-                    .Where(name => !failure.Loaded.Contains(name))
                     .OrderBy(name => name, StringComparer.Ordinal)
                     .ToList();
                 if (missing.Count > 0)
@@ -637,28 +638,26 @@ namespace DwarfMapper.Testing
         /// </summary>
         private static string TypeName(MetadataReader md, EntityHandle handle)
         {
-            switch (handle.Kind)
+            if (handle.Kind == HandleKind.TypeDefinition)
             {
-                case HandleKind.TypeDefinition:
-                    return TypeName(md, md.GetTypeDefinition((TypeDefinitionHandle)handle));
-                case HandleKind.TypeReference:
-                    var reference = md.GetTypeReference((TypeReferenceHandle)handle);
-                    var name = md.GetString(reference.Name);
-                    return reference.ResolutionScope.Kind == HandleKind.TypeReference
-                        ? TypeName(md, (EntityHandle)reference.ResolutionScope) + "+" + name
-                        : Qualified(md.GetString(reference.Namespace), name);
-                case HandleKind.TypeSpecification:
-                    var blob = md.GetBlobReader(md.GetTypeSpecification((TypeSpecificationHandle)handle).Signature);
-                    if (blob.ReadSignatureTypeCode() != SignatureTypeCode.GenericTypeInstance)
-                    {
-                        return "";
-                    }
-
-                    blob.ReadSignatureTypeCode(); // class or value type
-                    return TypeName(md, blob.ReadTypeHandle());
-                default:
-                    return "";
+                return TypeName(md, md.GetTypeDefinition((TypeDefinitionHandle)handle));
             }
+
+            if (handle.Kind == HandleKind.TypeReference)
+            {
+                var reference = md.GetTypeReference((TypeReferenceHandle)handle);
+                var name = md.GetString(reference.Name);
+                return reference.ResolutionScope.Kind == HandleKind.TypeReference
+                    ? TypeName(md, reference.ResolutionScope) + "+" + name
+                    : Qualified(md.GetString(reference.Namespace), name);
+            }
+
+            // The only other kind a base type or an interface can be is a generic instantiation (ECMA-335 II.23.2.14:
+            // GENERICINST, then CLASS or VALUETYPE, then the definition), named after its definition.
+            var blob = md.GetBlobReader(md.GetTypeSpecification((TypeSpecificationHandle)handle).Signature);
+            blob.ReadSignatureTypeCode();
+            blob.ReadSignatureTypeCode();
+            return TypeName(md, blob.ReadTypeHandle());
         }
 
         private static string TypeName(MetadataReader md, TypeDefinition def)
