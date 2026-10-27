@@ -188,6 +188,18 @@ is still open under its own name.
       `EmittedIlIsVerifiableTests` does not contain, so it would have waived the install for a job that selects
       those tests by name. Review caught it. A theory over nine filters failed 6 of 9 against that version.
   - CONTRIBUTING's list of the expensive tier gained `perf-tests` (missing since round 31) and the two new jobs.
+
+  **B11 done — three non-blocking jobs block** (inventory item 6; the Ubuntu canary by the owner's choice,
+  2026-10-27). Their job-level `continue-on-error` is gone.
+  - `roslyn-forward-compat` and `preview-sdk-canary` set their own criterion: blocking once seen green, and for
+    the preview canary on pushed master, with the run cited in the flip commit. Both were green on every master
+    nightly read for the flip, 2026-10-22 to 10-27. The run cited is 40477294097 (`b58c6e3`).
+  - `ubuntu-26-canary`'s comment planned to move every pin to 26.04 and delete the job. The owner chose instead to
+    make the canary blocking and keep every other Linux job on 24.04. It was green on the same six nightlies, and
+    the header note on the pins now says so.
+  - `CiGateScanTests`: the three rows no longer say "declaration only". A new theory fails if a job-level
+    `continue-on-error` comes back on any of them: planted on `ubuntu-26-canary`, 1 of 3 red; removed, green.
+    Step-level ones (`bench-wall-time-alert`, `build-test`'s test-analytics step) are out of its scope by design.
 - **C. DwarfMapper's share of a large build** — a `-p:ReportAnalyzer=true` build of a fresh copy of FusedChat's
   validation tree (32 projects, 8 mappers), repinned to master packed under a version nobody will reuse: the
   generator's time, cold and warm, against the compiler's and the whole build's. The generator alone is measured

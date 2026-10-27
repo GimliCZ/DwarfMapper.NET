@@ -55,13 +55,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             yield return ["aot-trim-gate", "trim/AOT cleanliness would stop being verified"];
             yield return ["codeql", "static security analysis would stop running"];
             yield return ["sbom", "the release artifacts would stop carrying a signed bill of materials"];
-            // `continue-on-error: true` today by its own comment's design, pending its first green run. So
-            // this row asserts DECLARATION only and says nothing about the leg's verdict — which is the
-            // honest claim for it either way, since a continue-on-error leg cannot fail the workflow.
-            yield return ["roslyn-forward-compat", "the generator would stop being built and tested against " + "an unpinned newer SDK (declaration only — the leg is " + "continue-on-error and cannot fail the workflow)"];
-            // continue-on-error: true for the weeks GitHub moves `ubuntu-latest` to 26.04, and meant to be deleted
-            // when the pins follow it (CiRunnerImagePinScanTests). Until then it is the only job that tries 26.04.
-            yield return ["ubuntu-26-canary", "the image ubuntu-latest is moving to would stop being tried before " + "the Linux jobs' pins move onto it (declaration only — the leg is " + "continue-on-error and cannot fail the workflow)"];
+            // Blocking since round 34 (A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error).
+            yield return ["roslyn-forward-compat", "the generator would stop being built and tested against " + "an unpinned newer SDK"];
+            // Blocking since round 34, by the owner's choice; the only job that runs 26.04 while the other Linux
+            // jobs stay pinned to 24.04 (CiRunnerImagePinScanTests).
+            yield return ["ubuntu-26-canary", "the image ubuntu-latest is moving to would stop being tried before " + "the Linux jobs' pins move onto it"];
 
             // ── Nightly tier: cron on the default branch plus manual dispatch, never on push ──────────────
             // "Declared" is an even weaker claim for these than for the per-push jobs above — but deleting
@@ -72,11 +70,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             yield return ["reproducible-build", "the shipped packages would stop being byte-compared across " + "two clean builds of the same commit"];
             yield return ["package-size", "the package-size ceiling would stop being measured, and the class " + "of regression it alone catches — something unintended starting " + "to ship — would go back to being invisible"];
             yield return ["cross-platform", "Windows and macOS would stop being tested at all, leaving ubuntu " + "as the only platform any suite has ever run on in CI"];
-            // continue-on-error: true by design (a preview SDK's own breakage must not red the nightly).
             yield return ["perf-tests", "the wall-clock ratio tests (Category=Perf) would stop running anywhere, since " + "every other leg excludes them — the ambient collection path could go back to " + "growing with the application and nothing would say so"];
             yield return ["fuzz-exhaustion", "the complete feature-combination proof (every subset of the feature set on " + "every member-assigning emit path) would stop running anywhere but a maintainer's machine, " + "as it did until round 34"];
             yield return ["isa-matrix", "the scalar tails behind the SIMD fast paths would stop executing under test, " + "since every runner has AVX2 and nothing else restricts the instruction set"];
-            yield return ["preview-sdk-canary", "the next major SDK would stop being tried against this repo " + "before it ships (declaration only — the leg is " + "continue-on-error and cannot fail the workflow)"];
+            // Blocking since round 34, on its own criterion: green on pushed master (run 40477294097).
+            yield return ["preview-sdk-canary", "the next major SDK would stop being tried against this repo " + "before it ships"];
             // The ALERT STEP is continue-on-error; the job's input-sanity step is not. So this row, too,
             // asserts declaration and nothing about a verdict.
             yield return ["bench-wall-time-alert", "benchmark wall-time would stop being tracked night to " + "night (declaration only — the alert step is " + "continue-on-error by deliberate design)"];
@@ -88,6 +86,28 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             Assert.True(Workflow.Contains("\n  " + job + ":", StringComparison.Ordinal),
                 $"CI job '{job}' is no longer declared in ci.yml — {consequence}, and every build would stay " + "green while it happened.");
+        }
+
+        /// <summary>
+        ///     Round 34 made three legs blocking. roslyn-forward-compat and preview-sdk-canary met the criterion their own
+        ///     comments set, green on pushed master (run 40477294097); ubuntu-26-canary was the owner's choice. A
+        ///     job-level <c>continue-on-error: true</c> put back on one of them would make it decoration again, and nothing
+        ///     would say so. Only the job's own keys (a four-space indent) are read: a step-level one, which
+        ///     bench-wall-time-alert and build-test keep by design, is a different decision.
+        /// </summary>
+        [Theory]
+        [InlineData("roslyn-forward-compat")]
+        [InlineData("preview-sdk-canary")]
+        [InlineData("ubuntu-26-canary")]
+        public void A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error(string job)
+        {
+            var text = Workflow.Replace("\r\n", "\n", StringComparison.Ordinal);
+            var body = Regex.Match(text, "\n  " + Regex.Escape(job) + @":[ \t]*\n(?<body>(?:(?:    [^\n]*|[ \t]*)\n)*)",
+                RegexOptions.ExplicitCapture).Groups["body"].Value;
+
+            Assert.True(body.Length > 0, $"ci.yml declares no job '{job}', so this check would pass by reading nothing.");
+            Assert.False(Regex.IsMatch(body, @"(?m)^    continue-on-error:"),
+                $"CI job '{job}' carries a job-level continue-on-error again: it can no longer fail the workflow, so it " + "is decoration. Round 34 made it blocking; undoing that is a decision to state, not a line to add.");
         }
 
         /// <summary>

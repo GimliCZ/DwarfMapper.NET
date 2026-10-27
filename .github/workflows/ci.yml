@@ -3,8 +3,9 @@
 #
 # Linux jobs name `ubuntu-24.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` to
 # Ubuntu 26.04 over several weeks (2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside that window
-# two jobs of one run can land on different images. `ubuntu-26-canary` below tries 26.04 meanwhile. The pins move
-# once it has been green, in one commit with CiRunnerImagePinScanTests, which holds this rule.
+# two jobs of one run can land on different images. `ubuntu-26-canary` below runs 26.04, and since round 34 it is
+# blocking while the pins stay (the owner's choice, 2026-10-27). Moving them is a decision of its own, made in one
+# commit with CiRunnerImagePinScanTests, which holds this rule.
 name: CI
 on:
   push:
@@ -774,13 +775,11 @@ jobs:
   # CS9057. Measured locally: referencing 5.6.0 while building on SDK 10.0.101 fails with exactly that,
   # which is why this leg needs its own, newer SDK and cannot live in build-test.
   #
-  # NON-BLOCKING ON PURPOSE, FOR NOW. It was authored without a machine that has a newer 10.0.x SDK, so its
-  # first real run happens here. Flip `continue-on-error` to false once it has been seen green — a gate that
-  # cannot fail is decoration, and leaving it like this permanently would be exactly the kind of thing the
-  # rest of this pipeline exists to prevent.
+  # BLOCKING since round 34. It was authored non-blocking, without a machine that had a newer 10.0.x SDK, to be
+  # flipped "once it has been seen green". It was green on every master nightly read for the flip (2026-10-22 to
+  # 10-27, run 40477294097 among them), so its continue-on-error came off: a gate that cannot fail is decoration.
   roslyn-forward-compat:
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -1176,13 +1175,13 @@ jobs:
   # compat asks that question one 10.0.x patch ahead; this asks it one MAJOR ahead, on the .NET 11 preview
   # channel (11.0.100-preview.7 was the published preview SDK when this leg was written).
   #
-  # NON-BLOCKING ON PURPOSE, FOR NOW — a deliberate clone of roslyn-forward-compat's shape and of the
-  # discipline stated in its own comment. FLIP `continue-on-error` TO FALSE once this leg has been seen
-  # GREEN on pushed master, citing that run id in the flip commit; that is the Z3 precedent and it is the
-  # same obligation. A gate that cannot fail is decoration. Until then, understand what a red here means:
-  # it is INFORMATION about a future SDK, not a regression in this commit.
+  # BLOCKING since round 34. It was authored non-blocking, to be flipped "once this leg has been seen GREEN on
+  # pushed master, citing that run id in the flip commit" (the Z3 precedent). Run 40477294097 (master,
+  # b58c6e3, 2026-10-27) is that run, and the leg was green on every nightly read for the flip (2026-10-22 to
+  # 10-27). A red here is still about a future SDK rather than a regression in the commit under test, but it now
+  # has to be answered, as the next paragraph explains, instead of being read past.
   #
-  # It is expected to be red at first, and for a reason worth naming so nobody "fixes" it wrongly:
+  # A red can come for a reason worth naming so nobody "fixes" it wrongly:
   # Directory.Build.props sets TreatWarningsAsErrors with AnalysisLevel=latest-all and AnalysisMode=All,
   # so every analyzer rule a new SDK ADDS arrives as a build error. That is a real forward-compat signal
   # (a consumer on the preview SDK compiling our analyzers sees the same thing), but it is a different
@@ -1204,7 +1203,6 @@ jobs:
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci')
-    continue-on-error: true
     # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
     # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
     # UNPINNED restore. The plan budgets ~5 min; reckon ~12 min on a hosted runner and take 20 so the leg
@@ -1284,12 +1282,12 @@ jobs:
   # (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29, Python 3.12 -> 3.14. PowerShell and
   # the preinstalled .NET SDKs are the same, and the SDK used is the pinned 10.0.101 either way.
   #
-  # NON-BLOCKING ON PURPOSE, like roslyn-forward-compat: the image's own breakage must not red a PR that
-  # changed nothing. Once it has been green for a few nights, move every pin to ubuntu-26.04 in one commit with
-  # CiRunnerImagePinScanTests, and delete this job.
+  # BLOCKING since round 34, by the owner's choice (2026-10-27). It was authored non-blocking so the image's own
+  # breakage could not red a PR that changed nothing, and it was green on every nightly read for the flip
+  # (2026-10-22 to 10-27). The other Linux jobs stay pinned to ubuntu-24.04; this is the one job that runs
+  # 26.04, and now a break there fails the run instead of passing unread.
   ubuntu-26-canary:
     runs-on: ubuntu-26.04
-    continue-on-error: true
     # ESTIMATE from PR #7's last run on ubuntu-24.04 (2026-10-12): build-test 4.5 min, the linux AOT leg 1 min.
     # 30 leaves room for a slower new image and a cold cache.
     timeout-minutes: 30
