@@ -627,6 +627,11 @@ jobs:
     timeout-minutes: 90
     env:
       DWARF_FUZZ_FULL: '1'
+      # Server GC (round 34, ServerGcScopeScanTests): the power set's compilations run in parallel and allocate heavily,
+      # and workstation GC stops every thread while one collects. 6:19 -> 5:05 on 12 logical CPUs; on 4, the deep
+      # tier, the same kind of load, went 80.0 -> 68.2 s. Never in a runtimeconfig: Stryker's serial sessions are slower
+      # under it.
+      DOTNET_gcServer: '1'
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).

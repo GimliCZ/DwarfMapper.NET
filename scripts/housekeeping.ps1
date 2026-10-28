@@ -381,11 +381,18 @@ try {
     }
 
     Write-Host "== 1/4 Full self-test suite ==" -ForegroundColor Cyan
+    $gcServerBefore = $env:DOTNET_gcServer
     if ($Deep) {
         # One knob, one reader: tests/Shared/DeepTier.cs. Multiplies every registered fuzz/property/torture
         # population per its catalog entry; the fast tier (unset) is byte-for-byte the routine counts.
         $env:DWARF_DEEP = '1'
-        Write-Host "   (deep tier: DWARF_DEEP=1)" -ForegroundColor DarkGray
+        # Server GC for the deep tier (round 34, ServerGcScopeScanTests): its compilations allocate about 30 GB, and
+        # workstation GC stops every test thread while one collects. Generator.Tests' deep tier went 53.3 -> 44.9 s on
+        # 12 logical CPUs and 80.0 -> 68.2 s on 4, a hosted runner's shape; the fast tier showed no gain on 4, so it
+        # stays off there. Set for this run only: stage 1c times code and stage 4 runs Stryker, whose serial sessions
+        # are slower under it.
+        $env:DOTNET_gcServer = '1'
+        Write-Host "   (deep tier: DWARF_DEEP=1, server GC)" -ForegroundColor DarkGray
     }
     $covDir = Join-Path $root 'TestResults/coverage'
     # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
@@ -409,7 +416,7 @@ try {
     # not out of this one, which is what CI's deep-test job runs - and deep-test went red on it on 2026-10-24
     # (787.8 -> 1383.4 ns) and on PR #9 (857.2 -> 1394.0 ns), against a 1.5x bound. Stage 1c runs them alone.
     dotnet test DwarfMapper.NET.sln -c Release --nologo --filter "Category!=Perf" @testArgs
-    if ($Deep) { Remove-Item Env:DWARF_DEEP }
+    if ($Deep) { Remove-Item Env:DWARF_DEEP; $env:DOTNET_gcServer = $gcServerBefore }
     if ($LASTEXITCODE) { throw "self-test suite failed" }
 
     if ($Coverage) {
@@ -456,9 +463,14 @@ try {
     if (-not $SkipExhaustion) {
         Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~10 min) ==" -ForegroundColor Cyan
         $env:DWARF_FUZZ_FULL = '1'
+        # Server GC, as for the deep tier: the power set's 262,144 compilations run in parallel (6:19 -> 5:05 on 12
+        # logical CPUs, round 34). Put back after the run, before the stages that time code or run Stryker.
+        $gcServerBefore = $env:DOTNET_gcServer
+        $env:DOTNET_gcServer = '1'
         dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --nologo `
             --filter "FullyQualifiedName~FeatureCombinationFuzzTests"
         Remove-Item Env:DWARF_FUZZ_FULL
+        $env:DOTNET_gcServer = $gcServerBefore
         if ($LASTEXITCODE) { throw "exhaustion (full power-set) failed" }
     }
 
