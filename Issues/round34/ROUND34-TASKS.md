@@ -82,6 +82,26 @@ is still open under its own name.
       `-m:1` runs one project at a time: 8 of 8 at 0.91-1.02x, about six seconds slower. The perf-tests job and
       housekeeping's stage 1c now pass `-m:1`, and `PerfCategoryIsolationScanTests` requires it of every run that
       selects the category (RED on both, then GREEN).
+- **E. Test start-up and the long legs** (the owner, 2026-10-27: "starting tests commonly takes longer than running
+  them"; then "target lowest times at maximum surface without current coverage reduction"). The evidence is in
+  `benchmarks/results/2026-10-28-round34-e-test-startup.md`.
+  - **Where the time is.** The six mutation legs are 215 of a full-ci run's 273 job-minutes; the generator and
+    pipeline legs set its wall-clock. A test host costs ~1.5 s to start before any test of ours runs (a trivial
+    xunit project: 1.46 s), and Stryker 4.16 starts fresh hosts for every session, serially inside each.
+  - **E1 done — `2c9995d`. The static mutants were an artifact.** 160 of the generator leg's 415 mutants and 178 of
+    the pipeline leg's 314 were "static", so Stryker ran each against the whole suite. Its coverage phase at debug
+    verbosity showed why: five theories over records (`MatrixCell`, `FimMatrixCase`) were each ONE xunit test case
+    reporting a result per row, and Stryker's coverage window closed at the first, so rows two to N ran outside
+    every window. Each row is now its own test case (it passes a key the test resolves);
+    `TheoryRowsAreTestCasesScanTests` holds that. In the 4-CPU container, at concurrency 2:
+    - generator leg 1:14:03 → 34:01 (-54 %), 97.11 % both times, no mutant's status different, 0 static;
+    - test hosts started 1,038 → 277.
+  - **Concurrency, measured with the owner's approval** (the guard's 2026-08-26 basis predates A1 and assumed xunit
+    parallelises inside Stryker's sessions, which its run settings forbid): concurrency 4 is 23 % faster on the
+    testing leg and 19 % on the generator leg (27:39), with identical statuses and no extra timeouts; the memory
+    floor drops to 4.75 GB. CI's own numbers for E1 come first, from the run on `2c9995d`.
+  - **Not a lever yet:** Stryker's MTP runner keeps hosts warm but cannot yet run only a mutant's covering tests.
+    The runtime leg's static mutants are module-initializer registration, the product's own start-up.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
 
   **Inventory taken** (`Issues/round34/SILENCED-CHECKS-INVENTORY.md`, agent-produced, headline claims spot-checked).
