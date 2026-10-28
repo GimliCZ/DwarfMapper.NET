@@ -213,7 +213,7 @@ namespace DwarfMapper.Generator.Tests
             var diagnostics = driver.GetRunResult().Results
                 .Single(r => r.Generator.GetGeneratorType() == typeof(DwarfGenerator))
                 .Diagnostics;
-            var errors = output.GetDiagnostics()
+            var errors = ForErrorsOnly(output).GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToImmutableArray();
 
@@ -314,7 +314,7 @@ namespace DwarfMapper.Generator.Tests
                     .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
                     .OrderBy(t => t.FilePath, StringComparer.Ordinal)
                     .Select(t => t.ToString()));
-            var errors = output.GetDiagnostics()
+            var errors = ForErrorsOnly(output).GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToImmutableArray();
 
@@ -386,10 +386,34 @@ namespace DwarfMapper.Generator.Tests
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
             AssertGeneratedSourceParses(outputCompilation);
 
-            return outputCompilation.GetDiagnostics()
+            return ForErrorsOnly(outputCompilation).GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToImmutableArray();
         }
+
+        /// <summary>
+        ///     <paramref name="output" /> with Roslyn's nullable flow analysis switched off, for a check that reads only
+        ///     ERRORS or emits: the nullable walker reports warnings, never errors, and emitted IL does not depend on it.
+        ///     <para>
+        ///         Round 34 (E8). Binding the generated code was three quarters of a variation's cost in the power set
+        ///         (15.0 of ~21 CPU-ms), and skipping the walker halved it (7.7 ms) with no error found or lost. The
+        ///         generator has already run against the compilation exactly as a consumer's build sees it, so what it
+        ///         emitted is unchanged; only this check's own binding skips the walker. Checks that read WARNINGS
+        ///         (<see cref="GeneratedCodeWarnings" />) keep the full analysis.
+        ///     </para>
+        /// </summary>
+        internal static Compilation ForErrorsOnly(Compilation output)
+        {
+            var trees = output.SyntaxTrees
+                .Select(t => t.WithRootAndOptions(t.GetRoot(),
+                    ((CSharpParseOptions)t.Options).WithFeatures(t.Options.Features
+                        .Where(f => f.Key != SkipNullableAnalysis.Key)
+                        .Append(SkipNullableAnalysis))))
+                .ToList();
+            return output.RemoveAllSyntaxTrees().AddSyntaxTrees(trees);
+        }
+
+        private static readonly KeyValuePair<string, string> SkipNullableAnalysis = new("run-nullable-analysis", "never");
 
         /// <summary>
         ///     Runs the generator and returns every C# compiler diagnostic of WARNING severity or worse whose
@@ -575,7 +599,7 @@ namespace DwarfMapper.Generator.Tests
             var generated = PerMapperFile(output.SyntaxTrees);
 
             using var ms = new MemoryStream();
-            var result = output.Emit(ms);
+            var result = ForErrorsOnly(output).Emit(ms);
             return result.Success
                 ? (diagnostics, generated, Assembly.Load(ms.ToArray()), ImmutableArray<Diagnostic>.Empty)
                 : (diagnostics, generated, null, result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToImmutableArray());
@@ -593,7 +617,7 @@ namespace DwarfMapper.Generator.Tests
             AssertGeneratedSourceParses(outputCompilation);
 
             using var ms = new MemoryStream();
-            var result = outputCompilation.Emit(ms);
+            var result = ForErrorsOnly(outputCompilation).Emit(ms);
 
             if (result.Success)
             {
