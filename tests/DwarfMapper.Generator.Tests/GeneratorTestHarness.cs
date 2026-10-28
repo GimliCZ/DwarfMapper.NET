@@ -649,10 +649,6 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
-        ///     The multi-tree form. Tree order is the order the compiler sees the files in, which is the order it
-        ///     lays out a partial struct's fields in — a test that needs a particular file order states it here.
-        /// </summary>
-        /// <summary>
         ///     Compilations this thread has built, so a test can hold a helper to compiling its source once (round 34 E7,
         ///     <c>CompileOnceTests</c>). Per thread because tests run in parallel; a test's body runs on one thread.
         /// </summary>
@@ -660,6 +656,10 @@ namespace DwarfMapper.Generator.Tests
 
         [ThreadStatic] private static int compilationsOnThisThread;
 
+        /// <summary>
+        ///     The multi-tree form. Tree order is the order the compiler sees the files in, which is the order it
+        ///     lays out a partial struct's fields in — a test that needs a particular file order states it here.
+        /// </summary>
         public static CSharpCompilation BuildCompilation(
             string assemblyName,
             IReadOnlyList<SyntaxTree> trees,
@@ -677,23 +677,47 @@ namespace DwarfMapper.Generator.Tests
             // the same compilation Create() would have produced: same identity, same options, same references,
             // and the trees in the order the caller listed them (the baseline holds none, so order is preserved
             // — the multi-tree overload's field-layout contract depends on that).
-            return Baselines
-                .GetOrAdd((assemblyName, nullable, allowUnsafe),
-                    static k => CSharpCompilation.Create(
-                        k.AssemblyName,
-                        Array.Empty<SyntaxTree>(),
-                        References.Value,
-                        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                            nullableContextOptions: k.Nullable,
-                            allowUnsafe: k.AllowUnsafe)))
-                .AddSyntaxTrees(trees);
+            //
+            // A baseline is kept only from a key's SECOND request (round 34 E10). EmitAssembly, RunAndEmit and several
+            // tests name each compilation uniquely (a GUID suffix, to keep emitted assemblies apart), so their keys are
+            // never asked for twice, yet each was cached for the rest of the run: 1,635 entries in build-test's run and
+            // 5,319 in the deep tier, none ever read. Measured, they were small (the deep tier's heap after a full
+            // collection held 420-440 MB live with and without them), so this keeps the cache to what it is for rather
+            // than buying time. A unique key now leaves only its request count behind.
+            var key = (assemblyName, nullable, allowUnsafe);
+            if (Baselines.TryGetValue(key, out var baseline))
+            {
+                return baseline.AddSyntaxTrees(trees);
+            }
+
+            var fresh = CSharpCompilation.Create(
+                assemblyName,
+                Array.Empty<SyntaxTree>(),
+                References.Value,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                    nullableContextOptions: nullable,
+                    allowUnsafe: allowUnsafe));
+            if (BaselineRequests.AddOrUpdate(key, 1, static (_, n) => n + 1) >= 2)
+            {
+                fresh = Baselines.GetOrAdd(key, fresh);
+            }
+
+            return fresh.AddSyntaxTrees(trees);
         }
 
         /// <summary>
-        ///     One empty compilation per distinct (assembly name, nullable context, allowUnsafe) triple, so the
-        ///     reference binding behind it is paid once per triple instead of once per test. The suite uses a
-        ///     handful of assembly names, so this stays small and lives for the test host's lifetime.
+        ///     One empty compilation per (assembly name, nullable context, allowUnsafe) triple that is asked for more than
+        ///     once, so the reference binding behind it is paid once per triple instead of once per test.
         /// </summary>
         private static readonly ConcurrentDictionary<(string AssemblyName, NullableContextOptions Nullable, bool AllowUnsafe), CSharpCompilation> Baselines = new();
+
+        /// <summary>How often each triple has been asked for: a baseline is cached from the second request.</summary>
+        private static readonly ConcurrentDictionary<(string AssemblyName, NullableContextOptions Nullable, bool AllowUnsafe), int> BaselineRequests = new();
+
+        /// <summary>Whether a baseline is cached for this triple, so a test can hold a name used once to leaving none.</summary>
+        internal static bool HasCachedBaseline(string assemblyName, NullableContextOptions nullable = NullableContextOptions.Disable, bool allowUnsafe = false)
+        {
+            return Baselines.ContainsKey((assemblyName, nullable, allowUnsafe));
+        }
     }
 }
