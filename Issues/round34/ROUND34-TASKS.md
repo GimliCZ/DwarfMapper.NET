@@ -176,6 +176,15 @@ is still open under its own name.
     index planted twice), `KillersFirstOrdererTests` the parts' rank (red with the fallback off). Left: the deep tier's
     tail is mid-sized classes the kills-first order starts late; a longest-first order in parallel runs (kills first
     under Stryker) would be worth about 5 s.
+  - **E14 done — `b1db8e9`. One way to run the suite** (the owner, 2026-10-28: "convert preliminary tests into full
+    deep ones (removal or merge) so we have single way of testing entire infra"; the owner's choices: the power set
+    keeps its own job, the mutation legs run the same full populations). Every population runs what was its deep size
+    (`tests/Shared/TestPopulations.cs`, was `DeepTier.cs`); `DWARF_DEEP`, `.runsettings`, housekeeping's `-Deep` and the
+    `surface-matrix` job are gone; every job runs `--filter "Category!=Perf"`. Coverage identical to the old deep run, a
+    superset of the old per-push run (+9 generator lines, +8 branch points). The per-push suite on four CPUs 57 s → 2:01;
+    on this machine 29 → 60 s. `TestPopulationsSelfTests` pins the sizes and bans the variable (red on both planted).
+    Day's result before E14, same session: build-test's run -52 %, surface -67 %, deep -65 %, power set -52 %,
+    generator mutation leg 51:32 → 26:33.
   - **Test-writing rules** (the owner, 2026-10-28: "Are there any rules about test creations? … we should have been
     avoiding these problems right from the start"). The published ones (Microsoft's unit-testing practices, xUnit's
     parallelism and shared context, Google's test sizes, Stryker's `since` and `with-baseline`) are mapped onto this

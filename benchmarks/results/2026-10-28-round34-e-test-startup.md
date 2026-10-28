@@ -456,3 +456,55 @@ Across classes, a combinatorial cell is compiled by `CombinatorialEngineTests`, 
 `GoldenCaseTests`, and the fuzz families that share seeds compile the same schema four or five times in the deep tier.
 The golden check cannot share the combinatorial row's compilation: `GoldenFingerprint` hashes every emitted file, the
 assembly-wide files are named after the assembly, and the emit needs a unique assembly name.
+
+## The day's result, every tier (2026-10-28, 15:28-15:51)
+
+The start of the E work (`95c7433`, before E3) against `540eee7` (E3-E13), one Release build of each in a detached
+worktree, every tier run the way CI ran it at `540eee7` (the deep tier and the power set with server GC in the "now"
+arm, E13), alternating where repeated. Every run green.
+
+| Tier | Start | Now | Change |
+|---|---|---|---|
+| build-test's run, the whole solution (2 each) | 67.6 / 62.8 s | 34.4 / 28.9 s | -52 % |
+| surface matrix (2 each) | 25.7 / 23.9 s | 8.4 / 8.2 s | -67 % |
+| deep tier, the whole solution | 153.0 s | 53.1 s | -65 % |
+| power set (262,144 compilations) | 9:30 | 4:33 | -52 % |
+| generator mutation leg, container, concurrency 2 | 51:32 (`95c7433`, that morning) | 26:33 | -48 % |
+
+The generator leg at `540eee7` scored 97.11 % (403 killed, 12 survived), every one of the 867 mutants' statuses the same
+as at E4 (`07a3796`, 28:25).
+
+## E14: one way to run the suite (`b1db8e9`)
+
+The owner, 2026-10-28: "convert preliminary tests into full deep ones (removal or merge) so we have single way of
+testing entire infra". The fast tier, the deep tier (`DWARF_DEEP`) and the surface matrix's own job are one suite: every
+population at what was its deep size (`tests/Shared/TestPopulations.cs`), the surface matrix included, the same
+`--filter "Category!=Perf"` in every job. The owner kept the power set in its own job and chose that the mutation legs
+run the same populations. `TestPopulationsSelfTests` pins every size and fails if the old variable comes back.
+
+Coverage of the one suite is identical line for line and branch point for branch point to the old deep run, and a
+superset of the old per-push run: 9 more generator lines and 8 more branch points on every push.
+
+| This machine, alternating, 2 runs each, no coverage | Rep 1 | Rep 2 |
+|---|---|---|
+| the one suite (`b1db8e9`) | 59.4 s | 59.6 s |
+| the old deep run (`540eee7`, `DWARF_DEEP=1`) | 60.7 s | 59.5 s |
+| the old per-push run (`540eee7`) | 30.1 s | 28.6 s |
+
+On four CPUs, a hosted runner's shape (the container rig), with coverage collected as build-test collects it,
+alternating:
+
+| | Rep 1 | Rep 2 |
+|---|---|---|
+| build-test's run at `540eee7` (fast, surface matrix excluded) | 58.1 s | 56.5 s |
+| the one suite at `b1db8e9` | 120.2 s | 121.7 s |
+| the one suite with server GC | 117.0 s | 115.8 s |
+
+Every push now runs what the nightly ran, for about one more minute of test on a runner. Server GC buys 3 % there:
+Generator.Tests gains (1:44 / 1:46 to 1:41 / 1:39 in its host) and IntegrationTests, which keeps the runtime's
+defaults, loses (1:27 / 1:24 to 1:35 / 1:32), so build-test stays without it. The cross-platform and preview-SDK jobs'
+estimated timeouts go from 20 to 30 minutes for the doubled suite.
+
+The one suite's three longest hosts on four CPUs are Generator.Tests (1:44), IntegrationTests (1:27, its torture and
+registry-property populations four and ten times larger than the fast tier ran) and CompilerTests (1:05, the K0-K2
+pinned samples at 250-1,000 cases). They are where the next cut is.
