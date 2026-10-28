@@ -16,6 +16,12 @@
              (the MapConfig<S,T> surface is compile-time-only and never actually instantiates them at runtime),
              so the analyzer can't see they're "used" -->
         <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812</NoWarn>
+        <!-- Round 34 E3: this host keeps the runtime's defaults. Its oracles measure the runtime itself:
+             InterfaceBucketTests (Category=Perf) times interface dispatch, which PGO decides how to compile, and the
+             allocation contracts count bytes that optimised code may keep off the heap. The test-host tuning in
+             Directory.Build.targets would have them measure a runtime no consumer runs. PerfHostRuntimeDefaultsTests
+             checks this host; PerfCategoryIsolationScanTests holds every project with such an oracle to this. -->
+        <DwarfKeepRuntimeDefaults>true</DwarfKeepRuntimeDefaults>
         <!-- DWARF038 is downgraded in this project's .globalconfig, with its reason, per the 2026-09-27 ruling (no
              DWARF id in a NoWarn). DWARF044 was here too and suppressed nothing (round 34's audit). -->
         <!-- DWARF070 is NOT in this list since round 32: NullableRefAssignRuntimeTests, which maps string? -> string on

@@ -38,6 +38,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private static readonly Regex OneProjectAtATime = new(@"(?<![\w-])(?:-m|-maxcpucount|--maxcpucount|/m)[:=]1(?!\d)", RegexOptions.CultureInvariant);
 
+        private static readonly Regex PerfTrait = new(@"^\s*\[Trait\(""Category"",\s*""Perf""\)\]", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+        private static readonly Regex ReadsAllocationCounters = new(@"\bGC\.(?:GetAllocatedBytesForCurrentThread|GetTotalAllocatedBytes)\(", RegexOptions.CultureInvariant);
+
+        private static readonly Regex KeepsRuntimeDefaults = new(@"<DwarfKeepRuntimeDefaults>\s*true\s*</DwarfKeepRuntimeDefaults>", RegexOptions.CultureInvariant);
+
         [Fact]
         public void Every_test_run_CI_reaches_keeps_the_Perf_category_out_unless_it_selects_by_name()
         {
@@ -136,6 +142,59 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             Assert.True(offenders.Count == 0,
                 "Stryker config comment(s) say there is no test filter while the config carries one: [" + string.Join(", ", offenders) + "].");
+        }
+
+        /// <summary>
+        ///     Round 34 (E3) gives every test host three runtime settings in Directory.Build.targets: call counting from the
+        ///     start, no PGO pass, no background GC (<see cref="TestHostRuntimeTuningTests" />). A test whose oracle is a timing
+        ///     ratio or an allocation count measures the runtime itself, and those settings change it: PGO decides how interface
+        ///     dispatch is compiled, and the tier decides whether the JIT may keep an object off the heap. So every project
+        ///     holding such a test keeps the runtime's defaults (<c>DwarfKeepRuntimeDefaults</c>) and measures what a consumer
+        ///     runs. The population is built, not listed: every source file under tests/ that carries the Perf trait or reads
+        ///     the allocation counters, and the project above it.
+        /// </summary>
+        [Fact]
+        public void Every_project_that_measures_time_or_allocations_keeps_the_runtime_defaults()
+        {
+            var measuring = Directory.GetFiles(Path.Combine(RepoPaths.Root, "tests"), "*.cs", SearchOption.AllDirectories)
+                                     .Where(f => !IsBuildOutput(f))
+                                     .Where(f =>
+                                     {
+                                         var text = File.ReadAllText(f);
+                                         return PerfTrait.IsMatch(text) || ReadsAllocationCounters.IsMatch(text);
+                                     })
+                                     .Select(ProjectOf)
+                                     .Distinct(StringComparer.Ordinal)
+                                     .ToList();
+
+            // Non-vacuity: InterfaceBucketTests and the allocation contracts both live in IntegrationTests.
+            Assert.Contains(measuring, p => Path.GetFileName(p) == "DwarfMapper.IntegrationTests.csproj");
+
+            var offenders = measuring.Where(p => !KeepsRuntimeDefaults.IsMatch(File.ReadAllText(p)))
+                                     .Select(p => Path.GetRelativePath(RepoPaths.Root, p).Replace('\\', '/'))
+                                     .ToList();
+
+            Assert.True(offenders.Count == 0,
+                "test project(s) whose tests time the runtime or count its allocations run with the tuned test-host " +
+                "runtime, so their oracles measure a runtime no consumer runs: [" + string.Join(", ", offenders) + "]. Set " +
+                "<DwarfKeepRuntimeDefaults>true</DwarfKeepRuntimeDefaults> in the project, with the reason beside it.");
+        }
+
+        private static bool IsBuildOutput(string path)
+        {
+            var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return parts.Contains("bin", StringComparer.Ordinal) || parts.Contains("obj", StringComparer.Ordinal);
+        }
+
+        private static string ProjectOf(string sourceFile)
+        {
+            for (var dir = Path.GetDirectoryName(sourceFile); dir is not null; dir = Path.GetDirectoryName(dir))
+            {
+                var project = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
+                if (project is not null) { return project; }
+            }
+
+            throw new InvalidOperationException("no project file above " + sourceFile);
         }
 
         /// <summary>

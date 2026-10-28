@@ -43,4 +43,34 @@
         <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
     </PropertyGroup>
 
+    <!-- Round 34 E3. The test hosts' runtime: call counting from the start, no PGO pass, no background GC.
+         A generator test emits and loads a fresh assembly, so a test host JIT-compiles new methods at tier 0 all the
+         time. The runtime holds back call counting, and with it every tier-1 recompile, while that start-up-like
+         activity goes on (TC_CallCountingDelayMs, 100 ms after the last of it), so the host ran Roslyn - IL only in its
+         package - on unoptimised tier-0 code for long stretches. Measured on Generator.Tests, 2026-10-28, Windows,
+         6 cores / 12 threads, the full run (8,097 tests) and a serial 226-test session in the shape of a Stryker
+         session:
+             runtime defaults (two runs)        full 55.3 s, 300 CPU-s   serial 7.6 s
+             call counting at once (alone)      full 38.8 s              serial 6.5 s
+             no PGO pass (alone)                full 47.9 s              serial 7.0 s
+             no background GC (alone)           full 49.8 s              serial 7.4 s
+             all three, against the defaults    full 62.8 s -> 29.8 s,   serial 8.1 s -> 5.5 s
+               run beside them in one batch      288 -> 140 CPU-s
+         Rejected, measured in the same batches: tiering off altogether (full 33.0 s, serial 8.7 s: slower in the
+         serial shape every Stryker session has), server GC (serial 7.0 s, a heap per core in every host), and Roslyn
+         precompiled ReadyToRun (a further ~9 %, for a crossgen step in every clean build). Only when code is optimised
+         and how the heap is collected change; the tests and the code paths they run do not.
+         A project whose oracles measure the runtime itself sets DwarfKeepRuntimeDefaults: IntegrationTests times
+         interface dispatch (Category=Perf), which PGO decides how to compile, and counts allocations that optimised
+         code may keep off the heap. TestHostRuntimeTuningTests reads the settings back in a tuned host;
+         PerfCategoryIsolationScanTests holds every project with such an oracle to the opt-out. -->
+    <PropertyGroup Condition="'$(IsTestProject)' == 'true' and '$(DwarfKeepRuntimeDefaults)' != 'true'">
+        <TieredPGO>false</TieredPGO>
+        <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(IsTestProject)' == 'true' and '$(DwarfKeepRuntimeDefaults)' != 'true'">
+        <!-- No MSBuild property maps to this one; the runtime reads it by this name from runtimeconfig.json. -->
+        <RuntimeHostConfigurationOption Include="System.Runtime.TieredCompilation.CallCountingDelayMs" Value="0"/>
+    </ItemGroup>
+
 </Project>
