@@ -73,6 +73,39 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "per case (GoldenCaseTests is the pattern: a TheoryData of case ids, GoldenCorpus.Case(id) in the row).");
         }
 
+        /// <summary>
+        ///     Round 34 (E9). The surface matrix's counted populations are checked by ONE fact over one sweep. Nine facts
+        ///     each classified the matrix for themselves (5,868 compilations of 942 inputs in the surface category), and
+        ///     under Stryker each ran its whole sweep in every session of the 143 generator-leg mutants it covered. A cell
+        ///     is classified in two places only: <c>AllCells</c>, which that one fact calls, and the per-cell theory, one
+        ///     row per cell. A check that classified for itself, fact or helper, would be a second sweep.
+        /// </summary>
+        [Fact]
+        public void The_surface_matrix_is_swept_by_one_fact()
+        {
+            var file = Path.Combine(RepoPaths.Root, "tests", "DwarfMapper.Generator.Tests", "Contracts", "SurfaceParityTests.cs");
+            var methods = CSharpSyntaxTree.ParseText(File.ReadAllText(file)).GetRoot()
+                                          .DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+
+            var sweepers = methods.Where(m => Calls(m, "AllCells")).Select(m => m.Identifier.Text).ToList();
+            var classifiers = methods.Where(m => Calls(m, "SurfaceProbe.Classify") && !HasAttribute(m, "Theory"))
+                                     .Select(m => m.Identifier.Text).ToList();
+
+            Assert.Equal(new[] { "Every_counted_population_holds_its_pin" }, sweepers);
+            Assert.Equal(new[] { "AllCells" }, classifiers);
+            Assert.True(HasAttribute(methods.Single(m => m.Identifier.Text == "Every_counted_population_holds_its_pin"), "Fact"));
+        }
+
+        private static bool Calls(MethodDeclarationSyntax method, string callee)
+        {
+            return method.DescendantNodes().OfType<InvocationExpressionSyntax>().Any(i => i.Expression.ToString() == callee);
+        }
+
+        private static bool HasAttribute(MethodDeclarationSyntax method, string name)
+        {
+            return method.AttributeLists.SelectMany(l => l.Attributes).Any(a => a.Name.ToString() == name);
+        }
+
         private static bool IsBuildOutput(string path)
         {
             var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
