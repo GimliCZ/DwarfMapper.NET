@@ -109,3 +109,88 @@ timeouts either way), concurrency 4 is 19-23 % faster at no cost in score, at a 
 Stryker's MTP runner (preview since 4.13, `--test-runner mtp`) keeps the test host alive across mutants. It needs the
 suite on Microsoft.Testing.Platform (xunit v3), and per its announcement it "cannot yet filter individual test cases
 per mutant", so every covered mutant would run every test. Not usable until it can.
+
+## What a test spends its time on (E3)
+
+The owner's follow-up: "Mapper is extremely fast, for that reason most of the time is startup"; aggregate the kinds of
+tests and prepare their spin-ups in front. Measured first, on one combinatorial cell at a time (Generator.Tests'
+harness, Windows, a host that had compiled ten cells before):
+
+| Phase of one cell | ms |
+|---|---|
+| parse + compilation object | 0.25 |
+| generator run | 5.5 |
+| parse check of the generated files | 1.6 |
+| emit | 17.8 |
+| `Assembly.Load` | 0.2 |
+| compiler diagnostics | 1.0 |
+
+The mapper itself runs in microseconds; the cost is Roslyn's. The same `EmitAssembly` in a host that had run 2,400
+compilations before took 7.3 ms, not ~25 ms, so the question was why a test host runs Roslyn slowly for so long.
+
+**The NuGet package's Roslyn is IL only** (the SDK's own copy is ReadyToRun), so every test host JIT-compiles the
+compiler before its first generator test: a host's first four generator tests cost 1.1 s more than a symbol-only test.
+And every generator test emits and loads a fresh assembly, so the host compiles new methods at tier 0 all the time.
+The runtime holds back call counting, and with it every tier-1 recompile, while that start-up-like activity goes on
+(`TC_CallCountingDelayMs`, 100 ms), so Roslyn stayed on unoptimised tier-0 code for long stretches.
+
+Generator.Tests under runtime settings set by environment variable, `dotnet vstest` on one Release build: the full run
+(8,097 tests, `Category!=SurfaceMatrix&Category!=Perf`) and a serial 226-test session
+(`DisableParallelization=true`, the shape of every Stryker session). In-host figures from a temporary probe read at
+process exit (JIT time, GC pause). Two runs each, 06:55-07:08, before the owner started a game:
+
+| Setting | Full run | CPU | JIT | GC pause | Serial session |
+|---|---|---|---|---|---|
+| runtime defaults | 55.3 s | 300 s | 19.1 s | 10.7 s | 7.6 s |
+| `TC_CallCountingDelayMs=0` | 38.8 s | 195 s | 51.5 s | 10.8 s | 6.5 s |
+| `TieredPGO=0` | 47.9 s | 234 s | 15.8 s | 10.7 s | 7.0 s |
+| `gcConcurrent=0` | 49.8 s | 263 s | 15.6 s | 5.7 s | 7.4 s |
+| `GCgen0size` 64 MB | 51.3 s | 277 s | 16.2 s | 6.2 s | 7.5 s |
+| `TieredCompilation=0` | 33.0 s | 126 s | 29.2 s | 9.2 s | 8.7 s |
+| `ReadyToRun=0` (control) | 64.8 s | 325 s | 21.8 s | 11.1 s | 10.3 s |
+
+Combinations, one run each beside a defaults run of their own (07:16-07:22; the game started at about the end):
+
+| Setting | Full run | CPU | Serial session |
+|---|---|---|---|
+| runtime defaults | 62.8 s | 288 s | 8.1 s |
+| call counting at once + no PGO | 34.3 s | 154 s | 5.7 s |
+| **+ no background GC (adopted)** | **29.8 s** | **140 s** | **5.5 s** |
+| tiering off + no background GC | 27.6 s | 122 s | 8.8 s |
+| call counting at once + no PGO + server GC | 26.7 s | 141 s | 7.0 s |
+| Roslyn precompiled (ReadyToRun), defaults | 47.7 s | 233 s | 6.3 s |
+| Roslyn precompiled + the adopted three | 27.2 s | 137 s | 5.0 s |
+
+**Adopted (`35f1a20`):** every test project's runtimeconfig.json carries
+`System.Runtime.TieredCompilation.CallCountingDelayMs=0`, `System.Runtime.TieredPGO=false` and `System.GC.Concurrent=false`
+(Directory.Build.targets), so dotnet test, the IDE, coverage runs and Stryker's sessions all get them. The runtime reads
+them from there: on the serial session with no `DOTNET_` variable set, JIT 7.4-7.5 s and 10 gen-0 GCs; with
+environment variables forcing the defaults back on the same build, JIT 3.0-3.2 s and 66-67 gen-0 GCs (the defaults'
+signature: 2.8 s, 67). Peak working set rises ~100 MB per host (non-concurrent GC grows a larger gen 0).
+
+**Kept at defaults:** IntegrationTests (`DwarfKeepRuntimeDefaults`). Its oracles measure the runtime itself:
+`InterfaceBucketTests` (Category=Perf) times interface dispatch, which PGO decides how to compile, and the allocation
+contracts count bytes that optimised code may keep off the heap. Every test that reads the allocation counters lives
+there. `PerfCategoryIsolationScanTests` holds every project with such an oracle to the opt-out.
+
+**Rejected, with the measurement:**
+- Tiering off altogether: fastest full run, but the serial session got slower (8.7 s, 8.8 s), and every Stryker
+  session is serial.
+- Server GC: slower serial session (7.0 s) and a heap per core in each of Stryker's hosts.
+- Roslyn precompiled ReadyToRun: a further ~9 % on both shapes, for a crossgen2 step over ~10 MB of IL in every
+  clean build, and CI builds clean in every job.
+- A fixed assembly name, to reuse the harness's bound reference set (`EmitAssembly` names each compilation uniquely):
+  7.13 vs 7.29 ms per cell in a warm host. Roslyn already shares the referenced assemblies' symbols.
+- Several cells in one compilation, one generator run, one emit: 16.4-17.6 ms per cell at 10 cells, 16.9-20.8 at 40,
+  26.2-26.5 at 120 (two runs). The assembly-wide files (registration, extensions) grow with every cell, and the cells
+  would share an assembly again, which is what E1 separated.
+
+**"Prepare the spin-ups in front", answered.** Generator work done ahead of a test, in a fixture or in a cache shared
+between tests, runs outside every test's coverage window, and Stryker then classifies each mutant it touches as
+static and runs it against the whole suite. That is the artifact E1 removed (160 mutants, 1:14:03 -> 34:01 in the
+container). Stryker also activates mutants per test inside one host, so a result cached by one test would answer for
+another test's mutant. The safe place to prepare is the runtime: E3 does that.
+
+**Aggregating test projects.** A host costs ~1.5 s of framework start-up before any test (above), and `dotnet test`
+starts the projects' hosts in parallel; after E1 almost every Stryker session runs only Generator.Tests. Merging
+projects would save at most one host start per project and run, so it is not pursued.

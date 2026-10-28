@@ -96,10 +96,31 @@ is still open under its own name.
     `TheoryRowsAreTestCasesScanTests` holds that. In the 4-CPU container, at concurrency 2:
     - generator leg 1:14:03 → 34:01 (-54 %), 97.11 % both times, no mutant's status different, 0 static;
     - test hosts started 1,038 → 277.
+
+    On CI (run 40637130998, Stryker step against the previous run's): generator 79.6 → 62.6 min at the same 403
+    killed / 12 survived / 0 timeouts, pipeline 107.4 → 29.8 (72 in another run before E1), testing 24.1 → 18.2.
+    The generator leg gained less than in the container: its sessions are now short, so their start-up decides.
+  - **E3 done — `35f1a20`. The test hosts ran Roslyn on unoptimised code.** One cell's compile costs ~25 ms early in
+    a host and 7.3 ms in a warm one; the mapper itself runs in microseconds. Roslyn's package is IL only, and every
+    generator test loads a fresh assembly, so the runtime kept postponing call counting and tier-1 recompiles
+    (`TC_CallCountingDelayMs`). Every test project's runtimeconfig.json now carries call counting from the start,
+    no PGO pass and no background GC (Directory.Build.targets). Generator.Tests against the defaults run beside it:
+    full run 62.8 → 29.8 s and 288 → 140 CPU-s, serial 226-test session (a Stryker session's shape) 8.1 → 5.5 s.
+    - IntegrationTests keeps the defaults (`DwarfKeepRuntimeDefaults`): its Perf ratio times interface dispatch,
+      which PGO compiles, and its allocation contracts count what optimised code may keep off the heap.
+    - Locks: `TestHostRuntimeTuningTests` (RED 4/4 before), `PerfCategoryIsolationScanTests`' new fact, and
+      `PerfHostRuntimeDefaultsTests` (both RED with the opt-out removed).
+    - Rejected with numbers: tiering off (serial session slower), server GC, Roslyn precompiled ReadyToRun (+9 %
+      for a crossgen step in every clean build), a fixed assembly name (0.16 ms), cells batched into one
+      compilation. Generator work prepared ahead of a test or cached between tests would make its mutants static
+      again: the safe place to prepare is the runtime.
+    - The owner, 2026-10-28: "keep it local, push once at the end". The clean before/after (the whole suite, the
+      surface matrix, the deep tier, the power set, coverage, and the container mutation legs) runs after the owner's
+      game, which skews every timing taken beside it.
   - **Concurrency, measured with the owner's approval** (the guard's 2026-08-26 basis predates A1 and assumed xunit
     parallelises inside Stryker's sessions, which its run settings forbid): concurrency 4 is 23 % faster on the
     testing leg and 19 % on the generator leg (27:39), with identical statuses and no extra timeouts; the memory
-    floor drops to 4.75 GB. CI's own numbers for E1 come first, from the run on `2c9995d`.
+    floor drops to 4.75 GB. To be measured again with E3 in place before CI gets it (E2).
   - **Not a lever yet:** Stryker's MTP runner keeps hosts warm but cannot yet run only a mutant's covering tests.
     The runtime leg's static mutants are module-initializer registration, the product's own start-up.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
