@@ -183,21 +183,58 @@ namespace DwarfMapper.Generator.Tests
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
             AssertGeneratedSourceParses(output);
 
-            var generated = output.SyntaxTrees
-                                .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
-                                // Exclude the assembly-wide aggregate outputs (convenience facade + DI registration) so single-
-                                // mapper snapshot tests keep selecting the per-mapper file regardless of emit order.
-                                .Where(t => !t.FilePath.EndsWith("DwarfMapper.Extensions.g.cs", StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs",
-                                                StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.AmbientRegistration.g.cs", StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.AmbientRequires.g.cs", StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.Validate.g.cs", StringComparison.Ordinal))
-                                .Select(t => t.ToString())
-                                .FirstOrDefault() ??
-                            string.Empty;
+            return (genDiagnostics, PerMapperFile(output.SyntaxTrees));
+        }
 
-            return (genDiagnostics, generated);
+        /// <summary>
+        ///     <see cref="Run(string, NullableContextOptions, bool)" /> and <see cref="RunAndGetCompilationErrors" /> from
+        ///     ONE driver run: <see cref="DwarfGenerator" />'s own diagnostics and per-mapper file, as <c>Run</c> returns
+        ///     them, and the errors of the compilation both shipped generators produce, as
+        ///     <c>RunAndGetCompilationErrors</c> returns them.
+        ///     <para>
+        ///         Round 34 (E7). <see cref="GeneratorAssert" /> called the two in turn on the same source, so every one of
+        ///         its 790 call sites ran <c>DwarfGenerator</c> twice: 3,788 compilations of 1,916 inputs in a normal run.
+        ///         Generators in one driver do not see each other's output, so <c>DwarfGenerator</c>'s diagnostics and
+        ///         files are the same with <see cref="MapToGenerator" /> beside it. The compilation is named as
+        ///         <c>Run</c>'s (the generator reads the name for the assembly-wide files' namespace and the ambient
+        ///         validator), so the diagnostics and the per-mapper file are byte for byte what <c>Run</c> returned.
+        ///     </para>
+        /// </summary>
+        public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource, ImmutableArray<Diagnostic> CompilationErrors)
+            RunWithCompilationErrors(string source, NullableContextOptions nullable = NullableContextOptions.Disable)
+        {
+            var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+
+            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator())
+                .RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+            AssertGeneratedSourceParses(output);
+
+            var dwarfFile = typeof(DwarfGenerator).FullName!;
+            var diagnostics = driver.GetRunResult().Results
+                .Single(r => r.Generator.GetGeneratorType() == typeof(DwarfGenerator))
+                .Diagnostics;
+            var errors = output.GetDiagnostics()
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .ToImmutableArray();
+
+            return (diagnostics, PerMapperFile(output.SyntaxTrees.Where(t => t.FilePath.Contains(dwarfFile, StringComparison.Ordinal))), errors);
+        }
+
+        /// <summary>
+        ///     The first per-mapper file among <paramref name="trees" />: a <c>.g.cs</c> tree that is not one of the five
+        ///     assembly-wide aggregate outputs, so single-mapper snapshot tests keep selecting it regardless of emit order.
+        /// </summary>
+        private static string PerMapperFile(IEnumerable<SyntaxTree> trees)
+        {
+            return trees.Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+                       .Where(t => !t.FilePath.EndsWith("DwarfMapper.Extensions.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.AmbientRegistration.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.AmbientRequires.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.Validate.g.cs", StringComparison.Ordinal))
+                       .Select(t => t.ToString())
+                       .FirstOrDefault() ??
+                   string.Empty;
         }
 
         /// <summary>
@@ -521,6 +558,30 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     <see cref="Run(string, NullableContextOptions, bool)" /> and <see cref="EmitAssembly(string)" /> from ONE
+        ///     driver run: the generator's diagnostics and per-mapper file, and the emitted assembly (null when the emit
+        ///     failed, with its errors). Round 34 (E7): every combinatorial cell's row ran the generator once for the
+        ///     diagnostics and again to emit. Both ran <see cref="DwarfGenerator" /> alone over the same source; the one
+        ///     run keeps <c>EmitAssembly</c>'s unique assembly name, which only the assembly-wide files read.
+        /// </summary>
+        public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource, Assembly? Assembly, ImmutableArray<Diagnostic> EmitErrors)
+            RunAndEmit(string source)
+        {
+            var compilation = BuildCompilation("FuzzAsm_" + Guid.NewGuid().ToString("N"), source);
+
+            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+            driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+            AssertGeneratedSourceParses(output);
+            var generated = PerMapperFile(output.SyntaxTrees);
+
+            using var ms = new MemoryStream();
+            var result = output.Emit(ms);
+            return result.Success
+                ? (diagnostics, generated, Assembly.Load(ms.ToArray()), ImmutableArray<Diagnostic>.Empty)
+                : (diagnostics, generated, null, result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToImmutableArray());
+        }
+
+        /// <summary>
         ///     <see cref="EmitAssembly(string)" /> for a compilation the caller built — several syntax trees in a
         ///     chosen order, unsafe code, a specific assembly name. The generator runs against exactly that
         ///     compilation, so what it saw is what the test controls.
@@ -567,12 +628,21 @@ namespace DwarfMapper.Generator.Tests
         ///     The multi-tree form. Tree order is the order the compiler sees the files in, which is the order it
         ///     lays out a partial struct's fields in — a test that needs a particular file order states it here.
         /// </summary>
+        /// <summary>
+        ///     Compilations this thread has built, so a test can hold a helper to compiling its source once (round 34 E7,
+        ///     <c>CompileOnceTests</c>). Per thread because tests run in parallel; a test's body runs on one thread.
+        /// </summary>
+        internal static int CompilationsOnThisThread => compilationsOnThisThread;
+
+        [ThreadStatic] private static int compilationsOnThisThread;
+
         public static CSharpCompilation BuildCompilation(
             string assemblyName,
             IReadOnlyList<SyntaxTree> trees,
             NullableContextOptions nullable = NullableContextOptions.Disable,
             bool allowUnsafe = false)
         {
+            compilationsOnThisThread++;
             // Derive from an EMPTY baseline that already carries this exact (name, options, references) triple,
             // rather than calling CSharpCompilation.Create per test. Caching the MetadataReference objects
             // (References, above) stopped the disk reads; it did not stop Roslyn rebuilding a ReferenceManager

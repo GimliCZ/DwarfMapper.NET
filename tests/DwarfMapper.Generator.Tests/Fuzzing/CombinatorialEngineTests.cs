@@ -44,8 +44,8 @@ public class CombinatorialEngineTests
         {
             var cell = CombinatorialSchema.Cell(key);
 
-            // 1. Run generator — no unexpected DWARF errors allowed
-            var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
+            // 1. Run generator — no unexpected DWARF errors allowed. The same run emits the assembly checked in step 2.
+            var (diagnostics, generatedSource, asm, emitErrors) = GeneratorTestHarness.RunAndEmit(cell.Source);
             var unexpectedErrors = diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToList();
@@ -59,7 +59,6 @@ public class CombinatorialEngineTests
             }
 
             // 2. Emit assembly
-            var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
             if (asm is null)
             {
                 Assert.Fail(FormatCellFailure(cell,
@@ -80,7 +79,7 @@ public class CombinatorialEngineTests
         {
             var cell = CombinatorialSchema.Cell(key);
 
-            var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
+            var (diagnostics, generatedSource, asm, emitErrors) = GeneratorTestHarness.RunAndEmit(cell.Source);
             var unexpectedErrors = diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 // DWARF027 (unsupported collection) is expected and acceptable
@@ -95,7 +94,6 @@ public class CombinatorialEngineTests
                     generatedSource));
             }
 
-            var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
             if (asm is null)
             {
                 Assert.Fail(FormatCellFailure(cell,
@@ -269,7 +267,8 @@ public class CombinatorialDepthTwoTests
         {
             var cell = CombinatorialSchema.Cell(key);
 
-            var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
+            // One driver run for the diagnostics and the emitted assembly (round 34 E7).
+            var (diagnostics, generatedSource, asm, emitErrors) = GeneratorTestHarness.RunAndEmit(cell.Source);
             var unexpectedErrors = diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id != "DWARF027")
                 .ToList();
@@ -286,7 +285,6 @@ public class CombinatorialDepthTwoTests
                 "\n" +
                 cell.Source);
 
-            var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
             Assert.True(asm is not null,
                 "Cell [" +
                 cell.BasicType +
