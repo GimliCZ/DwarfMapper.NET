@@ -2,7 +2,6 @@
 
 
 // CA5394: seeded System.Random for deterministic adversary/fuzz data only. Not security.
-
 #pragma warning disable CA5394
 
 namespace DwarfMapper.IntegrationTests

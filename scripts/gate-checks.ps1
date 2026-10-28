@@ -80,6 +80,10 @@ function Get-LegAdjudication {
     $fence = [regex]::Match($text, '(?s)```json\s*(\{.*?\})\s*```')
     if (-not $fence.Success) { return $null }
 
+    # A json block that does not parse reads as no ledger, so every leg gates on the band alone, as a leg the
+    # ledger has never adjudicated does. That cannot pass a regression, because the break check in
+    # Assert-MutationScoreWithinBand does not read the ledger. It can turn a leg with recorded phantom kills into a
+    # "raise the floor" failure, which is loud and names the leg; the fix is then the ledger's json, not the floor.
     try { $doc = $fence.Groups[1].Value | ConvertFrom-Json } catch { return $null }
     # The leg key is the config's own name for it; 'doc tooling' and 'code fixes' carry a space in the
     # housekeeping switch but not in the ledger, which keys them as one word.
@@ -1080,10 +1084,32 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 937 B on Windows, 1,114 B on ubuntu.
 # DwarfMapper.Testing (54 KB = 55,296 B) 643 B on Windows, 670 B on ubuntu.
+#
+# RE-MEASURED 2026-10-27 (round 34, at a3b135d): DwarfMapper unchanged at 362, DwarfMapper.Testing 53 -> 56.
+# B5 (5ed2f45) grew the Testing package and did not re-measure, so R1 was missed a fourth time: the first full-ci
+# run on PR #11 (fc0ae37, run 40558858454) failed this gate at 56 KB. Stated rather than backdated.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     4a169a4 (master)     DwarfMapper 370,900 B   Testing 54,598 B   floor 362 / 53
+#     a3b135d (round 34)   DwarfMapper 371,023 B   Testing 57,883 B   floor 362 / 56
+#   Windows, SDK 10.0.101, CI=true, a3b135d: 371,224 B (+201) and 57,934 B (+51) - floor 362 / 56. The ceiling
+#   is the higher floor, so both platforms agree on it.
+#
+# ENTRY BY ENTRY, master (4a169a4) -> round 34 (a3b135d), compressed bytes, packed in the container:
+#
+#   lib/net10.0/DwarfMapper.Testing.dll              +2,732   B5: an interface whose only implementation did
+#                                                             not load is reported, read from metadata
+#   lib/net10.0/DwarfMapper.Testing.xml                +557   its documentation
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll      +125   DWARFR17 and null directive names (B1, B2)
+#
+# Every row is intended round-34 content; nothing started shipping that should not. README.md is unchanged.
+#
+# Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 488 B on Windows, 689 B on ubuntu.
+# DwarfMapper.Testing (57 KB = 58,368 B) 434 B on Windows, 485 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper'         = 362
-    'DwarfMapper.Testing' = 53
+    'DwarfMapper.Testing' = 56
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1300,4 +1326,110 @@ function Write-DashboardReport {
     [System.IO.File]::WriteAllText($Out, $text, [System.Text.UTF8Encoding]::new($false))
     '{0} -> {1} bytes; kept {2} of {3} tests (the ones a mutant references); {4} mutants passed through' -f `
         (Get-Item -LiteralPath $Report).Length, (Get-Item -LiteralPath $Out).Length, $kept, $total, $mutants
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The warning codes a build raised in ONE project, for scripts/nowarn-audit.ps1. The audit clears NoWarn
+# with a GLOBAL property (-p:NoWarn=), and a global property reaches every ProjectReference as well, so the
+# output also holds the referenced projects' warnings. Counting all of them credited DwarfMapper.Testing's
+# own CA5394 (System.Random in ObjectFactoryV2) to Benchmarks, Conformance and Gallery, whose CA5394
+# suppressed nothing (round 34). MSBuild ends every warning line with the project it belongs to, in
+# brackets, the location-less `CSC : warning ...` ones included; only this project's lines count.
+function Get-OwnWarningCodes {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $BuildOutput,
+        [Parameter(Mandatory)] [string] $Project
+    )
+
+    $mine = [regex]::Escape($Project)
+    @([regex]::Matches($BuildOutput, "(?im)\bwarning\s+([A-Z]+[0-9]+):[^\r\n]*\[$mine\]\s*$") |
+        ForEach-Object { $_.Groups[1].Value.ToUpperInvariant() } |
+        Select-Object -Unique)
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The upload itself, sent once more when the dashboard gave no answer about the report. On 2026-10-27
+# the first nightly on round 33's code measured and gated all six legs, and two still went red here: the
+# dashboard answered the runtime and codefixes PUTs (09:09:41 and 09:09:59 UTC) with HTTP 504 four
+# minutes later, while the uploads at 09:08 and 09:28 went through. A 5xx, or no status at all (curl
+# writes 000 when the connection fails), says nothing about the request, so it is sent again after a
+# pause. A 4xx is the dashboard's answer about the request - the key, the project name, the size (413) -
+# and the same request cannot get a different one, so it fails at once. One retry, not a loop: a
+# dashboard down for longer fails the leg as before, and the next nightly publishes. PUT replaces the
+# module's report, so a second send of a report the first one delivered after all changes nothing.
+# -Send and -Pause are the transport and the clock, injectable so a battery can drive the policy with
+# neither (DashboardUploadTests); -Send returns the HTTP status and leaves the body in -Response.
+function Send-DashboardReport {
+    param(
+        [Parameter(Mandatory)] [string] $Url,
+        [Parameter(Mandatory)] [string] $Payload,
+        [Parameter(Mandatory)] [string] $Response,
+        [int] $RetryDelaySeconds = 120,
+        [scriptblock] $Send = {
+            param($url, $payload, $response)
+            # A failed connection is curl exiting non-zero with 000 written, which is exactly the answer the policy
+            # below retries. With PowerShell's native-command preference on, that exit would throw first.
+            $PSNativeCommandUseErrorActionPreference = $false
+            curl -sS -o $response -w '%{http_code}' -X PUT $url `
+                -H 'Content-Type: application/json' `
+                -H "X-Api-Key: $env:STRYKER_DASHBOARD_API_KEY" `
+                --data-binary "@$payload"
+        },
+        [scriptblock] $Pause = { param($seconds) Start-Sleep -Seconds $seconds }
+    )
+
+    $attempt = 1
+    $status = ([string](& $Send $Url $Payload $Response)).Trim()
+    if (Test-Path -LiteralPath $Response) { Get-Content -Raw -LiteralPath $Response }
+    if ($status -match '^(5\d\d|000)$') {
+        "dashboard: HTTP $status, which says nothing about the report - sending it again in $RetryDelaySeconds s"
+        & $Pause $RetryDelaySeconds
+        $attempt = 2
+        $status = ([string](& $Send $Url $Payload $Response)).Trim()
+        if (Test-Path -LiteralPath $Response) { Get-Content -Raw -LiteralPath $Response }
+    }
+    if ($status -ne '200' -and $status -ne '201') {
+        throw "dashboard upload: HTTP $status after $attempt attempt(s)."
+    }
+    "dashboard: HTTP $status (attempt $attempt)"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# zizmor's report read as a gate (actions-security.yml). The job was authored in reporting mode: findings
+# could not fail it until the owner had triaged the first run's (the baseline). Every run read for the flip,
+# six on master and PR #11 on 2026-10-27, reported none, so the baseline was empty, and since round 34 an
+# open finding fails the job. A finding suppressed in the workflow's own text (`# zizmor: ignore[rule]`)
+# carries a SARIF suppression and does not count: that decision is in the diff where review sees it. No
+# report, an empty one, one with no runs, or a run with no results array (SARIF's way of saying the tool
+# produced none) fails too, because no analysis is not no findings. Each open finding is printed as an
+# error annotation on its file and line before the throw (ZizmorGateTests).
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-ZizmorReportClean {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "zizmor: no report was written, so no finding count means anything."
+    }
+    $text = Get-Content -Raw -LiteralPath $Path
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        throw "zizmor: the report is empty, so no finding count means anything."
+    }
+    $runs = @(($text | ConvertFrom-Json).runs | Where-Object { $null -ne $_ })
+    if ($runs.Count -eq 0) {
+        throw "zizmor: the report has no runs, so the tool analysed nothing and no finding count means anything."
+    }
+    if (@($runs | Where-Object { $null -eq $_.results }).Count) {
+        throw "zizmor: a run in the report has no results array, which SARIF reserves for a tool that produced none."
+    }
+
+    $results = @($runs | ForEach-Object { $_.results })
+    $open = @($results | Where-Object { -not $_.suppressions })
+    foreach ($finding in $open) {
+        $at = $finding.locations[0].physicalLocation
+        "::error file=$($at.artifactLocation.uri),line=$($at.region.startLine)::zizmor $($finding.ruleId): $($finding.message.text)"
+    }
+    "zizmor findings: $($open.Count) open, $($results.Count - $open.Count) suppressed in source"
+    if ($open.Count) {
+        throw "zizmor: $($open.Count) open finding(s). Fix each one, or suppress it in the workflow's text with '# zizmor: ignore[<rule>]' and the reason beside it."
+    }
 }

@@ -5,9 +5,6 @@
         <IsPackable>false</IsPackable>
         <RootNamespace>ConsumerTests.ProviderB</RootNamespace>
         <AssemblyName>ConsumerTests.ProviderB</AssemblyName>
-        <!-- CA1515: consumer-shaped fixtures are public BY DESIGN — cross-assembly reachability is the point. -->
-        <!-- CA1002/CA1819/CA2227: DTOs expose List<T>/arrays exactly as a real consumer's do. -->
-        <NoWarn>$(NoWarn);CA1002;CA2227</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

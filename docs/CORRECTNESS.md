@@ -34,6 +34,15 @@ of the generated `.g.cs`, so a reviewer can see *what maps to what* without read
 face of anti-mislinking. *Evidence:* `MapEmitter.EmitMappingPlanDoc`; rendered for every public object-to-object method
 (snapshot-tested). Projection, span, and async-stream methods carry the `<summary>` but no per-member plan list.
 
+**The one pragma in generated code.** An exhaustive enum map names every member, `[Obsolete]` ones included: a
+deprecated member is still a legal value, and leaving its arm out would turn a legal input into a runtime
+`ArgumentOutOfRangeException`. Naming it raises CS0618 (CS0612 for the message-less form) inside the generated file,
+where you cannot suppress it, so the one switch that names such a member, and only that switch, is wrapped in
+`#pragma warning disable CS0612, CS0618` and restored right after it. Any other obsolete-use warning in the file stays
+visible. A member marked `[Obsolete(…, error: true)]` raises CS0619, which no pragma lifts; it cannot be referenced, so
+the map leaves it out. *Evidence:* `EnumConverter.ObsoleteGuard`, pinned by `EnumToEnumTests` and
+`ConsumerReportedEmissionWarningsTests`.
+
 ## 3. Round-trips are verified, not hoped
 
 Tag a forward/back pair `[RoundTrip]` and the generator emits a seeded fuzz harness proving
@@ -71,7 +80,8 @@ mappers structurally cannot go.
   `MakeGenericType`, `dynamic`, …) across 64 fuzz seeds + every advanced feature.
 - *Evidence (end to end):* the CI AOT gate (`aot-trim-gate`, `linux-x64` and `win-x64`) publishes
   `samples/DwarfMapper.AotSample` with **zero** IL2xxx/IL3xxx warnings, asserts the output is a native image,
-  and executes it — the behavioural gate in its `Program.cs` (36 `return 1` sites) runs in CI, not only locally.
+  and executes it — the behavioural gate in its `Program.cs` (every check returns 1 on failure, held by
+  `AotSampleGateScanTests`) runs in CI, not only locally.
 - *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run
   **locally** as a native binary (not a CI job) — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
   deterministic over 100 000 runs, and the depth/SetNull guards hold over tens of thousands of runs. Timing

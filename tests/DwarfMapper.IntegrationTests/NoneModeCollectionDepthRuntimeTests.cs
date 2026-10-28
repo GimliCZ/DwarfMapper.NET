@@ -2,7 +2,6 @@
 
 
 // CA5394: System.Random is used ONLY for deterministic, seeded test-data generation. Not security.
-
 #pragma warning disable CA5394
 
 namespace DwarfMapper.IntegrationTests

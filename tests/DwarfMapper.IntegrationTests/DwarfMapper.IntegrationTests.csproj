@@ -11,15 +11,13 @@
         <!-- CA1028: enum underlying-type tests intentionally exercise non-int underlying types (byte, long, ulong) -->
         <!-- CA1711: enum test helpers intentionally carry "Enum" suffix to clearly identify their role -->
         <!-- CA1008: enum underlying-type tests intentionally omit zero member to exercise non-zero value truncation -->
-        <!-- DWARF038/DWARF044: these runtime tests deliberately exercise DwarfMapper's SUPPORTED lossy conversions
-             (narrowing, parse/format) and nullable-path traversals, which became Warnings in item 8. Suppress them
-             here so the repo-wide TreatWarningsAsErrors does not turn intentional feature coverage into build errors
-             (a consumer downgrades them project-wide in a .globalconfig - an .editorconfig does not reach a DwarfMapper
-             diagnostic; see docs/diagnostics.md). -->
         <!-- CA5394: tests generate pseudo-random DATA (not security-sensitive) with System.Random by design -->
         <!-- CA1812: MapConfigRuntimeTests' S/T fixtures are only referenced via typeof()/lambda member-access
              (the MapConfig<S,T> surface is compile-time-only and never actually instantiates them at runtime),
              so the analyzer can't see they're "used" -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812</NoWarn>
+        <!-- DWARF038 is downgraded in this project's .globalconfig, with its reason, per the 2026-09-27 ruling (no
+             DWARF id in a NoWarn). DWARF044 was here too and suppressed nothing (round 34's audit). -->
         <!-- DWARF070 is NOT in this list since round 32: NullableRefAssignRuntimeTests, which maps string? -> string on
              purpose to pin the raw-assign behaviour at runtime, states that with [MapProperty(AllowNull = true)] on the
              one member instead. -->
@@ -31,7 +29,6 @@
              not "a location-scoped mechanism" the way #pragma and .editorconfig severity are; it is the
              generator choosing not to report at all, so it needs no compiler-level suppression pipeline to
              reach. See docs/diagnostics.md#dwarf108. -->
-        <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812;DWARF038;DWARF044</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

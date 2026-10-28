@@ -112,10 +112,10 @@ namespace DwarfMapper.IntegrationTests
                         barrier.SignalAndWait();
                         body(index);
                     }
-#pragma warning disable CA1031 // Do not catch general exception types
-                    // Deliberate: an unhandled exception on a raw Thread tears down the test PROCESS, so the
-                    // harness would report "the run crashed" instead of "the registry raced". Catching
+                    // CA1031, deliberately: an unhandled exception on a raw Thread tears down the test PROCESS, so
+                    // the harness would report "the run crashed" instead of "the registry raced". Catching
                     // everything and asserting the bag is empty is what turns a crash into a readable failure.
+#pragma warning disable CA1031
                     catch (Exception ex)
 #pragma warning restore CA1031
                     {

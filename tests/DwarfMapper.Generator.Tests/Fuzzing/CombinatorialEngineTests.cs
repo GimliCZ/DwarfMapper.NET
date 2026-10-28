@@ -25,33 +25,24 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 public class CombinatorialEngineTests
     {
         // ── Matrix data ──────────────────────────────────────────────────────────
-        public static IEnumerable<object[]> DepthOneIdentityCells()
+        // Rows are cell KEYS, so xunit runs each cell as its own test case (MatrixCell.Key says why).
+        public static TheoryData<string> DepthOneIdentityCells()
         {
-            return CombinatorialSchema.DepthOneMatrix()
-                .Where(c => c.Variant == MatrixVariant.Identity)
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthOneMatrix().Where(c => c.Variant == MatrixVariant.Identity));
         }
 
-        public static IEnumerable<object[]> DepthOneDivergentCells()
+        public static TheoryData<string> DepthOneDivergentCells()
         {
-            return CombinatorialSchema.DepthOneMatrix()
-                .Where(c => c.Variant == MatrixVariant.TypeDivergent)
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthOneMatrix().Where(c => c.Variant == MatrixVariant.TypeDivergent));
         }
 
         // ── Identity variant ────────────────────────────────────────────────────
 
         [Theory]
         [MemberData(nameof(DepthOneIdentityCells))]
-        public void Identity_cell_compiles_emits_and_maps(MatrixCell cell)
+        public void Identity_cell_compiles_emits_and_maps(string key)
         {
-            ArgumentNullException.ThrowIfNull(cell);
+            var cell = CombinatorialSchema.Cell(key);
 
             // 1. Run generator — no unexpected DWARF errors allowed
             var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
@@ -85,9 +76,9 @@ public class CombinatorialEngineTests
 
         [Theory]
         [MemberData(nameof(DepthOneDivergentCells))]
-        public void Divergent_cell_compiles_emits_and_maps(MatrixCell cell)
+        public void Divergent_cell_compiles_emits_and_maps(string key)
         {
-            ArgumentNullException.ThrowIfNull(cell);
+            var cell = CombinatorialSchema.Cell(key);
 
             var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
             var unexpectedErrors = diagnostics
@@ -265,21 +256,18 @@ public class CombinatorialEngineTests
 /// </summary>
 public class CombinatorialDepthTwoTests
     {
-        public static IEnumerable<object[]> DepthTwoCells()
+        // Rows are cell KEYS, so xunit runs each cell as its own test case (MatrixCell.Key says why).
+        public static TheoryData<string> DepthTwoCells()
         {
-            return CombinatorialSchema.DepthTwoMatrix()
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthTwoMatrix());
         }
 
         [Trait("tier", "exhaustive")]
         [Theory]
         [MemberData(nameof(DepthTwoCells))]
-        public void DepthTwo_cell_compiles_and_maps(MatrixCell cell)
+        public void DepthTwo_cell_compiles_and_maps(string key)
         {
-            ArgumentNullException.ThrowIfNull(cell);
+            var cell = CombinatorialSchema.Cell(key);
 
             var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
             var unexpectedErrors = diagnostics

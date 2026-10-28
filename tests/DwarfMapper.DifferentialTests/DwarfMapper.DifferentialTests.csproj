@@ -7,6 +7,7 @@
         <!-- CA1515: test types need not be sealed -->
         <!-- CA2227/CA1002/CA1819: the shapes are DTOs, deliberately written the way real DTOs are written —
              settable collection properties and arrays are the point, not an oversight to be linted away. -->
+        <!-- CA1861: MemberComparerTests passes two constant arrays inline, once each per case. -->
         <NoWarn>$(NoWarn);CA1707;CA1515;CA2227;CA1002;CA1819;CA1861</NoWarn>
         <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a known
              advisory. This is a TEST-ONLY, non-shipped project (IsPackable=false) mapping in-memory POCOs with

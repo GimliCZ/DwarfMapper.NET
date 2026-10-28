@@ -3,8 +3,9 @@
 #
 # Linux jobs name `ubuntu-24.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` to
 # Ubuntu 26.04 over several weeks (2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside that window
-# two jobs of one run can land on different images. `ubuntu-26-canary` below tries 26.04 meanwhile. The pins move
-# once it has been green, in one commit with CiRunnerImagePinScanTests, which holds this rule.
+# two jobs of one run can land on different images. `ubuntu-26-canary` below runs 26.04, and since round 34 it is
+# blocking while the pins stay (the owner's choice, 2026-10-27). Moving them is a decision of its own, made in one
+# commit with CiRunnerImagePinScanTests, which holds this rule.
 name: CI
 on:
   push:
@@ -111,15 +112,16 @@ jobs:
         id: tests
 
       # ── Publish coverage to Codecov ─────────────────────────────────────────
-      # PREPARATION, not yet the gate. The inline gate below still runs, deliberately: a replacement gate is
-      # not proven until it has produced a verdict on a real push, and removing enforcement before that is
-      # how a repository ends up with neither. The cutover — what to delete, and the evidence required first
-      # — is written down in Issues/round27/PLAN-hosted-reports.md.
+      # Codecov IS the coverage gate now. The inline gate this step once prepared to replace was deleted after
+      # Codecov had produced verdicts on real pushes (see "Coverage is gated by Codecov" below, and
+      # Issues/round27/PLAN-hosted-reports.md for the cutover and its evidence).
       #
       # fail_ci_if_error is FALSE on purpose. An upload failure means Codecov was unreachable; a coverage
       # regression means the code got worse. Conflating them teaches everyone to re-run red builds, which is
-      # the habit that makes a gate worthless. The blocking verdict is the STATUS CHECK, configured in
-      # codecov.yml, which simply does not appear if the upload never arrived.
+      # the habit that makes a gate worthless. The verdict is the STATUS CHECK, configured in codecov.yml,
+      # which simply does not appear if the upload never arrived. It blocks a merge only where the branch
+      # requires it: as of 2026-10-27 master requires no status check at all (round 34's inventory), which is
+      # the owner's setting to change.
       - name: Upload test results to Codecov
         # !cancelled() rather than always(): a cancelled run has no meaningful results, but a FAILED one has
         # the most meaningful results there are. Paired with continue-on-error on the test step above, a red
@@ -456,25 +458,20 @@ jobs:
           # 2026-10-16 it accepted the testing leg's 87.8 MB and refused the pipeline leg's 116 MB with 413. That
           # 116 MB was the explicit `coveredBy` lists an initial test failure causes (see the ilverify step).
           REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Write-DashboardReport -Report $env:REPORT -Out dashboard-report.json'
-          status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
-            "https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module" \
-            -H 'Content-Type: application/json' \
-            -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
-            --data-binary @dashboard-report.json)
-          cat dashboard-response.json; echo
-          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
-            # This step has never run before this workflow first reaches master, and exactly one thing in it is
-            # unverified: `?module=`. The endpoint and the X-Api-Key header are documented; the module
-            # parameter's SPELLING is not, so a first-contact 4xx most likely means that name is wrong rather
-            # than that anything is broken. Say so here, with the pieces needed to fix it in one edit, instead
-            # of leaving six red legs reporting an opaque status code.
-            echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
-            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
-            echo "Response body is above. The URL SHAPE is documentation-verified - the dashboard's HTTP API"
-            echo "documents exactly '\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx"
-            echo "suspect the API KEY or the project name before the parameter. The report itself was measured"
-            echo "and gated before this step ran and is attached as an artifact, so a failed upload loses no"
-            echo "measurement: fix the credential or the name and the next nightly publishes."
+          url="https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
+          # Send-DashboardReport sends the report once more, after a pause, when the dashboard gave no answer
+          # about it (a 5xx or no connection), and fails at once on a 4xx (DashboardUploadTests). On 2026-10-27
+          # two legs that had measured and gated everything went red on a 504 here.
+          if ! URL="$url" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Send-DashboardReport -Url $env:URL -Payload dashboard-report.json -Response dashboard-response.json'; then
+            # The module parameter's spelling is proven: on 2026-10-27 the dashboard's badges read a separate
+            # score for each of the six modules. So a 4xx points at the key or the project name.
+            echo "::error::${{ matrix.leg }}: the dashboard upload failed; the status and the response body are above."
+            echo "PUT $url"
+            echo "The URL SHAPE is documentation-verified - the dashboard's HTTP API documents exactly"
+            echo "'\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx suspect the API KEY"
+            echo "or the project name. A 5xx or a failed connection was already sent twice. The report itself was"
+            echo "measured and gated before this step ran and is attached as an artifact, so a failed upload loses"
+            echo "no measurement: the next nightly publishes."
             exit 1
           fi
           # NOT asserted: anything about the response BODY. The dashboard documents the endpoint and the module
@@ -594,7 +591,10 @@ jobs:
           dotnet-version: '10.0.101'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
+      # One test project at a time (-m:1). Otherwise the solution starts every project's test host at once, ten of them
+      # discovering their tests on four CPUs while the one ratio test runs, and their start-up lands on a timed phase:
+      # measured in this job's shape in round 34 (A3), a phase moved 1.7x that way with the dispatch path settled.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build -m:1 --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
       - name: Assert the Perf lane ran at least one test
         run: |
           set -euo pipefail
@@ -604,6 +604,82 @@ jobs:
             echo "::error::the Category=Perf filter matched no test, so this lane proved nothing." >&2
             exit 1
           fi
+
+  # ── The complete feature-combination proof (round 34) ──────────────────────────────────────────────────
+  # FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path compiles every subset of the
+  # feature set (2^16) on every member-assigning emit path, ~262k compilations. It is gated behind
+  # DWARF_FUZZ_FULL=1 so routine runs stay fast, and until round 34 no CI job set it: housekeeping -Nightly
+  # skips the exhaustion stage (deep-test's 45-minute budget has no room for it) while the test's own comment
+  # said CI ran it. Its own job now: nightly, dispatch, or a `full-ci` PR, like the rest of the expensive tier.
+  #
+  # The vacuity guard reads the line the test writes only after the whole set compiled: without the variable
+  # the test returns at once, and that reads as a pass.
+  fuzz-exhaustion:
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement on a hosted runner. Measured locally on 2026-10-27: the whole set in 10.5 min
+    # on 6 cores / 12 threads. The compilations run in parallel, so a 4-vCPU runner should take about three times
+    # that, plus ~4 min of restore and build. 90 leaves room for a cold cache and a slow runner; the first full-ci
+    # run pins it. The hang timeout sits below the job's, so a real hang still leaves a dump.
+    timeout-minutes: 90
+    env:
+      DWARF_FUZZ_FULL: '1'
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-restore
+      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path" --blame-hang --blame-hang-timeout 75m --logger "trx" --results-directory FuzzResults
+      - name: Assert the whole power set compiled
+        run: |
+          set -euo pipefail
+          if ! grep -ho 'power set: [0-9]* subsets x [0-9]* emit paths = [0-9]* compilations' FuzzResults/*.trx; then
+            echo "::error::the power-set test reported no complete run: DWARF_FUZZ_FULL did not reach it, or the filter matched nothing." >&2
+            exit 1
+          fi
+
+  # ── Instruction-set matrix (round 34) ──────────────────────────────────────────────────────────────────
+  # scripts/isa-matrix.ps1 runs the runtime suites under five instruction-set configurations (the host's,
+  # 256-bit, 128-bit, SSE only, and no hardware intrinsics at all), so the scalar tails behind the SIMD fast
+  # paths execute under test. It ran only by hand until round 34. InstructionSetMatrixTests asserts that each
+  # configuration really applied, so the matrix cannot pass as five runs of one configuration, and the script
+  # fails when any configuration does.
+  isa-matrix:
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement on a hosted runner: restore and build ~4 min, then two runtime suites five times
+    # over, which took 50 s together on 6 cores / 12 threads (2026-10-27). 30 leaves room for a cold cache.
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - shell: pwsh
+        run: ./scripts/isa-matrix.ps1
 
   aot-trim-gate:
     strategy:
@@ -653,7 +729,8 @@ jobs:
           fi
           echo "NativeAOT confirmed: no managed assembly, no runtimeconfig.json in aot-out."
       # Publishing proves it COMPILES trim/AOT-clean; it says nothing about behaviour. The sample is written
-      # as a behavioural gate (36 `return 1` sites) and was never executed, so CORRECTNESS.md's "runs a
+      # as a behavioural gate (every check returns 1 on failure; AotSampleGateScanTests holds that, after two
+      # printed an ERROR and exited 0) and was never executed, so CORRECTNESS.md's "runs a
       # behavioural gate over the published native binary" was untrue until this step existed.
       - name: Execute the published AOT binary (behavioural gate)
         shell: bash
@@ -701,13 +778,11 @@ jobs:
   # CS9057. Measured locally: referencing 5.6.0 while building on SDK 10.0.101 fails with exactly that,
   # which is why this leg needs its own, newer SDK and cannot live in build-test.
   #
-  # NON-BLOCKING ON PURPOSE, FOR NOW. It was authored without a machine that has a newer 10.0.x SDK, so its
-  # first real run happens here. Flip `continue-on-error` to false once it has been seen green — a gate that
-  # cannot fail is decoration, and leaving it like this permanently would be exactly the kind of thing the
-  # rest of this pipeline exists to prevent.
+  # BLOCKING since round 34. It was authored non-blocking, without a machine that had a newer 10.0.x SDK, to be
+  # flipped "once it has been seen green". It was green on every master nightly read for the flip (2026-10-22 to
+  # 10-27, run 40477294097 among them), so its continue-on-error came off: a gate that cannot fail is decoration.
   roslyn-forward-compat:
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -1103,13 +1178,13 @@ jobs:
   # compat asks that question one 10.0.x patch ahead; this asks it one MAJOR ahead, on the .NET 11 preview
   # channel (11.0.100-preview.7 was the published preview SDK when this leg was written).
   #
-  # NON-BLOCKING ON PURPOSE, FOR NOW — a deliberate clone of roslyn-forward-compat's shape and of the
-  # discipline stated in its own comment. FLIP `continue-on-error` TO FALSE once this leg has been seen
-  # GREEN on pushed master, citing that run id in the flip commit; that is the Z3 precedent and it is the
-  # same obligation. A gate that cannot fail is decoration. Until then, understand what a red here means:
-  # it is INFORMATION about a future SDK, not a regression in this commit.
+  # BLOCKING since round 34. It was authored non-blocking, to be flipped "once this leg has been seen GREEN on
+  # pushed master, citing that run id in the flip commit" (the Z3 precedent). Run 40477294097 (master,
+  # b58c6e3, 2026-10-27) is that run, and the leg was green on every nightly read for the flip (2026-10-22 to
+  # 10-27). A red here is still about a future SDK rather than a regression in the commit under test, but it now
+  # has to be answered, as the next paragraph explains, instead of being read past.
   #
-  # It is expected to be red at first, and for a reason worth naming so nobody "fixes" it wrongly:
+  # A red can come for a reason worth naming so nobody "fixes" it wrongly:
   # Directory.Build.props sets TreatWarningsAsErrors with AnalysisLevel=latest-all and AnalysisMode=All,
   # so every analyzer rule a new SDK ADDS arrives as a build error. That is a real forward-compat signal
   # (a consumer on the preview SDK compiling our analyzers sees the same thing), but it is a different
@@ -1131,7 +1206,6 @@ jobs:
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci')
-    continue-on-error: true
     # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
     # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
     # UNPINNED restore. The plan budgets ~5 min; reckon ~12 min on a hosted runner and take 20 so the leg
@@ -1211,12 +1285,12 @@ jobs:
   # (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29, Python 3.12 -> 3.14. PowerShell and
   # the preinstalled .NET SDKs are the same, and the SDK used is the pinned 10.0.101 either way.
   #
-  # NON-BLOCKING ON PURPOSE, like roslyn-forward-compat: the image's own breakage must not red a PR that
-  # changed nothing. Once it has been green for a few nights, move every pin to ubuntu-26.04 in one commit with
-  # CiRunnerImagePinScanTests, and delete this job.
+  # BLOCKING since round 34, by the owner's choice (2026-10-27). It was authored non-blocking so the image's own
+  # breakage could not red a PR that changed nothing, and it was green on every nightly read for the flip
+  # (2026-10-22 to 10-27). The other Linux jobs stay pinned to ubuntu-24.04; this is the one job that runs
+  # 26.04, and now a break there fails the run instead of passing unread.
   ubuntu-26-canary:
     runs-on: ubuntu-26.04
-    continue-on-error: true
     # ESTIMATE from PR #7's last run on ubuntu-24.04 (2026-10-12): build-test 4.5 min, the linux AOT leg 1 min.
     # 30 leaves room for a slower new image and a cold cache.
     timeout-minutes: 30

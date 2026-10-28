@@ -59,9 +59,7 @@ namespace DwarfMapper.Generator.Tests
         private static (Compilation Compilation, INamedTypeSymbol Interface) BuildInterface()
         {
             var tree = CSharpSyntaxTree.ParseText(Source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location));
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences();
 
             var compilation = CSharpCompilation.Create(
                 "MemberFactsIfaceTestAsm_" + Guid.NewGuid().ToString("N"),

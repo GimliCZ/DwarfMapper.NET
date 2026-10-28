@@ -26,21 +26,17 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class GeneratedCodeIsWarningFreeTests
     {
-        public static IEnumerable<object[]> AllCells()
+        // Rows are cell KEYS, so xunit runs each cell as its own test case (MatrixCell.Key says why).
+        public static TheoryData<string> AllCells()
         {
-            return CombinatorialSchema.DepthOneMatrix()
-                .Concat(CombinatorialSchema.DepthTwoMatrix())
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthOneMatrix().Concat(CombinatorialSchema.DepthTwoMatrix()));
         }
 
         [Theory]
         [MemberData(nameof(AllCells))]
-        public void Combinatorial_cell_emits_warning_free_code(MatrixCell cell)
+        public void Combinatorial_cell_emits_warning_free_code(string key)
         {
-            ArgumentNullException.ThrowIfNull(cell);
+            var cell = CombinatorialSchema.Cell(key);
             AssertClean(cell.Source, $"combinatorial cell [{cell.BasicType} / {cell.ShapeName} / {cell.Variant}]");
         }
 

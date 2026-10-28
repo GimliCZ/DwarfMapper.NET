@@ -4,7 +4,6 @@
         <TargetFramework>net10.0</TargetFramework>
         <IsPackable>false</IsPackable>
         <!-- CA1707: test methods intentionally use underscores -->
-        <!-- CA1515: test types need not be sealed -->
         <NoWarn>$(NoWarn);CA1707</NoWarn>
     </PropertyGroup>
 

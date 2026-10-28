@@ -756,22 +756,28 @@ namespace DwarfMapper.Generator.Tests
 
         // ── Theory data ──────────────────────────────────────────────────────────
 
-        public static IEnumerable<object[]> Cases()
+        // Rows are case IDS, not cases: xunit runs a row as its own test case only when it can serialize the row's
+        // data, and the record it cannot. As one test case reporting every result, the theory ran its later cases
+        // outside Stryker's coverage window, which made each mutant they reached run against the whole suite
+        // (round 34; MatrixCell.Key is the same fix).
+        private static readonly Lazy<Dictionary<string, FimMatrixCase>> CasesById =
+            new(() => BuildCases().ToDictionary(c => c.Id, StringComparer.Ordinal));
+
+        public static TheoryData<string> Cases()
         {
+            var rows = new TheoryData<string>();
             foreach (var c in BuildCases())
-                yield return new object[]
-                {
-                    c
-                };
+                rows.Add(c.Id);
+            return rows;
         }
 
         // ── Test ─────────────────────────────────────────────────────────────────
 
         [Theory]
         [MemberData(nameof(Cases))]
-        public void Feature_combination_compiles_cleanly(FimMatrixCase c)
+        public void Feature_combination_compiles_cleanly(string id)
         {
-            ArgumentNullException.ThrowIfNull(c);
+            var c = CasesById.Value[id];
             if (c.ExpectedDiagnosticIds is not null)
             {
                 // For cases expected to produce specific diagnostics, assert they appear

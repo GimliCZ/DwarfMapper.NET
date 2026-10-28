@@ -4,7 +4,7 @@
 # Run before a release or a large push. Each stage fails fast.
 #
 #   pwsh scripts/housekeeping.ps1                 # suite + Perf ratio tests alone + exhaustion + AOT execute
-#   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~6 min full power-set
+#   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~10 min full power-set
 #   pwsh scripts/housekeeping.ps1 -Mutation       # also run Stryker mutation testing (very slow)
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
@@ -57,8 +57,8 @@ if ($unknown.Count) {
 
 # -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
 # (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
-# cannot drift apart. It skips exhaustion, AOT and stage 1c (exhaustion is a default local stage; AOT and
-# the Perf ratio tests have their own CI jobs, aot-trim-gate and perf-tests) and deliberately does NOT imply
+# cannot drift apart. It skips exhaustion, AOT and stage 1c, because each has a CI job of its own:
+# fuzz-exhaustion (since round 34), aot-trim-gate and perf-tests. It deliberately does NOT imply
 # -Mutation — the mutation legs are their own cost class and their own nightly CI jobs (the 'mutation' matrix).
 if ($Nightly) {
     # -BenchSmoke rides the nightly per the T8 placement rule: its measured wall-clock (6:36/6:44 across
@@ -446,14 +446,15 @@ try {
 
     if (-not $Nightly) {
         Write-Host "== 1c Wall-clock ratio tests (Category=Perf), alone ==" -ForegroundColor Cyan
-        # After the parallel suite has finished, so the only load beside the timed loop is the machine's own.
-        # Skipped under -Nightly for the reason AOT is: CI runs these in their own job, perf-tests.
-        dotnet test DwarfMapper.NET.sln -c Release --nologo --no-build --filter "Category=Perf"
+        # After the parallel suite has finished, and one test project at a time (-m:1), so the only load beside the
+        # timed loop is the machine's own: without it the solution starts every project's test host at once (round 34,
+        # A3). Skipped under -Nightly for the reason AOT is: CI runs these in their own job, perf-tests.
+        dotnet test DwarfMapper.NET.sln -c Release --nologo --no-build -m:1 --filter "Category=Perf"
         if ($LASTEXITCODE) { throw "wall-clock ratio tests (Category=Perf) failed" }
     }
 
     if (-not $SkipExhaustion) {
-        Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~6 min) ==" -ForegroundColor Cyan
+        Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~10 min) ==" -ForegroundColor Cyan
         $env:DWARF_FUZZ_FULL = '1'
         dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --nologo `
             --filter "FullyQualifiedName~FeatureCombinationFuzzTests"
@@ -637,6 +638,17 @@ try {
         Assert-BlitRatiosHold `
             -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
             -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/blit-ratio-baseline.json')
+    }
+
+    if ($Deep) {
+        Write-Host "== NoWarn audit: every declared suppression still suppresses something ==" -ForegroundColor Cyan
+        # Round 34. scripts/nowarn-audit.ps1 rebuilds each project that declares a <NoWarn> with the list cleared and,
+        # under -FailOnStale, fails on an id that no longer fires. Its help said housekeeping would turn that on once
+        # the lists had been trimmed; B4 trimmed them and nothing turned it on. Under -Deep, so CI's nightly deep-test
+        # runs it. After the stages that read Release output, because its forced rebuilds replace that output.
+        # Measured 2026-10-27: 140 s on 6 cores / 12 threads, 187 s in sdk:10.0.101 on four CPUs; 0 of 93 declared
+        # suppressions stale on either.
+        & (Join-Path $PSScriptRoot 'nowarn-audit.ps1') -FailOnStale
     }
 
     if ($Mutation -or $MutationLeg) {

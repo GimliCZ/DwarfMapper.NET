@@ -34,6 +34,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private static readonly Regex ScriptRun = new(@"scripts/[A-Za-z0-9_.-]+\.(?:ps1|sh)", RegexOptions.CultureInvariant);
 
+        private static readonly Regex SelectsPerf = new(@"--filter\s+[""']?Category=Perf[""'\s]", RegexOptions.CultureInvariant);
+
+        private static readonly Regex OneProjectAtATime = new(@"(?<![\w-])(?:-m|-maxcpucount|--maxcpucount|/m)[:=]1(?!\d)", RegexOptions.CultureInvariant);
+
         [Fact]
         public void Every_test_run_CI_reaches_keeps_the_Perf_category_out_unless_it_selects_by_name()
         {
@@ -55,12 +59,39 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         /// <summary>
+        ///     The runs that DO time them select <c>Category=Perf</c> from the whole solution, and for that
+        ///     <c>dotnet test</c> starts every test project's host at once: ten hosts discovering their tests on a
+        ///     four-CPU runner while the one ratio test runs. Round 34 (A3) measured it in the perf-tests job's own shape
+        ///     (sdk:10.0.101, four CPUs): with the dispatch path settled, a phase still moved 1.75x when a neighbour's
+        ///     start-up landed on it. So each such run, in the workflows and in the scripts they run (housekeeping's
+        ///     stage 1c among them), takes one project at a time.
+        /// </summary>
+        [Fact]
+        public void Every_run_that_times_the_Perf_category_takes_one_test_project_at_a_time()
+        {
+            var perfRuns = TestInvocations().Where(i => SelectsPerf.IsMatch(i.Command)).ToList();
+
+            // Non-vacuity: the perf-tests job and housekeeping's stage 1c.
+            Assert.True(perfRuns.Count >= 2, $"found only {perfRuns.Count} run(s) selecting Category=Perf; the perf-tests job and housekeeping's stage 1c both should.");
+
+            var offenders = perfRuns.Where(i => !OneProjectAtATime.IsMatch(i.Command)).Select(i => i.Source + ": " + i.Command).ToList();
+
+            Assert.True(offenders.Count == 0,
+                "run(s) timing the Category=Perf ratio tests start every test project's host at once, so the neighbours' " +
+                "start-up decides the verdict: [" + string.Join(" | ", offenders) + "]. Add -m:1.");
+        }
+
+        /// <summary>
         ///     A mutation leg's initial test run is the whole suite as well, and a failure there now stops the leg
         ///     (<c>--break-on-initial-test-failure</c>, <see cref="MutationLaunchContractTests" />). PR #9's pipeline leg
         ///     stopped exactly so, on <c>InterfaceBucketTests</c>' ratio (255.1 to 394.8 ns). Stryker 4.16 takes a test
         ///     filter only from its config file (<c>test-case-filter</c>; its command line has no such option), so
         ///     every config carries it. It costs no score: in the last complete local runtime-leg report the test
-        ///     killed 11 mutants and was the sole killer of none.
+        ///     killed 11 mutants and was the sole killer of none. Round 34 checked all six legs against CI's reports from
+        ///     before the filter (run 40299439526) and after it (run 40477294097). The ratio test was the only recorded
+        ///     killer of three runtime mutants, but each was a bail artifact: Stryker stops a session at its first failing
+        ///     test, the flaky ratio test came first, and the filtered run kills all three with other tests. Its one
+        ///     generator kill was a static mutant in code it never runs. In the other legs it killed nothing.
         /// </summary>
         [Fact]
         public void Every_mutation_leg_keeps_the_Perf_category_out_of_its_runs()
@@ -80,6 +111,31 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "Stryker config(s) let the Category=Perf ratio tests into the leg's runs, where a timing oracle under " +
                 "mutation load fails the initial run and --break-on-initial-test-failure stops the leg: [" +
                 string.Join(", ", offenders) + "]. Add \"test-case-filter\": \"" + ExcludesPerf + "\" to the stryker-config object.");
+        }
+
+        /// <summary>
+        ///     Until round 34 two configs carried that filter under comments that denied it: the generator leg's "No
+        ///     'test-case-filter' and no 'test-projects' key appear here, deliberately", the runtime leg's "WHY THERE IS NO
+        ///     TEST FILTER". Whoever reads a comment to decide whether a filter may be added must not be told there is none.
+        /// </summary>
+        [Fact]
+        public void No_mutation_config_comment_denies_the_filter_it_carries()
+        {
+            var denial = new Regex(@"\bno\s+'?test-case-filter\b|\bno\s+test\s+filter\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            var configs = Directory.GetFiles(RepoPaths.Root, "stryker-config*.json");
+            Assert.True(configs.Length >= 6, $"found {configs.Length} Stryker config(s); each of the six legs has one.");
+
+            var offenders = new List<string>();
+            foreach (var path in configs)
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var carries = doc.RootElement.GetProperty("stryker-config").TryGetProperty("test-case-filter", out _);
+                var comment = doc.RootElement.TryGetProperty("comment", out var c) ? c.GetString() ?? "" : "";
+                if (carries && denial.Match(comment) is { Success: true } said) { offenders.Add(Path.GetFileName(path) + ": \"" + said.Value + "\""); }
+            }
+
+            Assert.True(offenders.Count == 0,
+                "Stryker config comment(s) say there is no test filter while the config carries one: [" + string.Join(", ", offenders) + "].");
         }
 
         /// <summary>

@@ -19,7 +19,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("ConstructorSelectorUnit",
                 [CSharpSyntaxTree.ParseText("namespace Demo { public class Dst { public Dst(int a) { } } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var target = compilation.GetTypeByMetadataName("Demo.Dst")!;
             var ctor = target.InstanceConstructors.Single();
 

@@ -19,7 +19,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         public void A_symbol_declared_only_in_metadata_takes_the_fallback()
         {
             var compilation = CSharpCompilation.Create("FromFirstInSource",
-                references: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                references: [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var int32 = compilation.GetSpecialType(SpecialType.System_Int32);
 
             Assert.NotEmpty(int32.Locations);

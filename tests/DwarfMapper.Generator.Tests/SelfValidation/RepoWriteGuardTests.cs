@@ -127,6 +127,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     (1, "the ILVerify expectation battery script, temp directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/DashboardReportTests.cs"] =
                     (4, "three fake Stryker reports + the pwsh battery script, temp directory only"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/DashboardUploadTests.cs"] =
+                    (1, "the upload-retry pwsh battery script, temp directory only"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/IsaMatrixScriptTests.cs"] =
+                    (1, "the ISA matrix build-failure pwsh battery script, temp directory only"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/ZizmorGateTests.cs"] =
+                    (1, "the zizmor gate pwsh battery script, temp directory only"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/NoWarnAuditAttributionTests.cs"] =
+                    (1, "the NoWarn-audit attribution pwsh battery script, temp directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/GeneratedDocsAreCurrentTests.cs"] =
                     (1, "HasGitMarker probe writing a fake .git file into a temp directory"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoLayoutTests.cs"] =
@@ -136,7 +144,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 ["DwarfMapper.Generator.Tests/Round31/AuditSuppressionScanTests.cs"] =
                     (1, "WriteTemp helper: fake project files under a temp root, incl. a nested .claude/ checkout"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/OssScannerImageTests.cs"] =
-                    (1, "a global.json committed in a temp git repository, then removed from its working copy")
+                    (1, "a global.json committed in a temp git repository, then removed from its working copy"),
+                ["DwarfMapper.Testing.Tests/DanglingDependencyTests.cs"] =
+                    (1, "a probe assembly written to a temp directory, so it loads from a file the factory can read")
             };
 
             string[] rawWriteApis =

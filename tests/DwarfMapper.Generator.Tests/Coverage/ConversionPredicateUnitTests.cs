@@ -41,9 +41,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
         private static readonly Compilation Compilation = CSharpCompilation.Create("ConversionPredicateUnitTests",
             [CSharpSyntaxTree.ParseText(Source)],
-            AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location)),
+            GeneratorTestHarness.LoadedAssemblyReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
 
         private static INamedTypeSymbol Named(string metadataName) =>

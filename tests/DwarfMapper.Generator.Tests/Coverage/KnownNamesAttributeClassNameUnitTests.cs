@@ -23,7 +23,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("AttributeClassName",
                 [CSharpSyntaxTree.ParseText("namespace DwarfMapper { public sealed class MapIgnoreAttribute : System.Attribute { } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
             Assert.Equal(KnownNames.MapIgnoreFqn, KnownNames.AttributeClassName(compilation.GetTypeByMetadataName("DwarfMapper.MapIgnoreAttribute")));
         }

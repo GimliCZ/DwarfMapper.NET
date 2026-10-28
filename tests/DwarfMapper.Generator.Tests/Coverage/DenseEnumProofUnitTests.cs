@@ -33,7 +33,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("DenseEnumProofUnit",
                 [CSharpSyntaxTree.ParseText("namespace Demo { public enum Big : ulong { A = 0, B = 1, Huge = ulong.MaxValue } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var big = compilation.GetTypeByMetadataName("Demo.Big")!;
 
             var slots = DenseEnumProof.DeclaredSlots(big, 0).ToList();

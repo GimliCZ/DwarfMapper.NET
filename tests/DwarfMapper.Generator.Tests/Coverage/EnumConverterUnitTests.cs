@@ -17,7 +17,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("EnumConverterUnit",
                 [CSharpSyntaxTree.ParseText("namespace Demo { public class C { public const string Missing = null; public const int A = 1; public const int AliasA = 1; public const int B = 2; } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var type = compilation.GetTypeByMetadataName("Demo.C")!;
 
             Assert.Equal(["A", "B"], EnumConverter.DistinctValuedMembers(type).Select(m => m.Name));

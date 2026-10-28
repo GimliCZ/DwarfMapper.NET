@@ -3,9 +3,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
+using System.Runtime;
 using DwarfMapper;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace DwarfMapper.IntegrationTests.Round31
 {
@@ -20,6 +23,13 @@ namespace DwarfMapper.IntegrationTests.Round31
     /// </remarks>
     public sealed class InterfaceBucketTests
     {
+        private readonly ITestOutputHelper _output;
+
+        public InterfaceBucketTests(ITestOutputHelper output)
+        {
+            _output = output;
+        }
+
         /// <summary>GUARD: bucketing must not change ambiguity, which is always an intra-destination question.</summary>
         [Fact]
         public void Two_interfaces_accepting_one_source_for_one_destination_still_throw_naming_both()
@@ -85,15 +95,21 @@ namespace DwarfMapper.IntegrationTests.Round31
 
             var after = NanosPerCall(source);
 
+            // Written on every run, so a red can be read against the passes before it.
+            _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"collection dispatch: {before:F1} ns before, {after:F1} ns after 6,000 unrelated registrations ({after / before:F2}x, bound 1.5x)"));
             Assert.True(after <= before * 1.5,
                 $"collection dispatch went from {before:F1} ns to {after:F1} ns per call after 6,000 unrelated registrations");
         }
 
-        /// <summary>Best of several rounds, so a scheduler hiccup cannot fail the ratio.</summary>
+        /// <summary>
+        ///     Best of several rounds, so a scheduler hiccup cannot fail the ratio, timed only once
+        ///     <see cref="WarmUntilTheJitIsQuiet" /> returns.
+        /// </summary>
         private static double NanosPerCall(object source)
         {
             const int Calls = 20_000;
-            for (var i = 0; i < 2_000; i++) DwarfMapperRegistry.Map(source, typeof(ScanDst));
+            WarmUntilTheJitIsQuiet(source);
             var best = double.MaxValue;
             for (var round = 0; round < 7; round++)
             {
@@ -104,6 +120,34 @@ namespace DwarfMapper.IntegrationTests.Round31
             }
 
             return best;
+        }
+
+        /// <summary>
+        ///     Calls the path under test until the JIT has compiled nothing for half a second, five times the runtime's
+        ///     call-counting delay, so the rounds time the code tiering settles on. Until round 34 they started after
+        ///     2,000 calls, on whatever tier the path had reached by then. Unoptimised it costs ~200 ns a call here,
+        ///     optimised ~40 ns, and the tier each phase caught decided the ratio. Measured: 1.0x or 1.4x from one run to
+        ///     the next with the project alone; 1.6x to 3.0x on five CI runs with every test host of the solution
+        ///     starting beside it; with tiering off, 0.89x to 1.01x in ten runs of ten.
+        /// </summary>
+        private static void WarmUntilTheJitIsQuiet(object source)
+        {
+            var sinceLastCompile = Stopwatch.StartNew();
+            var waited = Stopwatch.StartNew();
+            var compiled = JitInfo.GetCompiledMethodCount();
+            while (sinceLastCompile.ElapsedMilliseconds < 500)
+            {
+                for (var i = 0; i < 2_000; i++) DwarfMapperRegistry.Map(source, typeof(ScanDst));
+                var now = JitInfo.GetCompiledMethodCount();
+                if (now != compiled)
+                {
+                    compiled = now;
+                    sinceLastCompile.Restart();
+                }
+
+                Assert.True(waited.Elapsed < TimeSpan.FromSeconds(30),
+                    "the JIT was still compiling after 30 s of calls, so no settled version of the dispatch path could be timed");
+            }
         }
 
         private interface IFirst;

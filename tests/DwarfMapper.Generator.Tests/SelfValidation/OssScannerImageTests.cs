@@ -192,6 +192,22 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.Contains("--filter \"" + filter + "\"", Ci(), StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     The image's own run of that suite does not fail the build, since an audit of a red tree is still worth
+        ///     running. Until round 34 a red tree said so only in the build log (<c>|| echo "WARNING: ..."</c>), which the
+        ///     scanning agent never reads: it could audit a red tree as green, and take a test that was already failing
+        ///     for its own finding. The outcome is kept in the image instead, and the threat model sends the agent to it.
+        /// </summary>
+        [Fact]
+        public void The_image_keeps_its_suite_outcome_where_the_threat_model_sends_the_agent()
+        {
+            var dockerfile = Dockerfile();
+
+            Assert.Contains("> /suite-outcome.txt", dockerfile, StringComparison.Ordinal);
+            Assert.DoesNotContain("|| echo", dockerfile, StringComparison.Ordinal);
+            Assert.Contains("`/suite-outcome.txt`", Section(ThreatModel(), "## How to exercise it"), StringComparison.Ordinal);
+        }
+
         [Fact]
         public void The_audit_runs_online_and_is_off_only_after_it()
         {

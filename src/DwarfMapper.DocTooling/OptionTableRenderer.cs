@@ -129,6 +129,9 @@ namespace DwarfMapper.DocTooling
             {
                 return Activator.CreateInstance(type);
             }
+            // An attribute whose parameterless constructor throws has no defaults to read, so every option's Default
+            // cell renders "—" rather than a value nobody could read. The table is still written, and the committed
+            // copy diffing against it is how anyone would notice.
             catch (TargetInvocationException)
             {
                 return null;

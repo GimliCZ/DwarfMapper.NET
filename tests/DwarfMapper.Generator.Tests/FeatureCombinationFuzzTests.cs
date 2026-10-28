@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using DwarfMapper.TestInfrastructure;
+using Xunit.Abstractions;
 
 namespace DwarfMapper.Generator.Tests
 {
@@ -21,6 +22,13 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class FeatureCombinationFuzzTests
     {
+        private readonly ITestOutputHelper _output;
+
+        public FeatureCombinationFuzzTests(ITestOutputHelper output)
+        {
+            _output = output;
+        }
+
         // Each feature contributes self-consistent source members, target members, method attributes, and any
         // helper methods. Member names are uniquely prefixed so features never collide when combined. The set
         // spans every member-level EMITTER: direct/rename, constant value, unflatten, deep path, conditional,
@@ -173,9 +181,11 @@ namespace DwarfMapper.Generator.Tests
         public void Full_power_set_compiles_on_every_emit_path()
         {
             // The COMPLETE proof: ~262k parallel compilations (full 2^16 power set × 3 construction emit-paths
-            // + update-into), ~6 min wall-clock. Gated behind DWARF_FUZZ_FULL=1 so routine `dotnet test` stays
-            // fast — the always-on pairwise [Theory] above covers the interaction surface where bugs live.
-            // CI/nightly/on-demand runs the full exhaustion. Verified green: 262,144 combinations, 0 failures.
+            // + update-into), ~10 min wall-clock (10.5 min on 6 cores / 12 threads, 2026-10-27). Gated behind
+            // DWARF_FUZZ_FULL=1 so routine `dotnet test` stays fast — the always-on pairwise [Theory] above covers
+            // the interaction surface where bugs live.
+            // Runs nightly in ci.yml's own fuzz-exhaustion job, and locally in housekeeping's stage 2/4. Until
+            // round 34 this said "CI/nightly runs the full exhaustion" while no CI job set the variable.
             if (Environment.GetEnvironmentVariable("DWARF_FUZZ_FULL") != "1")
             {
                 return;
@@ -184,6 +194,7 @@ namespace DwarfMapper.Generator.Tests
             var n = Features.Length;
             var emitModes = Modes.Where(m => m.FullSubsets && m.Name != "strict").Select(m => m.Name).ToArray();
             var failures = new ConcurrentBag<string>();
+            var compiled = 0;
             Parallel.For(0,
                 1 << n,
                 mask =>
@@ -198,9 +209,15 @@ namespace DwarfMapper.Generator.Tests
                     var arr = sub.ToArray();
                     foreach (var mode in emitModes) CompileInto(failures, "construct", mode, arr);
                     CompileInto(failures, "update", "none", arr);
+                    Interlocked.Add(ref compiled, emitModes.Length + 1);
                 });
             Assert.True(failures.IsEmpty,
                 failures.Count + " power-set combination(s) produced non-compiling code, e.g.: " + string.Join(" | ", failures.Take(8)));
+
+            // Complete, not merely green: every subset on every path. The line below is what ci.yml's
+            // fuzz-exhaustion job reads to tell this run from the early return above.
+            Assert.Equal((1 << n) * (emitModes.Length + 1), compiled);
+            _output.WriteLine($"power set: {1 << n} subsets x {emitModes.Length + 1} emit paths = {compiled} compilations, 0 failures");
         }
 
         private static void CompileInto(ConcurrentBag<string> failures, string kind, string mode, int[] sub)

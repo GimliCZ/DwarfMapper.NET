@@ -14,7 +14,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
     public class IsNullCapableSourceMemberUnitTests
     {
         private static readonly Compilation Corlib = CSharpCompilation.Create("IsNullCapableSourceMember",
-            references: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            references: [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         private static readonly Dictionary<string, ITypeSymbol> Members = new(StringComparer.Ordinal)
         {
