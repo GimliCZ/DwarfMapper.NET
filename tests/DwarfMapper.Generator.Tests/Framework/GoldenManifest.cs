@@ -9,7 +9,7 @@ namespace DwarfMapper.Generator.Tests.Framework
     /// <summary>
     ///     The manifest file: one sorted line per case, "&lt;id&gt; &lt;sha256&gt;". <see cref="Load" /> never
     ///     auto-creates it — a missing file simply comes back as an empty dictionary; it is the caller's job (see
-    ///     <c>GoldenCorpusTests.Generated_output_matches_the_golden_manifest</c>) to treat that as a failure with
+    ///     <c>GoldenCorpusTests.The_manifest_names_exactly_the_corpus_cases</c>) to treat that as a failure with
     ///     instructions, because a self-healing golden file lets CI silently bless whatever it produced. A malformed
     ///     line is never silently dropped either — it throws, so the manifest can never shrink unnoticed.
     /// </summary>
