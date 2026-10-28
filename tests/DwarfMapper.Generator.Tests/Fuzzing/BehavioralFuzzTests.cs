@@ -9,7 +9,7 @@ using DwarfMapper.TestInfrastructure;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing
 {
-    public class BehavioralFuzzTests
+    public static class BehavioralFuzzTests
     {
         public static IEnumerable<object[]> Seeds()
         {
@@ -20,9 +20,18 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             });
         }
 
-        [Theory]
-        [MemberData(nameof(Seeds))]
-        public void Identity_shape_mapping_is_value_preserving(int seed)
+        /// <summary>
+        ///     The seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): the deep tier's 600
+        ///     in one class took 21 s.
+        /// </summary>
+        private const int Parts = 2;
+
+        public static IEnumerable<object[]> Seeds(int part)
+        {
+            return TheoryParts.Of(Seeds(), part, Parts);
+        }
+
+        internal static void IdentityShapeIsValuePreserving(int seed)
         {
             // GenerateBehavioral excludes HashSet<T> so the positional IEnumerable
             // walk below does not produce false diffs from non-deterministic
@@ -270,5 +279,27 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
         // ── Cross-type structural diff ────────────────────────────────────────────
 
         private sealed record Diff(string Path, string? Expected, string? Actual);
+    }
+
+    // Round 34 (E12): BehavioralFuzzTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class BehavioralFuzzTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(BehavioralFuzzTests.Seeds), 0, MemberType = typeof(BehavioralFuzzTests))]
+        public void Identity_shape_mapping_is_value_preserving(int seed)
+        {
+            BehavioralFuzzTests.IdentityShapeIsValuePreserving(seed);
+        }
+    }
+
+    public sealed class BehavioralFuzzTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(BehavioralFuzzTests.Seeds), 1, MemberType = typeof(BehavioralFuzzTests))]
+        public void Identity_shape_mapping_is_value_preserving(int seed)
+        {
+            BehavioralFuzzTests.IdentityShapeIsValuePreserving(seed);
+        }
     }
 }

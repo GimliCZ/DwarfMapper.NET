@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
@@ -33,6 +34,9 @@ namespace DwarfMapper.Generator.Tests
 
         private static readonly Lazy<Ranking> Ranks = new(Ranking.Load);
 
+        /// <summary>A part class's suffix (<see cref="TheoryParts" />): "Part" and its number, ending the class name.</summary>
+        private static readonly Regex PartSuffix = new(@"Part\d+(?=\.[^.]+$|$)", RegexOptions.CultureInvariant);
+
         public IEnumerable<ITestCollection> OrderTestCollections(IEnumerable<ITestCollection> testCollections)
         {
             return InRankOrder(testCollections, c => ClassOf(c.DisplayName), Ranks.Value.Classes, c => c.UniqueID.ToString());
@@ -57,10 +61,30 @@ namespace DwarfMapper.Generator.Tests
             IReadOnlyDictionary<string, int> kills,
             Func<T, string> uniqueId)
         {
-            return items.OrderByDescending(i => kills.GetValueOrDefault(rankedName(i)))
+            return items.OrderByDescending(i => RankOf(rankedName(i), kills))
                         .ThenBy(uniqueId, StringComparer.Ordinal)
                         .ToList();
         }
+
+        /// <summary>
+        ///     A class's or method's kills. A part class takes its outer class's rank: round 34 (E12) deals a heavy theory's
+        ///     rows into classes named after it with a part number (<see cref="TheoryParts" />), and until the ranking is
+        ///     regenerated with their names, "Ns.OuterPart2" ranks as "Ns.Outer" and "Ns.OuterPart2.Method" as
+        ///     "Ns.Outer.Method" instead of falling to the end.
+        /// </summary>
+        internal static int RankOf(string name, IReadOnlyDictionary<string, int> kills)
+        {
+            if (kills.TryGetValue(name, out var exact))
+            {
+                return exact;
+            }
+
+            var outer = PartSuffix.Replace(name, "", 1);
+            return outer == name ? 0 : kills.GetValueOrDefault(outer);
+        }
+
+        /// <summary>The shipped ranking's class kills, for the test that holds every part class to its outer rank.</summary>
+        internal static IReadOnlyDictionary<string, int> ShippedClassKills => Ranks.Value.Classes;
 
         /// <summary>The class a per-class collection runs: xunit names it "Test collection for &lt;class&gt;".</summary>
         internal static string ClassOf(string collectionDisplayName)

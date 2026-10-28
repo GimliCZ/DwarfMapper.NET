@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Tests.Fuzzing;
-using Xunit.Abstractions;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation
 {
@@ -24,13 +23,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class CompileOnceTests
     {
-        private readonly ITestOutputHelper _output;
-
-        public CompileOnceTests(ITestOutputHelper output)
-        {
-            _output = output;
-        }
-
         private const string Source = """
                                       using DwarfMapper;
                                       namespace Demo;
@@ -68,14 +60,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             var row = FeatureCombinationFuzzTests.Combos().First();
             Assert.Equal("construct/none:rename", row[0]);
-            AssertOneCompilation(() => new FeatureCombinationFuzzTests(_output).Feature_combination_resolves_as_expected(
+            AssertOneCompilation(() => FeatureCombinationFuzzTests.ResolvesAsExpected(
                 (string)row[0], (string)row[1], (string)row[2], (int[])row[3]));
         }
 
         [Fact]
         public void A_compiles_always_row_compiles_its_source_once()
         {
-            AssertOneCompilation(() => new CompilesAlwaysFuzzTests().Generated_mapper_always_compiles(0));
+            AssertOneCompilation(() => CompilesAlwaysFuzzTests.MapperAlwaysCompiles(0));
             AssertOneCompilation(() => new CompilesAlwaysFuzzTests().Generated_advanced_mapper_always_compiles(0));
         }
 

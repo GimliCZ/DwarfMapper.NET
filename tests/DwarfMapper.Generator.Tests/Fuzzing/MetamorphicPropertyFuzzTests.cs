@@ -21,9 +21,18 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             });
         }
 
-        [Theory]
-        [MemberData(nameof(Seeds))]
-        public void Round_trip_is_idempotent(int seed)
+        /// <summary>
+        ///     The round-trip seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): in the
+        ///     deep tier the two theories took 21 s in one class, 13 s of it the round trips.
+        /// </summary>
+        private const int Parts = 2;
+
+        public static IEnumerable<object[]> Seeds(int part)
+        {
+            return TheoryParts.Of(Seeds(), part, Parts);
+        }
+
+        internal static void RoundTripIsIdempotent(int seed)
         {
             var src = SyntheticSchema.GenerateBehavioralForMode(seed, SyntheticSchema.EmitMode.RoundTrip);
             var (asm, errors) = GeneratorTestHarness.EmitAssembly(src);
@@ -92,6 +101,28 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var secondPass = CrossTypeComparer.Compare(source, dst);
             Assert.True(secondPass.Count == 0,
                 $"seed={seed} update-into was not idempotent (a second Update changed the destination):\n{CrossTypeComparer.Render(secondPass)}");
+        }
+    }
+
+    // Round 34 (E12): MetamorphicPropertyFuzzTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class MetamorphicPropertyFuzzTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(MetamorphicPropertyFuzzTests.Seeds), 0, MemberType = typeof(MetamorphicPropertyFuzzTests))]
+        public void Round_trip_is_idempotent(int seed)
+        {
+            MetamorphicPropertyFuzzTests.RoundTripIsIdempotent(seed);
+        }
+    }
+
+    public sealed class MetamorphicPropertyFuzzTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(MetamorphicPropertyFuzzTests.Seeds), 1, MemberType = typeof(MetamorphicPropertyFuzzTests))]
+        public void Round_trip_is_idempotent(int seed)
+        {
+            MetamorphicPropertyFuzzTests.RoundTripIsIdempotent(seed);
         }
     }
 }

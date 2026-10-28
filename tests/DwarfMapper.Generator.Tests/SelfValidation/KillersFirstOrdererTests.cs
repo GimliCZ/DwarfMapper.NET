@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Text.RegularExpressions;
+
 namespace DwarfMapper.Generator.Tests.SelfValidation
 {
     /// <summary>
@@ -10,6 +12,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     public class KillersFirstOrdererTests
     {
         private const string OrdererName = "DwarfMapper.Generator.Tests.KillersFirstOrderer";
+
+        private static readonly Regex PartNumber = new(@"Part\d+$", RegexOptions.CultureInvariant);
 
         [Theory]
         [InlineData("Xunit.TestCollectionOrdererAttribute")]
@@ -60,6 +64,45 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public void A_collection_is_ranked_by_the_class_it_runs()
         {
             Assert.Equal("Ns.Some.Tests", KillersFirstOrderer.ClassOf("Test collection for Ns.Some.Tests"));
+        }
+
+        [Fact]
+        public void A_part_class_ranks_as_the_class_it_was_split_from()
+        {
+            var kills = new Dictionary<string, int>(StringComparer.Ordinal) { ["Ns.Outer"] = 7, ["Ns.Outer.M"] = 3, ["Ns.OuterPart9"] = 9 };
+
+            Assert.Equal(7, KillersFirstOrderer.RankOf("Ns.OuterPart1", kills));
+            Assert.Equal(3, KillersFirstOrderer.RankOf("Ns.OuterPart1.M", kills));
+            Assert.Equal(9, KillersFirstOrderer.RankOf("Ns.OuterPart9", kills));
+            Assert.Equal(0, KillersFirstOrderer.RankOf("Ns.OtherPart1", kills));
+            Assert.Equal(0, KillersFirstOrderer.RankOf("Ns.Unranked", kills));
+        }
+
+        /// <summary>
+        ///     Round 34 (E12). A part class (<see cref="TheoryParts" />) with no rank of its own ranks as the class it was
+        ///     split from does in the shipped ranking, so splitting a theory does not send its rows to the end of a
+        ///     Stryker session.
+        /// </summary>
+        [Fact]
+        public void Every_part_class_keeps_the_rank_of_the_class_it_was_split_from()
+        {
+            var kills = KillersFirstOrderer.ShippedClassKills;
+            var assembly = typeof(KillersFirstOrdererTests).Assembly;
+            var parts = assembly.GetTypes()
+                .Select(t => (Part: t, Outer: assembly.GetType(PartNumber.Replace(t.FullName!, ""))))
+                .Where(x => x.Outer is not null && x.Outer != x.Part && !kills.ContainsKey(x.Part.FullName!))
+                .ToList();
+
+            // Non-vacuity: round 34 split seven theories, among them ranked classes.
+            Assert.True(parts.Count(x => kills.ContainsKey(x.Outer!.FullName!)) >= 5,
+                $"found {parts.Count} part classes, few of them split from a ranked class.");
+
+            var demoted = parts
+                .Where(x => KillersFirstOrderer.RankOf(x.Part.FullName!, kills) != kills.GetValueOrDefault(x.Outer!.FullName!))
+                .Select(x => x.Part.FullName)
+                .ToList();
+
+            Assert.True(demoted.Count == 0, "Part classes not ranked as the class they were split from: [" + string.Join(", ", demoted) + "].");
         }
     }
 }

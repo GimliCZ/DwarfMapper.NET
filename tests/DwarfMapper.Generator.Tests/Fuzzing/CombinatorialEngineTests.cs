@@ -38,9 +38,19 @@ public class CombinatorialEngineTests
 
         // ── Identity variant ────────────────────────────────────────────────────
 
-        [Theory]
-        [MemberData(nameof(DepthOneIdentityCells))]
-        public void Identity_cell_compiles_emits_and_maps(string key)
+        /// <summary>
+        ///     The identity cells are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): their 692
+        ///     rows in one class finished build-test's run 5 s after an even spread would have.
+        /// </summary>
+        private const int Parts = 4;
+
+        public static TheoryData<string> DepthOneIdentityCells(int part)
+        {
+            return CombinatorialSchema.Keys(TheoryParts.Of(
+                CombinatorialSchema.DepthOneMatrix().Where(c => c.Variant == MatrixVariant.Identity), part, Parts));
+        }
+
+        internal static void IdentityCell(string key)
         {
             var cell = CombinatorialSchema.Cell(key);
 
@@ -408,6 +418,48 @@ public class ExtendedBehavioralFuzzTests
                 GraphOracleComparer.RenderValueDiff(diffs) +
                 "\n--- source ---\n" +
                 src);
+        }
+    }
+
+    // Round 34 (E12): CombinatorialEngineTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class CombinatorialEngineTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 0, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
+        }
+    }
+
+    public sealed class CombinatorialEngineTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 1, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
+        }
+    }
+
+    public sealed class CombinatorialEngineTestsPart2
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 2, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
+        }
+    }
+
+    public sealed class CombinatorialEngineTestsPart3
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 3, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
         }
     }
 }

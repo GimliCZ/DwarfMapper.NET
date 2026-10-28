@@ -150,9 +150,18 @@ namespace DwarfMapper.Generator.Tests
             }
         }
 
-        [Theory]
-        [MemberData(nameof(Combos))]
-        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        /// <summary>
+        ///     The rows are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): the deep tier's
+        ///     3,565 in one class ran alone for the tier's last 14 s.
+        /// </summary>
+        private const int Parts = 4;
+
+        public static IEnumerable<object[]> Combos(int part)
+        {
+            return TheoryParts.Of(Combos(), part, Parts);
+        }
+
+        internal static void ResolvesAsExpected(string label, string kind, string refMode, int[] featureIdx)
         {
             _ = label;
             var src = BuildSource(kind, refMode, featureIdx);
@@ -285,6 +294,48 @@ namespace DwarfMapper.Generator.Tests
             sb.Append(helpers);
             sb.Append("}\n");
             return sb.ToString();
+        }
+    }
+
+    // Round 34 (E12): FeatureCombinationFuzzTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class FeatureCombinationFuzzTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 0, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
+        }
+    }
+
+    public sealed class FeatureCombinationFuzzTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 1, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
+        }
+    }
+
+    public sealed class FeatureCombinationFuzzTestsPart2
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 2, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
+        }
+    }
+
+    public sealed class FeatureCombinationFuzzTestsPart3
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 3, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
         }
     }
 }
