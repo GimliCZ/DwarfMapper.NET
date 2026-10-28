@@ -117,10 +117,29 @@ is still open under its own name.
     - The owner, 2026-10-28: "keep it local, push once at the end". The clean before/after (the whole suite, the
       surface matrix, the deep tier, the power set, coverage, and the container mutation legs) runs after the owner's
       game, which skews every timing taken beside it.
+  - **The long legs, measured where their time goes** (the owner, 2026-10-28: "that is still way too long. The
+    longest tests run over an hour and half"; "merge short session tests and surface tests and swap them into full
+    scale ones"; "the overall testing should be in matter of single minutes"). E3 on the generator leg, container,
+    concurrency 2: 51:32 → 35:41 (-31 %), mutation testing 43:00 → 27:36, 0 of 867 statuses changed.
+    - Generator.Tests compiles the same input twice or more in 51 % of its compilations (surface matrix 84 %, deep
+      tier 56 %), mostly inside one test. Ranked against the mutation reports, the costliest tests are the
+      combinatorial cells' rows, the pairwise feature rows, the warning rows, and two facts that looped the generator
+      over all 1,021 golden cases.
+    - **E5 done — `c81e014`.** Those two facts are one row per golden case running the generator once for both
+      checks; `CorpusWideSweepScanTests` holds it (red on `3204dc6`, three sweeps). Coverage unchanged line for line.
+      No measurable gain on the leg (37:26 against 35:41, within this machine's drift): 46 mutants reach nearly every
+      row. Kept for half the golden generator runs and per-case failures.
+    - **E4 — killers first.** `KillersFirstOrderer` runs the test classes and methods with the most kills in the last
+      mutation reports first (`MutationKillRanking.tsv`, written by `scripts/kill-ranking.py`), so a killed mutant's
+      session ends at an early killer. On top of E5: mutation testing 29:11 → 20:25 (-30 %), the leg 37:26 → 28:25,
+      0 of 867 statuses changed. `KillersFirstOrdererTests` holds the wiring, the file and the order.
+    - Measured and dropped: Stryker on a Release build (-1 to -5 % on its sessions; the cost is Roslyn's, which ships
+      optimised).
   - **Concurrency, measured with the owner's approval** (the guard's 2026-08-26 basis predates A1 and assumed xunit
     parallelises inside Stryker's sessions, which its run settings forbid): concurrency 4 is 23 % faster on the
     testing leg and 19 % on the generator leg (27:39), with identical statuses and no extra timeouts; the memory
-    floor drops to 4.75 GB. To be measured again with E3 in place before CI gets it (E2).
+    floor drops to 4.75 GB. **E2 not applied:** measured again on top of E3, E5 and E4 it bought 3 % (27:38 against
+    28:25, statuses identical) while the memory floor fell to 3.3 GB; two short sessions already keep four CPUs busy.
   - **Not a lever yet:** Stryker's MTP runner keeps hosts warm but cannot yet run only a mutant's covering tests.
     The runtime leg's static mutants are module-initializer registration, the product's own start-up.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.

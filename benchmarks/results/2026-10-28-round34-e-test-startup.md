@@ -234,3 +234,80 @@ does differ: Generator.Tests' own hit on `GraphOracleComparer.cs:884` (a sort co
 element). Over three runs per arm it was hit 4, 4 and 0 times with E3 and 0, 0 and 4 with the defaults: a coin toss
 in both. String hashing is randomised per process, so a set's enumeration order, and with it the comparisons a sort
 makes, changes from run to run. Testing.Tests covers the line in every run.
+
+### E3 on the generator leg (container, 2026-10-28)
+
+The rig above, the CI job's own Stryker command, concurrency 2, the commit before E3 and E3 itself, one after the
+other on the same day:
+
+| Generator leg | Before E3 (`95c7433`) | E3 (`35f1a20`) |
+|---|---|---|
+| Stryker time | 51:32 | 35:41 (-31 %) |
+| mutation testing (after the initial run and coverage capture) | 43:00 | 27:36 (-36 %) |
+| initial run and coverage capture | 7:09 | 6:41 |
+| score | 97.11 % (403 killed / 12 survived) | 97.11 % (403 / 12) |
+| mutants whose status differs | | 0 of 867 |
+| lowest available memory | 7,301 MB | 6,885 MB |
+
+Early in mutation testing E3's sessions ran more than twice as fast: 61 Generator.Tests sessions in the first seven
+minutes against 27. The same commit ran 34:01 on the evening of 2026-10-27, against 51:32 on this morning's machine;
+that run's statuses match this morning's mutant for mutant, so the setup repeats and only the machine's speed moved.
+Arms are compared within one session for that reason.
+
+## Where a mutation session's time goes, and the two changes it led to (E5, E4)
+
+**Repeated compilations.** A temporary probe in `GeneratorTestHarness.BuildCompilation` hashed every compiled input
+(source, nullable context, unsafe) and the test class that compiled it:
+
+| Generator.Tests | Compilations | Distinct inputs | Repeats |
+|---|---|---|---|
+| build-test's run | 14,332 | 6,992 | 7,340 (51 %) |
+| surface matrix | 5,868 | 942 | 4,926 (84 %) |
+| deep tier | 36,605 | 16,153 | 20,452 (56 %) |
+
+Most repeats are inside one test: `GeneratorAssert`'s helpers run the generator twice per call (once for its
+diagnostics, once with both generators for the compile errors), a combinatorial cell's row runs it for the
+diagnostics and again to emit, and `SurfaceProbe` and `OptionProbe` recompute their matrices in several tests. Some
+repeats are the point: the determinism tests compile twice to compare.
+
+**The tests that cost the legs most.** Each covering test's duration (a serial Debug run, Stryker's own shape) times
+the number of tested mutants it covers, in the CI reports of run 40637130998, summed per class. This is an upper
+bound: Stryker stops a killed mutant's session at the first failure.
+
+| Class | Generator leg | Pipeline leg |
+|---|---|---|
+| `CombinatorialEngineTests` | 11.0 min | 4.6 min |
+| `FeatureCombinationFuzzTests` | 6.5 | 6.2 |
+| `GeneratedCodeIsWarningFreeTests` | 5.2 | 2.1 |
+| `EmittedCodePolicyScanTests` (one fact over 1,021 cases) | 3.9 | 4.4 |
+| `GoldenCorpusTests` (one fact over the same cases) | 3.8 | 4.3 |
+| `GeneratedDocsAreCurrentTests` | 2.1 | 1.3 |
+
+**E5 (`c81e014`): one row per golden case.** The golden manifest check and the banned-API scan were facts that each
+ran the generator over all 1,021 cases. They are one row per case now, running the generator once for both; the
+corpus-wide checks that run no generator stay facts. `CorpusWideSweepScanTests` holds the project to it (red on
+`3204dc6` with three sweeps named). Coverage unchanged line for line. On the generator leg it gained nothing measurable:
+46 of the 153 mutants that reach golden rows reach nearly all 1,021, and for them a thousand small rows cost about what
+the two loops did. Kept for what it does buy: half the golden generator runs, and a failure named by its case.
+
+**E4: the tests that kill the most run first.** Stryker stops a session at its first failing test, and xunit's
+default order is arbitrary, so a mutant covered by thousands of tests often ran most of them before its killer; the
+40 Generator.Tests sessions over 20 s took 54 % of the session time. `KillersFirstOrderer` orders the collections, and
+the tests within each, by the kills `MutationKillRanking.tsv` records for them (`scripts/kill-ranking.py` writes it from
+the mutation reports). The order changes no verdict.
+
+| Generator leg, container, concurrency 2, 2026-10-28 | Stryker time | Mutation testing | Score | Statuses changed |
+|---|---|---|---|---|
+| E3 (`35f1a20`) | 35:41 | 27:36 | 97.11 % | |
+| E3 + E5 (`c81e014`) | 37:26 | 29:11 | 97.11 % | 0 of 867 |
+| E3 + E5 + E4 | 28:25 | 20:25 | 97.11 % | 0 of 867 |
+| E3 + E5 + E4, concurrency 4 | 27:38 | 19:18 | 97.11 % | 0 of 867 |
+| before E3 (`95c7433`), for scale | 51:32 | 43:00 | 97.11 % | |
+
+Run-to-run drift on this machine is large (the same commit ran 34:01 one evening and 51:32 the next morning), so a
+difference of a few percent between arms is not an effect; E4's -30 % on the mutation phase is.
+
+**Concurrency 4 no longer pays (E2 not applied).** Before E3 and E4 it bought 19-23 %. On top of them it bought 3 %
+of the leg (-5 % of mutation testing), inside this machine's drift, while the lowest available memory fell from
+5,127 MB to 3,339 MB. A session is short now and runs its own tier-1 JIT on background threads, so two sessions already
+keep four CPUs busy. CI keeps Stryker's default (half the logical processors).
