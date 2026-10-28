@@ -1115,8 +1115,10 @@ jobs:
     # with Category!=SurfaceMatrix (the matrix adds ~25 s, so ~81 s for the unfiltered run this leg does).
     # A ~4-core hosted runner is ~3x on the build/test parts and pays a cold NuGet restore on top:
     # reckon ~1 min SDK setup + ~2 min restore + ~3 min build + ~4 min test ≈ 10 min, which is also the
-    # plan's own budget figure. Doubled -> 20. Replace with the first real per-OS wall-clocks.
-    timeout-minutes: 20
+    # plan's own budget figure. Doubled -> 20. Round 34 (E14) made every run the full population: on four
+    # CPUs in the sdk:10.0.101 container the suite went 57 s -> 2:01, about double, so reckon ~8 min of test and
+    # ~14 min in all. Doubled -> 30. Replace with the first real per-OS wall-clocks.
+    timeout-minutes: 30
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -1196,8 +1198,9 @@ jobs:
     # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
     # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
     # UNPINNED restore. The plan budgets ~5 min; reckon ~12 min on a hosted runner and take 20 so the leg
-    # cannot die of its own download. Replace with the first real wall-clock.
-    timeout-minutes: 20
+    # cannot die of its own download. Round 34 (E14) doubled the suite (57 s -> 2:01 on four CPUs, every run the
+    # full population), so ~16 min; take 30. Replace with the first real wall-clock.
+    timeout-minutes: 30
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
