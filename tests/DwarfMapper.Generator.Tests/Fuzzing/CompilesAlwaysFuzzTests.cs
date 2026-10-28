@@ -34,9 +34,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
         public void Generated_mapper_always_compiles(int seed)
         {
             var src = SyntheticSchema.Generate(seed);
-            var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+            var (diagnostics, generated, compileErrors) = GeneratorTestHarness.RunWithCompilationErrors(src);
             var dwarfErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-            var compileErrors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
             Assert.True(
                 dwarfErrors.Count == 0 && compileErrors.Length == 0,
                 $"seed={seed} produced errors.\n" +
@@ -51,9 +50,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
         public void Generated_advanced_mapper_always_compiles(int seed)
         {
             var src = SyntheticSchema.GenerateWithAdvancedFeatures(seed);
-            var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+            var (diagnostics, generated, compileErrors) = GeneratorTestHarness.RunWithCompilationErrors(src);
             var dwarfErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-            var compileErrors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
             Assert.True(
                 dwarfErrors.Count == 0 && compileErrors.Length == 0,
                 $"seed={seed} (advanced) produced errors.\n" +

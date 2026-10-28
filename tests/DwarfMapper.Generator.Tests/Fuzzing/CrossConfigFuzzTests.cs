@@ -41,10 +41,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var attrArgs = a + ", " + b;
             var src = SyntheticSchema.GenerateBehavioralWithConfig(seed, attrArgs, SyntheticSchema.EmitMode.None);
 
-            var (diags, _) = GeneratorTestHarness.Run(src);
+            var (diags, _, asm, errors) = GeneratorTestHarness.RunAndEmit(src);
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-
-            var (asm, errors) = GeneratorTestHarness.EmitAssembly(src);
             Assert.True(asm is not null,
                 $"config pair [{attrArgs}] failed to emit: {string.Join(", ", errors.Select(e => e.Id))}\n{src}");
 
@@ -85,10 +83,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             // acyclic input (the mode only changes cycle handling, which acyclic data never exercises).
             var src = SyntheticSchema.GenerateBehavioralWithConfig(seed, cfg, SyntheticSchema.EmitMode.UpdateInto);
 
-            var (diags, _) = GeneratorTestHarness.Run(src);
+            var (diags, _, asm, errors) = GeneratorTestHarness.RunAndEmit(src);
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-
-            var (asm, errors) = GeneratorTestHarness.EmitAssembly(src);
             Assert.True(asm is not null,
                 $"seed={seed} cfg=[{cfg}] failed to emit: {string.Join(", ", errors.Select(e => e.Id))}\n{src}");
 

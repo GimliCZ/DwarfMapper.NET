@@ -156,19 +156,20 @@ namespace DwarfMapper.Generator.Tests
         {
             _ = label;
             var src = BuildSource(kind, refMode, featureIdx);
-            var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
             var expected = ExpectedError(refMode, featureIdx);
             if (expected is not null)
             {
                 // A "should error" combination — confirm the exact diagnostic, cited.
+                var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
                 Assert.True(diags.Any(d => d.Id == expected),
                     $"Expected {expected} for '{label}', got: " + string.Join(", ", diags.Select(d => d.Id).Distinct()));
             }
             else
             {
-                // A valid combination — must compile clean with no error diagnostic.
-                Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-                GeneratorAssert.EmitsCompilableCode(src);
+                // A valid combination — must compile clean with no error diagnostic. One generator run answers both
+                // (round 34 E11); this ran Run for the diagnostics and EmitsCompilableCode, a second run, for the
+                // compile errors.
+                GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
             }
         }
 
