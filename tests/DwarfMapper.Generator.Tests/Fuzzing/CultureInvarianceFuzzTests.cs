@@ -48,19 +48,19 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             }
         }
 
-        // Fast 8 / deep 80 — see DeepPopulation.CultureBehavioralSeeds.
+        // 80 seeds — see TestPopulation.CultureBehavioralSeeds.
         public static IEnumerable<object[]> BehavioralSeeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.CultureBehavioralSeeds)).Select(i => new object[]
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.CultureBehavioralSeeds)).Select(i => new object[]
             {
                 i
             });
         }
 
-        // Fast 4 / deep 40 — see DeepPopulation.CultureAdvancedSeeds.
+        // 40 seeds — see TestPopulation.CultureAdvancedSeeds.
         public static IEnumerable<object[]> AdvancedSeeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.CultureAdvancedSeeds)).Select(i => new object[]
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.CultureAdvancedSeeds)).Select(i => new object[]
             {
                 i
             });

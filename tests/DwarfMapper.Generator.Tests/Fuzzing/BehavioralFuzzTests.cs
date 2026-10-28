@@ -13,16 +13,16 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
     {
         public static IEnumerable<object[]> Seeds()
         {
-            // Fast 60 / deep 600 — see DeepPopulation.BehavioralSeeds.
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.BehavioralSeeds)).Select(i => new object[]
+            // 600 seeds — see TestPopulation.BehavioralSeeds.
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.BehavioralSeeds)).Select(i => new object[]
             {
                 i
             });
         }
 
         /// <summary>
-        ///     The seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): the deep tier's 600
-        ///     in one class took 21 s.
+        ///     The seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): the 600 in one
+        ///     class took 21 s.
         /// </summary>
         private const int Parts = 2;
 

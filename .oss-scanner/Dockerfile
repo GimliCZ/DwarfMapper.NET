@@ -46,7 +46,7 @@ ENV DWARFMAPPER_OFFLINE_IMAGE=true
 # But the agent never reads the build log, so the outcome stays in the image, at /suite-outcome.txt: GREEN, or RED and
 # the tests that were already failing. threat_model.md sends the agent there first. Until round 34 a red tree said so
 # only in an echo here.
-RUN dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" \
+RUN dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" \
         --blame-hang --blame-hang-timeout 5m > /tmp/suite.log 2>&1; \
     code=$?; cat /tmp/suite.log; \
     { if [ "$code" -eq 0 ]; then echo "GREEN: the push-time suite passed when this image was built."; \

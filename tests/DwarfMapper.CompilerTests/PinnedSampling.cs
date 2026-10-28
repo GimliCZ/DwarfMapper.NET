@@ -16,7 +16,7 @@ namespace DwarfMapper.CompilerTests
     ///         <c>seed</c> argument pins <i>the first iteration only</i> — measured 2026-08-22 on CsCheck
     ///         4.7.0: with <c>seed</c> fixed and <c>threads: 1</c>, iteration 1 is constant and iterations
     ///         2..n come from a randomly seeded thread PCG, so the executed case set differs on every run.
-    ///         That makes a fast-tier <c>[Fact]</c> a gate on a nondeterministic oracle, which invariant
+    ///         That makes a <c>[Fact]</c> a gate on a nondeterministic oracle, which invariant
     ///         <b>R4</b> forbids outright (<c>RatchetInvariantScanTests</c>), and it is how MR-3 shipped able
     ///         to redden at random — the I11 finding.
     ///     </para>
@@ -38,13 +38,12 @@ namespace DwarfMapper.CompilerTests
     ///         <see cref="PinnedCorpus" /> row, which survives generator edits that would rot any seed string.
     ///     </para>
     ///     <para>
-    ///         <b>Exploration still belongs to the deep tier</b>, and it stays deterministic there: widen by
-    ///         raising the population's deep count (more pinned streams), not by re-rolling the same count.
-    ///         A deep red is then as replayable as a fast one.
+    ///         <b>Exploration stays deterministic</b>: widen by raising the population's count (more pinned
+    ///         streams), not by re-rolling the same count, so a red is always replayable.
     ///     </para>
     ///     <para>
     ///         H7 termination: the case loop is <c>Parallel.For</c> over <c>[0, count)</c> with
-    ///         <c>count</c> read once from the deep-tier catalog; every inner <c>Sample</c> runs exactly one
+    ///         <c>count</c> read once from <see cref="TestPopulations" />; every inner <c>Sample</c> runs exactly one
     ///         iteration on one thread.
     ///     </para>
     /// </summary>
@@ -53,7 +52,7 @@ namespace DwarfMapper.CompilerTests
         /// <summary>
         ///     The pinned PCG seed every case stream is drawn at. An arbitrary constant — its VALUE carries no
         ///     meaning, its STABILITY is the whole point: changing it silently swaps the entire case set of
-        ///     every population in this project, so treat it the way the deep-tier catalog treats a fast count.
+        ///     every population in this project, so treat it the way <see cref="TestPopulations" /> treats a count.
         ///     (Distinct streams rather than sequential seeds: sequential seeds measurably collide — 62/64
         ///     distinct first draws at 2026-08-22 against 64/64 for distinct streams.)
         /// </summary>
@@ -72,21 +71,21 @@ namespace DwarfMapper.CompilerTests
         ///     ratchet on the generator rather than on the product — but two runs of the same tree must print
         ///     the same value, which is what makes determinism checkable from a log.
         /// </summary>
-        /// <param name="population">The deep-tier catalog entry that owns the case count.</param>
+        /// <param name="population">The <see cref="TestPopulations" /> entry that owns the case count.</param>
         /// <param name="gen">The generator; case <c>k</c> is its single draw from stream <c>k</c>.</param>
         /// <param name="describe">Stable one-line description of a case, for the digest.</param>
         /// <param name="body">The relation/oracle to run per case. Must be thread-safe.</param>
         /// <param name="output">xunit sink for the digest line.</param>
         /// <param name="label">Name of the relation, for the digest line.</param>
         public static void Run<T>(
-            DeepPopulation population,
+            TestPopulation population,
             Gen<T> gen,
             Func<T, string> describe,
             Action<T> body,
             ITestOutputHelper output,
             string label)
         {
-            var count = DeepTier.Count(population);
+            var count = TestPopulations.Count(population);
             var descriptions = new string?[count];
             AggregateException? failures = null;
 

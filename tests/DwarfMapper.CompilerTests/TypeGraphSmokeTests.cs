@@ -35,9 +35,9 @@ namespace DwarfMapper.CompilerTests
             var accepted = 0;
             var refused = 0;
 
-            // Case count from the deep-tier catalog (fast = smoke, DWARF_DEEP=1 = the deep multiplier); the
+            // Case count from TestPopulations (TestPopulation.CompilerGraphSmokeSeeds); the
             // loop is PinnedSampling's Parallel.For over [0, count) (H7: the variant is that index).
-            PinnedSampling.Run(DeepPopulation.CompilerGraphSmokeSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerGraphSmokeSeeds,
                 TypeGraphGen.MirroredPair(),
                 graph => graph.Describe(),
                 graph =>
@@ -91,7 +91,7 @@ namespace DwarfMapper.CompilerTests
         ///         <b>Its own population, not a widened one.</b> See <c>TypeGraphRenderer.Render</c>'s
         ///         <c>withProjection</c> remarks: the projection refuses a strictly wider grammar than
         ///         <c>Map</c>, and an error-severity refusal makes the whole run <c>RefusedLoudly</c>, so
-        ///         folding <c>Project</c> into <see cref="DeepPopulation.CompilerGraphSmokeSeeds" /> would have
+        ///         folding <c>Project</c> into <see cref="TestPopulation.CompilerGraphSmokeSeeds" /> would have
         ///         flipped accepted cases to refused and silently stopped compile-checking them.
         ///     </para>
         ///     <para>
@@ -109,7 +109,7 @@ namespace DwarfMapper.CompilerTests
             var accepted = 0;
             var refused = 0;
 
-            PinnedSampling.Run(DeepPopulation.CompilerProjectionSmokeSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerProjectionSmokeSeeds,
                 TypeGraphGen.MirroredPair(),
                 graph => graph.Describe(),
                 graph =>

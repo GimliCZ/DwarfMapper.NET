@@ -369,9 +369,9 @@ public class ExtendedBehavioralFuzzTests
     {
         public static IEnumerable<object[]> Seeds()
         {
-            // Fast 40 (seeds 200-239, no overlap with existing) / deep 400 (seeds 200-599) —
-            // see DeepPopulation.ExtendedBehavioralSeeds.
-            return Enumerable.Range(200, DeepTier.Count(DeepPopulation.ExtendedBehavioralSeeds))
+            // 400 seeds, 200-599, no overlap with the other fuzz families' — see
+            // TestPopulation.ExtendedBehavioralSeeds.
+            return Enumerable.Range(200, TestPopulations.Count(TestPopulation.ExtendedBehavioralSeeds))
                 .Select(i => new object[]
                 {
                     i

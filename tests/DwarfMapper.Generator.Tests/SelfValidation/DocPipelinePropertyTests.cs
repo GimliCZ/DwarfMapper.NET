@@ -21,10 +21,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class DocPipelinePropertyTests
     {
-        // CsCheck iteration counts: fast 500/200 (the values these properties always ran with), deep ×10 —
-        // see DeepPopulation.DocPipelineIters / DocPipelineScanIters.
-        private static readonly int Iters = DeepTier.Count(DeepPopulation.DocPipelineIters);
-        private static readonly int ScanIters = DeepTier.Count(DeepPopulation.DocPipelineScanIters);
+        // CsCheck iteration counts: 5,000 and 2,000 — see TestPopulation.DocPipelineIters / DocPipelineScanIters.
+        private static readonly int Iters = TestPopulations.Count(TestPopulation.DocPipelineIters);
+        private static readonly int ScanIters = TestPopulations.Count(TestPopulation.DocPipelineScanIters);
 
         /// <summary>
         ///     Deliberately adversarial: the lines a naive implementation mishandles. Ordinary code lines would

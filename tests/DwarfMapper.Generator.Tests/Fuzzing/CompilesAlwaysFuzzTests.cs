@@ -8,21 +8,20 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 {
     public class CompilesAlwaysFuzzTests
     {
-        // Fast 200 / deep 1000 (×5 — both theories dial together, serial in one class) —
-        // see DeepPopulation.CompilesAlwaysSeeds.
+        // 1,000 seeds — see TestPopulation.CompilesAlwaysSeeds.
         public static IEnumerable<object[]> Seeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.CompilesAlwaysSeeds))
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.CompilesAlwaysSeeds))
                 .Select(i => new object[]
                 {
                     i
                 });
         }
 
-        // Fast 50 / deep 250 — see DeepPopulation.CompilesAlwaysAdvancedSeeds.
+        // 250 seeds — see TestPopulation.CompilesAlwaysAdvancedSeeds.
         public static IEnumerable<object[]> AdvancedSeeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.CompilesAlwaysAdvancedSeeds))
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.CompilesAlwaysAdvancedSeeds))
                 .Select(i => new object[]
                 {
                     i
@@ -30,8 +29,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
         }
 
         /// <summary>
-        ///     The seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): the deep tier's 1,000
-        ///     and the advanced theory's 250 shared one class.
+        ///     The seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): the 1,000 and the
+        ///     advanced theory's 250 shared one class.
         /// </summary>
         private const int Parts = 2;
 

@@ -7,8 +7,8 @@ namespace DwarfMapper.CompilerTests
 {
     /// <summary>
     ///     Runs every <see cref="PinnedCorpus" /> row through the same must-compile-or-refuse invariant the
-    ///     smoke sampling enforces — a pinned row is a REGRESSION pin, so it runs on every fast-tier pass, not
-    ///     behind the deep knob.
+    ///     smoke sampling enforces — a pinned row is a REGRESSION pin, so it runs on every pass whatever the
+    ///     sampled populations' sizes.
     /// </summary>
     public class PinnedCorpusTests
     {

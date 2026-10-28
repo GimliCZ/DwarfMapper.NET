@@ -30,8 +30,8 @@
         <Using Include="Xunit"/>
     </ItemGroup>
     <ItemGroup>
-        <!-- The DWARF_DEEP tier knob is ONE shared source of truth, linked (not copied) into every test
-             project that owns a dialable population; DeepTierSelfTests pins its catalog. -->
-        <Compile Include="..\Shared\DeepTier.cs" Link="Shared\DeepTier.cs"/>
+        <!-- The sized test populations are ONE shared source of truth, linked (not copied) into every test
+             project that owns one; TestPopulationsSelfTests pins every size. -->
+        <Compile Include="..\Shared\TestPopulations.cs" Link="Shared\TestPopulations.cs"/>
     </ItemGroup>
 </Project>

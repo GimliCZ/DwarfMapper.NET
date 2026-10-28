@@ -117,10 +117,10 @@ namespace DwarfMapper.Generator.Tests
                     i, j
                 }); // pairs
 
-            // Deep tier only (fast 2 / deep 3 — see DeepPopulation.FeatureCombinationSubsetOrder): the next
-            // complete structural tier, all C(16,3) = 560 triples, on every emit-path consumer of the full
-            // subsets. Fast keeps exactly singles+pairs+all — the surface where the deferred-member bugs hid.
-            if (DeepTier.Count(DeepPopulation.FeatureCombinationSubsetOrder) >= 3)
+            // Order 3 (see TestPopulation.FeatureCombinationSubsetOrder): all C(16,3) = 560 triples, on every
+            // emit-path consumer of the full subsets, on top of the singles and pairs where the deferred-member
+            // bugs hid. Every subset is Full_power_set_compiles_on_every_emit_path, in a job of its own.
+            if (TestPopulations.Count(TestPopulation.FeatureCombinationSubsetOrder) >= 3)
             {
                 for (var i = 0; i < n; i++)
                 for (var j = i + 1; j < n; j++)
@@ -151,8 +151,8 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
-        ///     The rows are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): the deep tier's
-        ///     3,565 in one class ran alone for the tier's last 14 s.
+        ///     The rows are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): the 3,565 in one class
+        ///     ran alone for the last 14 s of the run they were in.
         /// </summary>
         private const int Parts = 4;
 

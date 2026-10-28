@@ -57,7 +57,7 @@ namespace DwarfMapper.CompilerTests
             var executed = 0;
             var refused = 0;
 
-            PinnedSampling.Run(DeepPopulation.CompilerMrMemberOrderSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerMrMemberOrderSeeds,
                 TypeGraphGen.MirroredPair().Select(Gen.Int[0, int.MaxValue - 1]),
                 sample => sample.Item1.Describe() + "|" + sample.Item2.ToString(CultureInfo.InvariantCulture),
                 sample =>
@@ -104,7 +104,7 @@ namespace DwarfMapper.CompilerTests
             var executed = 0;
             var refused = 0;
 
-            PinnedSampling.Run(DeepPopulation.CompilerMrUnmappedMemberSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerMrUnmappedMemberSeeds,
                 TypeGraphGen.MirroredPair().Select(Gen.Int[0, int.MaxValue - 1]),
                 sample => sample.Item1.Describe() + "|" + sample.Item2.ToString(CultureInfo.InvariantCulture),
                 sample =>
@@ -229,7 +229,7 @@ namespace DwarfMapper.CompilerTests
             var executed = 0;
             var refused = 0;
 
-            PinnedSampling.Run(DeepPopulation.CompilerMrRekindSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerMrRekindSeeds,
                 TypeGraphGen.MirroredPair().Select(Gen.Int[0, int.MaxValue - 1]),
                 sample => sample.Item1.Describe() + "|" + sample.Item2.ToString(CultureInfo.InvariantCulture),
                 sample =>

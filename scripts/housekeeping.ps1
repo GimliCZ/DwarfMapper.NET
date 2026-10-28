@@ -9,11 +9,12 @@
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
 #   pwsh scripts/housekeeping.ps1 -ILVerify       # ILVerify the shipped runtime + a generated-consumer assembly
-#   pwsh scripts/housekeeping.ps1 -Deep           # DWARF_DEEP=1 for stage 1: multiplied fuzz/property/torture counts
 #   pwsh scripts/housekeeping.ps1 -BenchSmoke     # benchmark smoke (ShortRun) + allocation exact-pin gate (~7 min)
-#   pwsh scripts/housekeeping.ps1 -Nightly        # EXACTLY what CI's nightly deep-test job runs: -Deep -Coverage
-#                                                 # -ILVerify -BenchSmoke, exhaustion and AOT skipped. Mutation stays
-#                                                 # behind -Mutation (its own cost class; CI runs those legs as own jobs).
+#   pwsh scripts/housekeeping.ps1 -Nightly        # EXACTLY what CI's nightly deep-test job runs: -Coverage -ILVerify
+#                                                 # -BenchSmoke and the NoWarn audit, exhaustion and AOT skipped. Mutation
+#                                                 # stays behind -Mutation (its own cost class; CI runs those legs as own jobs).
+#   Stage 1 always runs every test population at its one size (tests/Shared/TestPopulations.cs); since round 34 there
+#   is no fast or deep tier to choose.
 #                                                 # Needs: dotnet-reportgenerator-globaltool + dotnet-ilverify.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
@@ -25,7 +26,6 @@ param(
     [switch]$Heal,
     [switch]$Coverage,
     [switch]$ILVerify,
-    [switch]$Deep,
     [switch]$BenchSmoke,
     [switch]$Nightly
 )
@@ -65,7 +65,7 @@ if ($Nightly) {
     # the two pin-verification runs, 12-core machine) is proportionate to the deep tier now that the
     # 44-minute ceiling is raised - it does not dwarf the mutation legs (~37 min aggregate) the nightly
     # already carries on sibling jobs.
-    $Deep = $true; $Coverage = $true; $ILVerify = $true; $BenchSmoke = $true
+    $Coverage = $true; $ILVerify = $true; $BenchSmoke = $true
     $SkipExhaustion = $true; $SkipAot = $true
 }
 
@@ -381,19 +381,13 @@ try {
     }
 
     Write-Host "== 1/4 Full self-test suite ==" -ForegroundColor Cyan
+    # One population per test, in every run (round 34): tests/Shared/TestPopulations.cs holds each size, and nothing
+    # here or in CI chooses another. Server GC for this run (round 34, ServerGcScopeScanTests): its compilations
+    # allocate about 30 GB, and workstation GC stops every test thread while one collects. Generator.Tests at this
+    # population went 53.3 -> 44.9 s on 12 logical CPUs and 80.0 -> 68.2 s on 4, a hosted runner's shape. Set for
+    # this run only: stage 1c times code and stage 4 runs Stryker, whose serial sessions are slower under it.
     $gcServerBefore = $env:DOTNET_gcServer
-    if ($Deep) {
-        # One knob, one reader: tests/Shared/DeepTier.cs. Multiplies every registered fuzz/property/torture
-        # population per its catalog entry; the fast tier (unset) is byte-for-byte the routine counts.
-        $env:DWARF_DEEP = '1'
-        # Server GC for the deep tier (round 34, ServerGcScopeScanTests): its compilations allocate about 30 GB, and
-        # workstation GC stops every test thread while one collects. Generator.Tests' deep tier went 53.3 -> 44.9 s on
-        # 12 logical CPUs and 80.0 -> 68.2 s on 4, a hosted runner's shape; the fast tier showed no gain on 4, so it
-        # stays off there. Set for this run only: stage 1c times code and stage 4 runs Stryker, whose serial sessions
-        # are slower under it.
-        $env:DOTNET_gcServer = '1'
-        Write-Host "   (deep tier: DWARF_DEEP=1, server GC)" -ForegroundColor DarkGray
-    }
+    $env:DOTNET_gcServer = '1'
     $covDir = Join-Path $root 'TestResults/coverage'
     # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
     # testhost is dumped and killed with the offending test NAMED, instead of idling until someone kills
@@ -416,7 +410,7 @@ try {
     # not out of this one, which is what CI's deep-test job runs - and deep-test went red on it on 2026-10-24
     # (787.8 -> 1383.4 ns) and on PR #9 (857.2 -> 1394.0 ns), against a 1.5x bound. Stage 1c runs them alone.
     dotnet test DwarfMapper.NET.sln -c Release --nologo --filter "Category!=Perf" @testArgs
-    if ($Deep) { Remove-Item Env:DWARF_DEEP; $env:DOTNET_gcServer = $gcServerBefore }
+    $env:DOTNET_gcServer = $gcServerBefore
     if ($LASTEXITCODE) { throw "self-test suite failed" }
 
     if ($Coverage) {
@@ -463,7 +457,7 @@ try {
     if (-not $SkipExhaustion) {
         Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~10 min) ==" -ForegroundColor Cyan
         $env:DWARF_FUZZ_FULL = '1'
-        # Server GC, as for the deep tier: the power set's 262,144 compilations run in parallel (6:19 -> 5:05 on 12
+        # Server GC, as for stage 1: the power set's 262,144 compilations run in parallel (6:19 -> 5:05 on 12
         # logical CPUs, round 34). Put back after the run, before the stages that time code or run Stryker.
         $gcServerBefore = $env:DOTNET_gcServer
         $env:DOTNET_gcServer = '1'
@@ -652,12 +646,12 @@ try {
             -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/blit-ratio-baseline.json')
     }
 
-    if ($Deep) {
+    if ($Nightly) {
         Write-Host "== NoWarn audit: every declared suppression still suppresses something ==" -ForegroundColor Cyan
         # Round 34. scripts/nowarn-audit.ps1 rebuilds each project that declares a <NoWarn> with the list cleared and,
         # under -FailOnStale, fails on an id that no longer fires. Its help said housekeeping would turn that on once
-        # the lists had been trimmed; B4 trimmed them and nothing turned it on. Under -Deep, so CI's nightly deep-test
-        # runs it. After the stages that read Release output, because its forced rebuilds replace that output.
+        # the lists had been trimmed; B4 trimmed them and nothing turned it on. Under -Nightly, which CI's nightly
+        # deep-test job runs. After the stages that read Release output, because its forced rebuilds replace that output.
         # Measured 2026-10-27: 140 s on 6 cores / 12 threads, 187 s in sdk:10.0.101 on four CPUs; 0 of 93 declared
         # suppressions stale on either.
         & (Join-Path $PSScriptRoot 'nowarn-audit.ps1') -FailOnStale

@@ -49,8 +49,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public static IEnumerable<object[]> DeclaredJobs()
         {
             // ── Per-push tier ────────────────────────────────────────────────────────────────────────────
-            yield return ["build-test", "the entire test suite would stop running"];
-            yield return ["surface-matrix", "the 866-cell surface census would stop being measured, and its " + "red cells are the only place a silently-ignored option is visible"];
+            // Since round 34 build-test runs the suite the one way every job runs it, the surface census included,
+            // which had a job of its own until then.
+            yield return ["build-test", "the entire test suite, the surface census included, would stop running"];
             yield return ["conformance-gate", "the 47-assertion conformance sample would stop being executed"];
             yield return ["aot-trim-gate", "trim/AOT cleanliness would stop being verified"];
             yield return ["codeql", "static security analysis would stop running"];
@@ -65,7 +66,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // "Declared" is an even weaker claim for these than for the per-push jobs above — but deleting
             // any of them would still turn a measured floor into decoration, silently.
             yield return ["mutation", "all five Stryker legs' break floors would stop being measured nightly"];
-            yield return ["deep-test", "the deep suite, the coverage floors and ILVerify would stop running nightly"];
+            yield return ["deep-test", "the coverage floors, ILVerify, the benchmark smoke and the NoWarn audit would " + "stop running nightly"];
             // ── The five added in round-23 Layer 3 (I16) ─────────────────────────────────────────────────
             yield return ["reproducible-build", "the shipped packages would stop being byte-compared across " + "two clean builds of the same commit"];
             yield return ["package-size", "the package-size ceiling would stop being measured, and the class " + "of regression it alone catches — something unintended starting " + "to ship — would go back to being invisible"];

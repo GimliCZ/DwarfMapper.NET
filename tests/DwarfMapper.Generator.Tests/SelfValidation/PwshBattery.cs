@@ -12,7 +12,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///         The gates are PowerShell because <c>housekeeping.ps1</c> is, so the only honest test runs the
     ///         actual functions against fake inputs — a C# re-implementation would prove a copy. Every battery
     ///         is one script printing one <c>CASE &lt;name&gt;: &lt;OK result|THREW message&gt;</c> line per
-    ///         scenario, run in ONE process start to keep the fast-tier cost to a single spawn.
+    ///         scenario, run in ONE process start to keep the suite's cost to a single spawn.
     ///     </para>
     ///     <para>
     ///         Shared by <see cref="GateBandLogicTests" /> (R2 band logic) and

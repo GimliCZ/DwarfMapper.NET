@@ -64,7 +64,7 @@ namespace DwarfMapper.CompilerTests
 
             // Graph and population seed sampled TOGETHER so one pinned case index replays both — K1's shape,
             // and the reason this population's case set differs from the smoke leg's graphs-only draw.
-            PinnedSampling.Run(DeepPopulation.CompilerProjectionAgreementSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerProjectionAgreementSeeds,
                 TypeGraphGen.MirroredPair().Select(Gen.Int[0, int.MaxValue - 1]),
                 sample => sample.Item1.Describe() + "|" + sample.Item2.ToString(CultureInfo.InvariantCulture),
                 sample =>

@@ -61,10 +61,10 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 $"config pair [{attrArgs}] not value-preserving:\n{CrossTypeComparer.Render(diff)}\n--- source ---\n{src}");
         }
 
-        // Fast 20 / deep 200 — see DeepPopulation.CrossConfigUpdateSeeds.
+        // 200 seeds — see TestPopulation.CrossConfigUpdateSeeds.
         public static IEnumerable<object[]> UpdateModeSeeds()
         {
-            return from seed in Enumerable.Range(0, DeepTier.Count(DeepPopulation.CrossConfigUpdateSeeds))
+            return from seed in Enumerable.Range(0, TestPopulations.Count(TestPopulation.CrossConfigUpdateSeeds))
                 from cfg in new[]
                 {
                     "ReferenceHandling = global::DwarfMapper.ReferenceHandlingStrategy.Preserve", "OnCycle = global::DwarfMapper.OnCycleStrategy.SetNull"

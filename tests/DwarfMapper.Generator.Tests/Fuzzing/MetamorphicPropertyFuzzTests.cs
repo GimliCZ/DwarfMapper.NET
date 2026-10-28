@@ -12,18 +12,18 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
     /// </summary>
     public class MetamorphicPropertyFuzzTests
     {
-        // Fast 50 / deep 250 (×5, not ×10 — two theories share this class) — see DeepPopulation.MetamorphicSeeds.
+        // 250 seeds — see TestPopulation.MetamorphicSeeds.
         public static IEnumerable<object[]> Seeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.MetamorphicSeeds)).Select(i => new object[]
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.MetamorphicSeeds)).Select(i => new object[]
             {
                 i
             });
         }
 
         /// <summary>
-        ///     The round-trip seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): in the
-        ///     deep tier the two theories took 21 s in one class, 13 s of it the round trips.
+        ///     The round-trip seeds are dealt into two classes (round 34 E12, <see cref="TheoryParts" />): the two
+        ///     theories took 21 s in one class, 13 s of it the round trips.
         /// </summary>
         private const int Parts = 2;
 

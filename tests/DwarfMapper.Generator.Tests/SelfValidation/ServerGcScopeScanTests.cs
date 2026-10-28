@@ -8,12 +8,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// <summary>
     ///     <b>Server GC runs where it was measured to pay, and nowhere it costs.</b> Round 34.
     ///     <para>
-    ///         The deep tier's and the power set's compilations allocate tens of gigabytes, and workstation GC stops every
-    ///         test thread while one thread collects. Measured on Generator.Tests: the deep tier 53.3 to 44.9 s on 12 logical
-    ///         CPUs and 80.0 to 68.2 s on 4 (a hosted runner's shape), the power set 6:19 to 5:05 on 12. On 4 CPUs it bought
-    ///         nothing measurable on build-test's run, and a serial Stryker session is slower under it (5.5 to 7.0 s, E3).
-    ///         So no test project's runtimeconfig turns it on; CI's power-set job sets it, and housekeeping sets it for its
-    ///         deep and exhaustion stages and puts it back before the stages that time code or run Stryker.
+    ///         The full suite's and the power set's compilations allocate tens of gigabytes, and workstation GC stops every
+    ///         test thread while one thread collects. Measured on Generator.Tests at what is now the suite's only population
+    ///         (the deep tier until round 34): 53.3 to 44.9 s on 12 logical CPUs and 80.0 to 68.2 s on 4 (a hosted runner's
+    ///         shape); the power set 6:19 to 5:05 on 12. A serial Stryker session is slower under it (5.5 to 7.0 s, E3), so
+    ///         no test project's runtimeconfig turns it on; CI's power-set job sets it, and housekeeping sets it for its
+    ///         suite and exhaustion stages and puts it back before the stages that time code or run Stryker.
     ///     </para>
     /// </summary>
     public class ServerGcScopeScanTests
@@ -68,7 +68,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         [Fact]
-        public void Housekeeping_sets_server_GC_for_the_deep_and_exhaustion_stages_only_and_puts_it_back()
+        public void Housekeeping_sets_server_GC_for_the_suite_and_exhaustion_stages_only_and_puts_it_back()
         {
             var stages = StageBanner.Split(File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1")));
             var setting = stages.Where(s => SetsServerGc.IsMatch(s)).ToList();
@@ -76,12 +76,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.Equal(2, setting.Count);
             Assert.StartsWith("Write-Host \"== 1/4 ", setting[0], StringComparison.Ordinal);
             Assert.StartsWith("Write-Host \"== 2/4 ", setting[1], StringComparison.Ordinal);
-
-            // Stage 1 runs the fast tier too, where server GC measured no gain: it is set in the -Deep branch only.
-            var deepBranch = setting[0].IndexOf("if ($Deep) {", StringComparison.Ordinal);
-            var set = SetsServerGc.Match(setting[0]).Index;
-            Assert.True(deepBranch >= 0 && deepBranch < set && set < setting[0].IndexOf("\n    }", deepBranch, StringComparison.Ordinal),
-                "stage 1 sets server GC outside its -Deep branch.");
 
             foreach (var stage in setting)
             {

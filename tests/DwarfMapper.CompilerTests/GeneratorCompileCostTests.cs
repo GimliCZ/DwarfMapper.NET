@@ -31,7 +31,7 @@ namespace DwarfMapper.CompilerTests
     ///         it is what happens on every keystroke afterwards. Editing ONE mapper in a thousand-mapper
     ///         solution must re-extract ONE mapper and re-emit ONE file (plus the single aggregate facade that
     ///         lists them all, which is one file by design). That count is a pure function of the pipeline's
-    ///         value-equality, it is identical in the fast and deep tiers — MEASURED at both 40 and 1,000
+    ///         value-equality, it is identical at any corpus size — MEASURED at both 40 and 1,000
     ///         mappers, see <see cref="Editing_one_mapper_recomputes_a_constant_amount_of_work" /> — and it is
     ///         what a wall-clock ratio would only ever indirectly observe. If it ever becomes O(N), a
     ///         thousand-mapper solution re-emits its whole output on every keystroke, and no clock is needed to
@@ -94,7 +94,7 @@ namespace DwarfMapper.CompilerTests
 
         private static Corpus BuildCorpus()
         {
-            var mapperCount = DeepTier.Count(DeepPopulation.CompilerCostCorpusMappers);
+            var mapperCount = TestPopulations.Count(TestPopulation.CompilerCostCorpusMappers);
             var graphs = new GraphSpec[mapperCount];
             var gen = TypeGraphGen.MirroredPair();
 
@@ -239,15 +239,15 @@ namespace DwarfMapper.CompilerTests
         {
             var corpus = Shared.Value;
 
-            // The per-1,000 normalisation is only printed where it means something. Extrapolating it from the
-            // fast tier is a lie the first measurement told: 880 ms at 40 mappers normalises to 22.0 s per
-            // 1,000, while the deep tier actually measures 3.6 s per 1,000 — a 6x overstatement, because at
+            // The per-1,000 normalisation is only printed where it means something. Extrapolating it from a small
+            // corpus is a lie the first measurement told: 880 ms at 40 mappers normalises to 22.0 s per
+            // 1,000, while 1,000 mappers actually measure 3.6 s per 1,000 — a 6x overstatement, because at
             // N=40 the figure is almost entirely one-off JIT and first-run warm-up. A number that wrong would
             // be quoted anyway if it were printed, so it is not printed.
             var normalised = corpus.MapperCount >= 500
                 ? string.Create(CultureInfo.InvariantCulture,
                     $"({corpus.TimeToFirstEmit.TotalMilliseconds * 1000.0 / corpus.MapperCount:F0} ms per 1,000 mappers)")
-                : "(not normalised to 1,000 at this size: dominated by one-off JIT/warm-up — run with DWARF_DEEP=1)";
+                : "(not normalised to 1,000 at this size: dominated by one-off JIT/warm-up — CompilerCostCorpusMappers is below 500)";
 
             _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"S3 generator compile cost: mappers={corpus.MapperCount} " + $"parse+compilation={corpus.ParseTime.TotalMilliseconds:F0} ms " + $"time-to-first-emit={corpus.TimeToFirstEmit.TotalMilliseconds:F0} ms " + $"{normalised} " + $"generated={corpus.GeneratedTreeCount} diagnostics={corpus.GeneratorDiagnosticCount}"));

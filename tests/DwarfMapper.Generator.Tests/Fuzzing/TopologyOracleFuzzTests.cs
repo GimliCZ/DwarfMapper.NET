@@ -272,8 +272,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 
         public static IEnumerable<object[]> GraphSeeds()
         {
-            // Fast 12 / deep 120 — see DeepPopulation.TopologyGraphSeeds.
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.TopologyGraphSeeds)).Select(i => new object[]
+            // 120 seeds — see TestPopulation.TopologyGraphSeeds.
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.TopologyGraphSeeds)).Select(i => new object[]
             {
                 i
             });

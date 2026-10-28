@@ -20,8 +20,14 @@ every `setup-dotnet` step in the same commit.
 
 ```bash
 dotnet build DwarfMapper.NET.sln -c Release
-dotnet test  DwarfMapper.NET.sln -c Release
+dotnet test  DwarfMapper.NET.sln -c Release --filter "Category!=Perf"
 ```
+
+That is the whole suite, the one way every CI job runs it: every test at its one population size
+(`tests/Shared/TestPopulations.cs`), the surface matrix included. Two things run on their own. The wall-clock
+ratio tests time code, so they run alone, one project at a time: `dotnet test DwarfMapper.NET.sln -c Release
+--no-build -m:1 --filter "Category=Perf"`. The complete power set of feature combinations (262,144
+compilations) is housekeeping's stage 2 and CI's `fuzz-exhaustion` job.
 
 Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hooks` (heavier pre-release checks live in `scripts/housekeeping.ps1`).
 

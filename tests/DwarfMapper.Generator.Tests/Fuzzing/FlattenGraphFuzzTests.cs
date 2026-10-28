@@ -71,8 +71,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 
         public static IEnumerable<object[]> HomoSeeds()
         {
-            // Fast 25 / deep 250 — see DeepPopulation.FlattenHomoSeeds.
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.FlattenHomoSeeds)).Select(i => new object[]
+            // 250 seeds — see TestPopulation.FlattenHomoSeeds.
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.FlattenHomoSeeds)).Select(i => new object[]
             {
                 i
             });
@@ -80,8 +80,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 
         public static IEnumerable<object[]> HeteroSeeds()
         {
-            // Fast 15 / deep 150 — see DeepPopulation.FlattenHeteroSeeds.
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.FlattenHeteroSeeds)).Select(i => new object[]
+            // 150 seeds — see TestPopulation.FlattenHeteroSeeds.
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.FlattenHeteroSeeds)).Select(i => new object[]
             {
                 i
             });

@@ -15,10 +15,10 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
     /// </summary>
     public static class AllEmitPathsAgreeFuzzTests
     {
-        // Fast 50 / deep 250 (×5, not ×10 — ~300 ms per seed) — see DeepPopulation.AllEmitPathsSeeds.
+        // 250 seeds — see TestPopulation.AllEmitPathsSeeds.
         public static IEnumerable<object[]> Seeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.AllEmitPathsSeeds)).Select(i => new object[]
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.AllEmitPathsSeeds)).Select(i => new object[]
             {
                 i
             });
@@ -26,7 +26,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 
         /// <summary>
         ///     The seeds are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): in one class the
-        ///     deep tier's 250 took 30 s, the longest class after the feature combinations.
+        ///     250 took 30 s, the longest class after the feature combinations.
         /// </summary>
         private const int Parts = 4;
 

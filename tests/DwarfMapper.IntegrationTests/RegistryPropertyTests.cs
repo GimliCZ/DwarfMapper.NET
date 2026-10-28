@@ -24,9 +24,8 @@ namespace DwarfMapper.IntegrationTests
     /// </summary>
     public sealed class RegistryPropertyTests
     {
-        // CsCheck iteration count: fast 200 (the value these properties have always run with), deep ×10 —
-        // see DeepPopulation.RegistryPropertyIters.
-        private static readonly int Iters = DeepTier.Count(DeepPopulation.RegistryPropertyIters);
+        // CsCheck iteration count: 2,000 — see TestPopulation.RegistryPropertyIters.
+        private static readonly int Iters = TestPopulations.Count(TestPopulation.RegistryPropertyIters);
 
         /// <summary>Round-trip pool. Registered lazily by the property itself; delegates live here, once.</summary>
         private static readonly (PoolEntry Entry, Func<object, object> Map)[] RoundTripPool =

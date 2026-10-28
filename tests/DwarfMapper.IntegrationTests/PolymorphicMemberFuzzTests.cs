@@ -133,16 +133,15 @@ namespace DwarfMapper.IntegrationTests
         }
 
         /// <summary>
-        ///     Fast = exactly the original five hand-picked seeds; deep (fast 5 / deep 45 — see
-        ///     <see cref="DeepPopulation.PolymorphicGraphSeeds" />) extends with the contiguous seeds 9-48,
-        ///     which do not repeat the fast five.
+        ///     The original five hand-picked seeds first, then the contiguous seeds 9-48, which do not repeat them: 45
+        ///     in all (<see cref="TestPopulation.PolymorphicGraphSeeds" />).
         /// </summary>
         public static IEnumerable<object[]> GraphSeeds()
         {
-            int[] fastSeeds = [1, 2, 3, 5, 8];
-            var n = DeepTier.Count(DeepPopulation.PolymorphicGraphSeeds);
+            int[] handPicked = [1, 2, 3, 5, 8];
+            var n = TestPopulations.Count(TestPopulation.PolymorphicGraphSeeds);
             for (var i = 0; i < n; i++)
-                yield return [i < fastSeeds.Length ? fastSeeds[i] : i + 4];
+                yield return [i < handPicked.Length ? handPicked[i] : i + 4];
         }
 
         [Theory]

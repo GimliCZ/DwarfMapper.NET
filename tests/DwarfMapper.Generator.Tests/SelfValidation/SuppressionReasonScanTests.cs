@@ -138,10 +138,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// <summary>
         ///     The other direction of the same lists: an id that no longer fires. <c>scripts/nowarn-audit.ps1</c> finds
         ///     those, and its help said housekeeping would turn <c>-FailOnStale</c> on once the lists had been trimmed. Round
-        ///     34 trimmed them (B4) and wires it, under <c>-Deep</c>, which CI's nightly deep-test job runs.
+        ///     34 trimmed them (B4) and wires it, under <c>-Nightly</c>, which CI's nightly deep-test job runs.
         /// </summary>
         [Fact]
-        public void Housekeeping_deep_fails_on_a_NoWarn_id_that_suppresses_nothing()
+        public void Housekeeping_nightly_fails_on_a_NoWarn_id_that_suppresses_nothing()
         {
             var lines = File.ReadAllLines(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
             var call = Array.FindIndex(lines, l => !l.TrimStart().StartsWith('#') &&
@@ -151,7 +151,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             // The block that holds the call is the nearest `if` above it at the stages' own indentation.
             var opener = lines.Take(call).Reverse().First(l => l.StartsWith("    if", StringComparison.Ordinal));
-            Assert.Equal("    if ($Deep) {", opener.TrimEnd());
+            Assert.Equal("    if ($Nightly) {", opener.TrimEnd());
         }
 
         // ── #pragma warning disable ──────────────────────────────────────────────

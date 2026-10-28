@@ -25,10 +25,10 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
     /// </summary>
     public class IndependenceOracleFuzzTests
     {
-        // Fast 60 / deep 600 — see DeepPopulation.IndependenceSeeds.
+        // 600 seeds — see TestPopulation.IndependenceSeeds.
         public static IEnumerable<object[]> Seeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.IndependenceSeeds)).Select(i => new object[]
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.IndependenceSeeds)).Select(i => new object[]
             {
                 i
             });

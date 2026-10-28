@@ -56,7 +56,7 @@ namespace DwarfMapper.CompilerTests
             var refused = 0;
 
             // Population seed sampled WITH the graph so one pinned case index replays both together.
-            PinnedSampling.Run(DeepPopulation.CompilerOracleSeeds,
+            PinnedSampling.Run(TestPopulation.CompilerOracleSeeds,
                 TypeGraphGen.MirroredPair().Select(Gen.Int[0, int.MaxValue - 1]),
                 sample => sample.Item1.Describe() + "|" + sample.Item2.ToString(CultureInfo.InvariantCulture),
                 sample =>

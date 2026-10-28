@@ -156,7 +156,7 @@ namespace DwarfMapper.Generator.Tests
             // load rather than only what it has touched. Restricted to the names fixtures actually need, and that
             // restriction is a measurement, not caution: offering the whole TPA set closes the class outright but
             // takes this project from 62s to 83s (~34%), because every one of the thousands of compilations then
-            // binds against ~200 references instead of ~50. That is four times the ~10% fast-tier growth cap.
+            // binds against ~200 references instead of ~50. That is four times the ~10% growth cap the suite had then.
             // HarnessReferenceSetTests turns the residual risk into a loud, named failure instead of a CS0246 the
             // next reader blames on the generator; the cheap way to close the class properly is to retry a failed
             // compilation once against the full TPA set and report what it needed (recorded, not built).

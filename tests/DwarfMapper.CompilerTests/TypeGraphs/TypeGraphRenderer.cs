@@ -30,7 +30,7 @@ namespace DwarfMapper.CompilerTests.TypeGraphs
         ///         makes the WHOLE run <c>RefusedLoudly</c>. Cases those populations sample today as ACCEPTED
         ///         (and therefore compile-checked, oracle-compared, metamorphically related) would flip to
         ///         "refused" and stop being checked at all, with every digest moving and nothing saying why.
-        ///         A separate flag and a separate <c>DeepPopulation</c> keeps the existing case sets
+        ///         A separate flag and a separate <c>TestPopulation</c> keeps the existing case sets
         ///         byte-identical and makes the projection's own accept/refuse split measurable on its own.
         ///     </para>
         /// </param>
