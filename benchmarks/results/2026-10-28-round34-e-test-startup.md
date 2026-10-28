@@ -194,3 +194,43 @@ another test's mutant. The safe place to prepare is the runtime: E3 does that.
 **Aggregating test projects.** A host costs ~1.5 s of framework start-up before any test (above), and `dotnet test`
 starts the projects' hosts in parallel; after E1 almost every Stryker session runs only Generator.Tests. Merging
 projects would save at most one host start per project and run, so it is not pursued.
+
+### E3 before and after, on this machine (2026-10-28, 07:55-08:34)
+
+After the owner's game closed (a sentinel polling every 15 s logged none during the runs). One Release build of
+`35f1a20`; the defaults arm forces the runtime's defaults back with environment variables, which override
+runtimeconfig.json (`DOTNET_TieredPGO=1`, `DOTNET_TC_CallCountingDelayMs=100`, `DOTNET_gcConcurrent=1`). The arms
+alternate.
+
+| Run | Defaults | E3 | Change |
+|---|---|---|---|
+| build-test's run, all nine test assemblies, 3 each | 68.3 / 67.8 / 66.5 s | 36.9 / 37.8 / 39.1 s | -44 % |
+| surface matrix, 3 each | 27.0 / 27.0 / 26.5 s | 13.8 / 14.0 / 13.8 s | -48 % |
+| build-test's run with coverage, as CI runs it | 71.8 s | 41.4 s | -42 % |
+| deep tier (`DWARF_DEEP=1`, `Category!=Perf`) | 173.7 s | 93.5 s | -46 % |
+| power set (`DWARF_FUZZ_FULL=1`, 262,144 compilations in both) | 10:27 | 8:05 | -23 % |
+| Perf (IntegrationTests, which keeps the defaults) | | passes | |
+
+The test counts are the same in both arms: 9,685 tests in build-test's run, 18,775 in the deep tier. The defaults
+arm fails exactly one, `TestHostRuntimeTuningTests`' GC check, which sees the background GC come back.
+
+Within build-test's run, Generator.Tests went from 57.7 to 29.0 s. IntegrationTests went from 6.0 to 9.3 s (deep
+tier: 21 to 33 s) although its settings are the same in both arms: the assemblies run in parallel, and early in the
+run it now shares the CPU with the tuned hosts' tier-1 JIT threads.
+
+**Coverage is unchanged, line for line.** The coverage files merged by absolute source path, the way ReportGenerator
+and Codecov merge them:
+
+| Package | Lines covered (both arms) | Branches covered (both arms) |
+|---|---|---|
+| DwarfMapper.Generator | 14,249 / 14,258 | 8,138 / 8,154 |
+| DwarfMapper.Testing | 851 / 851 | 670 / 670 |
+| DwarfMapper (runtime) | 394 / 406 | 112 / 112 |
+| DwarfMapper.CodeFixes | 465 / 472 | 292 / 302 |
+| DwarfMapper.DocTooling | 444 / 446 | 242 / 244 |
+
+No line and no branch point is covered in one arm and not the other. Within a single test project's file one line
+does differ: Generator.Tests' own hit on `GraphOracleComparer.cs:884` (a sort comparator's arm for a null second
+element). Over three runs per arm it was hit 4, 4 and 0 times with E3 and 0, 0 and 4 with the defaults: a coin toss
+in both. String hashing is randomised per process, so a set's enumeration order, and with it the comparisons a sort
+makes, changes from run to run. Testing.Tests covers the line in every run.
