@@ -311,3 +311,148 @@ difference of a few percent between arms is not an effect; E4's -30 % on the mut
 of the leg (-5 % of mutation testing), inside this machine's drift, while the lowest available memory fell from
 5,127 MB to 3,339 MB. A session is short now and runs its own tier-1 JIT on background threads, so two sessions already
 keep four CPUs busy. CI keeps Stryker's default (half the logical processors).
+
+## Compiling less, and collecting in parallel (E7-E11, server GC)
+
+### E7 and E8 before and after (2026-10-28, 12:52-13:18)
+
+`93b1bb4` (a detached worktree) against `3f430d4`, alternating, one Release build each. E7 (`3a0a03c`): a check that
+needs one source's generator output compiles that source once. E8 (`3f430d4`): the checks that read only errors, and
+the emits, bind without Roslyn's nullable walker.
+
+| Run | Before | After | Change |
+|---|---|---|---|
+| build-test's run, all nine test assemblies, 3 each | 37.2 / 36.8 / 41.0 s | 36.6 / 34.4 / 32.0 s | -10 % (means 38.3 → 34.3 s) |
+| surface matrix, 3 each | 13.7 / 14.7 / 14.8 s | 13.1 / 14.6 / 12.4 s | -7 % |
+| deep tier (`DWARF_DEEP=1`, `Category!=Perf`) | 88.5 s | 76.2 s | -14 % (Generator.Tests in the host 1:17 → 1:04) |
+| power set (262,144 compilations in each) | 7:46 (7:43 in the host) | 6:22 (6:19) | -18 % |
+| power set, server GC on top | | 5:08 (5:05) | -34 % against before |
+
+The test counts match, apart from the five tests E7 and E8 add.
+
+### E9: the surface matrix's counted populations from one sweep (`500b5f2`)
+
+Nine facts each classified the matrix for themselves; one fact now sweeps once and runs all nine checks over it.
+
+| Surface category, 3 alternating runs each | E8 | E9 | Change |
+|---|---|---|---|
+| wall | 12.8 / 12.2 / 12.2 s | 8.5 / 8.4 / 8.4 s | -32 % |
+| in the host | 10 / 9 / 9 s | 5 / 5 / 5 s | -45 % |
+| tests | 978 | 970 | nine facts are one |
+
+### E10: what the GC pays for (`98e0d9c`)
+
+The owner asked whether the suite should release memory itself rather than lean on the GC. A temporary timer probe in
+the deep tier (Generator.Tests alone), E8 against E9 + E10; there is one clean run before, because the other crashed on
+the probe itself:
+
+| | Before | After (2 runs) |
+|---|---|---|
+| total GC pause | 12.4 s | 11.6 / 11.1 s |
+| allocated | 31.5 GB | 29.4 / 29.3 GB |
+| live after the last full collection | 430 MB | 444 / 419 MB |
+| peak working set | 1,444 MB | 1,349 / 1,353 MB |
+| emitted assemblies loaded | 5,431 | 5,431 |
+| time in the host | 51 s | 50 / 48 s |
+
+The harness cached a baseline compilation for every unique assembly name (5,319 in the deep tier, none read again).
+E10 caches from a name's second request, and the live heap did not move: the entries were small. The GC pays for
+allocation, about 30 GB per deep run, which stops the whole process for 11-12 s of a 50 s run. Nothing the tests hold,
+or could dispose, changes that. Compiling less does (E9 and E10 together took 2.2 GB off), and so does collecting in
+parallel.
+
+### Server GC on the parallel tiers
+
+Deep tier, Generator.Tests alone, after E10, two runs each, alternating, on this machine's 12 logical CPUs:
+
+| | Workstation (committed) | Server GC | Server GC, DATAS off |
+|---|---|---|---|
+| wall | 53.1 / 53.5 s | 44.5 / 45.4 s | 44.4 / 44.2 s |
+| in the host | 48 / 48 s | 39 / 40 s | 39 / 39 s |
+
+-16 % wall, all 18,178 tests passing; turning DATAS off adds nothing. Server GC stays out of the runtimeconfig, because a
+serial Stryker session is slower under it (5.5 → 7.0 s, the E3 table above).
+
+On four CPUs, a hosted runner's shape (the container rig, `8c98435`, two runs each, alternating):
+
+| Generator.Tests | Workstation | Server GC | Change |
+|---|---|---|---|
+| deep tier, wall | 76.5 / 83.4 s | 66.2 / 70.2 s | -15 % |
+| deep tier, in the host | 71 / 78 s | 61 / 65 s | -15 % |
+| build-test's run, wall | 35.6 / 34.1 s | 32.3 / 36.5 s | none measurable |
+
+Both arms fail the same two `EmittedIlIsVerifiableTests`: the container has no `ilverify` tool. So server GC is set where
+it measured a gain and nowhere else (E13): CI's `fuzz-exhaustion` job sets `DOTNET_gcServer`, and housekeeping sets it
+for stage 1 under `-Deep` (which CI's `deep-test` job runs) and for the exhaustion stage, and puts it back before the
+stages that time code or run Stryker. `ServerGcScopeScanTests` holds all three places, and no test project's
+runtimeconfig may turn it on.
+
+### What bounds a parallel run
+
+The span of every class (first start to last end) in each run's results file, against the run's length:
+
+| | Run (in the host) | Summed test time | Spread evenly over 12 threads | The class that ends last |
+|---|---|---|---|---|
+| build-test's run, Generator.Tests | 21.0 s | 192.9 s | 16.1 s | `CombinatorialEngineTests`: 923 tests, 20.1 s in one class |
+| deep tier | 48.5 s | 380.6 s | 31.7 s | `FeatureCombinationFuzzTests`: 3,566 tests, 47.8 s in one class |
+
+xUnit runs a class's tests one after another ("By default, there is a test collection per test class"; "tests within a
+single test collection will not be run in parallel against each other"), so a heavy class sets a run's length. The
+deep tier's last 14 s ran that one class alone.
+
+**E12 (`b27ab09`): the heaviest theories' rows dealt across classes.** Seven theories are split by `TheoryParts` into
+classes named after them with a part number (four parts for the feature combinations, the all-emit-paths seeds, the
+identity cells and the warning-free cells; two for the compiles-always, behavioural and round-trip seeds). The
+killers-first ranking ranks a part as the class it was split from. Alternating against E11:
+
+| | E11 | E12 |
+|---|---|---|
+| Generator.Tests, build-test's run (3 each) | 25.0 / 25.1 / 24.6 s | 24.8 / 23.8 / 21.7 s |
+| Generator.Tests, deep tier (2 each) | 45.8 / 47.7 s (41 / 43 in the host) | 42.5 / 43.6 s (37 / 39) |
+| the whole solution, build-test's run (2 each) | 30.0 / 30.8 s | 30.0 / 29.8 s |
+
+Smaller than the class spans promised, and the results files say why:
+- Generator.Tests' plain run now keeps 10-12 tests running until its last second (19.4 s against 17.1 s for an even
+  spread); it is CPU-bound, and ends on `SnapshotSuite`, which the kills-first order starts at 5.7 s;
+- in the whole solution Generator.Tests shares the 12 CPUs with eight other test hosts and was CPU-bound before the
+  split (21 s in its host in both arms), so only less work moves that run now;
+- the deep tier's tail is mid-sized classes the kills-first order starts late (`FlattenGraphFuzzTests`,
+  `DeterminismFuzzTests`, `ExtendedBehavioralFuzzTests`, `IndependenceOracleFuzzTests`, between 24 and 29 s). An order
+  that starts the longest classes first in a parallel run, and keeps kills first under Stryker (its data collector is
+  loaded in the host), would be worth about 5 s there; not done.
+
+### Repeats that remain, and E11 (`8c98435`)
+
+A second probe hashed the source text alone and recorded the test method, at E10:
+
+| Generator.Tests | Compilations | Distinct texts | Repeats of a text | Inside one test method |
+|---|---|---|---|---|
+| build-test's run | 10,697 | 5,259 | 5,438 (51 %) | 2,042 |
+| surface matrix | 1,809 | 942 | 867 (48 %) | 37 |
+| deep tier | 26,307 | 11,816 | 14,491 (55 %) | 8,152 |
+
+Three fuzz families ran the generator twice in the test body, the E7 shape one level up:
+`Feature_combination_resolves_as_expected` (`Run`, then `EmitsCompilableCode`), `CompilesAlwaysFuzzTests` (`Run`, then
+`RunAndGetCompilationErrors`) and `CrossConfigFuzzTests` (`Run`, then `EmitAssembly`). E11 makes one run per row:
+
+| Generator.Tests | E10 | E11 |
+|---|---|---|
+| compilations, build-test's run | 10,697 | 9,634 |
+| compilations, deep tier | 26,307 | 21,280 |
+| repeats inside one test method, build-test's run / deep tier | 2,042 / 8,152 | 979 / 3,125 |
+| deep tier, 2 alternating runs | 59.1 / 56.2 s (54 / 51 in the host) | 49.2 / 46.5 s (44 / 41) |
+| build-test's run, 2 alternating runs | 24.3 / 24.9 s | 24.2 / 24.1 s |
+
+The plain run does not move: its last class to finish is `CombinatorialEngineTests`, which E11 does not touch. Coverage
+is unchanged line for line and branch point for branch point.
+
+Left on purpose:
+- the determinism and culture tests compile twice to compare;
+- `FlattenGraphFuzzTests` and `TopologyOracleFuzzTests` compile one constant source in every row (25-250 rows). The rows
+  are separate tests and Stryker switches a mutant on per test, so an emit shared across rows would hide a mutant's
+  effect on the emission from every row after the first.
+
+Across classes, a combinatorial cell is compiled by `CombinatorialEngineTests`, `GeneratedCodeIsWarningFreeTests` and
+`GoldenCaseTests`, and the fuzz families that share seeds compile the same schema four or five times in the deep tier.
+The golden check cannot share the combinatorial row's compilation: `GoldenFingerprint` hashes every emitted file, the
+assembly-wide files are named after the assembly, and the emit needs a unique assembly name.

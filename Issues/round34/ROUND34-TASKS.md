@@ -142,6 +142,44 @@ is still open under its own name.
     28:25, statuses identical) while the memory floor fell to 3.3 GB; two short sessions already keep four CPUs busy.
   - **Not a lever yet:** Stryker's MTP runner keeps hosts warm but cannot yet run only a mutant's covering tests.
     The runtime leg's static mutants are module-initializer registration, the product's own start-up.
+  - **E7 done — `3a0a03c`. A check compiles its source once.** `GeneratorAssert`'s helpers ran the generator for the
+    diagnostics and again for the compile errors (790 call sites), and every combinatorial row ran it again to emit.
+    `RunWithCompilationErrors` and `RunAndEmit` answer both from one run; `CompileOnceTests` holds them (red: "Expected
+    1, Actual 2" three times).
+  - **E8 done — `3f430d4`. Errors-only checks skip the nullable walker.** Binding was most of a power-set variation
+    (19.1 CPU-ms of about 27); without the walker it fell 15.0 → 7.7 ms. `ErrorsOnlyCheckTests` holds it. E7 and E8
+    together, alternating against `93b1bb4`: build-test's run -10 %, surface matrix -7 %, deep tier -14 %, power set
+    7:43 → 6:19 (-18 %).
+  - **E9 done — `500b5f2`. The surface matrix's populations from one sweep.** Nine facts each classified the matrix;
+    one fact sweeps once and runs the nine checks. Surface category 12.4 → 8.4 s wall. `CorpusWideSweepScanTests`.
+  - **E10 done — `98e0d9c`. What the GC pays for** (the owner, 2026-10-28: "shouldn't we just handle disposal by
+    ourselves instead of pressuring garbage collection?"). The harness kept a baseline compilation for every unique
+    assembly name, 5,319 in the deep tier; it caches from a name's second request now. The live heap did not move (430
+    MB before, 419-444 after): the GC pays for allocation, about 30 GB and 11-12 s of pauses per 50 s deep run, which
+    nothing the tests hold or could dispose changes. `BaselineCacheTests`.
+  - **E11 done — `8c98435`. Three fuzz families compile each row once** (feature combinations, compiles-always and
+    cross-config ran the E7 shape in their bodies). Deep tier 26,307 → 21,280 compilations and 57.7 → 47.8 s wall
+    (means of two). The feature-combination rows read their compile errors under nullable Enable now, as they read
+    their diagnostics; coverage unchanged. `CompileOnceTests`.
+  - **E13 — server GC where it measured a gain.** Deep tier: 53.3 → 44.9 s on this machine's 12 logical CPUs, 80.0 →
+    68.2 s on four (the container, a hosted runner's shape); build-test's run on four: no gain; DATAS off adds nothing.
+    CI's `fuzz-exhaustion` job and housekeeping's `-Deep` stage 1 and exhaustion stage set `DOTNET_gcServer` and put it
+    back before the stages that time code or run Stryker (a serial session is slower under it). `ServerGcScopeScanTests`
+    holds the three places and keeps it out of every runtimeconfig (red without the change: 0 stages, no job).
+  - **What bounds a parallel run.** A class's tests run one after another, so the heaviest class sets a run's length:
+    Generator.Tests in build-test's run took 21 s against 16 s spread evenly (`CombinatorialEngineTests` ended last),
+    the deep tier 48.5 s against 32 s (`FeatureCombinationFuzzTests`, alone for its last 14 s).
+  - **E12 done — `b27ab09`. The heaviest theories' rows are dealt across classes.** Seven theories split into
+    `<Class>PartN` classes by `TheoryParts`; the killers-first ranking ranks a part as its outer class. Generator.Tests
+    alone: plain 24.9 → 23.4 s, deep 46.8 → 43.1 s (means); the whole solution's plain run is unchanged at ~30 s, CPU-bound
+    with eight other hosts beside Generator.Tests. `TheoryPartsTests` holds every row dealt exactly once (red with a part
+    index planted twice), `KillersFirstOrdererTests` the parts' rank (red with the fallback off). Left: the deep tier's
+    tail is mid-sized classes the kills-first order starts late; a longest-first order in parallel runs (kills first
+    under Stryker) would be worth about 5 s.
+  - **Test-writing rules** (the owner, 2026-10-28: "Are there any rules about test creations? … we should have been
+    avoiding these problems right from the start"). The published ones (Microsoft's unit-testing practices, xUnit's
+    parallelism and shared context, Google's test sizes, Stryker's `since` and `with-baseline`) are mapped onto this
+    PR's fixes; a rules page naming each rule's enforcing test is drafted and waits for the owner's go-ahead.
 - **B. The silenced-checks inventory** ("Owed between rounds"), diffed against round 30's.
 
   **Inventory taken** (`Issues/round34/SILENCED-CHECKS-INVENTORY.md`, agent-produced, headline claims spot-checked).
