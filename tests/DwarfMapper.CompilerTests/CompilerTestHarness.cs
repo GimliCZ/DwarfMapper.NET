@@ -55,6 +55,15 @@ namespace DwarfMapper.CompilerTests
         internal static MetadataReference[] MetadataReferences => References.Value;
 
         /// <summary>
+        ///     Each sample compiles on the thread that runs it (round 34 hill-climb, round 2). The population facts already
+        ///     run their samples in parallel (<see cref="PinnedSampling" />), so Roslyn's concurrent build only nested more
+        ///     parallel work inside each sample on the same CPUs: 5.00 -> 4.56 ms per sample at the facts' 4-way
+        ///     parallelism in the four-CPU container. <c>SampleCompilationOptionsTests</c> holds it.
+        /// </summary>
+        private static readonly CSharpCompilationOptions SampleOptions =
+            new(OutputKind.DynamicallyLinkedLibrary, concurrentBuild: false);
+
+        /// <summary>
         ///     Whole-compilation analysis passes (a <c>GetDiagnostics</c> or an <c>Emit</c>) this thread has asked for, so
         ///     a test can hold a seam to one pass per sample (<c>SingleAnalysisPassTests</c>). Per thread because tests run
         ///     in parallel; a test's body runs on one thread.
@@ -206,7 +215,7 @@ namespace DwarfMapper.CompilerTests
                 assemblyName,
                 trees,
                 References.Value,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+                SampleOptions);
 
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics);
