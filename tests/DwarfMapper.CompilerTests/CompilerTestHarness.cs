@@ -54,10 +54,21 @@ namespace DwarfMapper.CompilerTests
         /// </summary>
         internal static MetadataReference[] MetadataReferences => References.Value;
 
+        /// <summary>
+        ///     Whole-compilation analysis passes (a <c>GetDiagnostics</c> or an <c>Emit</c>) this thread has asked for, so
+        ///     a test can hold a seam to one pass per sample (<c>SingleAnalysisPassTests</c>). Per thread because tests run
+        ///     in parallel; a test's body runs on one thread.
+        /// </summary>
+        internal static int AnalysisPassesOnThisThread => analysisPassesOnThisThread;
+
+        [ThreadStatic] private static int analysisPassesOnThisThread;
+
         /// <summary>Runs both generators over the given compilation units (nullable disabled, house default).</summary>
         public static RunResult Run(IReadOnlyList<string> units)
         {
-            return RunCore(units, "TypeGraphAsm").Result;
+            var (generatorDiagnostics, output) = Generate(units, "TypeGraphAsm");
+            analysisPassesOnThisThread++;
+            return Result(generatorDiagnostics, output, output.GetDiagnostics());
         }
 
         /// <summary>
@@ -69,32 +80,30 @@ namespace DwarfMapper.CompilerTests
         ///     ambient registry's module-init self-registration, which keys on <see cref="Type" /> instances)
         ///     from ever conflating two samples. Default ALC on purpose — registry registration roots the
         ///     assembly anyway, so a collectible ALC would only pretend to unload.
+        ///     <para>
+        ///         ONE analysis pass, the emit (round 34 hill-climb, round 1). This used to ask for the compilation's
+        ///         diagnostics and then emit it, and the emit binds every method body again to lower it — 5.3 of the
+        ///         14.8 ms a sample cost in the four-CPU container was that first pass. The emit reports the same
+        ///         declaration and method-body errors (Roslyn binds the bodies in spite of earlier errors, exactly as
+        ///         <c>GetDiagnostics</c> does), so the errors are read from it; <c>SingleAnalysisPassTests</c> holds the
+        ///         count to one and the two error sets equal on inputs that have errors.
+        ///     </para>
         /// </summary>
         public static (RunResult Result, Assembly? Assembly) RunAndEmit(IReadOnlyList<string> units)
         {
-            var (result, output) = RunCore(
+            var (generatorDiagnostics, output) = Generate(
                 units,
                 FormattableString.Invariant($"TypeGraphAsm_{Guid.NewGuid():N}"));
-            if (result.RefusedLoudly || result.CompilationErrors.Length > 0)
-            {
-                return (result, null);
-            }
-
             using var pe = new MemoryStream();
+            analysisPassesOnThisThread++;
             var emit = output.Emit(pe);
-            if (!emit.Success)
-            {
-                // Errors-free per the check above, so a failed emit is emit-only diagnostics — surface them
-                // as compilation errors rather than silently returning a null assembly (loud, per H7 spirit).
-                return (result with
-                {
-                    CompilationErrors = emit.Diagnostics
-                        .Where(d => d.Severity == DiagnosticSeverity.Error)
-                        .ToImmutableArray()
-                }, null);
-            }
 
-            return (result, Assembly.Load(pe.ToArray()));
+            // An emit fails only on an error diagnostic, so "no compilation errors" and "the emit succeeded" are one
+            // fact; both are checked so a null assembly never comes back without the error that explains it.
+            var result = Result(generatorDiagnostics, output, emit.Diagnostics);
+            return result.RefusedLoudly || result.CompilationErrors.Length > 0 || !emit.Success
+                ? (result, null)
+                : (result, Assembly.Load(pe.ToArray()));
         }
 
         /// <summary>
@@ -184,7 +193,11 @@ namespace DwarfMapper.CompilerTests
                     FormattableString.Invariant($"Project over a ONE-element queryable yielded {rows.Count} rows"));
         }
 
-        private static (RunResult Result, CSharpCompilation Output) RunCore(
+        /// <summary>
+        ///     Both generators over the units: their diagnostics and the compilation a consumer's build would then
+        ///     compile, not yet analysed — each seam asks for exactly the one pass it needs.
+        /// </summary>
+        internal static (ImmutableArray<Diagnostic> GeneratorDiagnostics, CSharpCompilation Output) Generate(
             IReadOnlyList<string> units,
             string assemblyName)
         {
@@ -197,8 +210,15 @@ namespace DwarfMapper.CompilerTests
 
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics);
+            return (generatorDiagnostics, (CSharpCompilation)output);
+        }
 
-            var errors = output.GetDiagnostics()
+        private static RunResult Result(
+            ImmutableArray<Diagnostic> generatorDiagnostics,
+            CSharpCompilation output,
+            ImmutableArray<Diagnostic> compilationDiagnostics)
+        {
+            var errors = compilationDiagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToImmutableArray();
 
@@ -208,7 +228,7 @@ namespace DwarfMapper.CompilerTests
                     .OrderBy(t => t.FilePath, StringComparer.Ordinal)
                     .Select(t => t.ToString()));
 
-            return (new RunResult(generatorDiagnostics, errors, generated), (CSharpCompilation)output);
+            return new RunResult(generatorDiagnostics, errors, generated);
         }
 
         /// <summary>The outcome of one generator-plus-compile run.</summary>
