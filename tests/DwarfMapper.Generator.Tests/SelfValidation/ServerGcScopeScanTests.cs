@@ -26,8 +26,16 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private const string PutBack = "$env:DOTNET_gcServer = $gcServerBefore";
 
+        /// <summary>
+        ///     The one exception, round 34 hill-climb round 4: CompilerTests. Its population facts run their samples 4-way in
+        ///     parallel even inside a Stryker host (PinnedSampling's <c>Parallel.For</c>), so it is not the serial session E3
+        ///     measured slower; every sample allocates a whole compilation. Measured in the four-CPU container on r2:
+        ///     31.2 -> 27.1 s (-4.1 s ± 0.4 s, 4 runs each). The generator mutation leg is the check that it holds under Stryker.
+        /// </summary>
+        private const string OnlyServerGcProject = "tests/DwarfMapper.CompilerTests/DwarfMapper.CompilerTests.csproj";
+
         [Fact]
-        public void No_test_project_turns_server_GC_on_in_its_runtimeconfig()
+        public void Only_CompilerTests_turns_server_GC_on_in_its_runtimeconfig()
         {
             var files = Directory.GetFiles(Path.Combine(RepoPaths.Root, "tests"), "*.csproj", SearchOption.AllDirectories)
                                  .Concat(new[] { "Directory.Build.props", "Directory.Build.targets" }.Select(f => Path.Combine(RepoPaths.Root, f)))
@@ -38,12 +46,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(files.Count >= 10, $"read only {files.Count} project files.");
 
             var offenders = files.Where(f => Regex.IsMatch(File.ReadAllText(f), @"<ServerGarbageCollection>\s*true|System\.GC\.Server", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-                                 .Select(f => Path.GetRelativePath(RepoPaths.Root, f))
+                                 .Select(f => Path.GetRelativePath(RepoPaths.Root, f).Replace('\\', '/'))
                                  .ToList();
 
-            Assert.True(offenders.Count == 0,
-                "server GC in a test project's runtimeconfig reaches every Stryker session, which runs slower under it: [" +
-                string.Join(", ", offenders) + "]. Set DOTNET_gcServer for the run that measured a gain instead.");
+            Assert.True(offenders.SequenceEqual([OnlyServerGcProject]),
+                "server GC in a test project's runtimeconfig reaches every Stryker session, and a serial one runs slower under " +
+                "it; only " + OnlyServerGcProject + " measured a gain there. Found: [" + string.Join(", ", offenders) +
+                "]. Set DOTNET_gcServer for the run that measured a gain instead.");
         }
 
         [Fact]
