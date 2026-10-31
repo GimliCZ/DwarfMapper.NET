@@ -183,5 +183,74 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.NotEmpty(ciLaunches);
             Assert.All(ciLaunches, l => Assert.Contains(Flag, l, StringComparison.Ordinal));
         }
+
+        /// <summary>
+        ///     Round 34. Stryker 4.16 mutates and compiles every source of the project under test whatever the globs
+        ///     say, and drops what they exclude only afterwards: on the generator project that was 2:20 of a four-CPU
+        ///     leg spent on mutants no leg tests. So CI's legs on that project first mark the sources their globs do
+        ///     not name as generated code (<c>Set-UnmutatedSourcesGenerated</c>, held by
+        ///     <see cref="UnmutatedSourcesMarkingTests" />), which Stryker compiles without mutating. Every leg whose
+        ///     config mutates DwarfMapper.Generator carries the flag that runs the step, no other leg does (their
+        ///     projects' source scans have not been run against a marked tree), and the step runs before Stryker.
+        /// </summary>
+        [Fact]
+        public void The_generator_project_legs_compile_only_what_they_mutate()
+        {
+            const string Generator = "DwarfMapper.Generator.csproj";
+            var ci = File.ReadAllLines(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"));
+
+            var legs = new List<(string Leg, string Config, bool Flagged)>();
+            string? leg = null, config = null;
+            var flagged = false;
+            foreach (var line in ci)
+            {
+                var start = Regex.Match(line, @"^\s*-\s+leg:\s*(?<leg>[\w-]+)", RegexOptions.ExplicitCapture);
+                var end = leg is not null && Regex.IsMatch(line, @"^\s+timeout-minutes:");
+                if (start.Success || end)
+                {
+                    if (leg is not null)
+                    {
+                        legs.Add((leg, config ?? "", flagged));
+                    }
+
+                    if (end)
+                    {
+                        break;
+                    }
+
+                    (leg, config, flagged) = (start.Groups["leg"].Value, null, false);
+                    continue;
+                }
+
+                var named = Regex.Match(line, @"^\s+config:\s*(?<config>\S+)", RegexOptions.ExplicitCapture);
+                if (leg is not null && named.Success)
+                {
+                    config = named.Groups["config"].Value;
+                }
+
+                flagged |= leg is not null && Regex.IsMatch(line, @"^\s+compile-only-mutated:\s*true\s*$");
+            }
+
+            // Non-vacuity: the six legs, two of them (generator, pipeline) on the generator project.
+            Assert.True(legs.Count >= 6, $"read {legs.Count} mutation legs from ci.yml's matrix.");
+            Assert.True(legs.Count(l => ProjectOf(l.Config) == Generator) >= 2, "fewer than two legs mutate " + Generator + ".");
+            Assert.All(legs, l => Assert.True(l.Flagged == (ProjectOf(l.Config) == Generator),
+                $"leg '{l.Leg}' ({l.Config} mutates {ProjectOf(l.Config)}) {(l.Flagged ? "carries" : "lacks")} " +
+                "compile-only-mutated: true; exactly the legs on " + Generator + " carry it."));
+
+            var code = ci.Select((text, index) => (Text: text, Index: index)).Where(l => !l.Text.TrimStart().StartsWith('#')).ToList();
+            var marking = code.Single(l => l.Text.Contains("Set-UnmutatedSourcesGenerated -ConfigFile $env:CONFIG", StringComparison.Ordinal)).Index;
+            var launch = code.Single(l => Regex.IsMatch(l.Text, @"\bdotnet\s+stryker\b")).Index;
+            Assert.True(marking < launch, "the marking step must run before the leg's Stryker launch.");
+
+            var step = code.Last(l => l.Index < marking && Regex.IsMatch(l.Text, @"^\s*-\s+name:")).Index;
+            Assert.Contains(code, l => l.Index > step && l.Index < marking && Regex.IsMatch(l.Text, @"^\s+if:\s*matrix\.compile-only-mutated\s*$"));
+        }
+
+        private static string ProjectOf(string config)
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(RepoPaths.Root, config)));
+            return json.RootElement.GetProperty("stryker-config").GetProperty("project").GetString() ?? "";
+        }
     }
 }
