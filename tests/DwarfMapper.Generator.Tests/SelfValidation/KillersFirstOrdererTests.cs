@@ -5,9 +5,10 @@ using System.Text.RegularExpressions;
 namespace DwarfMapper.Generator.Tests.SelfValidation
 {
     /// <summary>
-    ///     <b>This assembly runs the tests that have killed the most mutants first</b> (round 34 E4,
+    ///     <b>This assembly runs the tests most likely to settle a mutant run first</b> (round 34 E4,
     ///     <see cref="KillersFirstOrderer" />): the assembly names the orderer, its ranking ships beside the tests and names
-    ///     classes that exist, and a ranked collection runs before an unranked one.
+    ///     classes that exist, a cheap decisive class outranks an expensive redundant one, and a ranked collection runs before
+    ///     an unranked one.
     /// </summary>
     public class KillersFirstOrdererTests
     {
@@ -48,6 +49,26 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(missing.Count == 0,
                 "MutationKillRanking.tsv ranks test classes this assembly no longer has: [" + string.Join(", ", missing) +
                 "]. Regenerate it from the latest mutation reports with scripts/kill-ranking.py.");
+        }
+
+        /// <summary>
+        ///     Cost-weighted, not most kills (round 34 mutation study). Stryker tests mutants whose covering tests do not
+        ///     overlap in one run and ends it only when every one is decided. In the EquatableArray trace leg, ranked by total
+        ///     kills, a run killed its broad mutant 13 s in, then ran four FeatureCombinationFuzz parts (about 40 s each, every
+        ///     row failing) before EquatableArrayCoverageTests, the only killer of the other two, at 218 s. A cheap class that
+        ///     alone kills a mutant has to run before an expensive suite whose kills other classes already made.
+        /// </summary>
+        [Fact]
+        public void A_cheap_class_that_alone_kills_a_mutant_runs_before_an_expensive_fuzz_suite()
+        {
+            var ranks = KillersFirstOrderer.ShippedClassKills;
+            var cheap = typeof(Coverage.EquatableArrayCoverageTests).FullName!;
+            var expensive = typeof(FeatureCombinationFuzzTests).FullName!;
+
+            Assert.True(KillersFirstOrderer.RankOf(cheap, ranks) > KillersFirstOrderer.RankOf(expensive, ranks),
+                $"MutationKillRanking.tsv runs {expensive} (score {KillersFirstOrderer.RankOf(expensive, ranks)}) before " +
+                $"{cheap} (score {KillersFirstOrderer.RankOf(cheap, ranks)}). Regenerate it with scripts/kill-ranking.py " +
+                "--durations, which ranks by not-yet-killed mutants per second instead of total kills.");
         }
 
         [Fact]

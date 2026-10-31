@@ -11,16 +11,24 @@ using Xunit.Sdk;
 namespace DwarfMapper.Generator.Tests
 {
     /// <summary>
-    ///     <b>The tests that have killed the most mutants run first.</b> Round 34 (E4).
+    ///     <b>The tests most likely to settle a mutant run run first.</b> Round 34 (E4; cost-weighted since the round's
+    ///     mutation study).
     ///     <para>
     ///         Stryker runs a mutant's covering tests in one session and stops it at the first failure. xunit's default
     ///         order is stable but arbitrary, so a mutant covered by thousands of tests often ran most of them before
     ///         the one that kills it: in the generator leg, 40 sessions over 20 s took 54 % of the session time.
-    ///         <c>MutationKillRanking.tsv</c> counts each class's and method's kills in the last mutation reports
+    ///         <c>MutationKillRanking.tsv</c> ranks the classes and methods that killed mutants in the last mutation reports
     ///         (<c>scripts/kill-ranking.py</c> writes it), so the likely killers run first and a killed mutant's session
     ///         ends early. Measured on the generator leg in CI's container shape, concurrency 2, on top of E3 and E5:
     ///         mutation testing 29:11 to 20:25 and the leg 37:26 to 28:25, with every one of the 867 mutants' statuses
     ///         unchanged.
+    ///     </para>
+    ///     <para>
+    ///         The rank is the min-sum set cover greedy, not the kill count: most not-yet-killed mutants per second of serial
+    ///         runtime first. Stryker tests several mutants in one session when their covering tests do not overlap and ends
+    ///         it only when every one is decided, and by kill count the golden and fuzz suites, whose rows each re-kill the
+    ///         same broad mutants, ran ahead of the small unit classes that alone kill the narrow ones; one EquatableArray
+    ///         session waited 205 s behind four FeatureCombinationFuzz parts for EquatableArrayCoverageTests.
     ///     </para>
     ///     <para>
     ///         The order changes no verdict: the same tests run, a killed mutant is killed by whichever fails first, and a
@@ -52,7 +60,7 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
-        ///     The order both use: most kills first, then the unranked in a stable order of their unique ids, as xunit's
+        ///     The order both use: highest score first, then the unranked in a stable order of their unique ids, as xunit's
         ///     own default orders them.
         /// </summary>
         internal static List<T> InRankOrder<T>(
