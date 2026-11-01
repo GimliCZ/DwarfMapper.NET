@@ -122,36 +122,20 @@ namespace DwarfMapper.TestInfrastructure
         RegistryPropertyIters,
 
         /// <summary>
-        ///     CompilerTests/TypeGraphSmokeTests CsCheck <c>iter</c> (round-22 K0): 250 (the fast tier ran 25). Each
-        ///     iteration renders a sampled type graph and runs BOTH generators plus a full in-memory compile (~15-45 ms
-        ///     serial per sample, CsCheck-parallelized across cores); measured before entering the catalog per the round-21
-        ///     rule: 250 ≈ 2 s in-class on the 12-core reference machine (2026-08-22).
-        /// </summary>
-        CompilerGraphSmokeSeeds,
-
-        /// <summary>
-        ///     CompilerTests/TypeGraphSmokeTests' PROJECTION leg (round-23 I18): the same K0 must-compile-or-refuse smoke
-        ///     over graphs whose mapper declares <c>IQueryable&lt;D0&gt; Project(IQueryable&lt;S0&gt;)</c> beside
-        ///     <c>Map</c>. Its own entry rather than a wider <see cref="CompilerGraphSmokeSeeds" /> because emitting
-        ///     <c>Project</c> into the existing population would re-cut its case set (the projection refuses a strictly
-        ///     wider grammar, and one error-severity refusal makes the whole run "refused" — accepted cases would silently
-        ///     stop being compile-checked); see <c>TypeGraphRenderer.Render</c>'s <c>withProjection</c> remarks. 1,000.
-        ///     MEASURED before entering the catalog per the round-21 rule (2026-08-23, 12-core reference machine), 25 / 50
-        ///     / 100 / 200 / 1000: <b>2</b>/23, <b>7</b>/43, <b>21</b>/79, <b>48</b>/152 and <b>233</b>/767
-        ///     accepted/refused, at ≈1 s, ≈1 s, ≈1 s, ≈2 s and ≈7 s in-class. The projection refuses a much wider grammar
-        ///     than <c>Map</c> (a HashSet member, a converter, a hook, reference handling — DWARF028's whole reason list),
-        ///     so at 25 the leg would have carried its compile-clean invariant on TWO accepted cases; the count is chosen
-        ///     off the accept column, not the wall column. 1,000 is ≈7 s in-class and 233 accepts.
-        /// </summary>
-        CompilerProjectionSmokeSeeds,
-
-        /// <summary>
         ///     CompilerTests/DifferentialOracleTests CsCheck <c>iter</c> (round-22 K1): 1,000, the plan's full-count
         ///     target (the fast tier ran 20). Each iteration is a K0 smoke sample PLUS an in-memory emit, an assembly load,
         ///     a name-keyed population, the generated map's execution and the naive-oracle comparison — the heaviest
         ///     per-sample cost class in this registry. Measured before entering the catalog per the round-21 rule
         ///     (2026-08-22, 12-core reference machine, 3 runs): 1000/1000 in ~10 s in-class. The 10,000 variant stays a
         ///     knob value only, unmeasured and therefore unused.
+        ///     <para>
+        ///         Round 34: the K0 smoke's only home. <c>TypeGraphSmokeTests</c>' K0 fact ran the must-compile-or-refuse
+        ///         check alone over 250 graphs from the same <c>TypeGraphGen.MirroredPair()</c> stream — the first 250 of
+        ///         these, whose leg 1 is that same check — and was collapsed into this population. Measured before it went:
+        ///         the mutants it reached were a subset of this fact's on both generator legs' mutated assemblies, its one
+        ///         recorded kill (r6 mutant 829) is killed by this fact alone, and CompilerTests without it covers the same
+        ///         5,866 generator lines and 2,908 branch conditions.
+        ///     </para>
         /// </summary>
         CompilerOracleSeeds,
 
@@ -166,12 +150,19 @@ namespace DwarfMapper.TestInfrastructure
         ///         never that an ORM provider translates it.
         ///     </para>
         ///     1,000: 233 executions, ≈14 s in-class (2026-08-23, 12-core reference machine). Measured on ITS OWN
-        ///     generator, which draws graph+population-seed PAIRS where the smoke leg draws graphs only — and the
+        ///     generator, which draws graph+population-seed PAIRS where the smoke leg drew graphs only — and the
         ///     execution counts came out IDENTICAL to the smoke leg's accept counts (25 → 2, 50 → 7, 100 → 21, 1000 →
         ///     233), because the pair generator draws the graph from the same stream first and the extra seed does not
-        ///     perturb it. A coincidence of the generator's shape, not a guarantee: a future generator edit can decouple
-        ///     them, so re-measure rather than assuming the two entries move together. The two deterministic anchors (the
-        ///     accepted <c>PinnedCorpus</c> rows) execute regardless of where the sampled split falls.
+        ///     perturb it. The two deterministic anchors (the accepted <c>PinnedCorpus</c> rows) execute regardless of
+        ///     where the sampled split falls.
+        ///     <para>
+        ///         Round 34: also the projection smoke's only home. <c>TypeGraphSmokeTests</c>' projection fact ran the
+        ///         must-compile-or-refuse check alone over the same 1,000 graphs — this fact's first assertion, on every
+        ///         one of them, before the agreement leg — and was collapsed into this population. Measured before it went:
+        ///         the same mutants reached on both generator legs' mutated assemblies, its one recorded kill (r6 mutant 829)
+        ///         killed by this fact alone, and the same generator lines and branch conditions covered without it. If a
+        ///         generator edit ever decouples the two draws, this fact still holds the check over its own 1,000 graphs.
+        ///     </para>
         /// </summary>
         CompilerProjectionAgreementSeeds,
 
@@ -242,8 +233,6 @@ namespace DwarfMapper.TestInfrastructure
             [TestPopulation.PolymorphicGraphSeeds] = 45,
             [TestPopulation.ObjectFactoryDistributionSeeds] = 4000,
             [TestPopulation.RegistryPropertyIters] = 2000,
-            [TestPopulation.CompilerGraphSmokeSeeds] = 250,
-            [TestPopulation.CompilerProjectionSmokeSeeds] = 1000,
             [TestPopulation.CompilerOracleSeeds] = 1000,
             [TestPopulation.CompilerProjectionAgreementSeeds] = 1000,
             [TestPopulation.CompilerMrMemberOrderSeeds] = 250,

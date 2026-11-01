@@ -74,7 +74,12 @@ namespace DwarfMapper.CompilerTests
                     var (result, assembly) = CompilerTestHarness.RunAndEmit(units);
 
                     // A loud refusal is a valid outcome and is the projection's DOCUMENTED answer for a shape
-                    // an expression tree cannot carry (DWARF028). Nothing to compare; not a red.
+                    // an expression tree cannot carry (DWARF028). Nothing to compare; not a red. A refused projection's
+                    // method is DROPPED, which leaves the partial declaration unimplemented: the CS8795 that follows is
+                    // a consequence of the refusal, not a silent miscompilation, which is why this check comes before
+                    // the compile-clean one. That compile-clean check is, since round 34, the projection smoke's only
+                    // home: the smoke fact ran it alone over these same 1,000 graphs and was collapsed into this one
+                    // (TestPopulation.CompilerProjectionAgreementSeeds' remarks carry the evidence).
                     if (result.RefusedLoudly)
                     {
                         Interlocked.Increment(ref refused);

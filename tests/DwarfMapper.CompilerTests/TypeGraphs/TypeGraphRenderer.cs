@@ -24,7 +24,7 @@ namespace DwarfMapper.CompilerTests.TypeGraphs
         ///     <para>
         ///         <b>Opt-in, and it must stay opt-in.</b> Emitting <c>Project</c> unconditionally would
         ///         silently re-cut the sampled space of every population that already exists
-        ///         (<c>CompilerGraphSmokeSeeds</c>, <c>CompilerOracleSeeds</c> and all three MR entries): the
+        ///         (<c>CompilerOracleSeeds</c> and all three MR entries): the
         ///         projection refuses a strictly wider grammar than <c>Map</c> does — a HashSet member, a
         ///         converter, a hook, reference handling — and an error-severity DWARF028 on the projection
         ///         makes the WHOLE run <c>RefusedLoudly</c>. Cases those populations sample today as ACCEPTED

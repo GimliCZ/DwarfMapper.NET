@@ -66,7 +66,9 @@ namespace DwarfMapper.CompilerTests
                     var (result, assembly) = CompilerTestHarness.RunAndEmit(units);
 
                     // Leg 1 — must compile or refuse loudly (K0's smoke contract, restated over this leg's
-                    // own samples because the emit path must also hold it before leg 2 may execute).
+                    // own samples because the emit path must also hold it before leg 2 may execute). Since round
+                    // 34 this is the contract's only home: the K0 smoke fact ran it alone over the first 250 of these
+                    // same graphs and was collapsed into this leg (TestPopulation.CompilerOracleSeeds' remarks).
                     if (result.RefusedLoudly)
                     {
                         Interlocked.Increment(ref refused);

@@ -48,8 +48,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             [TestPopulation.PolymorphicGraphSeeds] = 45,
             [TestPopulation.ObjectFactoryDistributionSeeds] = 4000,
             [TestPopulation.RegistryPropertyIters] = 2000,
-            [TestPopulation.CompilerGraphSmokeSeeds] = 250,
-            [TestPopulation.CompilerProjectionSmokeSeeds] = 1000,
+            // Round 34: CompilerGraphSmokeSeeds (250) and CompilerProjectionSmokeSeeds (1000) left the catalog with the
+            // two smoke facts collapsed into the oracles below, whose own leg 1 runs the same graphs through the same
+            // check (TestPopulations' remarks on these two entries carry the evidence).
             [TestPopulation.CompilerOracleSeeds] = 1000,
             [TestPopulation.CompilerProjectionAgreementSeeds] = 1000,
             [TestPopulation.CompilerMrMemberOrderSeeds] = 250,
