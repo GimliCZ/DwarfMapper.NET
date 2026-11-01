@@ -224,6 +224,7 @@ jobs:
             config: stryker-config.json
             timeout: 200
             compile-only-mutated: true
+            reroll-bad-order: true
           - leg: doctooling   # measured 5:04-5:30 (2026-08-21, 12 cores)
             config: stryker-config.doctooling.json
             timeout: 60
@@ -245,6 +246,7 @@ jobs:
             config: stryker-config.pipeline.json
             timeout: 350
             compile-only-mutated: true
+            reroll-bad-order: true
           # Round-29 testing-toolkit VERIFIERS. Added because DwarfMapper.Testing sat at 0 % mutation
           # coverage while Phase 4 put 189 lines of consumer-facing verification code into it — a verifier
           # that silently passes certifies a broken map. Scoped to the five verifier files, not the package:
@@ -339,9 +341,18 @@ jobs:
       # no later step runs after that signal. This step's live log is the one record that survives, so a
       # background loop writes memory, disk and the largest processes into it every 30 s. It reads and prints,
       # never fails the step, and stops with Stryker.
+      #
+      # REROLL (round 34, the legs on the generator project): Stryker visits the test projects in one order per
+      # launch, drawn from its parallel project analysis, and the draw that puts CompilerTests ahead of
+      # Generator.Tests took the same leg's mutant phase from 20:55 to 48:29 (3 of 12 full legs drew it).
+      # Invoke-StrykerRerollingBadOrder launches the same command, reads the order from the two projects' test hosts
+      # in Stryker's discovery and initial test run (before anything is mutated), and relaunches on that draw - at
+      # most three launches, the last one kept. Same tests, same mutants, same statuses; a killed launch writes no
+      # report, and the steps below take the newest one.
       - name: Run Stryker (with a resource trace)
         env:
           CONFIG: ${{ matrix.config }}
+          REROLL: ${{ matrix.reroll-bad-order }}
         run: |
           ( set +e
             trap 'kill "$nap" 2>/dev/null; exit 0' TERM
@@ -355,7 +366,11 @@ jobs:
             done ) &
           trace=$!
           rc=0
-          dotnet stryker --config-file "$CONFIG" --break-on-initial-test-failure || rc=$?
+          if [ "$REROLL" = true ]; then
+            pwsh -NoProfile -NonInteractive -Command '. ./scripts/gate-checks.ps1; exit (Invoke-StrykerRerollingBadOrder -ConfigFile $env:CONFIG)' || rc=$?
+          else
+            dotnet stryker --config-file "$CONFIG" --break-on-initial-test-failure || rc=$?
+          fi
           kill "$trace" 2>/dev/null || true
           wait "$trace" 2>/dev/null || true
           exit "$rc"

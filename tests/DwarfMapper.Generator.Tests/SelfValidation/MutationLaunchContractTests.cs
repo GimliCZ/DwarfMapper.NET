@@ -182,6 +182,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // Non-vacuity: a workflow that stopped launching Stryker would pass the check below over nothing.
             Assert.NotEmpty(ciLaunches);
             Assert.All(ciLaunches, l => Assert.Contains(Flag, l, StringComparison.Ordinal));
+
+            // CI's generator-project legs launch through the rerolling launcher, which builds its own arguments: the
+            // flag must be one of them, not a word in its comments.
+            var reroll = Regex.Match(Gate(),
+                @"function Invoke-StrykerRerollingBadOrder \{(?<body>[\s\S]*?)\n\}",
+                RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(10));
+            Assert.True(reroll.Success, "Invoke-StrykerRerollingBadOrder not found - this rule is reading the wrong file");
+            Assert.Matches(@"@\([^)\r\n]*'" + Regex.Escape(Flag) + @"'[^)\r\n]*\)", reroll.Groups["body"].Value);
         }
 
         /// <summary>
@@ -198,44 +206,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             const string Generator = "DwarfMapper.Generator.csproj";
             var ci = File.ReadAllLines(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"));
-
-            var legs = new List<(string Leg, string Config, bool Flagged)>();
-            string? leg = null, config = null;
-            var flagged = false;
-            foreach (var line in ci)
-            {
-                var start = Regex.Match(line, @"^\s*-\s+leg:\s*(?<leg>[\w-]+)", RegexOptions.ExplicitCapture);
-                var end = leg is not null && Regex.IsMatch(line, @"^\s+timeout-minutes:");
-                if (start.Success || end)
-                {
-                    if (leg is not null)
-                    {
-                        legs.Add((leg, config ?? "", flagged));
-                    }
-
-                    if (end)
-                    {
-                        break;
-                    }
-
-                    (leg, config, flagged) = (start.Groups["leg"].Value, null, false);
-                    continue;
-                }
-
-                var named = Regex.Match(line, @"^\s+config:\s*(?<config>\S+)", RegexOptions.ExplicitCapture);
-                if (leg is not null && named.Success)
-                {
-                    config = named.Groups["config"].Value;
-                }
-
-                flagged |= leg is not null && Regex.IsMatch(line, @"^\s+compile-only-mutated:\s*true\s*$");
-            }
+            var legs = MatrixLegs(ci);
 
             // Non-vacuity: the six legs, two of them (generator, pipeline) on the generator project.
             Assert.True(legs.Count >= 6, $"read {legs.Count} mutation legs from ci.yml's matrix.");
             Assert.True(legs.Count(l => ProjectOf(l.Config) == Generator) >= 2, "fewer than two legs mutate " + Generator + ".");
-            Assert.All(legs, l => Assert.True(l.Flagged == (ProjectOf(l.Config) == Generator),
-                $"leg '{l.Leg}' ({l.Config} mutates {ProjectOf(l.Config)}) {(l.Flagged ? "carries" : "lacks")} " +
+            Assert.All(legs, l => Assert.True(l.Flags.Contains("compile-only-mutated") == (ProjectOf(l.Config) == Generator),
+                $"leg '{l.Leg}' ({l.Config} mutates {ProjectOf(l.Config)}) {(l.Flags.Contains("compile-only-mutated") ? "carries" : "lacks")} " +
                 "compile-only-mutated: true; exactly the legs on " + Generator + " carry it."));
 
             var code = ci.Select((text, index) => (Text: text, Index: index)).Where(l => !l.Text.TrimStart().StartsWith('#')).ToList();
@@ -245,6 +222,80 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             var step = code.Last(l => l.Index < marking && Regex.IsMatch(l.Text, @"^\s*-\s+name:")).Index;
             Assert.Contains(code, l => l.Index > step && l.Index < marking && Regex.IsMatch(l.Text, @"^\s+if:\s*matrix\.compile-only-mutated\s*$"));
+        }
+
+        /// <summary>
+        ///     Round 34. Stryker 4.16 visits the test projects of every run in one order per invocation, drawn from its
+        ///     parallel project analysis, and on the generator project the draw that puts CompilerTests ahead of
+        ///     Generator.Tests took the same leg's mutant phase from 20:55 to 48:29 (3 of 12 full legs drew it). So CI's
+        ///     legs on that project launch through <c>Invoke-StrykerRerollingBadOrder</c> (held by
+        ///     <see cref="ProjectOrderRerollTests" />), which launches again on that draw. Every leg whose config mutates
+        ///     DwarfMapper.Generator carries the flag and no other leg does (no other leg's project costs were measured),
+        ///     and the wrapper and the plain launch share one step, chosen by the flag.
+        /// </summary>
+        [Fact]
+        public void The_generator_project_legs_reroll_a_bad_project_order()
+        {
+            const string Generator = "DwarfMapper.Generator.csproj";
+            const string Flag = "reroll-bad-order";
+            var ci = File.ReadAllLines(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"));
+            var legs = MatrixLegs(ci);
+
+            Assert.True(legs.Count >= 6, $"read {legs.Count} mutation legs from ci.yml's matrix.");
+            Assert.All(legs, l => Assert.True(l.Flags.Contains(Flag) == (ProjectOf(l.Config) == Generator),
+                $"leg '{l.Leg}' ({l.Config} mutates {ProjectOf(l.Config)}) {(l.Flags.Contains(Flag) ? "carries" : "lacks")} " +
+                Flag + ": true; exactly the legs on " + Generator + " carry it."));
+
+            var code = ci.Select((text, index) => (Text: text, Index: index)).Where(l => !l.Text.TrimStart().StartsWith('#')).ToList();
+            var wrapper = code.Single(l => l.Text.Contains("Invoke-StrykerRerollingBadOrder -ConfigFile $env:CONFIG", StringComparison.Ordinal)).Index;
+            var plain = code.Single(l => Regex.IsMatch(l.Text, @"\bdotnet\s+stryker\b")).Index;
+            var step = code.Last(l => l.Index < wrapper && Regex.IsMatch(l.Text, @"^\s*-\s+name:")).Index;
+            Assert.True(code.Last(l => l.Index < plain && Regex.IsMatch(l.Text, @"^\s*-\s+name:")).Index == step,
+                "the rerolling launch and the plain Stryker launch must sit in the same step.");
+            Assert.Contains(code, l => l.Index > step && l.Index < wrapper && Regex.IsMatch(l.Text, @"^\s+REROLL:\s*\$\{\{\s*matrix\." + Flag + @"\s*\}\}\s*$"));
+            Assert.Contains(code, l => l.Index > step && l.Index < wrapper && l.Text.Contains("if [ \"$REROLL\" = true ]; then", StringComparison.Ordinal));
+        }
+
+        /// <summary>The mutation matrix's legs with their config and the flags each sets to <c>true</c>.</summary>
+        private static List<(string Leg, string Config, HashSet<string> Flags)> MatrixLegs(string[] ci)
+        {
+            var legs = new List<(string Leg, string Config, HashSet<string> Flags)>();
+            string? leg = null, config = null;
+            var flags = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var line in ci)
+            {
+                var start = Regex.Match(line, @"^\s*-\s+leg:\s*(?<leg>[\w-]+)", RegexOptions.ExplicitCapture);
+                var end = leg is not null && Regex.IsMatch(line, @"^\s+timeout-minutes:");
+                if (start.Success || end)
+                {
+                    if (leg is not null)
+                    {
+                        legs.Add((leg, config ?? "", flags));
+                    }
+
+                    if (end)
+                    {
+                        break;
+                    }
+
+                    (leg, config, flags) = (start.Groups["leg"].Value, null, new HashSet<string>(StringComparer.Ordinal));
+                    continue;
+                }
+
+                var named = Regex.Match(line, @"^\s+config:\s*(?<config>\S+)", RegexOptions.ExplicitCapture);
+                if (leg is not null && named.Success)
+                {
+                    config = named.Groups["config"].Value;
+                }
+
+                var flag = Regex.Match(line, @"^\s+(?<flag>[a-z-]+):\s*true\s*$", RegexOptions.ExplicitCapture);
+                if (leg is not null && flag.Success)
+                {
+                    flags.Add(flag.Groups["flag"].Value);
+                }
+            }
+
+            return legs;
         }
 
         private static string ProjectOf(string config)

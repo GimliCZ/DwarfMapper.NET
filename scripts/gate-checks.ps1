@@ -483,6 +483,137 @@ function Set-UnmutatedSourcesGenerated {
     return $marked
 }
 
+# -----------------------------------------------------------------------------------------------------
+# A bad project-order draw is rerolled (round 34). Stryker 4.16 hands VsTest the test projects of every run - the
+# coverage run and each mutant run - in one order per invocation: the enumeration order of a ConcurrentBag its
+# parallel project analysis fills (InputFileResolver.AnalyzeAllNeededProjects, MaxDegreeOfParallelism = concurrency;
+# tag dotnet-stryker@4.16.0). No option sets it, and the solution file cannot steer it: four debug logs of one tree
+# began their analysis with four different pairs of projects. On the generator project, the draw that puts
+# DwarfMapper.CompilerTests ahead of DwarfMapper.Generator.Tests makes every mutant Generator.Tests kills pay
+# CompilerTests' covering run first (median 60 s a run): mutant phase 48:29 against 20:55 on the same code with the
+# same statuses (the r6 and r5 full legs, four CPUs); 3 of 12 full generator legs drew it. Splitting CompilerTests'
+# sampled facts so fewer of them cover such a mutant was measured first and rejected: nearly every slice of each
+# population reaches the same mutants (-4 % of that cost at four parts, -7 % at ten).
+#   The draw shows before anything is mutated: Stryker first discovers the test projects one at a time in that order
+# (InitialisationProcess.DiscoverTests), then runs them once unmutated in it, and every one of those sessions is a
+# test host whose command line names its project (the r6 leg's process trace: nine discovery hosts, then nine
+# initial-run hosts, both in the order its mutant runs later used). So this launches Stryker unchanged - output
+# inherited, nothing redirected - follows the two projects' test hosts, and on the bad draw kills the process tree and
+# launches again; the last of -MaxAttempts launches keeps whatever it draws. Checked against real launches on four
+# CPUs (rig/reroll-probe.ps1, 2026-11-01): five of five verdicts right, decided 61-81 s in, nothing left running two
+# seconds after a kill, and the bad draw came up in three of the five. What a leg tests does not change - the same
+# tests meet the same mutants - only the order its sessions visit the projects.
+#   Whatever it cannot read keeps the run - no host seen, a lister that throws - so its worst case is the plain launch
+# it replaced, never a lost leg.
+# -----------------------------------------------------------------------------------------------------
+function Get-TestHostProject {
+    param(
+        [string]$CommandLine,
+        [Parameter(Mandatory)][string[]]$Projects
+    )
+    # Which of the projects this process is a test host for, by its exact runtimeconfig, deps or assembly name: never
+    # another process, and never a project whose name only begins with one of these.
+    if ($CommandLine -notmatch 'testhost') { return $null }
+    foreach ($project in $Projects) {
+        if ($CommandLine -match ('[\\/]' + [regex]::Escape($project) + '\.(runtimeconfig\.json|deps\.json|dll)\b')) { return $project }
+    }
+    return $null
+}
+
+function Get-ProjectOrderVerdict {
+    param(
+        # This launch's test hosts of the two projects in the order first seen, each with Project and Seconds - how long
+        # it has been seen alive so far.
+        [object[]]$Hosts,
+        [Parameter(Mandatory)][string]$CostlyProject,
+        [Parameter(Mandatory)][string]$KillerProject,
+        [double]$LongSeconds = 10
+    )
+    $hosts = @($Hosts | Where-Object { $null -ne $_ })
+    if ($hosts.Count -eq 0) { return $null }
+    # Discovery hosts are brief - CompilerTests' showed in a single 0.25 s sample of the r6 trace - but Generator.Tests'
+    # lives about four seconds and cannot slip between polls, so a costly host seen before any killer host is the bad
+    # draw for certain.
+    if ($hosts[0].Project -eq $CostlyProject) { return 'reroll' }
+    # Otherwise the costly project's discovery host may have come and gone unseen. The initial run's sessions follow
+    # the same order and are long (34 s and 152 s in that trace) where no discovery host reaches LongSeconds, so the
+    # first host to reach it decides.
+    $long = @($hosts | Where-Object { $_.Seconds -ge $LongSeconds }) | Select-Object -First 1
+    if ($null -eq $long) { return $null }
+    if ($long.Project -eq $CostlyProject) { return 'reroll' }
+    if ($long.Project -eq $KillerProject) { return 'keep' }
+    return $null
+}
+
+function Invoke-StrykerRerollingBadOrder {
+    param(
+        [Parameter(Mandatory)][string]$ConfigFile,
+        [string]$CostlyProject = 'DwarfMapper.CompilerTests',
+        [string]$KillerProject = 'DwarfMapper.Generator.Tests',
+        [ValidateRange(1, 10)][int]$MaxAttempts = 3,
+        # Seams for ProjectOrderRerollTests: what to launch, and how to list live processes (objects with Id and
+        # CommandLine). On Linux a test host runs as `dotnet exec ... testhost.dll`, on Windows as testhost.exe.
+        [string[]]$Command = @('dotnet', 'stryker'),
+        [scriptblock]$ListProcesses = {
+            Get-Process -Name 'dotnet', 'testhost' -ErrorAction SilentlyContinue |
+                ForEach-Object { [pscustomobject]@{ Id = $_.Id; CommandLine = $_.CommandLine } }
+        },
+        [ValidateRange(10, 5000)][int]$PollMilliseconds = 200,
+        [ValidateRange(0.1, 600)][double]$LongSeconds = 10
+    )
+    # The flag every launch site passes (MutationLaunchContractTests): a red initial test run stops the leg.
+    $arguments = @($Command | Select-Object -Skip 1) + @('--config-file', $ConfigFile, '--break-on-initial-test-failure')
+    # Start-Process joins its arguments with spaces and quotes nothing.
+    $arguments = @($arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } })
+    # One record for all launches: a process alive before the first one, or a host of an earlier one, is never this
+    # launch's test host - a killed launch's hosts can outlive the kill by a moment, and judging the next draw by them
+    # rerolled it unseen (the battery's stale-host case).
+    $prior = @{}
+    try { foreach ($p in @(& $ListProcesses)) { $prior[[string]$p.Id] = $true } } catch { $null = $_ }
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $proc = Start-Process -FilePath $Command[0] -ArgumentList $arguments -NoNewWindow -PassThru
+        $null = $proc.Handle  # held, or Windows reports no ExitCode once the process is gone
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
+        $hosts = [ordered]@{}  # string keys: an OrderedDictionary reads an int index as a position, not a key
+        $verdict = $null
+        while ($null -eq $verdict -and -not $proc.HasExited) {
+            Start-Sleep -Milliseconds $PollMilliseconds
+            try {
+                $alive = @(& $ListProcesses)
+            } catch {
+                Write-Host "   attempt ${attempt}: cannot list processes ($($_.Exception.Message))"
+                $verdict = 'unreadable'
+                break
+            }
+            $now = $clock.Elapsed.TotalSeconds
+            foreach ($p in $alive) {
+                $key = [string]$p.Id
+                if ($prior.ContainsKey($key)) { continue }
+                if ($hosts.Contains($key)) { $hosts[$key].Last = $now; continue }
+                $project = Get-TestHostProject -CommandLine ([string]$p.CommandLine) -Projects $CostlyProject, $KillerProject
+                if ($project) { $hosts[$key] = [pscustomobject]@{ Project = $project; First = $now; Last = $now } }
+            }
+            $verdict = Get-ProjectOrderVerdict -CostlyProject $CostlyProject -KillerProject $KillerProject -LongSeconds $LongSeconds `
+                -Hosts @($hosts.Values | ForEach-Object { [pscustomobject]@{ Project = $_.Project; Seconds = $_.Last - $_.First } })
+        }
+        foreach ($key in @($hosts.Keys)) { $prior[$key] = $true }
+        if ($verdict -eq 'reroll' -and $attempt -lt $MaxAttempts) {
+            Write-Host "   attempt $attempt of ${MaxAttempts}: $CostlyProject's test host started ahead of $KillerProject's - killing Stryker and drawing again"
+            try { $proc.Kill($true) } catch { Write-Host "   (kill: $($_.Exception.Message))" }
+            $proc.WaitForExit()
+            continue
+        }
+        $outcome = switch ($verdict) {
+            'keep'   { "$KillerProject's test host started first - keeping this draw" }
+            'reroll' { "$CostlyProject's test host started first again - out of attempts, keeping this draw" }
+            default  { 'no verdict - keeping this draw' }
+        }
+        Write-Host "   attempt $attempt of ${MaxAttempts}: $outcome"
+        $proc.WaitForExit()
+        return $proc.ExitCode
+    }
+}
+
 
 # -----------------------------------------------------------------------------------------------------
 # Stryker launcher — correct reporters for the context, and a HARD FUSE so a leg can never hang forever.

@@ -137,6 +137,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     (1, "the NoWarn-audit attribution pwsh battery script, temp directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/UnmutatedSourcesMarkingTests.cs"] =
                     (1, "WriteTemp helper: a fake repository (project, sources, leg configs) + the pwsh battery script, " + "temp directory only"),
+                ["DwarfMapper.Generator.Tests/SelfValidation/ProjectOrderRerollTests.cs"] =
+                    (1, "WriteTemp helper: a fake Stryker script + the pwsh battery script, temp directory only"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/GeneratedDocsAreCurrentTests.cs"] =
                     (1, "HasGitMarker probe writing a fake .git file into a temp directory"),
                 ["DwarfMapper.Generator.Tests/SelfValidation/RepoLayoutTests.cs"] =
