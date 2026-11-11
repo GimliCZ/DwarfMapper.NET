@@ -16,8 +16,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///     code it hands back; or drop a leg because it could not read the process table.
     ///     <para>
     ///         Driven through <c>pwsh</c> against the REAL functions (<see cref="PwshBattery" />) with a fake Stryker
-    ///         script and a process lister that plays each launch's hosts on a schedule, in a temp directory (ARCH-06:
-    ///         registered in <see cref="RepoWriteGuardTests" />).
+    ///         script and a process lister that plays each launch's hosts on a schedule counted in the launcher's own
+    ///         polls, so no case's verdict depends on how fast the machine is, in a temp directory (ARCH-06: registered
+    ///         in <see cref="RepoWriteGuardTests" />).
     ///     </para>
     /// </summary>
     public class ProjectOrderRerollTests
@@ -31,7 +32,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             {
                 // A stand-in for `dotnet stryker`: records its launch and arguments, sleeps, marks that it finished, exits.
                 // A killed launch never writes its done-N marker, which is how a case tells a reroll from a finish. The
-                // plan gives each launch its own sleep ('30000,800 7': launch 1 sleeps 30 s, later ones 0.8 s): a launch
+                // plan gives each launch its own sleep ('30000,400 7': launch 1 sleeps 30 s, later ones 0.4 s): a launch
                 // the case expects to be killed sleeps far longer than any verdict takes, so it can never finish first,
                 // and a kept launch exits soon after its verdict - or before it, which keeps it all the same.
                 WriteTemp(Path.Combine(dir, "fake-stryker.ps1"),
@@ -65,22 +66,27 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                         if ($null -eq $v) { 'undecided' } else { $v }
                     }
                     # One fake leg. Launch N plays the hosts of $launches[N-1]: 'project,from,to[,id]' entries joined by ';',
-                    # seconds after that launch started; an explicit id lets a host outlive the launch that showed it.
+                    # listed in that order, where from and to count the launcher's POLLS of that launch (1 is its first,
+                    # '*' is for good) and never seconds: a host listed in one poll only is brief however slowly the polls
+                    # come, and one listed for good turns long, so no verdict here depends on the machine's speed (in
+                    # seconds, a 0.15 s host was missed whenever one poll came late, and the case then kept the bad draw).
+                    # An explicit id lets a host outlive the launch that showed it.
                     function Leg([string]$name, [string]$plan, [string[]]$launches, [switch]$ListerThrows) {
                         $dir = Join-Path $WorkDir $name
                         New-Item -ItemType Directory -Path $dir | Out-Null
                         Copy-Item -LiteralPath (Join-Path $WorkDir 'fake-stryker.ps1') -Destination $dir
                         Set-Content -LiteralPath (Join-Path $dir 'plan.txt') -Value $plan
+                        $polls = @{}
                         $lister = if ($ListerThrows) { { throw 'no process table here' } } else {
                             {
                                 $n = @(Get-ChildItem -LiteralPath $dir -Filter 'launch-*.txt').Count
                                 if ($n -lt 1 -or $n -gt $launches.Count) { return }
-                                $t = ([DateTime]::UtcNow - (Get-Item -LiteralPath (Join-Path $dir "launch-$n.txt")).LastWriteTimeUtc).TotalSeconds
+                                $polls[$n] = 1 + [int]$polls[$n]
                                 $i = 0
                                 foreach ($entry in @($launches[$n - 1] -split ';' | Where-Object { $_ })) {
                                     $i++
                                     $f = $entry -split ','
-                                    if ($t -lt [double]$f[1] -or $t -ge [double]$f[2]) { continue }
+                                    if ($polls[$n] -lt [int]$f[1] -or ($f[2] -ne '*' -and $polls[$n] -gt [int]$f[2])) { continue }
                                     $id = if ($f.Count -gt 3) { [int]$f[3] } else { 1000 * $n + $i }
                                     [pscustomobject]@{ Id = $id; CommandLine = "dotnet exec --runtimeconfig /w/tests/$($f[0])/bin/$($f[0]).runtimeconfig.json /nuget/testhost.dll" }
                                 }
@@ -104,10 +110,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     Show 'both-brief'        { V @((Seen $gt 4), (Seen $ct 0.3)) }
                     Show 'costly-runs-first' { V @((Seen $gt 4), (Seen $ct 10)) }
                     Show 'killer-runs-first' { V @((Seen $gt 4), (Seen $ct 0.3), (Seen $gt 12)) }
-                    Show 'reroll-early'      { Leg 'reroll-early' '30000,800 7' @("$ct,0,0.15;$gt,0.2,90", "$gt,0,0.1;$ct,0.15,0.2;$gt,0.25,90") }
-                    Show 'reroll-late'       { Leg 'reroll-late' '30000,800 7' @("$gt,0,0.1;$ct,0.15,90", "$gt,0,90") }
-                    Show 'stale-host'        { Leg 'stale-host' '30000,800 7' @("$ct,0,90,4242", "$ct,0,90,4242;$gt,0.1,90") }
-                    Show 'out-of-attempts'   { Leg 'out-of-attempts' '30000,30000,800 7' @("$ct,0,90", "$ct,0,90", "$ct,0,90") }
+                    Show 'reroll-early'      { Leg 'reroll-early' '30000,400 7' @("$ct,1,1;$gt,1,*", "$gt,1,*;$ct,1,1") }
+                    Show 'reroll-late'       { Leg 'reroll-late' '30000,400 7' @("$gt,1,1;$ct,2,*", "$gt,1,*") }
+                    Show 'stale-host'        { Leg 'stale-host' '30000,400 7' @("$ct,1,*,4242", "$ct,1,*,4242;$gt,1,*") }
+                    Show 'out-of-attempts'   { Leg 'out-of-attempts' '30000,30000,400 7' @("$ct,1,*", "$ct,1,*", "$ct,1,*") }
                     Show 'unreadable'        { Leg 'unreadable' '300 7' @() -ListerThrows }
                     Show 'exits-first'       { Leg 'exits-first' '0 3' @() }
                     Show 'arguments'         { (Get-Content -Raw -LiteralPath (Join-Path $WorkDir 'reroll-late' 'launch-2.txt')).Trim() }
@@ -133,7 +139,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 Assert.Equal("OK keep", cases["killer-runs-first"]);
 
                 // The bad draw is killed before it finishes whichever way it shows, and the good one runs to the end with
-                // its exit code handed back.
+                // its exit code handed back. Early: the costly host is listed once, ahead of a killer host in the same poll
+                // (the process table lists the older process first), and the next launch shows the two the other way
+                // round, which is not the bad draw. Late: the costly host comes after a brief killer host and stays.
                 Assert.Equal("OK exit=7 launches=2 finished=2", cases["reroll-early"]);
                 Assert.Equal("OK exit=7 launches=2 finished=2", cases["reroll-late"]);
 
