@@ -35,14 +35,21 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 // A killed launch never writes its done-N marker, which is how a case tells a reroll from a finish. The
                 // plan gives each launch its own sleep ('30000,400 7': launch 1 sleeps 30 s, later ones 0.4 s): a launch
                 // the case expects to be killed sleeps far longer than any verdict takes, so it can never finish first,
-                // and a kept launch exits soon after its verdict - or before it, which keeps it all the same.
+                // and a kept launch exits soon after its verdict - or before it, which keeps it all the same. A launch
+                // that must still be running when the launcher asks whether mutation has begun sleeps 'asked': until
+                // the case's stand-in for that question has been called (it leaves asked.txt), not for a guessed time.
                 WriteTemp(Path.Combine(dir, "fake-stryker.ps1"),
                     """
                     $n = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'launch-*.txt').Count + 1
                     Set-Content -LiteralPath (Join-Path $PSScriptRoot "launch-$n.txt") -Value ($args -join ' ')
                     $plan = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'plan.txt')).Trim() -split ' '
                     $sleeps = $plan[0] -split ','
-                    Start-Sleep -Milliseconds ([int]$sleeps[[Math]::Min($n, $sleeps.Count) - 1])
+                    $sleep = $sleeps[[Math]::Min($n, $sleeps.Count) - 1]
+                    if ($sleep -eq 'asked') {
+                        for ($i = 0; $i -lt 600 -and -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'asked.txt')); $i++) { Start-Sleep -Milliseconds 50 }
+                    } else {
+                        Start-Sleep -Milliseconds ([int]$sleep)
+                    }
                     Set-Content -LiteralPath (Join-Path $PSScriptRoot "done-$n.txt") -Value 'done'
                     exit ([int]$plan[1])
                     """);
@@ -72,14 +79,29 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     # come, and one listed for good turns long, so no verdict here depends on the machine's speed (in
                     # seconds, a 0.15 s host was missed whenever one poll came late, and the case then kept the bad draw).
                     # An explicit id lets a host outlive the launch that showed it.
-                    function Leg([string]$name, [string]$plan, [string[]]$launches, [switch]$ListerThrows, [switch]$Mutating) {
+                    #   -Mutating and -ProbeThrows stand in for the launcher's question "has this launch started on its
+                    # mutants?". -TestBin asks it for real instead: the launcher's OWN default probe runs, from the leg's
+                    # folder, over a tests/ tree holding the named files - a test bin as Stryker leaves it.
+                    function Leg([string]$name, [string]$plan, [string[]]$launches, [switch]$ListerThrows, [switch]$Mutating,
+                                 [switch]$ProbeThrows, [string[]]$TestBin) {
                         $dir = Join-Path $WorkDir $name
                         New-Item -ItemType Directory -Path $dir | Out-Null
                         Copy-Item -LiteralPath (Join-Path $WorkDir 'fake-stryker.ps1') -Destination $dir
                         Set-Content -LiteralPath (Join-Path $dir 'plan.txt') -Value $plan
-                        # Stands in for the *.stryker-unchanged backups Stryker leaves once it starts on its mutants.
-                        if ($Mutating) { Set-Content -LiteralPath (Join-Path $dir 'mutating.txt') -Value '' }
-                        $began = { Test-Path -LiteralPath (Join-Path $dir 'mutating.txt') }.GetNewClosure()
+                        $probe = @{}
+                        if ($TestBin) {
+                            $bin = Join-Path $dir 'tests' 'DwarfMapper.Generator.Tests' 'bin' 'Debug' 'net10.0'
+                            New-Item -ItemType Directory -Path $bin | Out-Null
+                            foreach ($file in $TestBin) { Set-Content -LiteralPath (Join-Path $bin $file) -Value '' }
+                        } elseif ($ProbeThrows) {
+                            $probe['MutationBegan'] = { Set-Content -LiteralPath (Join-Path $dir 'asked.txt') -Value ''; throw 'no file system here' }.GetNewClosure()
+                        } else {
+                            if ($Mutating) { Set-Content -LiteralPath (Join-Path $dir 'mutating.txt') -Value '' }
+                            $probe['MutationBegan'] = {
+                                Set-Content -LiteralPath (Join-Path $dir 'asked.txt') -Value ''
+                                Test-Path -LiteralPath (Join-Path $dir 'mutating.txt')
+                            }.GetNewClosure()
+                        }
                         $polls = @{}
                         $lister = if ($ListerThrows) { { throw 'no process table here' } } else {
                             {
@@ -96,11 +118,17 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                                 }
                             }.GetNewClosure()
                         }
-                        $code = Invoke-StrykerRerollingBadOrder -ConfigFile 'leg.json' -PollMilliseconds 50 -LongSeconds 0.3 -ListProcesses $lister `
-                            -MutationBegan $began -Command @('pwsh', '-NoProfile', '-NonInteractive', '-File', (Join-Path $dir 'fake-stryker.ps1'))
+                        Push-Location -LiteralPath $dir   # the default probe looks under the current folder, as on a runner
+                        try {
+                            $code = Invoke-StrykerRerollingBadOrder -ConfigFile 'leg.json' -PollMilliseconds 50 -LongSeconds 0.3 -ListProcesses $lister `
+                                @probe -Command @('pwsh', '-NoProfile', '-NonInteractive', '-File', (Join-Path $dir 'fake-stryker.ps1')) -InformationVariable said
+                        } finally { Pop-Location }
                         $launched = @(Get-ChildItem -LiteralPath $dir -Filter 'launch-*.txt').Count
                         $finished = @(Get-ChildItem -LiteralPath $dir -Filter 'done-*.txt' | ForEach-Object { $_.BaseName.Substring(5) } | Sort-Object) -join ','
-                        "exit=$code launches=$launched finished=$finished"
+                        # WHY a launch was kept, in the launcher's own words: a launch that merely ended before any verdict
+                        # is kept too, and must not pass for one kept because it was too late to kill.
+                        $why = if (@($said | Where-Object { "$_" -match 'too late to reroll' }).Count) { ' too-late' } else { '' }
+                        "exit=$code launches=$launched finished=$finished$why"
                     }
                     Show 'host-costly'       { M (HostLine $ct) }
                     Show 'host-killer'       { M (HostLine $gt) }
@@ -118,13 +146,16 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     Show 'reroll-late'       { Leg 'reroll-late' '30000,400 7' @("$gt,1,1;$ct,2,*", "$gt,1,*") }
                     Show 'stale-host'        { Leg 'stale-host' '30000,400 7' @("$ct,1,*,4242", "$ct,1,*,4242;$gt,1,*") }
                     Show 'out-of-attempts'   { Leg 'out-of-attempts' '30000,30000,400 7' @("$ct,1,*", "$ct,1,*", "$ct,1,*") }
-                    Show 'too-late'          { Leg 'too-late' '2000,400 7' @("$gt,1,1;$ct,2,*") -Mutating }
+                    Show 'too-late'          { Leg 'too-late' 'asked,400 7' @("$gt,1,1;$ct,2,*") -Mutating }
+                    Show 'cannot-tell'       { Leg 'cannot-tell' 'asked,400 7' @("$ct,1,*") -ProbeThrows }
+                    Show 'bin-untouched'     { Leg 'bin-untouched' '30000,400 7' @("$ct,1,*", "$gt,1,*") -TestBin 'DwarfMapper.Generator.dll' }
+                    Show 'bin-backed-up'     { Leg 'bin-backed-up' '1500,400 7' @("$ct,1,*") -TestBin 'DwarfMapper.Generator.dll', 'DwarfMapper.Generator.dll.stryker-unchanged' }
                     Show 'unreadable'        { Leg 'unreadable' '300 7' @() -ListerThrows }
                     Show 'exits-first'       { Leg 'exits-first' '0 3' @() }
                     Show 'arguments'         { (Get-Content -Raw -LiteralPath (Join-Path $WorkDir 'reroll-late' 'launch-2.txt')).Trim() }
                     """);
 
-                var cases = PwshBattery.Run(dir, 20, "Invoke-StrykerRerollingBadOrder");
+                var cases = PwshBattery.Run(dir, 23, "Invoke-StrykerRerollingBadOrder");
 
                 // A test host of either project, by its exact name - nothing else, and not a longer name.
                 Assert.Equal("OK DwarfMapper.CompilerTests", cases["host-costly"]);
@@ -157,8 +188,18 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 Assert.Equal("OK exit=7 launches=3 finished=3", cases["out-of-attempts"]);
 
                 // A bad draw that shows only once Stryker has started on its mutants is kept: killing it then would
-                // leave a test bin without its original assembly, or with a mutated one.
-                Assert.Equal("OK exit=7 launches=1 finished=1", cases["too-late"]);
+                // leave a test bin without its original assembly, or with a mutated one. So is one it cannot ask about.
+                // Both launches stay alive until the question has been asked, and the launcher says why it kept them.
+                Assert.Equal("OK exit=7 launches=1 finished=1 too-late", cases["too-late"]);
+                Assert.Equal("OK exit=7 launches=1 finished=1 too-late", cases["cannot-tell"]);
+
+                // The question as the launcher really asks it, with nothing injected: a test bin Stryker has not touched
+                // lets the bad draw be rerolled, and one holding Stryker's backup of the original assembly
+                // (<assembly>.stryker-unchanged, TestProjectsInfo.GetBackupName) does not. Without the first of these the
+                // default could answer "begun" to everything - a typo, a wrong folder - and the launcher would never
+                // reroll on a runner while every case above stayed green.
+                Assert.Equal("OK exit=7 launches=2 finished=2", cases["bin-untouched"]);
+                Assert.Equal("OK exit=7 launches=1 finished=1 too-late", cases["bin-backed-up"]);
 
                 // What it cannot read keeps the run, and a Stryker that exits before any host shows is not relaunched.
                 Assert.Equal("OK exit=7 launches=1 finished=1", cases["unreadable"]);
