@@ -504,7 +504,9 @@ function Set-UnmutatedSourcesGenerated {
 # seconds after a kill, and the bad draw came up in three of the five. What a leg tests does not change - the same
 # tests meet the same mutants - only the order its sessions visit the projects.
 #   Whatever it cannot read keeps the run - no host seen, a lister that throws - so its worst case is the plain launch
-# it replaced, never a lost leg.
+# it replaced, never a lost leg. And it kills only what is safe to kill: a launch still discovering or running the
+# unmutated suite. One already on its mutants is kept whatever its draw (-MutationBegan), because Stryker has by then
+# moved the original assembly out of the test bins.
 # -----------------------------------------------------------------------------------------------------
 function Get-TestHostProject {
     param(
@@ -559,7 +561,15 @@ function Invoke-StrykerRerollingBadOrder {
                 ForEach-Object { [pscustomobject]@{ Id = $_.Id; CommandLine = $_.CommandLine } }
         },
         [ValidateRange(10, 5000)][int]$PollMilliseconds = 200,
-        [ValidateRange(0.1, 600)][double]$LongSeconds = 10
+        [ValidateRange(0.1, 600)][double]$LongSeconds = 10,
+        # Whether the launch has started on its mutants. When Stryker's initial test run is over it MOVES each test
+        # bin's copy of the project under test to <name>.stryker-unchanged (MutationTestProcess.Initialize ->
+        # TestProjectsInfo.BackupOriginalAssembly, tag dotnet-stryker@4.16.0) and writes the mutated assembly in its
+        # place a moment later. Asked once, before a kill.
+        [scriptblock]$MutationBegan = {
+            [bool](Get-ChildItem -Path (Join-Path (Get-Location).Path 'tests') -Recurse -File -Filter '*.stryker-unchanged' -ErrorAction SilentlyContinue |
+                Select-Object -First 1)
+        }
     )
     # The flag every launch site passes (MutationLaunchContractTests): a red initial test run stops the leg.
     $arguments = @($Command | Select-Object -Skip 1) + @('--config-file', $ConfigFile, '--break-on-initial-test-failure')
@@ -598,6 +608,15 @@ function Invoke-StrykerRerollingBadOrder {
         }
         foreach ($key in @($hosts.Keys)) { $prior[$key] = $true }
         if ($verdict -eq 'reroll' -and $attempt -lt $MaxAttempts) {
+            # A kill is safe only while Stryker is still discovering or running the unmutated suite, which is where
+            # both legs' verdicts come (the initial run's sessions are the long hosts). One that is already on its
+            # mutants has moved the original assembly out of the test bins: killed there, it leaves them without it
+            # or with a mutated copy. If the answer cannot be had, it is taken as yes.
+            $mutating = $true
+            try { $mutating = [bool](& $MutationBegan) } catch { Write-Host "   (cannot tell whether mutation began: $($_.Exception.Message))" }
+            if ($mutating) { $verdict = 'late' }
+        }
+        if ($verdict -eq 'reroll' -and $attempt -lt $MaxAttempts) {
             Write-Host "   attempt $attempt of ${MaxAttempts}: $CostlyProject's test host started ahead of $KillerProject's - killing Stryker and drawing again"
             try { $proc.Kill($true) } catch { Write-Host "   (kill: $($_.Exception.Message))" }
             $proc.WaitForExit()
@@ -606,6 +625,7 @@ function Invoke-StrykerRerollingBadOrder {
         $outcome = switch ($verdict) {
             'keep'   { "$KillerProject's test host started first - keeping this draw" }
             'reroll' { "$CostlyProject's test host started first again - out of attempts, keeping this draw" }
+            'late'   { "$CostlyProject's test host ran first, but this launch is already on its mutants - too late to reroll, keeping this draw" }
             default  { 'no verdict - keeping this draw' }
         }
         Write-Host "   attempt $attempt of ${MaxAttempts}: $outcome"

@@ -12,8 +12,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///     0.25 s sample) and initial-run hosts long, so a costly host seen before any killer host rerolls at once, and
     ///     otherwise the first host to stay alive <c>-LongSeconds</c> decides. What it must never do: take a process that
     ///     is not a test host, or a project whose name only begins with one of the two, for a host; decide on brief hosts
-    ///     alone; judge a launch by a host its killed predecessor left behind; reroll past its last attempt; lose the exit
-    ///     code it hands back; or drop a leg because it could not read the process table.
+    ///     alone; judge a launch by a host its killed predecessor left behind; reroll past its last attempt; kill a launch
+    ///     that has already started on its mutants; lose the exit code it hands back; or drop a leg because it could not
+    ///     read the process table.
     ///     <para>
     ///         Driven through <c>pwsh</c> against the REAL functions (<see cref="PwshBattery" />) with a fake Stryker
     ///         script and a process lister that plays each launch's hosts on a schedule counted in the launcher's own
@@ -71,11 +72,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     # come, and one listed for good turns long, so no verdict here depends on the machine's speed (in
                     # seconds, a 0.15 s host was missed whenever one poll came late, and the case then kept the bad draw).
                     # An explicit id lets a host outlive the launch that showed it.
-                    function Leg([string]$name, [string]$plan, [string[]]$launches, [switch]$ListerThrows) {
+                    function Leg([string]$name, [string]$plan, [string[]]$launches, [switch]$ListerThrows, [switch]$Mutating) {
                         $dir = Join-Path $WorkDir $name
                         New-Item -ItemType Directory -Path $dir | Out-Null
                         Copy-Item -LiteralPath (Join-Path $WorkDir 'fake-stryker.ps1') -Destination $dir
                         Set-Content -LiteralPath (Join-Path $dir 'plan.txt') -Value $plan
+                        # Stands in for the *.stryker-unchanged backups Stryker leaves once it starts on its mutants.
+                        if ($Mutating) { Set-Content -LiteralPath (Join-Path $dir 'mutating.txt') -Value '' }
+                        $began = { Test-Path -LiteralPath (Join-Path $dir 'mutating.txt') }.GetNewClosure()
                         $polls = @{}
                         $lister = if ($ListerThrows) { { throw 'no process table here' } } else {
                             {
@@ -93,7 +97,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                             }.GetNewClosure()
                         }
                         $code = Invoke-StrykerRerollingBadOrder -ConfigFile 'leg.json' -PollMilliseconds 50 -LongSeconds 0.3 -ListProcesses $lister `
-                            -Command @('pwsh', '-NoProfile', '-NonInteractive', '-File', (Join-Path $dir 'fake-stryker.ps1'))
+                            -MutationBegan $began -Command @('pwsh', '-NoProfile', '-NonInteractive', '-File', (Join-Path $dir 'fake-stryker.ps1'))
                         $launched = @(Get-ChildItem -LiteralPath $dir -Filter 'launch-*.txt').Count
                         $finished = @(Get-ChildItem -LiteralPath $dir -Filter 'done-*.txt' | ForEach-Object { $_.BaseName.Substring(5) } | Sort-Object) -join ','
                         "exit=$code launches=$launched finished=$finished"
@@ -114,12 +118,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     Show 'reroll-late'       { Leg 'reroll-late' '30000,400 7' @("$gt,1,1;$ct,2,*", "$gt,1,*") }
                     Show 'stale-host'        { Leg 'stale-host' '30000,400 7' @("$ct,1,*,4242", "$ct,1,*,4242;$gt,1,*") }
                     Show 'out-of-attempts'   { Leg 'out-of-attempts' '30000,30000,400 7' @("$ct,1,*", "$ct,1,*", "$ct,1,*") }
+                    Show 'too-late'          { Leg 'too-late' '2000,400 7' @("$gt,1,1;$ct,2,*") -Mutating }
                     Show 'unreadable'        { Leg 'unreadable' '300 7' @() -ListerThrows }
                     Show 'exits-first'       { Leg 'exits-first' '0 3' @() }
                     Show 'arguments'         { (Get-Content -Raw -LiteralPath (Join-Path $WorkDir 'reroll-late' 'launch-2.txt')).Trim() }
                     """);
 
-                var cases = PwshBattery.Run(dir, 19, "Invoke-StrykerRerollingBadOrder");
+                var cases = PwshBattery.Run(dir, 20, "Invoke-StrykerRerollingBadOrder");
 
                 // A test host of either project, by its exact name - nothing else, and not a longer name.
                 Assert.Equal("OK DwarfMapper.CompilerTests", cases["host-costly"]);
@@ -150,6 +155,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
                 // Three bad draws in a row: the third is kept, not rerolled again.
                 Assert.Equal("OK exit=7 launches=3 finished=3", cases["out-of-attempts"]);
+
+                // A bad draw that shows only once Stryker has started on its mutants is kept: killing it then would
+                // leave a test bin without its original assembly, or with a mutated one.
+                Assert.Equal("OK exit=7 launches=1 finished=1", cases["too-late"]);
 
                 // What it cannot read keeps the run, and a Stryker that exits before any host shows is not relaunched.
                 Assert.Equal("OK exit=7 launches=1 finished=1", cases["unreadable"]);
