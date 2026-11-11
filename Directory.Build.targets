@@ -73,4 +73,32 @@
         <RuntimeHostConfigurationOption Include="System.Runtime.TieredCompilation.CallCountingDelayMs" Value="0"/>
     </ItemGroup>
 
+    <!-- Round 34. A project compiled ahead of time is published against a patched runtime; the SDK pin stays.
+         PublishAot makes the SDK reference Microsoft.DotNet.ILCompiler at the runtime patch the SDK shipped with:
+         10.0.1 for the pinned 10.0.101. On 2026-11-03 that version drew advisory GHSA-p3jp-9v83-76w9 (CVE-2026-111497,
+         the Brotli decoder's out-of-bounds write; high; fixed in 10.0.14). The audit in Directory.Build.props then did
+         what it is there for: NU1903 failed every restore of the solution, and master's nightly was red in 18 of 23
+         jobs from 2026-11-04 on.
+         RuntimeFrameworkVersion is the SDK's own property for the runtime patch a project is published against, and
+         the SDK takes the compiler pack from it: the lock files resolve Microsoft.DotNet.ILCompiler and its
+         runtime.<rid> pack to this version (Microsoft.NET.ILLink.Tasks follows). Measured on the pinned SDK,
+         2026-11-11: the restore passes the audit; `dotnet publish -warnaserror` builds for win-x64 and linux-x64, and
+         both native binaries end "AOT gate: all checks passed.".
+         Rejected, each one tried:
+           - an explicit PackageReference with the version in Directory.Packages.props: it restores, and then the
+             package itself warns "Delete explicit 'Microsoft.DotNet.ILCompiler' package reference", an error under
+             the AOT gate's -warnaserror;
+           - updating the SDK's KnownILCompilerPack item: MSB4191 in the form that touches net10.0 alone, and an
+             SDK-internal item either way;
+           - switching the audit off or suppressing the advisory: what the gate exists to refuse.
+         The price: the MANAGED build of such a project asks for this runtime patch, so running it without publishing
+         (`dotnet run`) needs runtime 10.0.15 or later installed. Nothing here does that: ci.yml's aot-trim-gate,
+         housekeeping's AOT stage and scripts/run-aot-bench.ps1 all publish and run the native binary.
+         Scoped to net10.0: the number is a 10.0 runtime's, and a project targeting another framework must not inherit it.
+         Delete this when the SDK pin moves to one whose own runtime is at least this patch. AotCompilerPatchScanTests
+         fails then, and fails when a PublishAot project's lock file resolves any other compiler. -->
+    <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(TargetFramework)' == 'net10.0'">
+        <RuntimeFrameworkVersion>10.0.15</RuntimeFrameworkVersion>
+    </PropertyGroup>
+
 </Project>
