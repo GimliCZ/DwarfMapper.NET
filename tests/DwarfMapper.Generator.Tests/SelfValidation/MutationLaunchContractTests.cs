@@ -225,6 +225,36 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         /// <summary>
+        ///     Round 34. The marking edits tracked sources, and the job's "Assert the tracked tree survived the leg" step is
+        ///     <c>git diff --exit-code</c>: left alone, it fails every marked leg on the marking itself (found on 2026-11-11
+        ///     by reading the job end to end; the container legs that verified the marking never ran that step). So the
+        ///     marking step stages its edits. <c>git diff</c> compares the working tree against the index, which is then
+        ///     the marked tree, and the assertion still proves what it is there for: the run wrote nothing into a tracked
+        ///     file (H1, the mutated doc writer of 2026-08-19).
+        /// </summary>
+        [Fact]
+        public void The_marking_is_staged_so_the_tracked_tree_assertion_compares_against_the_marked_tree()
+        {
+            var ci = File.ReadAllLines(Path.Combine(RepoPaths.Root, ".github", "workflows", "ci.yml"));
+            var code = ci.Select((text, index) => (Text: text, Index: index)).Where(l => !l.Text.TrimStart().StartsWith('#')).ToList();
+
+            var marking = code.Single(l => l.Text.Contains("Set-UnmutatedSourcesGenerated -ConfigFile $env:CONFIG", StringComparison.Ordinal)).Index;
+            var launch = code.Single(l => Regex.IsMatch(l.Text, @"\bdotnet\s+stryker\b")).Index;
+            var nextStep = code.First(l => l.Index > marking && Regex.IsMatch(l.Text, @"^\s*-\s+(name|run|uses|if):")).Index;
+
+            var staged = code.Where(l => Regex.IsMatch(l.Text, @"^\s+git add --update\s*$")).Select(l => l.Index).ToList();
+            Assert.True(staged.Count == 1 && staged[0] > marking && staged[0] < nextStep,
+                "the step that marks the unmutated sources must stage its edits (`git add --update`, after the marking, " +
+                "in the same step): the tracked-tree assertion after the leg is `git diff`, working tree against index, " +
+                "and unstaged it fails every marked leg on the marking itself.");
+
+            var treeAssertion = code.Where(l => Regex.IsMatch(l.Text, @"^\s+run:\s*git diff --exit-code\s*$")).Select(l => l.Index).ToList();
+            Assert.True(treeAssertion.Count == 1 && treeAssertion[0] > launch,
+                "the mutation job must still assert, after the launch, that the leg wrote nothing into a tracked file " +
+                "(`git diff --exit-code`).");
+        }
+
+        /// <summary>
         ///     Round 34. Stryker 4.16 visits the test projects of every run in one order per invocation, drawn from its
         ///     parallel project analysis, and on the generator project the draw that puts CompilerTests ahead of
         ///     Generator.Tests took the same leg's mutant phase from 20:55 to 48:29 (3 of 12 full legs drew it). So CI's

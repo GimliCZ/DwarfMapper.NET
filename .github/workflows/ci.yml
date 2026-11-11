@@ -315,11 +315,18 @@ jobs:
       # tests. Only the generator-project legs, whose source scans were run against the marked tree; the other
       # projects' legs keep the whole-project compile until theirs are. UnmutatedSourcesMarkingTests holds the
       # function, MutationLaunchContractTests this step and its place before the launch.
+      #   The marking edits tracked sources, and "Assert the tracked tree survived the leg" below is `git diff`: the
+      # working tree against the INDEX. So the edits are staged here. That step then compares against the marked tree
+      # and still proves the run wrote nothing into a tracked file; unstaged, it would fail both legs on the marking
+      # itself (caught reading this job end to end before its first run on a runner, 2026-11-11: the container legs
+      # that verified the marking never ran the steps after Stryker).
       - name: Compile only what this leg mutates
         if: matrix.compile-only-mutated
         env:
           CONFIG: ${{ matrix.config }}
-        run: pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Set-UnmutatedSourcesGenerated -ConfigFile $env:CONFIG'
+        run: |
+          pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Set-UnmutatedSourcesGenerated -ConfigFile $env:CONFIG'
+          git add --update
       # Exits non-zero when the score falls below the config's thresholds.break — each leg keeps its own
       # measured floor (see each config's comment for the measurement it came from, and for why an older,
       # higher number must not be "restored": the runtime leg's 66 counted load-induced timeouts on mutants
