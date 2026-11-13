@@ -165,21 +165,25 @@ namespace DwarfMapper.IntegrationTests
 
             for (var i = 0; i < 100; i++) mapper.MapSpan(src, dst); // warm up
 
-            // Five windows of 1,000 maps, and at least one of them reads exactly zero. One window was the whole test
+            // Five windows of 1,000 maps, of which at most ONE may read non-zero. One window was the whole test
             // until round 35, when PR #13's net11 job read 4,896 bytes in it once (run 43439030599).
             //
             // CAUSE, measured (Issues/round35/AllocationCounterProbe.cs): GC.GetAllocatedBytesForCurrentThread is not
             // exact across a BACKGROUND collection. A thread that has allocated holds the unused rest of its
             // allocation buffer (up to about 8 KB); when a background gen-2 collection started by ANOTHER thread
-            // reaches it, the counter jumps by that rest although the thread allocated nothing. On runtime 10.0.1
-            // and 11.0.0 alike: 10 to 705 of 17,000 to 55,000 empty windows moved, by 16 to 8,176 bytes; none
-            // with concurrent collection off, none under blocking or gen-0 collections, and none once the thread
-            // stops allocating (0 of about 270,000 windows). This test's thread has just allocated its arrays, and
-            // the other test collections of this assembly run beside it and allocate large objects.
+            // reaches it, the counter jumps by that rest although the thread allocated nothing. Runtime 10.0.1 and
+            // 11.0.0 alike; never with concurrent collection off, never under blocking or gen-0 collections. This
+            // test's thread has just allocated its arrays, and the other test collections of this assembly run
+            // beside it and allocate large objects.
             //
-            // So the jump can land in one window and not in the next, while a map that allocates does so in every
-            // window: the oracle is a window that reads zero. (This project keeps the runtime's defaults on purpose,
-            // concurrent collection among them; see Directory.Build.targets.)
+            // THE ORACLE, measured with this test's own body beside a thread that keeps background collections
+            // going (Issues/round35/ZeroAllocationOracleProbe.cs; about 8,000 trials a run, two runs a runtime):
+            //   the first window read non-zero in 108 to 123 trials   - the old test, failing on demand
+            //   exactly one of the five did in about a third of them  - the rest was spent, there is no more to add
+            //   two or more did in none of about 32,000               - so two non-zero windows are not the counter
+            //   with an allocation planted in the window, all five did, in every trial.
+            // (This project keeps the runtime's defaults on purpose, concurrent collection among them; see
+            // Directory.Build.targets.)
             var windows = new long[5];
             for (var w = 0; w < windows.Length; w++)
             {
@@ -189,7 +193,9 @@ namespace DwarfMapper.IntegrationTests
             }
 
             Assert.Equal(64, dst.Length);
-            Assert.Contains(0L, windows); // writes into caller-provided memory — no allocation
+            Assert.True(windows.Count(w => w != 0) <= 1,
+                $"the span map allocated: bytes per window of 1,000 maps = [{string.Join(", ", windows)}]. One non-zero " +
+                "window is the allocation counter moving under a background collection; two are an allocation.");
         }
     }
 }

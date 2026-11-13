@@ -51,10 +51,10 @@ namespace DwarfMapper.IntegrationTests
             AllocPointDst sink = default;
             for (var i = 0; i < 200; i++) sink = mapper.Map(src);
 
-            // Five windows, at least one of them exactly zero: a map that allocates does so in every window, while a
-            // background collection started by another thread can move this counter once by the unused rest of this
-            // thread's allocation buffer (measured in round 35; written out in AsyncSpanQueryablePropertyTests, whose
-            // single window read 4,896 bytes that way).
+            // Five windows, of which at most one may read non-zero: a map that allocates does so in every window,
+            // while a background collection started by another thread can move this counter once, by the unused
+            // rest of this thread's allocation buffer (measured in round 35; written out in
+            // AsyncSpanQueryablePropertyTests, whose single window read 4,896 bytes that way).
             var windows = new long[5];
             for (var w = 0; w < windows.Length; w++)
             {
@@ -66,7 +66,9 @@ namespace DwarfMapper.IntegrationTests
 
             // Keep the result observable so the JIT cannot elide the loop.
             Assert.Equal(3, sink.Z);
-            Assert.Contains(0L, windows);
+            Assert.True(windows.Count(w => w != 0) <= 1,
+                $"the struct map allocated: bytes per window of 10,000 maps = [{string.Join(", ", windows)}]. One non-zero " +
+                "window is the allocation counter moving under a background collection; two are an allocation.");
         }
     }
 

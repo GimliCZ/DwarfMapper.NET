@@ -95,9 +95,27 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 
   The deltas run from 16 to 8,176 bytes (one allocation quantum less one object), and the collection count does not
   mark a moved window (every moved window had an unchanged gen-2 count), so a window cannot be discarded by asking.
-  It is not new in .NET 11; the job that happened to catch it runs the suite there. The two tests that assert an
-  exact zero over one window now read five and require a zero among them: a map that allocates does so in every
-  window. The tests with a per-call bound are not exposed (8 KB over their iteration counts is under their slack).
+  It is not new in .NET 11; the job that happened to catch it runs the suite there.
+
+  The last row of that table is about 18 exposures, not 270,000: a thread that allocated once has one unused rest
+  to lose, once. So the oracle was measured with the failing test's own body instead
+  ([`ZeroAllocationOracleProbe.cs`](ZeroAllocationOracleProbe.cs)): trials of five windows of 1,000 `MapSpan`
+  calls, each trial allocating its arrays first as the test does, beside a thread that keeps background
+  collections going; six seconds a run:
+
+  | | runtime 10.0.1 | runtime 11.0.0 |
+  |---|---|---|
+  | trials a run | 7,793 and 8,064 | 8,423 and 7,787 |
+  | the FIRST window non-zero (the old one-window test fails) | 123 and 113 | 108 and 108 |
+  | any one window non-zero | 2,605 and 2,740 | 2,771 and 2,573 |
+  | two or more windows non-zero | 0 and 0 | 0 and 0 |
+  | neighbour idle: any window non-zero | 0 of 35,524 | 0 of 36,480 |
+  | `DOTNET_gcConcurrent=0`: any window non-zero | 0 of 1,937 | 0 of 1,805 |
+  | one allocation planted per window: all five non-zero | 7,826 of 7,826 | 8,924 of 8,924 |
+
+  So the old test's failure is reproduced on demand (about 1.5 % of trials under that neighbour), and the two
+  tests that assert an exact zero now read five windows and allow at most one of them to be non-zero: the counter
+  never moved twice in about 32,000 trials, and an allocating map moves all five every time. The tests with a per-call bound are not exposed (8 KB over their iteration counts is under their slack).
   IntegrationTests keeps concurrent collection on, as it keeps every runtime default: it measures what a consumer
   runs.
 
