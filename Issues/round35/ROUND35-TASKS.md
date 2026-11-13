@@ -324,3 +324,32 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   clean build. Measured: `B: plain=(n,'') alias=(n,'')` against `A: plain=(n,'') alias=(n,'al')` with the ignore on
   the dispatch method instead. It is the same adoption rule "an arm may resolve to any declared method" (F43)
   applied to a method whose parameter is a BASE of the arm's source. Older than this round.
+
+- **A fresh thread alone was not enough: macOS** (PR #13's `cross-platform (macos-latest)` at `420e7f8`, run
+  43501831387). Three tests failed on `Assert.Equal(0, reading.BeforeWindow)` with 152: on macOS a new thread has
+  allocated 152 bytes by the time its entry point runs, so it owns an allocation buffer like any other thread. The
+  window itself read zero; it was the premise I had asserted that was false there, and with it the claim that the
+  reading could not be moved. Windows and Linux start a thread having allocated nothing (0 of 389,412 and 0 of
+  98,591 trials), which is why the probes had not shown it.
+  - **What is exact on a thread that HAS allocated: retire its buffer first.** The counter never moved under a
+    blocking collection, which retires every thread's buffer with the unused rest accounted for. So the measuring
+    thread runs `GC.Collect(0, GCCollectionMode.Forced, blocking: true)` and allocates nothing more before the
+    window. [`RetiredBufferAllocationProbe.cs`](RetiredBufferAllocationProbe.cs), one window of 1,000 `MapSpan` on the
+    CALLING thread, which allocates three arrays of varying size before each:
+
+    | runtime | before the window | neighbour | trials | window non-zero |
+    |---|---|---|---|---|
+    | 10.0.11 | nothing | continuous background collections | 216,186 | 2,686 (largest 8,176 B) |
+    | 10.0.11 | blocking gen-0 collection | continuous | 27,664 | 0 |
+    | 10.0.11 | blocking gen-0 collection | one every 20 ms | 418,087 | 0 |
+    | 10.0.11 | blocking gen-0 collection, **allocation planted** | continuous | 7,500 | 7,500 (24 B) |
+    | 11.0.0 | nothing | continuous | 99,953 | 852 (largest 8,184 B) |
+    | 11.0.0 | blocking gen-0 collection | continuous | 10,367 | 0 |
+
+    And the form the tests use ([`FreshThreadAllocationProbe.cs`](FreshThreadAllocationProbe.cs), modes
+    `mapdirty`/`plantdirty`): a thread started for the window that allocates 152 bytes first, as macOS's does, then
+    collects - 0 of 20,810 and 0 of 67,932 on 10.0.11, 0 of 11,379 and 0 of 41,076 on 11.0.0; planted, 6,375 of
+    6,375 and 3,754 of 3,754.
+  - **The change.** `ExactBytesOnFreshThread` runs that collection on its thread before the window and returns the
+    bytes of the window alone; the `BeforeWindow` reading and the three assertions on it are gone. macOS itself is
+    not available here: its verdict is the `cross-platform (macos-latest)` job of the next run.
