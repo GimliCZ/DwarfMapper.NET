@@ -6,11 +6,9 @@ namespace DwarfMapper.IntegrationTests
     // (round 35 T2; the last untested cell of round 33's fast-path audit). The element method here ignores one member,
     // so a block copy would carry it across anyway: the array map has to go through the element method instead.
     //
-    // Held here for a mapper WITHOUT reference handling, where it is true. Under ReferenceHandling.Preserve and
-    // OnCycle.SetNull it is NOT true today, and not only for arrays: a nested member or element of a pair that has a
-    // declared partial is routed through a generated helper, and that helper applies the class's pair-scoped
-    // directives but not the directives written on the method. Issues/round35/ROUND35-TASKS.md, T2, has the measured
-    // output and the decision that is open; the two modes get their facts here with the fix.
+    // In every mode. Under ReferenceHandling.Preserve and OnCycle.SetNull the pair's declared partial yields to a
+    // generated helper, so the gate that asks "does the element resolve to a user conversion?" answered no, and
+    // under SetNull the array was block-copied past the ignore (under Preserve the helper mapped the member itself).
     public struct AbeCell
     {
         public int Kept;
@@ -37,6 +35,28 @@ namespace DwarfMapper.IntegrationTests
 
     [DwarfMapper]
     public partial class AbeNoneMapper
+    {
+        [MapIgnore(nameof(AbeCellDto.Dropped))]
+        public partial AbeCellDto MapCell(AbeCell cell);
+
+        public partial AbeGridDto Map(AbeGrid grid);
+
+        public partial AbeCellDto[] MapArray(AbeCell[] cells);
+    }
+
+    [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+    public partial class AbeSetNullMapper
+    {
+        [MapIgnore(nameof(AbeCellDto.Dropped))]
+        public partial AbeCellDto MapCell(AbeCell cell);
+
+        public partial AbeGridDto Map(AbeGrid grid);
+
+        public partial AbeCellDto[] MapArray(AbeCell[] cells);
+    }
+
+    [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+    public partial class AbePreserveMapper
     {
         [MapIgnore(nameof(AbeCellDto.Dropped))]
         public partial AbeCellDto MapCell(AbeCell cell);
@@ -73,6 +93,28 @@ namespace DwarfMapper.IntegrationTests
         public void An_ignored_element_member_stays_ignored_in_an_array_map_without_reference_handling()
         {
             var mapper = new AbeNoneMapper();
+            AssertElementConfigHonoured(mapper.MapArray(Cells));
+            AssertElementConfigHonoured(mapper.Map(new AbeGrid
+            {
+                Cells = Cells
+            }).Cells);
+        }
+
+        [Fact]
+        public void An_ignored_element_member_stays_ignored_in_an_array_map_under_SetNull()
+        {
+            var mapper = new AbeSetNullMapper();
+            AssertElementConfigHonoured(mapper.MapArray(Cells));
+            AssertElementConfigHonoured(mapper.Map(new AbeGrid
+            {
+                Cells = Cells
+            }).Cells);
+        }
+
+        [Fact]
+        public void An_ignored_element_member_stays_ignored_in_an_array_map_under_Preserve()
+        {
+            var mapper = new AbePreserveMapper();
             AssertElementConfigHonoured(mapper.MapArray(Cells));
             AssertElementConfigHonoured(mapper.Map(new AbeGrid
             {

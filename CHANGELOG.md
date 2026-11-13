@@ -15,6 +15,17 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Under `ReferenceHandling = Preserve` or `OnCycle = SetNull`, the directives written on a mapping method now
+  apply when its pair is mapped as a nested member or a collection element.** In those modes a nested use of a
+  declared pair goes through a generated helper (the public method cannot take the shared tracking context), and
+  that helper applied the class's pair-scoped directives but not the ones on the method. A member the method
+  `[MapIgnore]`s was **mapped anyway, with no diagnostic**; an array of layout-identical structs was block-copied
+  past it under `SetNull`. A method-level rename, `[MapValue]`, guard or format was not applied either (those
+  usually failed the build as an unmapped member, so they were at least loud). The helper now takes the method's
+  directives, merged with the pair-scoped ones exactly as the method itself merges them, and a class-level
+  `[MapIgnore]` reaches it too. **If you relied on `[MapIgnore]` to keep a member out of a mapped object in one of
+  these modes, check what was mapped: nested and element values carried it.** Nothing changes without reference
+  handling, where the method was always called directly. (Round 35.)
 - **`[FlattenGraph]` under `ReferenceHandling = Preserve` no longer copies a widened or block-copied collection
   member in silence** (`DWARF075`, Warning). A node member such as `List<int>` mapped to `List<long>`, or `int[]` to
   `long[]`, was flattened through a helper that does no reference tracking, so two nodes sharing one source

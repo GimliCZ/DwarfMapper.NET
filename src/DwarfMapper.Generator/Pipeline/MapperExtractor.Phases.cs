@@ -2886,6 +2886,20 @@ namespace DwarfMapper.Generator.Pipeline
             var pair = "'" + srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) + "' → '" +
                        tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) + "'";
 
+            // Round 35 T2. Directives written ON the pair's declared partial customize the pair exactly as the
+            // pair-scoped forms below do. Without reference handling the element resolves to that method and the loop
+            // is kept anyway; under Preserve/SetNull the method yields to a synthesized helper
+            // (PrefersSynthesizedObjectMap), the user-conversion question answers no, and an array of
+            // layout-identical structs was block-copied past an [MapIgnore] the method carries.
+            // Any attribute of ours on the method, whichever: the gate keeps the loop for the sake of meaning, and
+            // a directive that turns out not to touch the copy costs a fast path, never a wrong value.
+            if (DeclaredPartialFor(decls, srcElem, tgtElem) is { } declaredPartial &&
+                declaredPartial.GetAttributes().Any(a =>
+                    string.Concat(KnownNames.AttributeClassName(a.AttributeClass)).StartsWith(KnownNames.Ns + ".", StringComparison.Ordinal)))
+            {
+                return ("the directives on '" + declaredPartial.Name + "', the method declared for " + pair, "applying");
+            }
+
             if (AnyPairIgnore(decls.PairIgnores, tgtElem))
             {
                 return ("the pair-scoped [MapIgnore<T>] declared for " + pair, "applying");
@@ -3697,6 +3711,21 @@ namespace DwarfMapper.Generator.Pipeline
         ///     anything moved, which is the check this round added after three boundary bugs found the other
         ///     way round.
         /// </remarks>
+        /// <summary>
+        ///     The partial mapping method this class declares for exactly <paramref name="src" /> →
+        ///     <paramref name="tgt" /> - one source parameter, that return type - or <see langword="null" /> when there
+        ///     is none. Two declarations of one pair are not arbitrated here: a nested use of such a pair is DWARF013
+        ///     before any helper for it matters (NestedDeclaredPairDirectiveTests).
+        /// </summary>
+        private static IMethodSymbol? DeclaredPartialFor(MapperDeclarations decls, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return decls.ClassSymbol.GetMembers()
+                        .OfType<IMethodSymbol>()
+                        .FirstOrDefault(m => m.IsPartialDefinition && m.Parameters.Length == 1 &&
+                                             SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, src) &&
+                                             SymbolEqualityComparer.Default.Equals(m.ReturnType, tgt));
+        }
+
         private static void DrainNestedMappingQueue(
             GeneratorAttributeSyntaxContext ctx,
             MapperDeclarations decls,
@@ -3718,6 +3747,67 @@ namespace DwarfMapper.Generator.Pipeline
                 // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.
                 var (nestedExplicit, nestedExtras) = MatchPairProps(decls.PairProps, nestedSrc, nestedTgt);
                 var nestedIgnores = MatchPairIgnores(decls.PairIgnores, nestedTgt);
+                var nestedValues = MatchPairValues(decls.PairValues, nestedTgt);
+
+                // Round 35 T2. A helper synthesized for a pair the class DECLARES AS A PARTIAL must map it the way that
+                // partial does - with the directives written on the method, not only the class's pair-scoped ones.
+                // Under Preserve/SetNull a nested use of the pair is REQUIRED to go through this helper (the public
+                // method cannot take the shared context; PrefersSynthesizedObjectMap), so the method's own
+                // [MapIgnore]/[MapProperty]/[MapValue]/... were dropped on exactly that route: an ignored member was
+                // mapped, with no diagnostic. Merged as the declared path merges them: the method's win, the
+                // pair-scoped ones fill the gaps, class-level ignores apply as they do to the method.
+                var declaredPartial = DeclaredPartialFor(decls, nestedSrc, nestedTgt);
+                Dictionary<string, string>? nestedStringFormats = null;
+                var nestedFlattenRoots = new List<string>();
+                var nestedReinterpret = new List<string>();
+                List<string>? nestedShare = null;
+                List<(string Member, int Offset)>? nestedDense = null;
+                var nestedIgnoredSources = ClassIgnoredSources(decls);
+                if (declaredPartial is not null)
+                {
+                    var methodExplicit = ReadExplicitMaps(declaredPartial);
+                    // Inherited [ReverseMap] renames too; what they have to report was reported at the method.
+                    methodExplicit.AddRange(CollectReverseRenames(decls.ClassSymbol, declaredPartial, nestedSrc, nestedTgt,
+                        methodExplicit, new List<DiagnosticInfo>(), nestedOrigin));
+                    var explicitTargets = new HashSet<string>(methodExplicit.Select(m => m.Target), StringComparer.Ordinal);
+                    foreach (var pe in nestedExplicit)
+                        if (explicitTargets.Add(pe.Target))
+                        {
+                            methodExplicit.Add(pe);
+                        }
+
+                    nestedExplicit = methodExplicit;
+
+                    var methodExtras = ReadMapPropertyExtras(declaredPartial);
+                    var extraTargets = new HashSet<string>(methodExtras.Select(e => e.Target), StringComparer.Ordinal);
+                    foreach (var pe in nestedExtras)
+                        if (extraTargets.Add(pe.Target))
+                        {
+                            methodExtras.Add(pe);
+                        }
+
+                    nestedExtras = methodExtras;
+
+                    foreach (var name in decls.ClassIgnores) nestedIgnores.Add(name);
+                    foreach (var name in ReadIgnores(declaredPartial)) nestedIgnores.Add(name);
+
+                    var methodValues = ReadMapValues(declaredPartial);
+                    var valueTargets = new HashSet<string>(methodValues.Select(v => v.Target), StringComparer.Ordinal);
+                    foreach (var pv in nestedValues)
+                        if (valueTargets.Add(pv.Target))
+                        {
+                            methodValues.Add(pv);
+                        }
+
+                    nestedValues = methodValues;
+
+                    nestedStringFormats = ReadStringFormats(declaredPartial);
+                    nestedFlattenRoots = ReadFlattenRoots(declaredPartial);
+                    nestedReinterpret = ReadReinterpretMembers(declaredPartial);
+                    nestedShare = ReadShareMembers(declaredPartial);
+                    nestedDense = ReadDenseEnumKeys(declaredPartial);
+                    nestedIgnoredSources = IgnoredSourcesFor(decls, declaredPartial);
+                }
 
                 // Inform the registry that we are now building this pair's body,
                 // so subsequent GetOrReserve calls record edges in the dependency graph.
@@ -3846,7 +3936,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // one, otherwise the enclosing class's policy. Without the pair-scoped lookup the
                         // enclosing class's value is the ONLY input, which is how one logical nested pair
                         // reached from two classes ended up with opposite null semantics.
-                        SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, null, nestedSrc, nestedTgt, policy.SkipNullSrc),
+                        SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, declaredPartial, nestedSrc, nestedTgt, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         // FALSE on purpose: this is the auto-acc.Synthesized NESTED mapper. Explicit-only guards
                         // the TOP-LEVEL trust boundary; reaching a nested pair already required the developer
@@ -3866,20 +3956,23 @@ namespace DwarfMapper.Generator.Pipeline
                     decls.AllMethods,
                     decls.MapperMethods,
                     acc.Synthesized,
-                    new List<string>(),
-                    new List<string>(), // no flatten/reinterpret
+                    nestedFlattenRoots,
+                    nestedReinterpret, // empty unless the pair's declared partial names some
                     // A synthesized nested mapper must not adopt a dedicated converter either — the author never wrote
                     // this pair, so they certainly did not offer it one.
                     decls.MapperReservedConverters,
                     nestedConsumed,
                     nestedRequiredMustInit,
                     acc.NestedRegistry,
-                    MatchPairValues(decls.PairValues, nestedTgt),
+                    nestedValues,
                     decls.ValueProviders,
                     mapPropertyExtras: nestedExtras,
+                    stringFormats: nestedStringFormats,
                     requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
                     factoryExcludedMembers: nestedFactoryExcluded,
-                    ignoredSourceMembers: ClassIgnoredSources(decls));
+                    ignoredSourceMembers: nestedIgnoredSources,
+                    shareMembers: nestedShare,
+                    denseEnumMembers: nestedDense);
 
                 // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
                 // because source coverage has never applied at depth and turning it on for every acc.Synthesized pair
