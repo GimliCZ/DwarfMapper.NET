@@ -51,14 +51,21 @@ namespace DwarfMapper.IntegrationTests
             AllocPointDst sink = default;
             for (var i = 0; i < 200; i++) sink = mapper.Map(src);
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
-            for (var i = 0; i < 10_000; i++)
-                sink = mapper.Map(src);
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            // Five windows, at least one of them exactly zero: a map that allocates does so in every window, and a
+            // single allocation that lands on this thread from elsewhere cannot fail the test (the same oracle, for
+            // the reason written out in AsyncSpanQueryablePropertyTests, whose one window read 4,896 bytes once).
+            var windows = new long[5];
+            for (var w = 0; w < windows.Length; w++)
+            {
+                var before = GC.GetAllocatedBytesForCurrentThread();
+                for (var i = 0; i < 10_000; i++)
+                    sink = mapper.Map(src);
+                windows[w] = GC.GetAllocatedBytesForCurrentThread() - before;
+            }
 
             // Keep the result observable so the JIT cannot elide the loop.
             Assert.Equal(3, sink.Z);
-            Assert.Equal(0, allocated);
+            Assert.Contains(0L, windows);
         }
     }
 
