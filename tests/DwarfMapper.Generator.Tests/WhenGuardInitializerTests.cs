@@ -55,19 +55,37 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("'Name'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
-        [Fact]
-        public void A_positional_record_member_has_no_initializer_to_read_so_it_is_reported_and_KeepDefault_answers_it()
+        private static string Positional(string parameter)
         {
-            // Declared by a record's parameter list, the member's value is whatever a constructor passed - not an
-            // initializer the generator can read. It errs towards reporting, as a member declared in metadata does,
-            // and the per-member statement is the answer the message offers.
-            const string types = "public record BaseB(string Name);\npublic record B : BaseB { public B() : base(\"\") { } }\n";
-            var source = Source("").Replace("public class B {  }\n", types, StringComparison.Ordinal);
+            var types = "public record BaseB(" + parameter + ");\npublic record B : BaseB { public B() : base(\"\") { } }\n";
+            return Source("").Replace("public class B {  }\n", types, StringComparison.Ordinal);
+        }
 
-            var d = Assert.Single(Run(source), x => x.Id == "DWARF066");
-            Assert.Contains("'Name'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        // Round 35 T4. Declared by a record's parameter list, the member holds whatever the constructor was given,
+        // and every constructor has to give it one: a false guard leaves that value, not a null. This was reported
+        // from round 32 to round 34 as a known false positive ("no initializer to read") with KeepDefault as the way
+        // round it - which is now the stale statement, since there is no report left for it to accept.
+        [Fact]
+        public void A_positional_record_member_is_not_reported_and_KeepDefault_on_it_accepts_nothing()
+        {
+            var source = Positional("string Name");
+
+            Assert.DoesNotContain(Run(source), x => x.Id == "DWARF066");
             var kept = Run(source.Replace("When = nameof(IsReady))", "When = nameof(IsReady), KeepDefault = true)", StringComparison.Ordinal));
-            Assert.DoesNotContain(kept, x => x.Id is "DWARF066" or "DWARF116");
+            Assert.DoesNotContain(kept, x => x.Id == "DWARF066");
+            var stale = Assert.Single(kept, x => x.Id == "DWARF116");
+            Assert.Contains("its own non-null default", stale.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
+        // The parameter's own default is read as an initializer is: a null in disguise is still a null, and a real
+        // default is a default.
+        [Theory]
+        [InlineData("string Name = null!", true)]
+        [InlineData("string Name = default!", true)]
+        [InlineData("string Name = \"(none)\"", false)]
+        public void A_positional_record_member_with_a_parameter_default_is_judged_by_that_default(string parameter, bool reported)
+        {
+            Assert.Equal(reported, Run(Positional(parameter)).Any(x => x.Id == "DWARF066"));
         }
 
         [Fact]

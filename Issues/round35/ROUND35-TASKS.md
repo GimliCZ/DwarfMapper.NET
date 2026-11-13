@@ -19,7 +19,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T1 | **Silently dropped guarantees.** Every place the generator decides by helper family (`IsComplexHelper`, `IsSynthesized`, `IsObjectMap`), against every helper family, under Preserve / SetNull / AsNull: find the pairs a fast-path helper slips through. | **done** - see Notes |
 | T2 | **The last untested audit cell:** an array blit under SetNull against a method-level config on the element pair's partial. | **done** - defect fixed, see Notes |
 | T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | **done** (`93d8b01`) |
-| T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | open |
+| T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | **done** - see Notes |
 | T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | **done** - see Notes |
 | T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | open |
 | T7 | **Move the SDK pin** to the current 10.0 servicing release; re-measure every gate tied to it; drop the AOT compiler override if the new pin makes it dead. | open |
@@ -184,3 +184,12 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   not a member-by-member map of the pair. Tests: `FlattenGraphNestedPairTests` (generator, 6 cases) and
   `FlattenGraphNestedPairRuntimeTests` (runtime, 6 cases). RED: before, the Preserve and SetNull mappers of the
   probe did not build (DWARF001 'Nodes', then CS8795 for every partial of the class).
+
+- **T4 fixed.** `HasNonNullInitializer` read property and field initializers and nothing else, so a member whose
+  declaring syntax is a record's parameter had "no initializer to read" and was reported - pinned as a known false
+  positive in round 32 and carried through rounds 33 and 34. A parameter with no default is always passed, and its
+  type is the member's (non-nullable, or DWARF066 is not asked at all), so it now counts as a non-null default; a
+  parameter default is read as an initializer is. The test that pinned the false positive is replaced by its
+  opposite, and by a theory over the three defaults. RED: 2 of 12 in `WhenGuardInitializerTests` with the tests
+  changed and the generator not; GREEN: 12 of 12. A `KeepDefault = true` written to quiet the old report is now
+  DWARF116, which the changelog says.

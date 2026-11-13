@@ -15,6 +15,12 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **DWARF066 no longer reports a `When`-guarded member that a positional record declares**
+  (`record Base(string Name)`). Every constructor of the record has to pass that parameter, so a false guard
+  leaves the value the constructor was given, not a null; only a parameter default that is a null in disguise
+  (`string Name = null!`) still reports. It had been a known false positive since round 32, with
+  `KeepDefault = true` as the way round it. **If you wrote `KeepDefault = true` for such a member, it now reports
+  DWARF116** (it accepts nothing): remove it. (Round 35, T4.)
 - **A `[FlattenGraph]` method's pair can be used inside another map under `Preserve` and `OnCycle = SetNull`.**
   A holder with a member or a list of the flattened pair built without reference handling (it calls the method)
   and stopped with DWARF001 on the flattened collection under the other two modes - with advice,
