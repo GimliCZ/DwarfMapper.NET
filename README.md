@@ -19,12 +19,12 @@ with one attribute**, and blittable data (unmanaged, fixed-layout structs) falls
     *distribute** the binary, your project must also be GPLv2 with source available. Running it inside a hosted
     service (SaaS) does **not** trigger that. **If you ship closed-source binaries, this is not the mapper for you.
     ** ([why →](#license))
-> - **.NET 10 only.** The runtime package targets `net10.0` with no multi-targeting — net8/net9 projects can't reference
-    it yet.
+> - **.NET 10 or later.** The runtime package ships one `net10.0` assembly, which a `net10.0` or later project
+    references — .NET 11 is verified in CI (job `net11`); net8/net9 projects can't reference it yet.
 > - **Pre-release.** `1.0.2-rc.1` is a release candidate — APIs are stabilising; install it with the `--prerelease`
     flag. ([status →](#status))
 >
-> If GPLv2, .NET 10, and pre-release all work for you, read on: completeness becomes a *build error*, maps are
+> If GPLv2, .NET 10 or later, and pre-release all work for you, read on: completeness becomes a *build error*, maps are
 *round-trip-**verifiable*** (opt in per pair with `[RoundTrip]`), and blittable data goes through *SIMD*.
 
 **Quick links:
@@ -242,11 +242,11 @@ public sealed class RuneDto
 <!-- endsnippet -->
 
 That's the whole loop: **two plain classes, one attribute, one call.** The generated body is exactly what you'd write by
-hand — `new PersonDto { Name = person.Name, Age = person.Age }`.
+hand — `new RuneDto { Id = rune.Id, Name = rune.Name }`.
 
-**The payoff:** add an `Email` property to `PersonDto` and forget to map it, and **the build fails** — `DWARFR02` names
-the unmapped member (`Email`). (The squiggle sits on the `[MapTo]` source type. You'll also see
-`CS1061: 'Person' does not contain 'MapTo'` — that's expected: the generator withholds the extension method until the
+**The payoff:** add a `Power` property to `RuneDto` and forget to map it, and **the build fails** — `DWARFR02` names
+the unmapped member (`Power`). (The squiggle sits on the `[MapTo]` source type. You'll also see
+`CS1061: 'Rune' does not contain 'MapTo'` — that's expected: the generator withholds the extension method until the
 map is complete, so the `DWARFR02` is the real cause, not a missing `using`.) You cannot silently ship an incomplete
 map. Don't want a member mapped? Put `[MapIgnore]` on it.
 
@@ -304,8 +304,8 @@ public partial class Mappers
 ```
 <!-- endsnippet -->
 
-Overloads are distinguished by source type; declaring two pairs with the same source type but different targets is an
-ambiguous-overload compile error — declare those as named `partial` methods instead.
+Overloads are distinguished by source type; declaring two pairs with the same source type but different targets is
+the build error `DWARF060` — declare those as named `partial` methods instead.
 
 ### No mapper class — `[MapTo]`
 
@@ -345,7 +345,8 @@ nullable-unwrap. Full design: [
 
 ### Four ways to call a mapper
 
-The mapper is a stateless, allocation-free class, so use whichever style fits:
+The mapper is a stateless, allocation-free class, so use whichever style fits — the three direct styles shown
+here, or the fourth, the ambient call described first below (`IDwarfMapper`, with `Dwarf.Map` as its static form):
 
 <!-- snippet: four-ways-to-call -->
 ```csharp
@@ -370,8 +371,10 @@ var byDi = provider.GetRequiredService<CallStyles>().Map(order);
   `[ModuleInitializer]`, so `DWARF061` proves the *graph*, not runtime *load order* — run the generated
   `DwarfMap.Validate()` (explicitly, via `services.AddDwarfMappers().ValidateDwarfMaps()`, or automatically with
   `[assembly: DwarfMapperValidationRoot(AutoValidate = true)]`) to also fail-fast when a provider hasn't loaded yet (
-  trimming / lazy-load); otherwise `Map<TDest>` can still throw `DwarfMapMissingException`. Collections project at the
-  call site: `list.Select(mapper.Map<Dst>)`. Full
+  trimming / lazy-load); otherwise `Map<TDest>` can still throw `DwarfMapMissingException`. Collections need no
+  separate pair: by default (`RegisterCollectionShapes = true`) each declared object map is also registered under the
+  common collection shapes, so `mapper.Map<ICollection<Dst>>(listOfSources)` resolves; with
+  `RegisterCollectionShapes = false`, project at the call site instead: `list.Select(mapper.Map<Dst>)`. Full
   guide: [ambient cross-assembly maps](docs/howto/ambient-cross-assembly-maps.md).
 
 - **`Dwarf.Map<TSource, TDest>(src)`** is the same ambient call made static, so the generator can bind it: when the
@@ -475,7 +478,7 @@ public partial class OrderMapper
   `[MapProperty("Customer.Name", nameof(Dto.CustomerName))]` emits `s.Customer.Name` (member names never contain dots,
   so the path is unambiguous). The leaf type goes through the same conversion rules (`Use=` works too). An unresolvable
   segment is `DWARF043`; a **nullable interior hop** (which can throw `NullReferenceException` at runtime) is the
-  `DWARF044` suggestion.
+  `DWARF044` warning.
 - **Unflattening (dotted target)**: the *target* may also be a single-level dotted path —
   `[MapProperty(nameof(Src.City), "Address.City")]` assigns `City` through an intermediate `Address`, which is
   instantiated once if null (`if (t.Address is null) t.Address = new …();`). Multiple leaves into the same intermediate
@@ -537,8 +540,9 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 **Conversion policy (`ImplicitConversions`, no silent surprises).** Lossless same-category widening (`int→long`,
 `float→double`) and identity always map silently. Every **non-lossless** auto-conversion — narrowing (`long→int`),
 parse/format (`string↔int`), and cross-category numeric (`int→double`, `int→float`) — instead surfaces a **`DWARF038`
-suggestion (Info)** so it is visible in the IDE, never silent, while still being applied. Set
-`[DwarfMapper(ImplicitConversions = false)]` to flip those suggestions into **build errors** (Mapperly-style strict) —
+warning** (Info only for a user-defined explicit conversion operator) so it is visible in the IDE, never silent, while
+still being applied. Set `[DwarfMapper(ImplicitConversions = false)]` to flip those diagnostics into **build errors**
+(Mapperly-style strict) —
 then each such conversion must be made explicit with `[MapProperty(Use = nameof(...))]`. Default is `true` (permissive),
 so this is opt-in and non-breaking.
 
@@ -970,13 +974,16 @@ boxing, `CS1612`, value equality, `[JsonConstructor]`, EF Core — is tabulated 
 
 ## Packages
 
-DwarfMapper is **.NET 10 only**. The one exception is the generator/code-fix assemblies (see note below).
+DwarfMapper ships one **`net10.0`** assembly, which a `net10.0` **or later** project references — .NET 11 is verified
+in CI (job `net11`); net8/net9 projects cannot reference it. The one exception is the generator/code-fix assemblies
+(see note below).
 
 **Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+).** The generator is built against
 `Microsoft.CodeAnalysis` 5.0.0 and Roslyn refuses to load an analyzer compiled against a *newer* compiler than
-the host (`CS9057`), so an older SDK cannot run it. Any 10.0.x SDK works — the floor is the .NET 10 line
-itself, not a specific patch. (The repo's own `global.json` pins one exact patch, but that is about
-reproducing *this* build byte-for-byte; it is not a requirement on consumers.)
+the host (`CS9057`), so an older SDK cannot run it. Any 10.0.x SDK works, and so does 11.0.100 (the SDK the
+`net11` CI job pins) — the floor is the .NET 10 line itself, not a specific patch. (The repo's own
+`global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte; it is not a
+requirement on consumers.)
 
 | Reference                                                   | Purpose                                                                                                                                                                                                                                                                                                                          | TFM       |
 |-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
@@ -1005,19 +1012,29 @@ DwarfMapper.NET.sln
 src/
   DwarfMapper/               # attributes + abstractions
   DwarfMapper.Generator/     # incremental source generator + analyzers
+  DwarfMapper.CodeFixes/     # IDE code fixes, bundled in the package's analyzer slot
+  DwarfMapper.DocTooling/    # renders the doc snippets, option tables + generated references
   DwarfMapper.Testing/       # fixtures, fuzzers, round-trip, informed dumps
+  Shared/                    # DwarfLimits.cs — recursion bounds compiled into runtime and generator
 tests/
   DwarfMapper.Generator.Tests/   # generator snapshot + behavior tests
   DwarfMapper.IntegrationTests/  # end-to-end mapping integration tests
   DwarfMapper.Testing.Tests/     # DwarfMapper.Testing library unit tests
   DwarfMapper.CorpusTests/       # real-world mapping parity corpus
+  DwarfMapper.CompilerTests/     # pinned corpus, differential-oracle + metamorphic compile tests
+  DwarfMapper.ConsumerTests/     # consumer-shaped harness: multi-assembly, DI, runtime registry
+  DwarfMapper.DifferentialTests/ # one payload through DwarfMapper, Mapperly + AutoMapper, member by member
+  DwarfMapper.NegativeCases/     # what the build must refuse, and the message it must give
+  Shared/                        # TestPopulations.cs — the one set of test population sizes
+scripts/                     # housekeeping, gate checks, conformance gate, git hooks
+conformance/                 # results/ — evidence files written by the conformance gate
 benchmarks/
   DwarfMapper.Benchmarks/    # BenchmarkDotNet suite (vs hand-written + Mapperly/Mapster/AutoMapper)
 samples/
   DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
   DwarfMapper.AotBench/      # NativeAOT benchmarking & stability harness
   DwarfMapper.Gallery/       # runnable simple→advanced mapping examples
-  DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (60 asserts)
+  DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (78 asserts)
 docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
 README.md
 ```

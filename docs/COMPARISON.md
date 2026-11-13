@@ -62,7 +62,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Per-member null substitution** | ✅ `NullSubstitute=` (type-checked, `DWARF049`) | ~ | ✅ | ✅ |
 | **Conditional member (`When=`)** | ✅ predicate `When=` (`DWARF050`) | ❌ | ✅ | ✅ |
 | **Reverse mapping (`[ReverseMap]`)** | ✅ inverts simple renames (`DWARF051/052`) | ~ | ✅ | ✅ |
-| **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
+| **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` (Warning for lossy conversions, Info otherwise), or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | ~ (untested here) | maps the raw value through |
 | **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type | throws | ~ (untested here) | maps the base as itself |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |

@@ -25,7 +25,7 @@ fixes), plus an optional **testing** package for `[RoundTrip]`.
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="DwarfMapper" Version="1.0.1-rc.1" />
+  <PackageReference Include="DwarfMapper" Version="1.0.2-rc.1" />
 </ItemGroup>
 ```
 
@@ -41,7 +41,8 @@ isn't bundled for you, so wire it as an **analyzer** explicitly (this is the lin
 </ItemGroup>
 ```
 
-The consuming project must target **`net10.0`** (DwarfMapper is .NET 10 only; only the bundled generator/code-fix
+The consuming project must target **`net10.0` or later** (the package ships one `net10.0` assembly; .NET 11 is
+verified in CI, job `net11`; net8/net9 projects cannot reference it; only the bundled generator/code-fix
 assemblies are `netstandard2.0`, because Roslyn loads generators into the compiler host — see [deploy-and-optimize.md](deploy-and-optimize.md#net-10-only--and-why-the-generator-is-netstandard20)).
 
 ---
@@ -72,7 +73,7 @@ public partial class OrderMapper
 ```
 
 - **`[GenerateMap<S,T>]`** emits `public T Map(S src)`, one overload per pair, resolved by **source type**.
-  (Two pairs with the *same* source but different targets is an ambiguous-overload compile error — declare
+  (Two pairs with the *same* source but different targets is the build error `DWARF060` — declare
   those as named `partial` methods instead.)
 - **POCOs stay attribute-free.** You never annotate your `Order` / `OrderDto` classes — only the mapper.
 - **Class-level options** ride on the `[DwarfMapper(...)]` attribute: `CaseInsensitive`, `NameConvention`,
@@ -96,7 +97,9 @@ referenced by `Use=`, `When=`, or a hook attribute.
 
 ## Change 3 — Move the call sites
 
-The mapper is a stateless, allocation-free class. Three ways to reach it:
+The mapper is a stateless, allocation-free class. Three ways to reach it directly (the fourth, the ambient
+`IDwarfMapper` / `Dwarf.Map` call for a map declared in another assembly, is in
+[ambient-cross-assembly-maps.md](ambient-cross-assembly-maps.md)):
 
 <!-- snippet: four-ways-to-call -->
 ```csharp

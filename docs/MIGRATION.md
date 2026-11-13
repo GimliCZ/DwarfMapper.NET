@@ -19,7 +19,7 @@ suite** — `tests/DwarfMapper.IntegrationTests/LibraryParityRuntimeTests.cs` �
 
 | Migration axiom | Why | Mechanical rule |
 |---|---|---|
-| **Runtime engine → one `partial class`** | DwarfMapper has no `MapperConfiguration`/`IMapper`/`Profile`/DI; the generated class *is* the configuration. | Delete the config/DI registration. `new MyMapper()` (stateless, allocation-free) or register the concrete type in DI. |
+| **Runtime engine → one `partial class`** | DwarfMapper has no `MapperConfiguration`/`Profile` and no assembly scan; the generated class *is* the configuration. `IMapper`'s counterpart is the ambient `IDwarfMapper`. | Delete the config and the `AddAutoMapper` registration. `new MyMapper()` (stateless, allocation-free), or call the generated `AddDwarfMappers()` (emitted when the project references `Microsoft.Extensions.DependencyInjection.Abstractions`), which registers each mapper and `IDwarfMapper`. |
 | **`CreateMap`/convention → `[GenerateMap<A,B>]` or a `partial` method** | A mapping pair is declared once, at compile time. | `CreateMap<A,B>()` → `[GenerateMap<A,B>]` on the class, **or** `public partial B Map(A a);`. Call sites drop the generic arg: `mapper.Map<B>(a)` → `mapper.Map(a)`. |
 | **Lambdas → named members** | Attributes cannot carry closures. | Every `MapFrom(s=>…)`, `Condition`, `ConvertUsing(s=>…)`, resolver, before/after lambda becomes a **named method** referenced by `Use=`, `When=`, or `[BeforeMap]`/`[AfterMap]`. |
 
@@ -57,11 +57,12 @@ and you do not have to configure anything to get it.
 
 | AutoMapper 14 | DwarfMapper | Before → after |
 |---|---|---|
-| `new MapperConfiguration(cfg=>…)` / `IMapper` | **non-goal** — no runtime config object | Delete it; the generated class is the config. |
+| `new MapperConfiguration(cfg=>…)` | **non-goal** — no runtime config object | Delete it; the generated class is the config. |
+| injected `IMapper` / `mapper.Map<B>(a)` | `IDwarfMapper` (ambient facade) / `Map<B>(a)` | swap the injected type; call sites stay nearly verbatim — see [ambient cross-assembly maps](howto/ambient-cross-assembly-maps.md) |
 | `class P : Profile { CreateMap<A,B>(); }` | `[DwarfMapper] partial class` + `[GenerateMap<A,B>]` | `class P:Profile{CreateMap<A,B>();}` → `[DwarfMapper][GenerateMap<A,B>] partial class P{}` |
 | `CreateMap<A,B>()` | `[GenerateMap<A,B>]` or `partial B Map(A)` | find-and-replace; call site `Map<B>(a)`→`Map(a)` |
 | `.ReverseMap()` | `[ReverseMap]` + explicit inverse method | see 1.6 |
-| `services.AddAutoMapper(asm)` | `new MyMapper()` / register the type | no assembly scan (AOT-safe by design) |
+| `services.AddAutoMapper(asm)` | `services.AddDwarfMappers()` (generated), or `new MyMapper()` | registers each mapper and `IDwarfMapper` explicitly — no assembly scan (AOT-safe by design) |
 | `CompileMappings()` / `AssertConfigurationIsValid()` | **non-goal / redundant** | delete — the build *is* the compile and completeness check |
 
 ### 1.2 Member configuration (`ForMember` family)
@@ -79,7 +80,7 @@ and you do not have to configure anything to get it.
 | `.ForSourceMember(s=>s.X, o=>o.DoNotValidate())` | `[MapIgnoreSource("X")]` | only relevant under `RequiredMapping=Both` |
 | `.ForPath(d=>d.A.B, …)` | `[MapProperty(src, "A.B")]` | single-level unflatten; deeper → `DWARF045` |
 | `.SetMappingOrder(n)` | **non-goal** | deterministic canonical order; use `[AfterMap]` if order mattered |
-| `.UseDestinationValue()` / per-member `AllowNull` | **partial** | update-into replaces (not merges); null policy is mapper-wide |
+| `.UseDestinationValue()` / per-member `AllowNull` | **partial** | update-into replaces (not merges); null policy is mapper-wide, and `[MapProperty(src, tgt, AllowNull = true)]` declares for one member that a null into a non-nullable destination is intended (no `DWARF070`; the emitted assignment is unchanged) |
 
 ### 1.3 Flattening / unflattening / inclusion
 
@@ -115,7 +116,7 @@ and you do not have to configure anything to get it.
 |---|---|---|
 | `.ReverseMap()` | `[ReverseMap]` on forward + explicit inverse `partial A ToA(B)` | inverts **simple renames** only; non-invertible config (`Use=`, dotted, `NullSubstitute`, `When`) → `DWARF051`; missing inverse → `DWARF052` |
 | `.Include<DS,DD>()` (base→derived) | `[MapDerivedType<DS,DD>]` on the base method | most-derived-first switch; unregistered runtime type throws |
-| `.IncludeBase<…>()` | **partial** | no config-inheritance primitive; restate shared config |
+| `.IncludeBase<…>()` | **partial** | no config-inheritance primitive; restate shared config and mark the derived pair `[RestatesBase<S,T>]` so the generator checks the restatement (`DWARF084`/`DWARF085`) |
 | `.IncludeAllDerived()` | **non-goal** | list each `[MapDerivedType]` arm (no reflection discovery) |
 | runtime `Map(obj, srcType, destType)` polymorphism | `[MapDerivedType]` generated type switch | AOT-safe, no reflection |
 
@@ -248,7 +249,7 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 | `[MapPropertyFromSource]` / `[MapValue]` | `[MapValue]` (const + `Use=`) | type-checked `DWARF040–042` |
 | `[MapperIgnoreTarget(nameof(D.X))]` | `[MapIgnore(nameof(D.X))]` | required by completeness gate |
 | `[MapperIgnoreSource(nameof(S.X))]` | `[MapIgnoreSource("X")]` | with `RequiredMapping=Both` |
-| `[MapperIgnoreObsoleteMembers]` | obsolete ctors excluded; otherwise `[MapIgnore]` | per-member explicitness |
+| `[MapperIgnoreObsoleteMembers]` | `[DwarfMapper(IgnoreObsoleteMembers = true)]` | off by default; an explicit `[MapProperty]`/`[MapValue]` opts one member back in. Obsolete ctors are always excluded |
 | `Use=`/referenced method converter | `[MapProperty(src, tgt, Use=nameof(M))]` | same idea |
 
 ### 3.3 Mapper options
@@ -258,7 +259,7 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive=true)]` | `DWARF010` on ambiguity |
 | `RequiredMappingStrategy.Target/Both` | `[DwarfMapper(RequiredMapping=Target/Both)]` | `DWARF039` (Info) for unconsumed source; a `.globalconfig` to escalate |
 | `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **Mapperly defaults ByValue, DwarfMapper ByName** — set explicitly; by-name mismatch → `DWARF015` |
-| strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` suggestions into build errors (Mapperly-style strict) |
+| strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` (a Warning for lossy conversions, Info otherwise) into build errors (Mapperly-style strict) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | **DwarfMapper reconstructs full topology** (Mapperly's is partial) |
 | `[MapDerivedType<DS,DD>]` | `[MapDerivedType<DS,DD>]` | same attribute name |
 | `IQueryable` projection | `partial IQueryable<Dst> Project(…)` | translatable subset — nested/collection/enum-cast/dotted supported; non-translatable → `DWARF028` |
@@ -287,7 +288,7 @@ which Mapperly offers. See [`COMPARISON.md`](COMPARISON.md#capability-matrix).
 | Deep merge into existing nested objects | ambiguous identity semantics | update **replaces** nested; merge by hand if truly needed |
 | Silent float/decimal→int truncation | data-loss footgun | explicit `Use=` converter (opt-in, visible) |
 | Turning the completeness check *off* | resilience-first stance | `[MapIgnore]` per intentional drop (auditable) |
-| `IncludeBase<S,T>()` / config inheritance between pairs | inheritance semantics would have to interact with pair-scoped attributes, `[MapDerivedType]` and the policy layer — and restatement keeps each pair readable at its own declaration | restate the shared `[MapProperty]`/`[MapIgnore]` on the derived pair; bracket the block with a comment naming the base pair so drift is visible in review |
+| `IncludeBase<S,T>()` / config inheritance between pairs | inheritance semantics would have to interact with pair-scoped attributes, `[MapDerivedType]` and the policy layer — and restatement keeps each pair readable at its own declaration | restate the shared `[MapProperty]`/`[MapIgnore]` on the derived pair and add `[RestatesBase<S,T>]` naming that derived pair: the generator compares it member by member with the base pair on the same mapper and reports drift (`DWARF085`; `DWARF084` when the base pair cannot be identified) |
 | Object↔collection maps (`ICollection<T>` ↔ a document that *holds* a collection) | not a mapping shape — one side is a container, the other an element sequence | map the inner collection; an AutoMapper `ConstructUsing` doing `ctx.Mapper.Map<ICollection<T>>(x.Items)` was already doing exactly this |
 | Reflectively bypassing a `private` constructor | the generator emits ordinary C#, so a `private` member is genuinely unreachable | widen to `internal` + `[InternalsVisibleTo]`, or `[MapConstructor]` a factory — the same grant, but one the compiler checks (`DWARF026` if you don't) |
 
@@ -302,7 +303,13 @@ existing instance, preserving its identity — the near-verbatim replacement for
 a key space separate from the create-maps, because a pair can have both and they are different operations.
 
 The ambient registry resolves an **exact** `(source, target)` pair; it does not derive a collection map from
-an element map the way AutoMapper did. `_mapper.Map<ICollection<Dto>>(listOfEntities)` therefore throws unless
+an element map at run time the way AutoMapper did. By default it does not have to:
+`RegisterCollectionShapes` (on `[DwarfMapper]`, default `true`) also registers each declared object map under
+the common collection shapes at compile time — six rows per pair, keyed on `IEnumerable<TSource>`, so a `List`,
+an array, a `HashSet` and a lazy LINQ iterator are served by the same entry — and
+`_mapper.Map<ICollection<Dto>>(listOfEntities)` resolves without a separate collection pair.
+
+The rest of this section applies only with `RegisterCollectionShapes = false`. That call then throws unless
 that collection pair is declared, and **two independent gates disagree about which type to key on**: the
 build-time check reads the call site's *static* argument type, while the runtime lookup uses
 `source.GetType()` and walks base types only — never interfaces. A method declared `ICollection<T>` that

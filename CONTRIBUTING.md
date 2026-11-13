@@ -16,7 +16,9 @@ suite compares generated code byte-for-byte, so "any 10.0.x" would mean contribu
 about what the build produces. CI installs the same exact version and asserts it matches `global.json`.
 If you have a different patch, install `10.0.101` alongside it (side-by-side SDKs are supported); do not
 loosen `global.json` locally. Bumping the pin means changing `global.json` **and** the `dotnet-version` in
-every `setup-dotnet` step in the same commit.
+every `setup-dotnet` step that names the pinned version, in the same commit. Three CI jobs deliberately name
+another one and are not part of the bump: `roslyn-forward-compat` (`10.0.x`), `preview-sdk-canary` (`11.0.x`)
+and `net11` (`11.0.100`).
 
 ```bash
 dotnet build DwarfMapper.NET.sln -c Release
@@ -57,7 +59,7 @@ This repo ships an `.mcp.json` that registers [**roslyn-lens**](https://github.c
 — a token-efficient, Roslyn-based MCP server for Claude Code (and compatible clients). It gives
 compiler-grade navigation (`find_references`, `find_callers`, `get_type_hierarchy`,
 `detect_antipatterns`, …) over this solution instead of reading whole `.cs` files, which is a large win
-on files like the ~6.6k-line `MapperExtractor.cs`.
+on types like `MapperExtractor`, now split into `MapperExtractor*.cs` partials (~19k lines in total).
 
 It's opt-in and requires the tool on your PATH:
 
