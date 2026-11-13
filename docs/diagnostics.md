@@ -840,6 +840,13 @@ Note this is different from **edge** members (the navigation properties named in
 are deliberately set to `null` — that topology degradation is the whole point of flattening a graph. A *data*
 leaf going missing is not, which is why it is now said out loud instead of silently dropped.
 
+A leaf that needs none of those helpers **is** flattened under Preserve, and each flattened node gets its own copy
+of it. A widening collection is the case to know: with `List<int> Wide` on the node and `List<long> Wide` on its
+DTO, two nodes that share ONE source list map to TWO destination lists, where the same mapper's plain `Map` would
+keep them one. The values are right in both; only the sharing is not carried over, and nothing reports it —
+flattening already gives up the shape of the graph, and separate copies never link what was not linked. If the
+sharing matters, map the graph without `[FlattenGraph]`.
+
 **Fix:** map the member explicitly (e.g. a `[MapProperty]` binding or a manual assignment in an `AfterMap` hook),
 or use `ReferenceHandling = None` for this mapper if the graph does not need reference preservation.
 

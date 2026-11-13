@@ -9,9 +9,9 @@ namespace DwarfMapper.IntegrationTests
     // conversion needs one of the tracked helpers is refused and reported (DWARF075: an int[] member, for one). A
     // widening collection leaf - List<int> to List<long> - needs none, so it IS flattened, each node getting its own
     // copy. What that gives up is pinned here on purpose, because nothing reports it: two nodes that share ONE source
-    // list map to TWO target lists, where the same mapper's plain map keeps them one. Whether that should be kept,
-    // reported or refused is an open decision (Issues/round34/ROUND34-TASKS.md, owner decision 9); this test is the
-    // measurement it rests on and will say so when the answer changes.
+    // list map to TWO target lists, where the same mapper's plain map keeps them one. Kept on purpose (owner decision
+    // 9, 2026-11-13: flattening already gives up the graph's shape, and separate copies never link what was not
+    // linked) and stated in docs/diagnostics.md under DWARF075; this test holds the documented behaviour.
     public class FplNode
     {
         public string Name { get; set; } = "";

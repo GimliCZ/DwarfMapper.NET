@@ -632,7 +632,8 @@ Both items below were the state when the round opened; this PR answered them as 
    so two nodes sharing one source list map to two target lists where the same mapper's plain map keeps them one
    (`FlattenGraphPreserveLeafTests` pins both). The values are right; only the sharing is lost. Keep it and say so
    in the documentation (recommended: flattening already gives up the graph's shape), report it, or refuse it like
-   the array.
+   the array. **Decided 2026-11-13** (the owner: "Proceed as you need", on the recommendation): kept, and stated in
+   `docs/diagnostics.md` under DWARF075.
 
 Decided and not carried: LICENSE stays as it is; the public contact is `dwarfmapper@seznam.cz`; T01's pin plus canary
 landed (`c142578`, `17c5c28`); private vulnerability reporting is on; scanner reports go by email and GitHub advisory
