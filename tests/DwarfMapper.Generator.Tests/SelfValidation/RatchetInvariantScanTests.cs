@@ -233,7 +233,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // tooling, runtime, code fixes, pipeline). Pinned as a literal rather than derived from the leg
             // list on purpose: deriving it would make this assertion agree with whatever housekeeping.ps1
             // happens to do, which is the one thing it must not do.
-            var legCalls = Regex.Matches(housekeeping, @"Assert-LegScoreWithinBand ").Count;
+            var legCalls = Regex.Count(housekeeping, @"Assert-LegScoreWithinBand ");
             Assert.True(legCalls == 6,
                 $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 6 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
         }
