@@ -442,6 +442,9 @@ namespace DwarfMapper.Generator.Pipeline
             // types' members and cannot choose the destination type from the runtime type, so a Dog held as an
             // Animal came out as an AnimalDto. The dispatch is reached with the shared context all the same:
             // through its depth companion when it is on a recursion cycle, through its Preserve wrapper otherwise.
+            // T15: nor does a [FlattenGraph] method, whose destination collection has no source member at all -
+            // the synthesized form could only report it unmapped (DWARF001, advising an ignore that would have
+            // emptied the list).
             return (req.IsPreserve || req.IsSetNull) &&
                    req.AutoNest &&
                    req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
@@ -452,19 +455,19 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     True when the class declares a partial mapping method <paramref name="name" /> taking exactly
-        ///     <paramref name="paramType" /> that is a <c>[MapDerivedType]</c> dispatch. A method that also carries
-        ///     <c>[FlattenGraph]</c> is not one: there the arms describe the graph's node types, and the method is
-        ///     read as a flatten (Plan 22).
+        ///     <paramref name="paramType" /> whose body is not a member-by-member map of its two types: a
+        ///     <c>[MapDerivedType]</c> dispatch, which chooses the destination type at run time, or a
+        ///     <c>[FlattenGraph]</c> method, which fills a collection from a walk (with arms, when both are written:
+        ///     Plan 22). A synthesized object map of the same pair cannot stand in for either.
         /// </summary>
-        internal static bool IsDeclaredDispatchMethod(INamedTypeSymbol classSymbol, string name, ITypeSymbol paramType)
+        internal static bool IsDeclaredDispatchOrFlattenMethod(INamedTypeSymbol classSymbol, string name, ITypeSymbol paramType)
         {
             return classSymbol.GetMembers(name)
                               .OfType<IMethodSymbol>()
                               .Any(m => m.IsPartialDefinition &&
                                         m.Parameters.Length == 1 &&
                                         SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, paramType) &&
-                                        ReadDerivedTypeAttributes(m).Count > 0 &&
-                                        ReadFlattenGraphAttributes(m).Count == 0);
+                                        (ReadDerivedTypeAttributes(m).Count > 0 || ReadFlattenGraphAttributes(m).Count > 0));
         }
 
         /// <summary>

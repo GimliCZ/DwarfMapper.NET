@@ -171,9 +171,10 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>
         ///     Installs the rule that answers "is the declared method <c>name(paramType)</c> one whose nested uses must
         ///     stay calls of that method?" - a <c>[MapDerivedType]</c> dispatch, which decides the destination TYPE
-        ///     from the source's runtime type. Under Preserve and SetNull a declared pair otherwise yields to a
-        ///     synthesized object map built from the declared types' members, which cannot make that decision: a
-        ///     derived instance came out as the base type, its own members dropped (round 35 T13). Travels on the
+        ///     from the source's runtime type, or a <c>[FlattenGraph]</c> method, which fills a collection from a
+        ///     walk. Under Preserve and SetNull a declared pair otherwise yields to a synthesized object map built
+        ///     from the declared types' members, which can do neither: a derived instance came out as the base type,
+        ///     its own members dropped, and the flattened collection was reported unmapped (round 35 T13, T15). Travels on the
         ///     registry for the reason <see cref="SetPairCustomizationRule" /> does: the conversion resolver is handed
         ///     types and names, never the mapper's declarations.
         /// </summary>

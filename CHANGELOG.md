@@ -15,6 +15,11 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **A `[FlattenGraph]` method's pair can be used inside another map under `Preserve` and `OnCycle = SetNull`.**
+  A holder with a member or a list of the flattened pair built without reference handling (it calls the method)
+  and stopped with DWARF001 on the flattened collection under the other two modes - with advice,
+  `[MapIgnore("Nodes")]`, that would have emptied the list. The nested use now goes through the flatten method in
+  every mode, and under `Preserve` one source graph is one target wherever it is met. (Round 35, T15.)
 - **A `[MapDerivedType]` method used inside another map now dispatches, keeps the shared context and survives a
   cycle - as a member, a list or array element, a dictionary key or value, in every mode.** Three defects, all
   older than this round (round 35, T12 to T14):

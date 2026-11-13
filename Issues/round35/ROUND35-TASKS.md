@@ -30,7 +30,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T12 | **A `[MapDerivedType]` pair used as a list or array element calls the public method with no context** (abstract base, every mode): a cycle through the collection is a stack overflow, and Preserve loses identity between elements. | **done** - see Notes |
 | T13 | **A `[MapDerivedType]` pair with a concrete base, nested under Preserve or SetNull, skips the dispatch**: a derived instance is mapped as the base, its own members dropped, with DWARF071 (Info) advising the attribute that is already there. | **done** - see Notes |
 | T14 | **SetNull, a concrete-base `[MapDerivedType]` pair and a cycle through an arm: the generated code does not compile** (CS7036, an arm's helper calls a context-taking helper without one). | **done** - see Notes |
-| T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | open - measured, see Notes |
+| T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | **done** - see Notes |
 
 ## Notes
 
@@ -175,3 +175,12 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     not compile), and after T12+T13 two Preserve facts still failed (`Assert.Same`, the acyclic families) until
     the companion route. Patch coverage of the six generator files: 0 uncovered, 0 partial (cobertura, whole
     Generator.Tests, 18,269 passing).
+
+- **T15 fixed, by the rule T13 added.** The probe first: with the flatten method keeping its declared route, the
+  holder builds in all three modes, the nested member and both list elements carry the two flattened nodes
+  (also when the nodes form a ring), and under Preserve `Many[0]`, `Many[1]` and `Inner` are one object - the
+  list reaches the method through its depth companion (T12), the member through the same context. So nothing is
+  refused and nothing is lost: `IsDeclaredDispatchOrFlattenMethod` answers for both kinds, the two whose body is
+  not a member-by-member map of the pair. Tests: `FlattenGraphNestedPairTests` (generator, 6 cases) and
+  `FlattenGraphNestedPairRuntimeTests` (runtime, 6 cases). RED: before, the Preserve and SetNull mappers of the
+  probe did not build (DWARF001 'Nodes', then CS8795 for every partial of the class).

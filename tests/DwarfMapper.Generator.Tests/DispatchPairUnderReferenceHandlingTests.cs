@@ -200,25 +200,27 @@ namespace DwarfMapper.Generator.Tests
                                               public partial AnimalDto Plain(Animal a);
                                               [MapDerivedType<Dog, DogDto>] public AnimalDto Written(Animal a) => new();
                                               [FlattenGraph(nameof(G.Entry), nameof(GDto.Nodes))] [MapDerivedType<Dog, DogDto>] public partial GDto Flat(G g);
+                                              [FlattenGraph(nameof(G.Entry), nameof(GDto.Nodes))] public partial GDto Walk(G g);
                                           }
                                           """;
 
-        // Which declared methods keep their nested route: a partial, taking exactly that type, carrying the dispatch
-        // attribute, and not a flatten (where the arms describe the graph's nodes).
+        // Which declared methods keep their nested route: a partial, taking exactly that type, that is a dispatch or a
+        // graph flatten (T15) - the two whose body is not a member-by-member map of the pair.
         [Theory]
         [InlineData("Dispatch", "Demo.Animal", true)]
         [InlineData("Dispatch", "Demo.Dog", false)] // the overload for the arm, which carries nothing
-        [InlineData("Plain", "Demo.Animal", false)] // no arms
+        [InlineData("Plain", "Demo.Animal", false)] // no arms, no walk
         [InlineData("Written", "Demo.Animal", false)] // not a partial: the attribute on it is not ours to honour
-        [InlineData("Flat", "Demo.G", false)] // a heterogeneous flatten
+        [InlineData("Flat", "Demo.G", true)] // a heterogeneous flatten: both attributes
+        [InlineData("Walk", "Demo.G", true)] // a flatten alone
         [InlineData("Absent", "Demo.Animal", false)]
-        public void Only_a_declared_dispatch_keeps_its_nested_route(string name, string parameterType, bool expected)
+        public void Only_a_declared_dispatch_or_flatten_keeps_its_nested_route(string name, string parameterType, bool expected)
         {
             var compilation = GeneratorTestHarness.BuildCompilation("DispatchPredicates", Predicates, NullableContextOptions.Enable);
             var mapper = compilation.GetTypeByMetadataName("Demo.M")!;
             var parameter = compilation.GetTypeByMetadataName(parameterType)!;
 
-            Assert.Equal(expected, MapperExtractor.IsDeclaredDispatchMethod(mapper, name, parameter));
+            Assert.Equal(expected, MapperExtractor.IsDeclaredDispatchOrFlattenMethod(mapper, name, parameter));
         }
 
         // The registry answers for the extraction that set it up; one nobody set up keeps no route and requires no
