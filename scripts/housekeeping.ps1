@@ -531,28 +531,16 @@ try {
 
     if ($ILVerify) {
         Write-Host "== ILVerify (install: dotnet tool install -g dotnet-ilverify) ==" -ForegroundColor Cyan
-        # Resolve against the newest installed net10 REF PACK — the contract surface the compiler resolved
-        # against — rather than shared/Microsoft.NETCore.App. Verified empirically 2026-08-21: the ref pack
-        # resolves everything both assemblies need (ilverify 10.0.11).
-        # Resolution is cross-platform (T5: the nightly deep-test CI job runs this stage on a Linux
-        # runner, where $env:ProgramFiles is empty): try the packs dir of every dotnet root we can name
-        # (DOTNET_ROOT, wherever `dotnet` on PATH lives, Program Files on Windows), then the NuGet cache's
-        # microsoft.netcore.app.ref — both layouts share the '<version>/ref/net10.0' shape. Newest by
-        # [version], not by string sort (which ranks 10.0.9 above 10.0.11); prerelease suffixes stripped
-        # before the cast so a rc/preview pack dir cannot crash the stage.
+        # Resolve against the newest installed net10 REF PACK - the contract surface the compiler resolved
+        # against - rather than shared/Microsoft.NETCore.App. Verified empirically 2026-08-21: the ref pack
+        # resolves everything both assemblies need (ilverify 10.0.11). Where it is looked for, and why a link
+        # has to be followed, is Get-Net10RefPack's in scripts/gate-checks.ps1 (RefPackLookupTests).
         $dotnetRoots = @()
         if ($env:DOTNET_ROOT) { $dotnetRoots += $env:DOTNET_ROOT }
-        $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
-        if ($dotnetCmd) { $dotnetRoots += (Split-Path -Parent $dotnetCmd.Source) }
         if ($env:ProgramFiles) { $dotnetRoots += (Join-Path $env:ProgramFiles 'dotnet') }
-        $packRoots = @($dotnetRoots | ForEach-Object { Join-Path $_ 'packs/Microsoft.NETCore.App.Ref' }) +
-                     @(Join-Path ([Environment]::GetFolderPath('UserProfile')) '.nuget/packages/microsoft.netcore.app.ref')
-        $refPack = $packRoots | Where-Object { Test-Path $_ } |
-                   ForEach-Object { Get-ChildItem $_ -Directory } |
-                   Where-Object { $_.Name -like '10.*' } |
-                   Sort-Object { [version]($_.Name -replace '-.*$', '') } -Descending |
-                   Select-Object -First 1
-        if (-not $refPack) { throw "ilverify: no net10 ref pack found (searched: $($packRoots -join '; '))" }
+        $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
+        $refPack = Get-Net10RefPack -DotnetRoots $dotnetRoots -DotnetCommand $(if ($dotnetCmd) { $dotnetCmd.Source }) `
+            -NuGetPackages $env:NUGET_PACKAGES -UserProfile ([Environment]::GetFolderPath('UserProfile'))
         $refPackGlob = Join-Path $refPack.FullName 'ref/net10.0/*.dll'
 
         # The excuse list and both halves of its check live in scripts/gate-checks.ps1, beside the other
