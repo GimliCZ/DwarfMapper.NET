@@ -17,7 +17,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | # | Task | Status |
 |---|---|---|
 | T1 | **Silently dropped guarantees.** Every place the generator decides by helper family (`IsComplexHelper`, `IsSynthesized`, `IsObjectMap`), against every helper family, under Preserve / SetNull / AsNull: find the pairs a fast-path helper slips through. | **done** - see Notes |
-| T2 | **The last untested audit cell:** an array blit under SetNull against a method-level config on the element pair's partial. | open |
+| T2 | **The last untested audit cell:** an array blit under SetNull against a method-level config on the element pair's partial. | **defect found - decision open**, see Notes |
 | T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | **done** (`93d8b01`) |
 | T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | open |
 | T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | open |
@@ -42,3 +42,20 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   was red (363 over 362 KB, 57 over 56): the README is packed into both packages and the documentation corrections
   lengthened it. PR #12's checks could not show it, the job being nightly-only. Ceilings re-measured entry by entry
   and the job moved to every event (it takes 0.7 min on a runner).
+- **T2. A real defect, wider than the cell.** Under `ReferenceHandling.Preserve` or `OnCycle.SetNull`, a NESTED use
+  of a pair that has a declared partial - a member, or the elements of a collection - does not call that partial.
+  It is routed through a generated `__DwarfMap_Obj_*` helper (`PrefersSynthesizedObjectMap`: the public method
+  cannot take the shared context), and that helper applies the class's pair-scoped directives but NOT the
+  directives written on the method. Measured with `[MapIgnore("Dropped")] partial D MapCell(C c)` beside
+  `partial RD Map(R r)` where `R` has a `C Child` and a `List<C> Kids`:
+  - no reference handling: `Child = MapCell(r.Child)` - honoured;
+  - Preserve and SetNull: the helper contains `Dropped = s.Dropped` - the ignored member is mapped, with no
+    diagnostic. For an array of layout-identical structs under SetNull the same pair is block-copied instead
+    (`__DwarfBlit_*`), with the same result.
+  `[MapIgnore]` is how a field is kept out of a transfer object, so this is a correctness defect with a
+  confidentiality edge. `ArrayBlitElementConfigTests` holds the mode where it is right.
+  **Open decision:** (A) the helper replicates the method's directives, as it already does the pair's hooks and
+  factory - the right behaviour, and a change in the middle of member resolution; or (B) refuse: an error when a
+  declared partial with method-level directives would be bypassed this way, naming the pair-scoped form
+  (`[MapIgnore<D>]`, `[MapProperty<C,D>]`) that the helper does honour. Recommended: B first - it stops the silent
+  wrong output at once and is small - then A.
