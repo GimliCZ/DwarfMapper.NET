@@ -15,6 +15,20 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **A declared mapping method whose destination is an enum or a built-in scalar now converts its value.**
+  `partial StatusDto Map(Status s)` was generated as `return new StatusDto { };` - an object with no members - and
+  returned the default **for every input, in a clean build**. So were a `string` to an enum, an enum to `int` and
+  back, `long` to `int`, `string` to `int`. `[GenerateMap<Status, StatusDto>]` of the same pair converted all
+  along; the declared method, the same map at the other door, had been missed when that was fixed. Both now
+  return the conversion a member of that pair gets (by name between enums, a checked narrowing, a parse, a
+  format), under the same options and with DWARF038 where it is lossy. **If you declared such a method, its
+  results change: they were always the default and are the converted value now.** A `string` destination, which
+  did not build (DWARF024 for the parameters of `string`'s constructors), builds and converts. (Round 35, T16.)
+- **New: DWARF117 (Error), "a scalar map cannot be generated as declared"** - a mapping method or a
+  `[GenerateMap]` pair between scalars that has no conversion to return: the same type or an implicit conversion
+  (`int` to `long`; the declared method was left as a bare CS8795 and the attribute generated nothing and said
+  nothing), or a nullable value type on either side (it was DWARF007 on `HasValue`, or the silent default). The
+  message says what to write instead.
 - **DWARF066 no longer reports a `When`-guarded member that a positional record declares**
   (`record Base(string Name)`). Every constructor of the record has to pass that parameter, so a false guard
   leaves the value the constructor was given, not a null; only a parameter default that is a null in disguise
@@ -34,7 +48,8 @@ so a version with no section here ships with no notes.
     reference handling, under `Preserve` and under `OnCycle = SetNull` alike**; it is now
     `DwarfMappingDepthException`, the shared instance, or `null` on the back edge, as each mode documents. Under
     `Preserve`, two references to one element became two objects; they are one again. This holds for any declared
-    mapping method reached as an element, not only a dispatch.
+    mapping method reached as a reference-type element, not only a dispatch: a pair under `AutoNest = false`, a
+    plain map from an abstract source.
   - With a **concrete base** under `Preserve` or `SetNull`, the dispatch was skipped: a `Dog` held as an `Animal`
     came out as an `AnimalDto`, its own members dropped, with DWARF071 (Info) advising the attribute that was
     already there. It is a `DogDto` now. **One consequence to check:** an instance of the base type itself, which

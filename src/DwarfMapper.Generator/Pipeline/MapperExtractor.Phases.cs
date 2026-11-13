@@ -1792,7 +1792,13 @@ namespace DwarfMapper.Generator.Pipeline
                                    out _,
                                    out _);
 
-            if (isCollReturn || isDictReturn)
+            // Round 35 T16: an enum or a built-in scalar is a VALUE to convert too. [GenerateMap] was given this
+            // route for it in an earlier round ("An ENUM target needs the same treatment", below); the declared
+            // method was not, and `partial StatusDto Map(Status s)` went on being built as an object with no members:
+            // `return new StatusDto { };`, the default for every input, in a clean build.
+            var isValueLikeReturn = IsValueLikeDestination(targetType);
+
+            if (isCollReturn || isDictReturn || isValueLikeReturn)
             {
                 // The route emits `return helper(param);` — there is nowhere for an extra parameter to go, so a
                 // second parameter is refused here rather than dropped from the implementing half (which emitted
@@ -1823,7 +1829,7 @@ namespace DwarfMapper.Generator.Pipeline
                     method.Name,
                     acc.Diagnostics,
                     out var tlConverter,
-                    out _,
+                    out var tlNull,
                     out var tlNeedsCtx,
                     out _,
                     acc.NestedRegistry,
@@ -1835,6 +1841,16 @@ namespace DwarfMapper.Generator.Pipeline
                     // objects, silently. The [GenerateMap] path was fixed for this; the DECLARED-METHOD path
                     // was the same bug at the other door.
                     reservedConverters: decls.MapperReservedConverters);
+
+                // A scalar pair this route cannot emit as `return helper(value);` - a null to handle first, or no
+                // helper because the value is assigned as it is - is refused by name (DWARF117). It used to be a
+                // bare CS8795, or the wrong id.
+                if (tlResolved && isValueLikeReturn &&
+                    ScalarMapRefusal(sourceType, targetType, "Mapping method '" + method.Name + "'", tlConverter, tlNull) is { } scalarRefusal)
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ScalarMapNeedsNoConversion, methodLocation, scalarRefusal));
+                    return;
+                }
 
                 if (!tlResolved || tlConverter is null)
                     // Element conversion failed (diagnostic already reported). Skip this method.
@@ -3449,7 +3465,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // and a follow-up audit caught [GenerateMap<int, long>] emitting `return new long { };` for
                 // exactly the same reason. SpecialType covers the primitives, string, decimal, char and bool;
                 // TypeKind.Enum covers the rest of the family.
-                var genIsValueLike = genTgt.TypeKind == TypeKind.Enum || genTgt.SpecialType != SpecialType.None;
+                // The one predicate the declared method asks as well, since round 35 (it looks through Nullable<T>).
+                var genIsValueLike = IsValueLikeDestination(genTgt);
 
                 if (genIsColl || genIsDict || genIsValueLike)
                 {
@@ -3466,7 +3483,7 @@ namespace DwarfMapper.Generator.Pipeline
                         "Map",
                         acc.Diagnostics,
                         out var gConv,
-                        out _,
+                        out var gNull,
                         out var gNeedsCtx,
                         out _,
                         acc.NestedRegistry,
@@ -3474,6 +3491,15 @@ namespace DwarfMapper.Generator.Pipeline
                         // dedicated to one pair — a [MapConstructor] factory over the same types matches by
                         // signature and wins, so the loop constructs each element and assigns nothing.
                         reservedConverters: decls.MapperReservedConverters);
+
+                    // The same refusal the declared method gets: a scalar pair that needs null handling, or no
+                    // conversion at all (which generated nothing here and said nothing).
+                    if (gResolved && genIsValueLike &&
+                        ScalarMapRefusal(genSrc, genTgt, "[GenerateMap<" + genSrc.ToDisplayString() + ", " + genTgt.ToDisplayString() + ">]", gConv, gNull) is { } genScalarRefusal)
+                    {
+                        acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ScalarMapNeedsNoConversion, genLoc, genScalarRefusal));
+                        continue;
+                    }
 
                     if (!gResolved || gConv is null)
                     {

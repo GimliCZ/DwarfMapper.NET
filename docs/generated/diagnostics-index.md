@@ -119,5 +119,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF114` | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm |
 | `DWARF115` | Warning | EF Core cannot precompile a query built by a projection method |
 | `DWARF116` | Warning | A statement of intent matches nothing |
+| `DWARF117` | Error | A scalar map cannot be generated as declared |
 
-111 diagnostics.
+112 diagnostics.

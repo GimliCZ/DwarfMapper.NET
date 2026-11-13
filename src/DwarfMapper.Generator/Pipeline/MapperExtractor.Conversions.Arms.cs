@@ -1287,7 +1287,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Round 35 T12, Preserve: a declared mapper method as the element is called through its depth
                 // companion from the start, so every element shares the one context. (Everything above asked its
                 // questions of the declared name; only the call changes.)
-                var elemCall = PreserveCompanionFor(req, elemConv, ref elemNeedsCtx);
+                var elemCall = PreserveCompanionFor(req, srcElem, elemConv, ref elemNeedsCtx);
                 converterMethod = CollectionConverter.Synthesize(synthesized,
                     req.SrcType,
                     srcElem,
@@ -1380,12 +1380,14 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>
         ///     Under Preserve, the name a collection or dictionary helper calls for an element that resolved to a
         ///     declared mapper method: its depth companion, which takes the shared context. Otherwise
-        ///     <paramref name="converter" /> unchanged. An overloaded name is left alone, as everywhere a companion is
-        ///     chosen by name: it cannot be told which overload the companion would stand for.
+        ///     <paramref name="converter" /> unchanged. Only for a reference-type element - identity is a property of
+        ///     references, and a declared enum or struct map called per element needs no context and gets none. An
+        ///     overloaded name is left alone, as everywhere a companion is chosen by name: it cannot be told which
+        ///     overload the companion would stand for.
         /// </summary>
-        private static string? PreserveCompanionFor(ConversionRequest req, string? converter, ref bool needsCtx)
+        private static string? PreserveCompanionFor(ConversionRequest req, ITypeSymbol elementSource, string? converter, ref bool needsCtx)
         {
-            if (!req.IsPreserve || converter is null || needsCtx ||
+            if (!req.IsPreserve || converter is null || needsCtx || !elementSource.IsReferenceType ||
                 req.AutoCandidates.Count(ac => string.Equals(ac.Name, converter, StringComparison.Ordinal)) != 1)
             {
                 return converter;
@@ -1552,8 +1554,8 @@ namespace DwarfMapper.Generator.Pipeline
                     NullSourceKind.CollectionElement);
 
                 // Round 35 T12, Preserve: as for a collection element above.
-                var keyCall = PreserveCompanionFor(req, keyConv, ref keyNeedsCtx);
-                var valCall = PreserveCompanionFor(req, valConv, ref valNeedsCtx);
+                var keyCall = PreserveCompanionFor(req, srcKey, keyConv, ref keyNeedsCtx);
+                var valCall = PreserveCompanionFor(req, srcVal, valConv, ref valNeedsCtx);
                 converterMethod = DictionaryConverter.Synthesize(synthesized,
                     req.SrcType,
                     tgtKey,

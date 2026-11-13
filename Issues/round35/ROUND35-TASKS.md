@@ -31,6 +31,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T13 | **A `[MapDerivedType]` pair with a concrete base, nested under Preserve or SetNull, skips the dispatch**: a derived instance is mapped as the base, its own members dropped, with DWARF071 (Info) advising the attribute that is already there. | **done** - see Notes |
 | T14 | **SetNull, a concrete-base `[MapDerivedType]` pair and a cycle through an arm: the generated code does not compile** (CS7036, an arm's helper calls a context-taking helper without one). | **done** - see Notes |
 | T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | **done** - see Notes |
+| T16 | **A declared mapping method with an enum or scalar destination returns the default for every input** (`return new StatusDto { };`), where `[GenerateMap]` of the same pair converts. | **done** - see Notes |
 
 ## Notes
 
@@ -193,3 +194,36 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   opposite, and by a theory over the three defaults. RED: 2 of 12 in `WhenGuardInitializerTests` with the tests
   changed and the generator not; GREEN: 12 of 12. A `KeepDefault = true` written to quiet the old report is now
   DWARF116, which the changelog says.
+
+- **The T12 route, checked against what it was not written for** (review before the push). Under Preserve the
+  companion was first given to every non-overloaded declared method reached as an element. Probed on five shapes:
+  an enum map as list element, dictionary key and value; a struct pair; a class pair under `AutoNest = false`; a
+  plain map from an abstract source; a hand-written converter. All compiled, but the enum got a depth companion and
+  a depth check per element, for a value that has no identity. The companion is now for a reference-type element
+  only (`PreserveCompanionFor`), and the shapes are tests: `DeclaredElementUnderPreserveTests` (generator, 3) and
+  `DeclaredElementUnderPreserveRuntimeTests` (runtime, 3 - `Assert.Same` across member, list, array and dictionary
+  for the `AutoNest = false` pair and the abstract-source pair).
+- **T13's throw is pinned.** `DispatchPairNestedRuntimeTests` gained, for the two concrete-base families in each
+  mode, a fact that an instance of the base type itself is refused with `ArgumentException` when the dispatch is
+  called directly and on every nested route (member, list, array, dictionary) - 6 facts, 42 in the file. This is
+  the one change of the round that turns output a caller may have relied on into an exception: under Preserve and
+  SetNull such an instance used to be mapped as the base type (by the same skip that turned a dog into an
+  `AnimalDto`).
+- **T16, found by one of those tests.** The enum row of the runtime test read `[Open, Open]` for
+  `[Closed, Open]`: the declared enum map returned the default. Probe, 15 declared pairs: a destination that is an
+  enum, `int` or `long` was generated as `return new T { };` for 8 of them, in a clean build; a `string`
+  destination was DWARF024 x4 (the parameters of `string`'s constructors), a nullable enum DWARF007 (`HasValue`).
+  The same 15 as `[GenerateMap]`: converted, through the helpers a member gets. `ExtractGenerateMapPairs` carries
+  the comment of the earlier fix - "An ENUM target needs the same treatment ... Every VALUE-like target" - and the
+  declared method's "Fix 1" block, the same route at the other door, never got it: a fix applied to one of two
+  identical sites. First attempt, taken back: a refusal (the destination "has no members"); the attribute probe
+  showed the feature exists, so the declared method now takes the same route through one shared predicate
+  (`IsValueLikeDestination`, which also looks through `Nullable<T>`). What that route cannot emit as
+  `return helper(value);` is DWARF117 at both doors: no helper (the same type, an implicit conversion - a bare
+  CS8795 before, or nothing at all from the attribute) or a null to handle first (uncompilable when first tried:
+  CS1503, `Status?` handed to a helper taking `Status`). Tests: `ScalarTargetMapMethodTests` (generator, 28: nine
+  conversions, the two doors agreeing on each, four no-conversion pairs and four nullable pairs refused at both,
+  two object destinations unchanged), `ScalarMapMethodRuntimeTests` (runtime, 5 - the enums are declared in
+  opposite orders, so a map by name and a cast disagree), the negative case, and `DeclaredPairReuseTests`' int to
+  long pair, which pinned "compiles clean" for an attribute that generated nothing and now pins DWARF117 beside a
+  converting pair. RED: with the first version of the tests and the generator unchanged, 12 of 15.

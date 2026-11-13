@@ -2272,5 +2272,36 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Warning,
             true,
             helpLinkUri: HelpBase + "dwarf116");
+
+        /// <summary>
+        ///     <c>DWARF117</c> (Error) — a partial mapping method, or a <c>[GenerateMap]</c> pair, between two scalar
+        ///     types that this form cannot generate: one that needs no conversion (the same type, or an implicit
+        ///     one such as <c>int</c> to <c>long</c>), or one with a nullable on either side.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A map whose destination is an enum or a built-in scalar is a CONVERSION of the value, and is
+        ///         generated as one (by name between enums, a checked narrowing, a parse, a format): the body is
+        ///         <c>return helper(value);</c>. When the value is assigned as it is there is no helper and so no
+        ///         body: the declared method was left without its implementing part (a bare CS8795), and the
+        ///         attribute generated nothing and said nothing. When a null has to be handled first the body would
+        ///         hand a <c>T?</c> to a helper taking <c>T</c>; it was refused before too, under ids that describe
+        ///         something else (DWARF007 on <c>HasValue</c>).
+        ///     </para>
+        ///     <para>
+        ///         Round 35 (T16). Until then a DECLARED method with such a destination was not converted at all:
+        ///         it was built as an object with no members, <c>return new StatusDto { };</c> - the default for
+        ///         every input, in a clean build. <c>[GenerateMap]</c> had been given the conversion route for
+        ///         exactly this in an earlier round; the declared method, the same map at the other door, had not.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ScalarMapNeedsNoConversion = new(
+            "DWARF117",
+            "A scalar map cannot be generated as declared",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf117");
     }
 }

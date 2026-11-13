@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF116`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF117`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -2671,6 +2671,27 @@ null *inside* the member (an element, a dictionary value).
 with that change.
 
 ---
+
+## dwarf117
+**A scalar map cannot be generated as declared** · Error
+
+A partial mapping method, or a `[GenerateMap<S, T>]` pair, whose destination is an enum or a built-in scalar
+(`int`, `string`, `decimal`, `DateTime`, ...) is a **conversion of the value** and is generated as one:
+`partial StatusDto Map(Status s)` maps by name, `partial int Parse(string s)` parses, `partial int Narrow(long v)`
+is a checked narrowing - the conversions a member of the same pair would get, under the same options and with the
+same [`DWARF038`](#dwarf038) where one is lossy. Two kinds of pair have no such body and are refused:
+
+- **nothing to convert** - the same type on both sides, or an implicit conversion (`int` to `long`). The value is
+  assigned as it is, so there is no conversion to return. **Fix:** remove the declaration and assign the value.
+- **a null to handle first** - a nullable value type on either side (`Status?` to `StatusDto?`, `int?` to `int`).
+  **Fix:** declare the map between the non-nullable types and decide about null where it is called, or write the
+  conversion as an ordinary (non-partial) method; the mapper calls a hand-written method of that signature wherever
+  the pair appears.
+
+Until round 35 a **declared method** with such a destination was not converted at all. It was built as an object
+with no members - `return new StatusDto { };` - and returned the default for every input, in a clean build. If you
+have such a method, its results change: they are the converted value now. (`[GenerateMap]` of the same pair always
+converted.)
 
 ## Runtime exceptions
 
