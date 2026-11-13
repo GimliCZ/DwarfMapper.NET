@@ -38,6 +38,8 @@ namespace DwarfMapper.Generator.Tests
             var modifier = abstractBase ? "abstract " : "";
             var home = cyclic ? "public Zoo? Home { get; set; }" : "";
             var homeDto = cyclic ? "public ZooDto? Home { get; set; }" : "";
+            // A base that can be instantiated needs an arm of its own (DWARF119).
+            var baseArm = abstractBase ? "" : "[MapDerivedType<Animal, AnimalDto>]";
             return $$"""
                      using DwarfMapper;
                      using System.Collections.Generic;
@@ -65,7 +67,7 @@ namespace DwarfMapper.Generator.Tests
                      {{mode}}
                      public partial class M
                      {
-                         [MapDerivedType<Dog, DogDto>]
+                         [MapDerivedType<Dog, DogDto>] {{baseArm}}
                          public partial AnimalDto {{dispatchName}}(Animal a);
                          public partial ZooDto Map(Zoo z);
                      }
@@ -129,7 +131,9 @@ namespace DwarfMapper.Generator.Tests
 
         // T13. Under Preserve and SetNull a concrete base made the pair "a mappable object pair", and it was handed to
         // a synthesized map of the base type's members: a Dog came out as an AnimalDto, with DWARF071 advising the
-        // attribute that was already there.
+        // attribute that was already there. A map of the base type's members now exists for one caller only: the
+        // dispatch's own arm for the base, which a base that can be instantiated must have (DWARF119). No member,
+        // element or entry reaches it except through the dispatch.
         [Theory]
         [MemberData(nameof(EveryShape))]
         public void The_dispatch_is_never_replaced_by_a_map_of_the_base_type(string mode, bool abstractBase, bool cyclic)
@@ -137,9 +141,15 @@ namespace DwarfMapper.Generator.Tests
             var source = Source(mode, abstractBase, cyclic);
             var (diagnostics, generated) = GeneratorTestHarness.Run(source);
 
-            Assert.DoesNotContain("__DwarfMap_Obj_global__Demo_Animal_global__Demo_AnimalDto", generated, StringComparison.Ordinal);
+            var uses = BaseMapUse.Matches(generated);
+            Assert.Equal(abstractBase, uses.Count == 0);
+            Assert.All(uses, use => Assert.Contains(use.Groups["before"].Value, new[] { "global::Demo.Animal __s => ", "private global::Demo.AnimalDto " }));
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF071");
         }
+
+        // The map of the base pair, with what stands before it: the base arm's pattern, or its own declaration.
+        private static readonly Regex BaseMapUse = new(@"(?<before>global::Demo\.Animal __s => |private global::Demo\.AnimalDto |)__DwarfMap_Obj_global__Demo_Animal_global__Demo_AnimalDto_\w*\(",
+            RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
 
         // An overloaded name cannot be told which overload its companion would stand for, here as everywhere a
         // companion is chosen by name: the helpers keep the public call, and the code still compiles.

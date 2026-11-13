@@ -39,6 +39,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper]
     public partial class DcNoneMapper
     {
+        [MapDerivedType<DcAnimal, DcAnimalDto>]
         [MapDerivedType<DcDog, DcDogDto>]
         public partial DcAnimalDto MapAnimal(DcAnimal a);
 
@@ -48,6 +49,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
     public partial class DcPreserveMapper
     {
+        [MapDerivedType<DcAnimal, DcAnimalDto>]
         [MapDerivedType<DcDog, DcDogDto>]
         public partial DcAnimalDto MapAnimal(DcAnimal a);
 
@@ -57,6 +59,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
     public partial class DcSetNullMapper
     {
+        [MapDerivedType<DcAnimal, DcAnimalDto>]
         [MapDerivedType<DcDog, DcDogDto>]
         public partial DcAnimalDto MapAnimal(DcAnimal a);
 
@@ -153,6 +156,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper]
     public partial class EcNoneMapper
     {
+        [MapDerivedType<EcAnimal, EcAnimalDto>]
         [MapDerivedType<EcDog, EcDogDto>]
         public partial EcAnimalDto MapAnimal(EcAnimal a);
 
@@ -162,6 +166,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
     public partial class EcPreserveMapper
     {
+        [MapDerivedType<EcAnimal, EcAnimalDto>]
         [MapDerivedType<EcDog, EcDogDto>]
         public partial EcAnimalDto MapAnimal(EcAnimal a);
 
@@ -171,6 +176,7 @@ namespace DwarfMapper.IntegrationTests
     [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
     public partial class EcSetNullMapper
     {
+        [MapDerivedType<EcAnimal, EcAnimalDto>]
         [MapDerivedType<EcDog, EcDogDto>]
         public partial EcAnimalDto MapAnimal(EcAnimal a);
 
@@ -313,20 +319,21 @@ namespace DwarfMapper.IntegrationTests
         }
 
 
-        // No arm names the base type itself. Called directly the dispatch refuses such an instance, and it refuses it
-        // the same on every nested route and in every mode. (Under Preserve and SetNull the nested routes used to
-        // map it as the base type - by skipping the dispatch, which is also what turned a dog into an AnimalDto.)
+        // The base can be instantiated, so the dispatch must have an arm for it (DWARF119) - and an instance of
+        // exactly the base type is mapped as the base on every route and in every mode. (Before round 35 the nested
+        // routes under Preserve and SetNull got there by skipping the dispatch, which also turned a dog into an
+        // AnimalDto; without the arm the dispatch threw ArgumentException.)
         [Fact]
-        public void Dc_None_an_instance_of_the_base_type_itself_is_refused_on_every_route()
+        public void Dc_None_an_instance_of_the_base_type_itself_is_mapped_as_the_base_on_every_route()
         {
             var plain = new DcAnimal { Name = "plain" };
             var mapper = new DcNoneMapper();
 
-            Assert.Throws<ArgumentException>(() => mapper.MapAnimal(plain));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { Star = plain }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { All = { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { Arr = new[] { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { ByName = { ["plain"] = plain } }));
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.MapAnimal(plain)).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { Star = plain }).Star).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { All = { plain } }).All[0]).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { Arr = new[] { plain } }).Arr[0]).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { ByName = { ["plain"] = plain } }).ByName["plain"]).Name);
         }
 
 
@@ -408,20 +415,21 @@ namespace DwarfMapper.IntegrationTests
         }
 
 
-        // No arm names the base type itself. Called directly the dispatch refuses such an instance, and it refuses it
-        // the same on every nested route and in every mode. (Under Preserve and SetNull the nested routes used to
-        // map it as the base type - by skipping the dispatch, which is also what turned a dog into an AnimalDto.)
+        // The base can be instantiated, so the dispatch must have an arm for it (DWARF119) - and an instance of
+        // exactly the base type is mapped as the base on every route and in every mode. (Before round 35 the nested
+        // routes under Preserve and SetNull got there by skipping the dispatch, which also turned a dog into an
+        // AnimalDto; without the arm the dispatch threw ArgumentException.)
         [Fact]
-        public void Dc_Preserve_an_instance_of_the_base_type_itself_is_refused_on_every_route()
+        public void Dc_Preserve_an_instance_of_the_base_type_itself_is_mapped_as_the_base_on_every_route()
         {
             var plain = new DcAnimal { Name = "plain" };
             var mapper = new DcPreserveMapper();
 
-            Assert.Throws<ArgumentException>(() => mapper.MapAnimal(plain));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { Star = plain }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { All = { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { Arr = new[] { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { ByName = { ["plain"] = plain } }));
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.MapAnimal(plain)).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { Star = plain }).Star).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { All = { plain } }).All[0]).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { Arr = new[] { plain } }).Arr[0]).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { ByName = { ["plain"] = plain } }).ByName["plain"]).Name);
         }
 
 
@@ -497,20 +505,21 @@ namespace DwarfMapper.IntegrationTests
         }
 
 
-        // No arm names the base type itself. Called directly the dispatch refuses such an instance, and it refuses it
-        // the same on every nested route and in every mode. (Under Preserve and SetNull the nested routes used to
-        // map it as the base type - by skipping the dispatch, which is also what turned a dog into an AnimalDto.)
+        // The base can be instantiated, so the dispatch must have an arm for it (DWARF119) - and an instance of
+        // exactly the base type is mapped as the base on every route and in every mode. (Before round 35 the nested
+        // routes under Preserve and SetNull got there by skipping the dispatch, which also turned a dog into an
+        // AnimalDto; without the arm the dispatch threw ArgumentException.)
         [Fact]
-        public void Dc_SetNull_an_instance_of_the_base_type_itself_is_refused_on_every_route()
+        public void Dc_SetNull_an_instance_of_the_base_type_itself_is_mapped_as_the_base_on_every_route()
         {
             var plain = new DcAnimal { Name = "plain" };
             var mapper = new DcSetNullMapper();
 
-            Assert.Throws<ArgumentException>(() => mapper.MapAnimal(plain));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { Star = plain }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { All = { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { Arr = new[] { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new DcZoo { ByName = { ["plain"] = plain } }));
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.MapAnimal(plain)).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { Star = plain }).Star).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { All = { plain } }).All[0]).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { Arr = new[] { plain } }).Arr[0]).Name);
+            Assert.Equal("plain", Assert.IsType<DcAnimalDto>(mapper.Map(new DcZoo { ByName = { ["plain"] = plain } }).ByName["plain"]).Name);
         }
 
 
@@ -744,20 +753,21 @@ namespace DwarfMapper.IntegrationTests
         }
 
 
-        // No arm names the base type itself. Called directly the dispatch refuses such an instance, and it refuses it
-        // the same on every nested route and in every mode. (Under Preserve and SetNull the nested routes used to
-        // map it as the base type - by skipping the dispatch, which is also what turned a dog into an AnimalDto.)
+        // The base can be instantiated, so the dispatch must have an arm for it (DWARF119) - and an instance of
+        // exactly the base type is mapped as the base on every route and in every mode. (Before round 35 the nested
+        // routes under Preserve and SetNull got there by skipping the dispatch, which also turned a dog into an
+        // AnimalDto; without the arm the dispatch threw ArgumentException.)
         [Fact]
-        public void Ec_None_an_instance_of_the_base_type_itself_is_refused_on_every_route()
+        public void Ec_None_an_instance_of_the_base_type_itself_is_mapped_as_the_base_on_every_route()
         {
             var plain = new EcAnimal { Name = "plain" };
             var mapper = new EcNoneMapper();
 
-            Assert.Throws<ArgumentException>(() => mapper.MapAnimal(plain));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { Star = plain }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { All = { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { Arr = new[] { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { ByName = { ["plain"] = plain } }));
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.MapAnimal(plain)).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { Star = plain }).Star).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { All = { plain } }).All[0]).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { Arr = new[] { plain } }).Arr[0]).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { ByName = { ["plain"] = plain } }).ByName["plain"]).Name);
         }
 
 
@@ -783,20 +793,21 @@ namespace DwarfMapper.IntegrationTests
         }
 
 
-        // No arm names the base type itself. Called directly the dispatch refuses such an instance, and it refuses it
-        // the same on every nested route and in every mode. (Under Preserve and SetNull the nested routes used to
-        // map it as the base type - by skipping the dispatch, which is also what turned a dog into an AnimalDto.)
+        // The base can be instantiated, so the dispatch must have an arm for it (DWARF119) - and an instance of
+        // exactly the base type is mapped as the base on every route and in every mode. (Before round 35 the nested
+        // routes under Preserve and SetNull got there by skipping the dispatch, which also turned a dog into an
+        // AnimalDto; without the arm the dispatch threw ArgumentException.)
         [Fact]
-        public void Ec_Preserve_an_instance_of_the_base_type_itself_is_refused_on_every_route()
+        public void Ec_Preserve_an_instance_of_the_base_type_itself_is_mapped_as_the_base_on_every_route()
         {
             var plain = new EcAnimal { Name = "plain" };
             var mapper = new EcPreserveMapper();
 
-            Assert.Throws<ArgumentException>(() => mapper.MapAnimal(plain));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { Star = plain }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { All = { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { Arr = new[] { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { ByName = { ["plain"] = plain } }));
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.MapAnimal(plain)).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { Star = plain }).Star).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { All = { plain } }).All[0]).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { Arr = new[] { plain } }).Arr[0]).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { ByName = { ["plain"] = plain } }).ByName["plain"]).Name);
         }
 
 
@@ -816,20 +827,21 @@ namespace DwarfMapper.IntegrationTests
         }
 
 
-        // No arm names the base type itself. Called directly the dispatch refuses such an instance, and it refuses it
-        // the same on every nested route and in every mode. (Under Preserve and SetNull the nested routes used to
-        // map it as the base type - by skipping the dispatch, which is also what turned a dog into an AnimalDto.)
+        // The base can be instantiated, so the dispatch must have an arm for it (DWARF119) - and an instance of
+        // exactly the base type is mapped as the base on every route and in every mode. (Before round 35 the nested
+        // routes under Preserve and SetNull got there by skipping the dispatch, which also turned a dog into an
+        // AnimalDto; without the arm the dispatch threw ArgumentException.)
         [Fact]
-        public void Ec_SetNull_an_instance_of_the_base_type_itself_is_refused_on_every_route()
+        public void Ec_SetNull_an_instance_of_the_base_type_itself_is_mapped_as_the_base_on_every_route()
         {
             var plain = new EcAnimal { Name = "plain" };
             var mapper = new EcSetNullMapper();
 
-            Assert.Throws<ArgumentException>(() => mapper.MapAnimal(plain));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { Star = plain }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { All = { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { Arr = new[] { plain } }));
-            Assert.Throws<ArgumentException>(() => mapper.Map(new EcZoo { ByName = { ["plain"] = plain } }));
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.MapAnimal(plain)).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { Star = plain }).Star).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { All = { plain } }).All[0]).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { Arr = new[] { plain } }).Arr[0]).Name);
+            Assert.Equal("plain", Assert.IsType<EcAnimalDto>(mapper.Map(new EcZoo { ByName = { ["plain"] = plain } }).ByName["plain"]).Name);
         }
 
 

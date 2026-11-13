@@ -33,6 +33,8 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | **done** - see Notes |
 | T16 | **A declared mapping method with an enum or scalar destination returns the default for every input** (`return new StatusDto { };`), where `[GenerateMap]` of the same pair converts. | **done** - see Notes |
 | T17 | **A cycle that runs through a `[FlattenGraph]` method's own node leaf is a stack overflow** in every mode (a node pointing at the object that holds the graph). | **done** - refused as DWARF118, see Notes |
+| T18 | **A base instance at a dispatch is refused in the build, not at run time** (the owner, 2026-11-13, on T13's "now throws": "compile time error would be better"). | **done** - DWARF119, see Notes |
+| T19 | **A derived arm adopts a declared method that takes the BASE type**, and the derived members are dropped with no diagnostic. Found while proving T18's advice. | open - see Notes |
 
 ## Notes
 
@@ -283,3 +285,42 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     the "at most one" are gone. Two tests hold the oracle itself: one object allocated in the window is read, and an
     exception from the operation is rethrown on the calling thread. The test host keeps the runtime's defaults
     (concurrent collection on), as E3 requires.
+
+- **T18: DWARF119, "a [MapDerivedType] dispatch has no arm for its own instantiable base type"** (the owner's
+  ruling on T13's consequence). The rule: the dispatch's source is a class, not abstract, not `object`, and no arm's
+  source is that type. Reported beside DWARF114, at the plain dispatch and at the node dispatch of a
+  `[FlattenGraph]` method - the three places that emit the "no [MapDerivedType] registered" fallback are the
+  dispatch method, its Preserve/SetNull wrapper (same arms) and the flatten node dispatch.
+  - **The advice was proven before it went into the message.** Probe, one mapper per mode, the base arm declared
+    FIRST, a zoo holding a plain `Animal` and a `Dog` as member, list element and dictionary value: the base comes out
+    as `AnimalDto` and the dog as `DogDto` on every route in all three modes; under Preserve one target per source
+    across all routes and the cycle through the base closes on the same zoo; SetNull nulls the back edge; None
+    throws `DwarfMappingDepthException`. A `[FlattenGraph]` node dispatch with a concrete node base threw
+    `ArgumentException` for a base node and flattens it with the arm.
+  - **Two sources, one target** (`Command`, `AliasCommand` -> `CommandOverviewDto`, the consumer shape of F44): the
+    base arm's pair is the method's own pair, and the method's own `[MapIgnore(nameof(Alias))]` is read for that
+    arm only - a plain command gives `Alias = ""`, an alias command still fills it. That is what F44 and
+    `DerivedTypeArmCompositionTests` now declare.
+  - **Blast radius, measured by building and running everything with the check in:** 9 mappers in 4 files of this
+    repository did not build (Conformance F44, DifferentialTests' `DwarfShapes`, `Par_DerivedMapper`, the six
+    concrete-base mappers of `DispatchPairNestedRuntimeTests`), and 31 tests failed - 21 on fixtures of that shape
+    (each given the arm, or an abstract base where the test is about a base that maps nothing), the golden
+    `DerivedTypes` case (source, manifest line and snapshot: the arm and its helper, nothing else), and the
+    registration checks. `DispatchPairNestedRuntimeTests`' six "base instance is refused on every route" facts are
+    now "is mapped as the base on every route". `LoudRatherThanSilentTests` says what is now true: DwarfMapper
+    refuses the undeclared base in the build, Mapperly at run time, AutoMapper not at all.
+  - **What the arm matches - for the owner.** An arm matches every subtype of its source (DWARF114's coverage rule
+    says so). So with the base arm, a subtype that has no arm of its own is mapped as the base, its own members
+    dropped, where it threw before. That was already how a base arm behaved (F43, and the "sibling" test, are on
+    `master`); DWARF119 makes more people write one. The docs section says it. Making the base arm match EXACTLY
+    the base type would keep the unknown subtype loud; it would also change mappers that use the base arm as the
+    catch-all today. Not done; a decision.
+  - Verified: whole solution 0 warnings; 20,034 tests green; the new method's lines 10/10 branches, and no generator
+    file changed its count of uncovered lines or partial branches against the run before it (whole files compared,
+    not only changed lines - the hole Codecov found in T12).
+- **T19, found by T18's probe and NOT fixed.** `[MapDerivedType<AliasCommand, OverviewDto>]` beside a declared
+  `[MapIgnore(nameof(OverviewDto.Alias))] private partial OverviewDto PlainToDto(Command c)`: the ALIAS arm adopts
+  `PlainToDto` (an `AliasCommand` converts to its parameter), so an alias command comes out with `Alias = ""`, in a
+  clean build. Measured: `B: plain=(n,'') alias=(n,'')` against `A: plain=(n,'') alias=(n,'al')` with the ignore on
+  the dispatch method instead. It is the same adoption rule "an arm may resolve to any declared method" (F43)
+  applied to a method whose parameter is a BASE of the arm's source. Older than this round.

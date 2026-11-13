@@ -1726,6 +1726,13 @@ namespace DwarfMapper.Generator.Pipeline
                     methodLocation,
                     acc.Diagnostics);
 
+                // DWARF119: a base that can be instantiated needs an arm of its own.
+                ReportInstantiableBaseWithoutArm(sourceType,
+                    rawDerivedPairs.Select(p => p.Item1),
+                    "'" + method.Name + "'",
+                    methodLocation,
+                    acc.Diagnostics);
+
                 var armModels = sortedArms
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),

@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF118`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF119`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -2706,6 +2706,39 @@ depth, until the stack ends - a `StackOverflowException`, which cannot be caught
 round 35, in every reference-handling mode. **Fix:** keep that member out of the flattened node - ignore it for the
 node's destination type, or give it a type that does not lead back (an identifier in place of the object).
 
+## dwarf119
+**A [MapDerivedType] dispatch has no arm for its own instantiable base type** · Error
+
+A method with `[MapDerivedType]` arms maps nothing itself: at run time an instance either matches an arm or reaches
+the fallback, which throws `ArgumentException`. An instance of *exactly the base type* matches no derived arm. When
+the base is a class that is not abstract, such instances can exist, and the declaration shows it - so the missing
+arm is a build error, not an exception for whoever passes one first.
+
+<!-- fence-exempt: illustrates the declaration DWARF119 refuses and its two fixes; a fragment, not a compilable unit -->
+```csharp
+public class Command { ... }                 // not abstract: `new Command()` is possible
+public class AliasCommand : Command { ... }
+
+[MapDerivedType<AliasCommand, AliasCommandDto>]
+public partial CommandDto ToDto(Command c);  // DWARF119: nothing maps a plain Command
+```
+
+**Fix** - whichever is true of your model:
+
+- **The base is never instantiated:** make it `abstract`. Nothing else changes.
+- **The base is instantiated:** add an arm for it, `[MapDerivedType<Command, CommandDto>]`. Arms are tried most
+  derived first whatever order they are written in, so the derived arms still win. When the base arm's pair is the
+  method's own pair, the method's `[MapProperty]` and `[MapIgnore]` are read for it - which is how a destination
+  member only a derived type can fill is ignored for the base.
+
+Note what an arm for the base matches: every instance that no more derived arm claims, **a subtype without an arm
+of its own included**, mapped as the base. If that would drop members you care about, give the subtype its arm.
+
+The same rule holds for the node dispatch of a `[FlattenGraph]` method with `[MapDerivedType]` arms. `object` as
+the dispatch's source is not asked for an arm. Before round 35 this shape built, and a base instance threw at run
+time - or, nested under `ReferenceHandling.Preserve` or `OnCycle.SetNull`, was mapped as the base by a route that
+skipped the dispatch altogether (and mapped derived instances as the base too).
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather
@@ -2728,7 +2761,7 @@ The throws you can encounter:
 | `string → enum` unrecognized name, or `enum → enum` **by-name** with an undefined/cast source value | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — these are **not total** (`DWARF015` only checks *declared* members) |
 | Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Warning) at build; a raw NRE at runtime |
 | `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
-| `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …" |
+| `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …". An instance of the base type itself is not among these: a base that can be instantiated must have an arm (`DWARF119`) |
 | Span/destination too small (span overloads) | `ArgumentException` | |
 | Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
 | Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |

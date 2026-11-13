@@ -64,7 +64,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Reverse mapping (`[ReverseMap]`)** | ✅ inverts simple renames (`DWARF051/052`) | ~ | ✅ | ✅ |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` (Warning for lossy conversions, Info otherwise), or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | ~ (untested here) | maps the raw value through |
-| **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type | throws | ~ (untested here) | maps the base as itself |
+| **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type; an instantiable base with no arm of its own is a **build error** (`DWARF119`) | throws | ~ (untested here) | maps the base as itself |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 
 **Differentiators only DwarfMapper has:** the blittable SIMD fast-path, zero-alloc `Span<T>` mapping,
@@ -89,7 +89,9 @@ demonstrated in the gallery (`49_MapShare.cs`, `50_MapDenseEnumKeys.cs`).
 which DwarfMapper is deliberately *less* capable than an oracle. A value the author did not declare an answer
 for — an enum value from a cast or a database column, a runtime subtype with no registered arm — is refused
 at runtime rather than substituted. That is the same stance as `NullStrategy.Throw` and the completeness
-gate: a mapping nobody wrote is not a mapping anyone should rely on.
+gate: a mapping nobody wrote is not a mapping anyone should rely on. One such case is refused earlier still:
+an instance of a dispatch's own base type, when that type can be instantiated and has no arm, is visible in the
+declaration and is a build error (`DWARF119`).
 
 Mapperly reaches the same conclusion by default on both rows, which is worth saying plainly — two
 independently designed generators agreeing is a better argument for the stance than either makes alone. What

@@ -2331,5 +2331,19 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Error,
             true,
             helpLinkUri: HelpBase + "dwarf118");
+
+        /// <summary>
+        ///     <c>DWARF119</c> (Error) — a <c>[MapDerivedType]</c> dispatch over a base type that can itself be
+        ///     instantiated has no arm for that type, so an instance of it would reach the run-time fallback and
+        ///     throw. See <c>MapperExtractor.ReportInstantiableBaseWithoutArm</c>. Args: {0} = the whole message.
+        /// </summary>
+        public static readonly DiagnosticDescriptor DispatchBaseHasNoArm = new(
+            "DWARF119",
+            "A [MapDerivedType] dispatch has no arm for its own instantiable base type",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf119");
     }
 }

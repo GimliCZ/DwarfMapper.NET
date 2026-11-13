@@ -15,6 +15,16 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **New: DWARF119 (Error), "a [MapDerivedType] dispatch has no arm for its own instantiable base type".** A
+  dispatch over a class that is not abstract, with arms for derived types only, used to build; an instance of
+  exactly the base type then reached the fallback and threw `ArgumentException` at run time. The declaration shows
+  that case, so it is refused there: make the base `abstract`, or add an arm for it
+  (`[MapDerivedType<Command, CommandDto>]` - the method's own `[MapIgnore]`/`[MapProperty]` are read for that arm).
+  The node dispatch of a `[FlattenGraph]` method is held to the same rule; `object` is not. **A mapper of this
+  shape that built before no longer builds.** This replaces the run-time exception this round's dispatch fix had
+  introduced for a base instance nested under Preserve or SetNull: with the arm, a base instance is mapped as the
+  base on every route and in every mode. Know what the arm matches - every instance no more derived arm claims,
+  a subtype without an arm of its own included. (Round 35.)
 - **New: DWARF118 (Error), "[FlattenGraph] node member leads back to the flatten method".** A node member that
   is not an edge of the graph is converted by an ordinary call; when that call leads back to the flatten method
   (a node pointing at the object that holds the graph), data that closes the loop **overflowed the stack - the
@@ -58,9 +68,9 @@ so a version with no section here ships with no notes.
     plain map from an abstract source.
   - With a **concrete base** under `Preserve` or `SetNull`, the dispatch was skipped: a `Dog` held as an `Animal`
     came out as an `AnimalDto`, its own members dropped, with DWARF071 (Info) advising the attribute that was
-    already there. It is a `DogDto` now. **One consequence to check:** an instance of the base type itself, which
-    no arm names, used to be mapped there; it now throws `ArgumentException`, exactly as the same method does when
-    called directly or nested without reference handling. Add an arm for the base type if it can occur.
+    already there. It is a `DogDto` now. An instance of the base type itself, which no arm named, used to be
+    mapped there and thrown for everywhere else; a base that can be instantiated must now have an arm of its own
+    (DWARF119, above), and with it such an instance is mapped as the base on every route.
   - Under `SetNull`, a concrete base and an arm whose type leads back into the graph **generated code that did
     not compile** (CS7036 inside the `.g.cs`).
 - **A span or async-stream map whose element holds a self-referencing member compiles** (`Src { Node? Root }`,

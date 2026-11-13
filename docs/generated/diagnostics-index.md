@@ -121,5 +121,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF116` | Warning | A statement of intent matches nothing |
 | `DWARF117` | Error | A scalar map cannot be generated as declared |
 | `DWARF118` | Error | [FlattenGraph] node member leads back to the flatten method |
+| `DWARF119` | Error | A [MapDerivedType] dispatch has no arm for its own instantiable base type |
 
-113 diagnostics.
+114 diagnostics.

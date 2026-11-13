@@ -115,7 +115,7 @@ and you do not have to configure anything to get it.
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
 | `.ReverseMap()` | `[ReverseMap]` on forward + explicit inverse `partial A ToA(B)` | inverts **simple renames** only; non-invertible config (`Use=`, dotted, `NullSubstitute`, `When`) → `DWARF051`; missing inverse → `DWARF052` |
-| `.Include<DS,DD>()` (base→derived) | `[MapDerivedType<DS,DD>]` on the base method | most-derived-first switch; unregistered runtime type throws |
+| `.Include<DS,DD>()` (base→derived) | `[MapDerivedType<DS,DD>]` on the base method | most-derived-first switch; unregistered runtime type throws. AutoMapper maps a base instance through the base map; here a base that can be instantiated needs its own arm, `[MapDerivedType<S,D>]`, or the build stops (`DWARF119`) |
 | `.IncludeBase<…>()` | **partial** | no config-inheritance primitive; restate shared config and mark the derived pair `[RestatesBase<S,T>]` so the generator checks the restatement (`DWARF084`/`DWARF085`) |
 | `.IncludeAllDerived()` | **non-goal** | list each `[MapDerivedType]` arm (no reflection discovery) |
 | runtime `Map(obj, srcType, destType)` polymorphism | `[MapDerivedType]` generated type switch | AOT-safe, no reflection |
