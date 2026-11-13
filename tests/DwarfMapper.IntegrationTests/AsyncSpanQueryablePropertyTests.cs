@@ -166,13 +166,20 @@ namespace DwarfMapper.IntegrationTests
             for (var i = 0; i < 100; i++) mapper.MapSpan(src, dst); // warm up
 
             // Five windows of 1,000 maps, and at least one of them reads exactly zero. One window was the whole test
-            // until round 35, when PR #13's net11 job read 4,896 bytes in it once (run 43439030599; green on the re-run
-            // and on the four commits before). That is under 5 bytes a map, where the smallest object is 24: something
-            // allocated once on this thread inside the window, the map did not allocate per call. It did not come
-            // back in 121 repetitions on runtime 11 (Windows and the Linux image, six tiering settings, one core
-            // shared by three hosts), and a collection started by another thread does not move this counter on
-            // runtime 10 or 11 (probed: 6,000 collections, no window moved). So the cause is not known, and the
-            // oracle is the one that separates the two: a map that allocates does so in every window.
+            // until round 35, when PR #13's net11 job read 4,896 bytes in it once (run 43439030599).
+            //
+            // CAUSE, measured (Issues/round35/AllocationCounterProbe.cs): GC.GetAllocatedBytesForCurrentThread is not
+            // exact across a BACKGROUND collection. A thread that has allocated holds the unused rest of its
+            // allocation buffer (up to about 8 KB); when a background gen-2 collection started by ANOTHER thread
+            // reaches it, the counter jumps by that rest although the thread allocated nothing. On runtime 10.0.1
+            // and 11.0.0 alike: 10 to 705 of 17,000 to 55,000 empty windows moved, by 16 to 8,176 bytes; none
+            // with concurrent collection off, none under blocking or gen-0 collections, and none once the thread
+            // stops allocating (0 of about 270,000 windows). This test's thread has just allocated its arrays, and
+            // the other test collections of this assembly run beside it and allocate large objects.
+            //
+            // So the jump can land in one window and not in the next, while a map that allocates does so in every
+            // window: the oracle is a window that reads zero. (This project keeps the runtime's defaults on purpose,
+            // concurrent collection among them; see Directory.Build.targets.)
             var windows = new long[5];
             for (var w = 0; w < windows.Length; w++)
             {

@@ -70,3 +70,29 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   Warning; a dead `#dwarfr11` anchor; a misspelled path; DWARF102 missing from the reserved ids; a wrong id in a
   fence comment. Two stale source comments fixed with it (`[MapNullSkip<,>]` duplicates are DWARF099, not "first
   wins"; DWARF103's `in` advice starts at 64 bytes, not 32).
+
+- **A red `net11` check on PR #13, and its cause.** At `0ebe50c` the job failed once:
+  `Span_map_into_caller_memory_allocates_zero_bytes` read 4,896 bytes over 1,000 maps (run 43439030599; the re-run
+  was green). Not the mapper and not the JIT: the test's own body read zero in every one of 3,000 windows across
+  tier-up, on runtime 10 and 11, under five tiering settings. The cause is the counter:
+  `GC.GetAllocatedBytesForCurrentThread` jumps by the unused rest of a thread's allocation buffer when a
+  **background** gen-2 collection started by another thread reaches it. Probe:
+  [`AllocationCounterProbe.cs`](AllocationCounterProbe.cs), in `sdk:10.0.101` and `sdk:11.0.100`, four CPUs, about
+  four seconds a mode:
+
+  | what the other thread does | runtime 10.0.1 | runtime 11.0.0 |
+  |---|---|---|
+  | `GC.Collect(0)`; small allocations (gen-0 collections) | 0 windows moved | 0 |
+  | blocking compacting gen-2 collections; `GC.GetTotalMemory(true)`; `GetTotalAllocatedBytes(true)`; no-GC regions | 0 | 0 |
+  | non-blocking gen-2 collections (`bgc`) | 91 to 705 of 17,000 to 30,000 | 10 to 64 of 17,000 to 26,000 |
+  | 200 KB allocations (`loh`, which start background collections) | 55 to 225 of about 55,000 | 41 to 128 of 28,000 to 53,000 |
+  | the last two with `DOTNET_gcConcurrent=0` | 0 | 0 |
+  | the last two when the measuring thread allocates once, before its first window | 0 of about 270,000 | 0 of about 275,000 |
+
+  The deltas run from 16 to 8,176 bytes (one allocation quantum less one object), and the collection count does not
+  mark a moved window (every moved window had an unchanged gen-2 count), so a window cannot be discarded by asking.
+  It is not new in .NET 11; the job that happened to catch it runs the suite there. The two tests that assert an
+  exact zero over one window now read five and require a zero among them: a map that allocates does so in every
+  window. The tests with a per-call bound are not exposed (8 KB over their iteration counts is under their slack).
+  IntegrationTests keeps concurrent collection on, as it keeps every runtime default: it measures what a consumer
+  runs.

@@ -51,9 +51,10 @@ namespace DwarfMapper.IntegrationTests
             AllocPointDst sink = default;
             for (var i = 0; i < 200; i++) sink = mapper.Map(src);
 
-            // Five windows, at least one of them exactly zero: a map that allocates does so in every window, and a
-            // single allocation that lands on this thread from elsewhere cannot fail the test (the same oracle, for
-            // the reason written out in AsyncSpanQueryablePropertyTests, whose one window read 4,896 bytes once).
+            // Five windows, at least one of them exactly zero: a map that allocates does so in every window, while a
+            // background collection started by another thread can move this counter once by the unused rest of this
+            // thread's allocation buffer (measured in round 35; written out in AsyncSpanQueryablePropertyTests, whose
+            // single window read 4,896 bytes that way).
             var windows = new long[5];
             for (var w = 0; w < windows.Length; w++)
             {
