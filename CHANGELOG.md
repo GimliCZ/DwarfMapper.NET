@@ -15,6 +15,11 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **.NET 11 is supported, and CI holds it.** The package still ships one `net10.0` assembly, which a `net11.0`
+  project references as it is; nothing in it changed for this. What is new is the proof: a CI job (`net11`) builds
+  the repository under SDK 11.0.100 with warnings as errors, builds the sample and consumer projects as `net11.0` -
+  generated code included - and runs their tests there, and publishes the NativeAOT sample with the 11.0 compiler.
+  Measured before the job was written: no finding in the library, the generator or the code it emits. (Round 35.)
 - **The generator no longer binds every `.Map(…)` call in your project.** To find `Dwarf.Map` call sites it sent every
   invocation *named* `Map` - above all `mapper.Map(x)`, the commonest call in a DwarfMapper codebase - to a semantic
   bind on its own compilation, a second binding of each enclosing method on top of the real compile. It now admits
