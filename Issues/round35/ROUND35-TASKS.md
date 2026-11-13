@@ -18,7 +18,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 |---|---|---|
 | T1 | **Silently dropped guarantees.** Every place the generator decides by helper family (`IsComplexHelper`, `IsSynthesized`, `IsObjectMap`), against every helper family, under Preserve / SetNull / AsNull: find the pairs a fast-path helper slips through. | **done** - see Notes |
 | T2 | **The last untested audit cell:** an array blit under SetNull against a method-level config on the element pair's partial. | open |
-| T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | open |
+| T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | **done** (`93d8b01`) |
 | T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | open |
 | T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | open |
 | T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | open |
@@ -38,3 +38,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   pair, which a collection helper's types never are, and the suite and the golden outputs are unchanged with the
   wider answer. The `[FlattenGraph]` leaf rule was the other one, fixed before this list (`4f5c384`). The plain
   Preserve path keeps identity through these helpers (`FlattenGraphPreserveLeafTests`).
+- **Found on the way: the package-size ceilings.** Rehearsing the nightly `package-size` job at this branch's head
+  was red (363 over 362 KB, 57 over 56): the README is packed into both packages and the documentation corrections
+  lengthened it. PR #12's checks could not show it, the job being nightly-only. Ceilings re-measured entry by entry
+  and the job moved to every event (it takes 0.7 min on a runner).
