@@ -16,7 +16,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 
 | # | Task | Status |
 |---|---|---|
-| T1 | **Silently dropped guarantees.** Every place the generator decides by helper family (`IsComplexHelper`, `IsSynthesized`, `IsObjectMap`), against every helper family, under Preserve / SetNull / AsNull: find the pairs a fast-path helper slips through. | open |
+| T1 | **Silently dropped guarantees.** Every place the generator decides by helper family (`IsComplexHelper`, `IsSynthesized`, `IsObjectMap`), against every helper family, under Preserve / SetNull / AsNull: find the pairs a fast-path helper slips through. | **done** - see Notes |
 | T2 | **The last untested audit cell:** an array blit under SetNull against a method-level config on the element pair's partial. | open |
 | T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | open |
 | T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | open |
@@ -29,3 +29,12 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T11 | **The three Stryker findings filed upstream.** The owner's to send; the write-up is ready. | owner |
 
 ## Notes
+
+- **T1.** All 24 places that decide by helper family were read. One real defect: `IsAnySynthesized` knew only names
+  under `__DwarfMap`, so the fast-path collection helpers (`__DwarfWiden*`, `__DwarfBlit*`) and the dense-enum helper
+  counted as methods the author declared, and DWARF116 told the reader their value "goes through
+  '__DwarfWidenL_21d8533...'". Fixed; `AllowNullIntentTests` holds it (3 of 4 shapes red before). The other sites
+  were checked against that reading: the two collection-element sites and the dictionary one require an object
+  pair, which a collection helper's types never are, and the suite and the golden outputs are unchanged with the
+  wider answer. The `[FlattenGraph]` leaf rule was the other one, fixed before this list (`4f5c384`). The plain
+  Preserve path keeps identity through these helpers (`FlattenGraphPreserveLeafTests`).

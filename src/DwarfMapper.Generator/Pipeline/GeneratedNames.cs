@@ -46,6 +46,9 @@ namespace DwarfMapper.Generator.Pipeline
         public const string BlitList = "__DwarfBlitL_";
         public const string Widen = "__DwarfWiden_";
         public const string WidenList = "__DwarfWidenL_";
+
+        // The dense enum-keyed dictionary helper ([MapDenseEnumKeys]).
+        public const string DenseEnum = "__DwarfDense_";
         public const string UserConv = Base + "UserConv_"; // user-defined conversion operator
         public const string EnumToStr = Base + "EnumStr_"; // enum -> string (by name)
         public const string StrToEnum = Base + "StrEnum_"; // string -> enum (by name)
@@ -60,9 +63,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///     True for ANY DwarfMapper-synthesized helper (object/scalar/enum AND collection/dict) — i.e.
         ///     <paramref name="name" /> is NOT a user-declared method. This is the widest classification.
         /// </summary>
+        /// <summary>
+        ///     Whether <paramref name="name" /> is a helper this generator wrote, of ANY family - as opposed to a method
+        ///     the mapper's author declared. Round 35: that includes the families named outside <see cref="Root" />
+        ///     (the fast-path collection copies and the dense enum helper). It answered no for those, so a diagnostic
+        ///     told the reader their value "goes through '__DwarfWidenL_21d8533...'" as if that were a converter of theirs.
+        /// </summary>
         public static bool IsAnySynthesized(string? name)
         {
-            return name is not null && name.StartsWith(Root, StringComparison.Ordinal);
+            return name is not null &&
+                   (name.StartsWith(Root, StringComparison.Ordinal) || CopiesACollection(name) || name.StartsWith(DenseEnum, StringComparison.Ordinal));
         }
 
         /// <summary>
