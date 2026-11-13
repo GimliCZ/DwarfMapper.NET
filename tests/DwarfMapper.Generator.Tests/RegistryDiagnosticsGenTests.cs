@@ -818,6 +818,51 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(6, r17.Location.GetLineSpan().StartLinePosition.Line);
         }
 
+        // The directive can sit where there is no source to point at: on a member inherited from a referenced assembly.
+        // DWARFR17 is still reported, at the source type that declared the pair. (Codecov read this fallback as half
+        // covered on PR #11: every other test writes its directive in the compilation under test.)
+        [Fact]
+        public void A_MapProperty_inherited_from_a_referenced_assembly_reports_DWARFR17_at_the_source_type()
+        {
+            var library = GeneratorTestHarness.BuildCompilation("DwarfMapperR17Library" + Guid.NewGuid().ToString("N"),
+                """
+                using DwarfMapper;
+                namespace Lib;
+                public class Base
+                {
+                    [MapProperty("Nmae")] public string Alias { get; set; } = "";
+                }
+                """);
+            Assert.Empty(library.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+
+            var compilation = GeneratorTestHarness.BuildCompilation("DwarfMapperR17Consumer" + Guid.NewGuid().ToString("N"),
+                """
+                using DwarfMapper;
+                namespace Demo;
+                [MapTo(typeof(Dto))]
+                public class Src : Lib.Base
+                {
+                    public string Name { get; set; } = "";
+                }
+                public class Dto { public string Name { get; set; } = ""; }
+                """);
+            using (var image = new MemoryStream())
+            {
+                Assert.True(library.Emit(image).Success);
+                compilation = compilation.AddReferences(MetadataReference.CreateFromImage(image.ToArray()));
+            }
+
+            Microsoft.CodeAnalysis.CSharp.CSharpGeneratorDriver.Create(new DwarfMapper.Generator.Registry.MapToGenerator())
+                                 .RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
+
+            var r17 = Assert.Single(diagnostics, d => d.Id == "DWARFR17");
+            Assert.Equal("[MapProperty] destination member 'Nmae' on 'Dto' does not exist or is not writable (names match " +
+                         "exactly, including case)",
+                r17.GetMessage(CultureInfo.InvariantCulture));
+            // At the source type (line 4): the attribute itself is in metadata and has no position.
+            Assert.Equal(3, r17.Location.GetLineSpan().StartLinePosition.Line);
+        }
+
         // A member's OWN name finding nothing on the target is an unused source member, not a directive gone wrong.
         [Fact]
         public void A_source_member_without_a_directive_that_matches_nothing_is_not_DWARFR17()
