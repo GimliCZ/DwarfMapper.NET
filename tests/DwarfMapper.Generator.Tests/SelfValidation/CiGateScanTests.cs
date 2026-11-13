@@ -62,6 +62,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // jobs stay pinned to 24.04 (CiRunnerImagePinScanTests).
             yield return ["ubuntu-26-canary", "the image ubuntu-latest is moving to would stop being tried before " + "the Linux jobs' pins move onto it"];
 
+            // Round 34: .NET 11 shipped on 2026-11-10. The one job that builds under its SDK with warnings as errors,
+            // builds and runs the consumers as net11.0, and publishes NativeAOT with the 11.0 compiler.
+            yield return ["net11", "nothing would build, test or publish against .NET 11 any more, and the claim that " + "it is supported would rest on the day it was measured"];
+
             // ── Nightly tier: cron on the default branch plus manual dispatch, never on push ──────────────
             // "Declared" is an even weaker claim for these than for the per-push jobs above — but deleting
             // any of them would still turn a measured floor into decoration, silently.
@@ -100,6 +104,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [InlineData("roslyn-forward-compat")]
         [InlineData("preview-sdk-canary")]
         [InlineData("ubuntu-26-canary")]
+        [InlineData("net11")]
         public void A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error(string job)
         {
             var text = Workflow.Replace("\r\n", "\n", StringComparison.Ordinal);

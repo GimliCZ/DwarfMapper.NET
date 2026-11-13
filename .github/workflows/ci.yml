@@ -1305,6 +1305,96 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
+  # ── .NET 11: the release that shipped (round 34) ─────────────────────────────────────────────────────────
+  # .NET 11 went GA on 2026-11-10. The library stays one net10.0 assembly, which a net11.0 application references
+  # as it is, and the generator stays netstandard2.0; what "supports .NET 11" means is held here, on every event:
+  #   1. the repository builds under the .NET 11 SDK with its own settings (warnings are errors: the rules that
+  #      SDK's analyzers add count), and the suite passes with DOTNET_ROLL_FORWARD=LatestMajor, the net10.0 test
+  #      assemblies on the newest runtime installed;
+  #   2. the consumer's shape: every sample and consumer test project retargeted to net11.0 in this working copy
+  #      (C# 15, the 11.0 reference assemblies), built with warnings as errors - generated code included, which a
+  #      consumer cannot suppress - and their tests run as net11.0 assemblies, which only the 11 runtime can load;
+  #   3. NativeAOT as net11.0, with the 11.0 compiler.
+  # Measured before the job was written, SDK 11.0.100 on this tree: 1 failed on three new analyzer rules in
+  # Generator.Tests alone (fixed), nothing under src/ or in generated code; 2 and 3 passed as they were.
+  # The SDK is PINNED here, like the 10.0 one and for the same reason: a newer 11.0.x band adds analyzer rules, and
+  # that must arrive as a change to this line, not as a red job on someone else's commit. preview-sdk-canary above
+  # stays the unpinned look ahead. Generator.Tests and the Gallery keep net10.0 in step 2: neither is a consumer
+  # (the Gallery is referenced by the net10.0 DocTooling), and as net11.0 the test project meets 92 CA1307 findings
+  # on string overloads that framework adds - its own style, not the product's.
+  net11:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DOTNET_ROLL_FORWARD: LatestMajor
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '11.0.100'
+      - name: Drop the SDK pin for this job only, and PROVE the .NET 11 SDK is what we got
+        run: |
+          set -euo pipefail
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          actual=$(dotnet --version)
+          echo "SDK resolved: $actual"
+          if [ "$actual" != "11.0.100" ]; then
+            echo "::error::the net11 job resolved SDK $actual, not 11.0.100 - it would prove nothing about .NET 11" >&2
+            exit 1
+          fi
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      # Locked mode off: another SDK resolves its implicit packages at its own patch (see roslyn-forward-compat).
+      - name: Build under the .NET 11 SDK, warnings as errors
+        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+      - name: The suite, rolled forward to the newest runtime
+        run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - name: Retarget the consumers to net11.0
+        run: |
+          set -euo pipefail
+          n=0
+          for p in $(git ls-files 'tests/*.csproj' 'tests/**/*.csproj' 'samples/**/*.csproj' | sort -u); do
+            case "$p" in *DwarfMapper.Generator.Tests.csproj|*DwarfMapper.Gallery.csproj) continue ;; esac
+            sed -i 's|<TargetFramework>net10.0</TargetFramework>|<TargetFramework>net11.0</TargetFramework>|' "$p"
+            grep -q '<TargetFramework>net11.0</TargetFramework>' "$p" || { echo "::error::$p was not retargeted"; exit 1; }
+            echo "$p" >> net11-projects.txt
+            n=$((n + 1))
+          done
+          echo "retargeted $n projects"
+          # The vacuity guard: the samples and consumer test projects are fourteen today.
+          [ "$n" -ge 14 ] || { echo "::error::only $n projects retargeted - the consumer shape was not built"; exit 1; }
+      - name: Build the consumers as net11.0, warnings as errors
+        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+      - name: Run them as net11.0 assemblies
+        run: |
+          set -euo pipefail
+          # Project by project, and not Generator.Tests: its scans read this working copy, which the step above
+          # changed on purpose (the suite, those scans included, ran two steps up on the tree as committed).
+          for p in $(grep -l -E 'xunit' $(cat net11-projects.txt)); do
+            dotnet test "$p" -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m 2>&1 | tee -a net11-test.log
+          done
+          ran=$(grep -c -E '^Passed!.*\(net11\.0\)' net11-test.log || true)
+          echo "$ran test assemblies passed as net11.0"
+          # Eight today (every test project but Generator.Tests). Fewer means the retargeting no longer reaches them.
+          [ "$ran" -ge 8 ] || { echo "::error::only $ran test assemblies ran as net11.0"; exit 1; }
+      - name: NativeAOT as net11.0, published and executed
+        run: |
+          set -euo pipefail
+          dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -p:RestoreLockedMode=false -warnaserror -o aot-out
+          if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
+            echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT publish." >&2
+            exit 1
+          fi
+          # The compiler the restore resolved for this publish, read from its assets file.
+          grep -q '"runtime.linux-x64.Microsoft.DotNet.ILCompiler/11\.' samples/DwarfMapper.AotSample/obj/project.assets.json || { echo "::error::the publish did not resolve an 11.x ILCompiler"; exit 1; }
+          ./aot-out/DwarfMapper.AotSample
+
   # ── Ubuntu 26.04 canary: does this pipeline survive the `ubuntu-latest` move? ───────────────────────────
   # Every other Linux job is pinned to ubuntu-24.04 (the note at the top of this file). This one runs the
   # push-time suite and the linux-x64 NativeAOT gate on the image `ubuntu-latest` is becoming, on every event,
