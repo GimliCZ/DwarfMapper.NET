@@ -15,6 +15,12 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **New: DWARF118 (Error), "[FlattenGraph] node member leads back to the flatten method".** A node member that
+  is not an edge of the graph is converted by an ordinary call; when that call leads back to the flatten method
+  (a node pointing at the object that holds the graph), data that closes the loop **overflowed the stack - the
+  process died - in every reference-handling mode**. The walk tracks visited nodes and nothing else, and its
+  helpers cannot carry a context, so the shape is now refused where it is declared. **A mapper of this shape that
+  built before no longer builds**; it was only ever safe on data that never closed the loop. (Round 35, T17.)
 - **A declared mapping method whose destination is an enum or a built-in scalar now converts its value.**
   `partial StatusDto Map(Status s)` was generated as `return new StatusDto { };` - an object with no members - and
   returned the default **for every input, in a clean build**. So were a `string` to an enum, an enum to `int` and

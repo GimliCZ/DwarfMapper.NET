@@ -122,6 +122,7 @@ DWARF114 | DwarfMapper | Error | A closed hierarchy has a direct descendant with
 DWARF115 | DwarfMapper | Warning | EF Core cannot precompile a query built by a projection method
 DWARF116 | DwarfMapper | Warning | A statement of intent matches nothing
 DWARF117 | DwarfMapper | Error | A scalar map cannot be generated as declared
+DWARF118 | DwarfMapper | Error | [FlattenGraph] node member leads back to the flatten method
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF117`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF118`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -2692,6 +2692,19 @@ Until round 35 a **declared method** with such a destination was not converted a
 with no members - `return new StatusDto { };` - and returned the default for every input, in a clean build. If you
 have such a method, its results change: they are the converted value now. (`[GenerateMap]` of the same pair always
 converted.)
+
+## dwarf118
+**[FlattenGraph] node member leads back to the flatten method** · Error
+
+A `[FlattenGraph]` method walks a graph of nodes and tracks the nodes it has visited - and nothing else. A node
+member that is not an edge of the graph is a *leaf*, converted by an ordinary call. This error is reported when
+that call leads back to the flatten method: a node that points at the object holding the graph, whose own map
+flattens the graph again; or a node member of the flattened type itself.
+
+On data that closes the loop the walk would be entered again from inside itself, with a fresh visited set and no
+depth, until the stack ends - a `StackOverflowException`, which cannot be caught. That is what happened before
+round 35, in every reference-handling mode. **Fix:** keep that member out of the flattened node - ignore it for the
+node's destination type, or give it a type that does not lead back (an identifier in place of the object).
 
 ## Runtime exceptions
 

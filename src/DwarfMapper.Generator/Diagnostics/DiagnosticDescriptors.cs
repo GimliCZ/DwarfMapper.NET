@@ -2303,5 +2303,33 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Error,
             true,
             helpLinkUri: HelpBase + "dwarf117");
+
+        /// <summary>
+        ///     <c>DWARF118</c> (Error) — a <c>[FlattenGraph]</c> method is on a recursion cycle that runs through one of
+        ///     its own node leaves: a member of a node is converted by something that leads back to the method.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The walk a flatten method emits tracks the NODES it has visited and nothing else. A node member
+        ///         that is not an edge of the graph is a leaf, converted by an ordinary call; when that call leads
+        ///         back to the flatten method, the walk is entered again from inside itself with a fresh visited set
+        ///         and no depth - on data that closes the loop, until the stack ends. Measured in round 35 (T17): a
+        ///         node holding a reference to the object that holds the graph killed the process without reference
+        ///         handling, under Preserve and under SetNull alike. The helpers that would have to carry a context
+        ///         through the walk are emitted as text with one parameter, so the shape is refused instead.
+        ///     </para>
+        ///     <para>
+        ///         An <b>Error</b> for the reason DWARF030 is one: the alternative is a StackOverflowException, which
+        ///         cannot be caught.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor FlattenGraphLeafLeadsBack = new(
+            "DWARF118",
+            "[FlattenGraph] node member leads back to the flatten method",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf118");
     }
 }

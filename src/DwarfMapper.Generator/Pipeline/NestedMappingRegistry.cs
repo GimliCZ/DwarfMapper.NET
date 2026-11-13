@@ -74,6 +74,8 @@ namespace DwarfMapper.Generator.Pipeline
 
         private readonly HashSet<string> _requiredDepthCompanions = new(StringComparer.Ordinal);
 
+        private readonly List<(string FlattenSourceFqn, string FlattenTargetFqn, string LeafName, string Converter, string? ConverterParamTypeFqn)> _flattenLeafCalls = new();
+
         // Cached result; empty until ComputeRecursionCapability() replaces it.
         private HashSet<string> _recursionCapable = new(StringComparer.Ordinal);
 
@@ -122,6 +124,21 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>The recorded helper → element-method edges (see <see cref="RecordHelperElementEdge" />).</summary>
         public IReadOnlyList<(string HelperName, string ElemMethod, string? ElemParamTypeFqn)> HelperElementEdges => _helperElementEdges;
+
+        /// <summary>The recorded flat-node leaf conversions (see <see cref="RecordFlattenLeafCall" />).</summary>
+        public IReadOnlyList<(string FlattenSourceFqn, string FlattenTargetFqn, string LeafName, string Converter, string? ConverterParamTypeFqn)> FlattenLeafCalls => _flattenLeafCalls;
+
+        /// <summary>
+        ///     Records that the <c>[FlattenGraph]</c> method mapping <paramref name="flattenSourceFqn" /> to
+        ///     <paramref name="flattenTargetFqn" /> converts the node member <paramref name="leafName" /> by calling
+        ///     <paramref name="converter" />. The call is made from inside a flat-node helper, which is emitted as text
+        ///     and is no node of the call graph - so, like a collection helper's element call, it has to be recorded to
+        ///     be seen (DWARF118 asks whether it leads back to the method).
+        /// </summary>
+        public void RecordFlattenLeafCall(string flattenSourceFqn, string flattenTargetFqn, string leafName, string converter, string? converterParamTypeFqn)
+        {
+            _flattenLeafCalls.Add((flattenSourceFqn, flattenTargetFqn, leafName, converter, converterParamTypeFqn));
+        }
 
         /// <summary>
         ///     Dequeues the next pending (src, tgt, methodName, autoNest, origin) to build.

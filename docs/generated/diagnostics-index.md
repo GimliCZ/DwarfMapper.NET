@@ -120,5 +120,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF115` | Warning | EF Core cannot precompile a query built by a projection method |
 | `DWARF116` | Warning | A statement of intent matches nothing |
 | `DWARF117` | Error | A scalar map cannot be generated as declared |
+| `DWARF118` | Error | [FlattenGraph] node member leads back to the flatten method |
 
-112 diagnostics.
+113 diagnostics.

@@ -243,6 +243,54 @@ namespace DwarfMapper.Generator.Pipeline
             }
         }
 
+        // ── DWARF118: a [FlattenGraph] method on a recursion cycle through its own node leaves ──
+        // The flatten walk keeps a set of the NODES it has visited; a node member that is not an edge is a leaf,
+        // converted by an ordinary call from inside the flat-node helper. When that call leads back to the flatten
+        // method the walk is entered again from inside itself, with a fresh visited set and no depth. Round 35 (T17),
+        // measured one process per case: a node holding a reference to the object that holds the graph ended in a
+        // stack overflow without reference handling, under Preserve and under SetNull. The flat-node helper is text
+        // with one parameter - nothing here can hand it a context - so the shape is refused.
+        //
+        // On the call graph as DetectDeclaredMethodsOnRecursionCycle left it, like DWARF030 above: the question is
+        // "does the leaf's converter reach this method", asked for each recorded leaf of each flatten method.
+        private static void ReportFlattenLeavesLeadingBack(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, NestedMappingRegistry nestedRegistry, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics, Dictionary<string, int> declaredNameCount)
+        {
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                if (!m.IsPartial || m.FlattenGraphDirectives.Count == 0)
+                {
+                    continue;
+                }
+
+                var methodKey = DeclKey(m, declaredNameCount);
+                foreach (var leaf in nestedRegistry.FlattenLeafCalls)
+                {
+                    if (!string.Equals(leaf.FlattenSourceFqn, m.ParameterTypeFullName, StringComparison.Ordinal) ||
+                        !string.Equals(leaf.FlattenTargetFqn, m.ReturnTypeFullName, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var leafKey = ExactOverloadKey(leaf.Converter, leaf.ConverterParamTypeFqn, declaredNameCount) ?? leaf.Converter;
+                    if (!string.Equals(leafKey, methodKey, StringComparison.Ordinal) && !CanReach(allCallGraph, leafKey, methodKey))
+                    {
+                        continue;
+                    }
+
+                    publicMethodLocs.TryGetValue(i, out var location);
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.FlattenGraphLeafLeadsBack,
+                        location,
+                        "[FlattenGraph] on '" + m.MethodName + "': the node member '" + leaf.LeafName + "' is converted by '" + leaf.Converter +
+                        "', which leads back to '" + m.MethodName + "'. The walk tracks the nodes it has visited and nothing else, so a " +
+                        "cycle through a node's own member would enter it again from inside itself until the stack ends. Keep '" +
+                        leaf.LeafName + "' out of the flattened node (ignore it for the node's destination type, or give it a type " +
+                        "that does not lead back, such as an identifier)"));
+                }
+            }
+        }
+
         // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
         // After recursion-capability is finalised, mark the methods that need register-before-populate emission.
         private static void MarkPreserveModeMethods(List<MapMethodModel> methods, bool isPreserveMode)

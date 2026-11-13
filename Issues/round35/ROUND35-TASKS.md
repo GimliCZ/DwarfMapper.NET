@@ -32,6 +32,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T14 | **SetNull, a concrete-base `[MapDerivedType]` pair and a cycle through an arm: the generated code does not compile** (CS7036, an arm's helper calls a context-taking helper without one). | **done** - see Notes |
 | T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | **done** - see Notes |
 | T16 | **A declared mapping method with an enum or scalar destination returns the default for every input** (`return new StatusDto { };`), where `[GenerateMap]` of the same pair converts. | **done** - see Notes |
+| T17 | **A cycle that runs through a `[FlattenGraph]` method's own node leaf is a stack overflow** in every mode (a node pointing at the object that holds the graph). | **done** - refused as DWARF118, see Notes |
 
 ## Notes
 
@@ -227,3 +228,17 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   opposite orders, so a map by name and a cast disagree), the negative case, and `DeclaredPairReuseTests`' int to
   long pair, which pinned "compiles clean" for an attribute that generated nothing and now pins DWARF117 beside a
   converting pair. RED: with the first version of the tests and the generator unchanged, 12 of 15.
+
+- **T17, found by the last probe row asked of T15.** T15's tests cycled inside the walk (the nodes in a ring). A
+  cycle THROUGH it - a node member `Owner` pointing at the holder, whose map flattens the graph again - killed the
+  process in all three modes: `none back`, `preserve back`, `setnull back`, each "PROCESS DIED". Without reference
+  handling that is on `master`; under the other two it had been unreachable only because the shape did not build
+  before T15. The generated text says why: `MapG` fills `Nodes` through `__DwarfMap_FlattenGraph_*`, whose
+  flat-node helper is text with one parameter and calls `Map(n.Owner)`; `Map` calls `MapG`. The call graph never saw
+  the helper's call, so nothing was on a cycle and nothing got a depth guard - and a guard could not be threaded
+  through that helper anyway. So the shape is refused: each leaf loop records what its flat-node helper calls
+  (`RecordFlattenLeafCall`), and `ReportFlattenLeavesLeadingBack` asks, on the call graph as the cycle phase left
+  it, whether that call reaches the flatten method. DWARF118, Error, at the flatten method, naming the member and
+  the converter. Tests: `FlattenGraphLeafLeadsBackTests` (generator, 6: refused in each mode; a leaf through a
+  declared method that does not lead back is flattened; the direct case, a member of the flattened type) and the
+  negative case. T15's own tests are unchanged and pass: their nodes have no such member.

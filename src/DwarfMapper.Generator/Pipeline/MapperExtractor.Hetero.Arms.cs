@@ -174,7 +174,7 @@ namespace DwarfMapper.Generator.Pipeline
                             out var leafConv,
                             out var leafNull,
                             out _,
-                            out _,
+                            out var leafParamType,
                             req.NestedRegistry);
                         // Both outcomes, as in the homogeneous loop: a RESOLVED leaf's diagnostics (a DWARF038
                         // suggestion, a strict-mode refusal) used to be discarded with the throw-away list (round 31).
@@ -191,6 +191,7 @@ namespace DwarfMapper.Generator.Pipeline
                             continue;
                         }
 
+                        RecordFlatLeafCall(req, leaf.Name, leafConv, leafParamType);
                         foreach (var kv in leafThrowAwaySynth)
                             if (!acc.Synthesized.ContainsKey(kv.Key))
                             {
@@ -247,6 +248,23 @@ namespace DwarfMapper.Generator.Pipeline
         ///         leaf loop cannot repeat that.
         ///     </para>
         /// </remarks>
+        /// <summary>
+        ///     Tells the registry what a flat-node helper calls for a leaf it does emit, in both leaf loops: the call
+        ///     graph cannot see into the helper's text, and DWARF118 has to know whether the call leads back.
+        /// </summary>
+        private static void RecordFlatLeafCall(FlattenGraphRequest req, string leafName, string? leafConv, string? leafParamType)
+        {
+            if (leafConv is not null)
+            {
+                req.NestedRegistry.RecordFlattenLeafCall(
+                    req.SourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    req.TargetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    leafName,
+                    leafConv,
+                    leafParamType);
+            }
+        }
+
         private static bool FlatLeafBlockedUnderPreserve(
             FlattenGraphRequest req,
             FlattenGraphAccumulators acc,

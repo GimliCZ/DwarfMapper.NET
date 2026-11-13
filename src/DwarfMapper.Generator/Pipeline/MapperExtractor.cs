@@ -467,6 +467,8 @@ namespace DwarfMapper.Generator.Pipeline
             DetectDeclaredMethodsOnRecursionCycle(methods, nestedRegistry, pendingNestedModels, recursionCapableNames, declaredNameCount, nodesOnCycle, selfRecursivePublicMethods, allCallGraph);
             // ── DWARF030: while converter names are still the call graph's own node names ──
             ReportCyclicConstructorParameters(methods, allCallGraph, nestedRegistry, publicMethodLocs, pendingNestedModels, diagnostics, isPreserveMode, declaredNameCount);
+            // ── DWARF118: a [FlattenGraph] method on a cycle through its own node leaves ──
+            ReportFlattenLeavesLeadingBack(methods, allCallGraph, nestedRegistry, publicMethodLocs, diagnostics, declaredNameCount);
             // ── None+Throw: upgrade collection/dict helpers whose element method is self-recursive ──
             UpgradeElementHelpersOnRecursionCycle(methods, nestedRegistry, recursionCapableNames, selfRecursivePublicMethods, nodesOnCycle, declaredNameCount);
             // ── Mark public methods and synthesized methods that call recursion-capable pairs ─
