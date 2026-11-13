@@ -1483,6 +1483,17 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (369 KB = 377,856 B) 813 B on Windows, 998 B on ubuntu.
 # DwarfMapper.Testing (58 KB = 59,392 B) 871 B on Windows, 918 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T18, at 79c7a8f): DwarfMapper 368 and DwarfMapper.Testing 57, both UNCHANGED.
+#
+#   the same container and commands:
+#     29437cc                   DwarfMapper 376,873 B   Testing 58,474 B   floor 368 / 57
+#     79c7a8f (T18, DWARF119)   DwarfMapper 377,461 B   Testing 58,478 B   floor 368 / 57
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll  +590   one diagnostic with its message and its check
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper 395 B, DwarfMapper.Testing 914 B.
+# Windows was not packed again; by the +185 B measured above it would stand about 210 B under. The next generator
+# change of any size moves this ceiling.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
     'DwarfMapper'         = 368
