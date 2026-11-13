@@ -27,6 +27,10 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T9 | **Test and tooling packages** brought up to date, one at a time, gates re-measured. | open |
 | T10 | **The in-process mutation runner** into the repository: tool project, tests, catalogue step, a CI job comparing its report with Stryker's. | open |
 | T11 | **The three Stryker findings filed upstream.** The owner's to send; the write-up is ready. | owner |
+| T12 | **A `[MapDerivedType]` pair used as a list or array element calls the public method with no context** (abstract base, every mode): a cycle through the collection is a stack overflow, and Preserve loses identity between elements. | open - measured, see Notes |
+| T13 | **A `[MapDerivedType]` pair with a concrete base, nested under Preserve or SetNull, skips the dispatch**: a derived instance is mapped as the base, its own members dropped, with DWARF071 (Info) advising the attribute that is already there. | open - measured, see Notes |
+| T14 | **SetNull, a concrete-base `[MapDerivedType]` pair and a cycle through an arm: the generated code does not compile** (CS7036, an arm's helper calls a context-taking helper without one). | open - measured, see Notes |
+| T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | open - measured, see Notes |
 
 ## Notes
 
@@ -96,3 +100,28 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   window. The tests with a per-call bound are not exposed (8 KB over their iteration counts is under their slack).
   IntegrationTests keeps concurrent collection on, as it keeps every runtime default: it measures what a consumer
   runs.
+
+- **T12-T15, found by the follow-up T2 left open** ("not known to be bypassed: `[FlattenGraph]` and
+  `[MapDerivedType]` on such a method"). They are bypassed, and the dispatch pair has older holes beside it. None of
+  the four came with round 35; all are on `master`. Probe: one mapper per mode, a `Zoo` holding an `Animal` as a
+  member, in a `List<Animal>` and in an `Animal[]`, `[MapDerivedType<Dog, DogDto>]` on `MapAnimal`, `Dog.Home`
+  pointing back at the zoo for the cyclic rows, one process per case (2026-11-13, at `b0e51e2`):
+
+  | base, mode | acyclic | cycle through the member | cycle through the list / the array |
+  |---|---|---|---|
+  | concrete, none | `DogDto` everywhere | `DwarfMappingDepthException` | `DwarfMappingDepthException` |
+  | concrete, Preserve | **`AnimalDto` everywhere** (T13) | maps, as `AnimalDto` | maps, as `AnimalDto` |
+  | concrete, SetNull | **does not compile** when an arm reaches back into the graph (T14) | | |
+  | abstract, none | `DogDto` everywhere | `DwarfMappingDepthException` | **stack overflow, the process dies** (T12) |
+  | abstract, Preserve | `DogDto`; **the list's two references to one dog become two objects** (T12) | maps | **stack overflow** (T12) |
+  | abstract, SetNull | `DogDto` | maps | **stack overflow** (T12) |
+
+  The generated text says why. A member of the pair calls `__DwarfMap_Depth_MapAnimal(x, ctx, depth)`, the
+  context-taking companion. The collection helpers for an abstract base call the public `MapAnimal(item)`, which
+  opens a fresh context: no depth, no identity, nothing on the stack to find. For a concrete base under Preserve or
+  SetNull the pair is "a mappable object pair", `PrefersSynthesizedObjectMap` hands it to a `__DwarfMap_Obj_*`
+  helper built from the base type's members, and the dispatch is never asked. T14 is the same hand-over seen from
+  the arm: nothing calls the dispatch, so the arm's helper is never marked as needing the context its callee takes.
+  T15: `[FlattenGraph(nameof(G.Entry), nameof(GDto.Nodes))] GDto MapG(G)` alone is clean in all three modes; a
+  holder with a `G` member or a `List<G>` is clean without reference handling (it calls `MapG`) and DWARF001 on
+  `Nodes` under Preserve and SetNull.
