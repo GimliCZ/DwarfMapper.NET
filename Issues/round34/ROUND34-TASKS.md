@@ -585,8 +585,9 @@ Both items below were the state when the round opened; this PR answered them as 
 
 - **T03 Pre-size the Preserve identity map** — waits on its API surface (owner decision 1).
 - **The fast-path audit's untested cells**, in its rank order: `default(ImmutableArray<T>)` as a source (needs owner
-  decision 5 before a test can pin it); a FlattenGraph leaf under Preserve; `Nullable<struct>` wrappers losing Preserve
-  identity; an array blit under SetNull against a method-level config on the element pair's partial.
+  decision 5 before a test can pin it); an array blit under SetNull against a method-level config on the element
+  pair's partial. Tested in round 35: `Nullable<struct>` wrappers KEEP Preserve identity (the audit's inference was
+  wrong; `PreserveThroughStructRuntimeTests`), and a FlattenGraph leaf under Preserve is owner decision 9.
 - **`2a10fb3`** — the null-element store shape, 1.12x: below the bar, waiting for a quiet-machine confirmation at 100
   and 10,000 elements and the owner's call.
 - **Generator cold start** — closed by task C: ~0.8 s per cold FusedChat build, not worth ReadyToRun's costs.
@@ -626,6 +627,12 @@ Both items below were the state when the round opened; this PR answered them as 
 8. The SDK pin. 10.0.101 is thirteen servicing releases old; the 2026-11-03 advisory was answered for the two
    ahead-of-time samples alone (`ed19b7c`). Moving the pin re-measures every gate tied to it (sizes, allocation pins,
    mutation scores).
+9. A widening collection leaf of a `[FlattenGraph]` node under Preserve (round 35). An `int[]` leaf is refused and
+   reported (DWARF075); a `List<int>` to `List<long>` leaf is flattened in silence, each node with its own copy,
+   so two nodes sharing one source list map to two target lists where the same mapper's plain map keeps them one
+   (`FlattenGraphPreserveLeafTests` pins both). The values are right; only the sharing is lost. Keep it and say so
+   in the documentation (recommended: flattening already gives up the graph's shape), report it, or refuse it like
+   the array.
 
 Decided and not carried: LICENSE stays as it is; the public contact is `dwarfmapper@seznam.cz`; T01's pin plus canary
 landed (`c142578`, `17c5c28`); private vulnerability reporting is on; scanner reports go by email and GitHub advisory
