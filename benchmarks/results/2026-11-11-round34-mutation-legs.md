@@ -262,8 +262,8 @@ was then rehearsed the same way before the push, at `180acea`, four CPUs:
 | Job | Rehearsed as | Result |
 |---|---|---|
 | `mutation`, generator leg | narrowed to one file and three test classes | green, 2:09 |
-| `mutation`, codefixes leg (no marking, no reroll launcher: the launch step's other branch) | whole | running when this was written; its result is not in this file |
-| `build-test` | whole | queued behind it when this was written (an earlier attempt stopped in the rehearsal tool, which did not yet know `continue-on-error`; its restore and build steps had exited 0) |
+| `mutation`, codefixes leg (no marking, no reroll launcher: the launch step's other branch) | whole | green, 9:53 |
+| `build-test` | whole | green, 2:51 |
 | `deep-test` (`housekeeping.ps1 -Nightly`) | whole | green, 14:03: restore, suite, coverage floors, ILVerify, benchmark smoke and allocation pins, NoWarn audit |
 | `fuzz-exhaustion` (the power set, server GC) | whole | green, 11:53 |
 | `perf-tests` | whole | green, 0:59 |
@@ -276,6 +276,10 @@ symlink and no `DOTNET_ROOT`, where a runner has `DOTNET_ROOT=/usr/share/dotnet`
 log). With that variable set, the stage passes. The lookup itself is left as it is; it would also miss the pack on a
 machine whose `dotnet` is a distribution's symlink with no `DOTNET_ROOT`, and says so loudly when it does.
 
-Not finished when this was written, and so not claimed: the codefixes leg and `build-test` above, and a forced reroll
-on real Stryker at `f46ab7b` (the launcher's own default answer to "has mutation begun?" in a real run; the battery
-covers it with a stand-in Stryker). Their logs are the rig's `r7-queue3`, `r7-queue4` and `r7-queue5` run logs.
+A forced reroll on real Stryker at `f46ab7b` (roles forced so the first launch is always the bad draw) exercised
+the launcher's own answer to "has mutation begun?": attempt 1 killed and drawn again, two launches, two output folders,
+one report.
+
+The first run of the suite without `global.json` (under SDK 11.0.100) found one more: two jobs delete that file to
+run on a newer SDK, and `AotCompilerPatchScanTests` read it unconditionally. It now has nothing to compare there and
+says why.

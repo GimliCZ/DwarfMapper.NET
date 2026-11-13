@@ -110,7 +110,17 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public void The_override_is_newer_than_the_pinned_SDKs_own_runtime()
         {
             var patch = NamedPatch();
-            using var global = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepoPaths.Root, "global.json")));
+
+            // ci.yml's roslyn-forward-compat and preview-sdk-canary jobs delete global.json from their working copy to
+            // run on a newer SDK, then run this suite. There is no pin to compare there, and the pinned jobs hold the
+            // rule. (Found by running the suite without the file before the first push: FileNotFoundException.)
+            var pin = Path.Combine(RepoPaths.Root, "global.json");
+            if (!File.Exists(pin))
+            {
+                return;
+            }
+
+            using var global = JsonDocument.Parse(File.ReadAllText(pin));
             var sdk = Version.Parse(global.RootElement.GetProperty("sdk").GetProperty("version").GetString()!);
 
             Assert.True(sdk.Major == patch.Major && sdk.Minor == patch.Minor,

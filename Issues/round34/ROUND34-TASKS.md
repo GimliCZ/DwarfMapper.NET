@@ -242,8 +242,8 @@ is still open under its own name.
     the marking and Stryker and not the job. `ci_job.py` (rig) runs a workflow job's `run:` steps as written, in
     order, with their `if:`, env and shell: the mutation job red on r6 as committed and green with the fix. Before
     the push the jobs this work changed were rehearsed at the head in the runner's image on four CPUs: `mutation`
-    (the generator leg, narrowed), `deep-test`, `fuzz-exhaustion` and `perf-tests` green; the codefixes leg and
-    `build-test` were still running when this was written. The table is in the results file.
+    (the generator leg narrowed, the codefixes leg whole), `build-test`, `deep-test`, `fuzz-exhaustion` and
+    `perf-tests`, all green. The table is in the results file.
     - **Found, left as it is: housekeeping's ILVerify stage looks for the reference pack beside the `dotnet` on
       `PATH` without following a symlink.** The first `deep-test` rehearsal failed there ("no net10 ref pack found"):
       the SDK container has `/usr/bin/dotnet` as a link and no `DOTNET_ROOT`. A hosted runner sets
