@@ -1056,23 +1056,11 @@ jobs:
   # longer masks anything.)
   package-size:
     runs-on: ubuntu-24.04
-    # Nightly cron and manual dispatch only — never on push or pull_request.
-    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
-    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
-    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
-    # checks the nightly runs, before the merge rather than the night after it.
-    #
-    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
-    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
-    # reviewer is actually approving.
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'full-ci')
-    # ESTIMATE, not a measurement — never run on a hosted runner. Local Windows 12-core at 81c4ace: locked
-    # restore + pack of both packages = ~20 s with a warm NuGet cache. A ~4-core hosted runner with a cold
-    # cache is dominated by restore (~2 min) and the analyzer-heavy Release build (~2 min), ~5 min with SDK
-    # setup. Trebled -> 15. Replace this paragraph with the first real run's wall-clock.
+    # On EVERY event since round 35. It was nightly-only as "the expensive tier", and it is not expensive: 0.7 min
+    # on a runner (PR #11's run 43389928831). What nightly-only cost instead: the ceiling was missed five times by
+    # changes that looked harmless on their pull request - the fifth a README edit, which is packed into both
+    # packages - and each showed up as a red nightly on master. On a pull request it is a red check on the change
+    # that causes it.
     timeout-minutes: 15
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no

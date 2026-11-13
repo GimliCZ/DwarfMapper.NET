@@ -1393,10 +1393,36 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 488 B on Windows, 689 B on ubuntu.
 # DwarfMapper.Testing (57 KB = 58,368 B) 434 B on Windows, 485 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35, at 93d8b01): DwarfMapper 362 -> 363, DwarfMapper.Testing 56 -> 57.
+# R1 was missed a fifth time, and again by a change nobody thinks of as code: the README, which is packed into both
+# packages, grew with nineteen documentation corrections. Nothing on the pull request said so, because this gate
+# ran only in the nightly tier; found by rehearsing the job before the merge. The job runs on every event since
+# this commit (it takes under a minute on a runner), so the sixth time is a red check on the change that causes it.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     018faeb (PR #11's head)   DwarfMapper 371,020 B   Testing 57,880 B   floor 362 / 56
+#     93d8b01 (round 35)        DwarfMapper 371,889 B   Testing 58,478 B   floor 363 / 57
+#   Windows, SDK 10.0.101, CI=true, 93d8b01: 372,075 B (+186) and 58,526 B (+48) - floor 363 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, 018faeb -> 93d8b01, compressed bytes, packed in the container:
+#
+#   README.md                                          +593   in BOTH packages - nearly all of the Testing
+#                                                             package's delta: the .NET 11 statement, the collection
+#                                                             shapes, DWARF060, the repository layout
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll      +227   DWARF075 for a copied collection leaf under Preserve;
+#                                                             every generated helper family known as generated (T1)
+#   lib/net10.0/DwarfMapper.xml                         +35   the ImplicitConversions doc (T3)
+#   the rest (nuspec, .rels, dll timestamps' entropy)   +14 / +5
+#
+# Every row is intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (364 KB = 372,736 B) 661 B on Windows, 847 B on ubuntu.
+# DwarfMapper.Testing (58 KB = 59,392 B) 866 B on Windows, 914 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 362
-    'DwarfMapper.Testing' = 56
+    'DwarfMapper'         = 363
+    'DwarfMapper.Testing' = 57
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
