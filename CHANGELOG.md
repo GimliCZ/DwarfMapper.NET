@@ -15,6 +15,14 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **`[FlattenGraph]` under `ReferenceHandling = Preserve` no longer copies a widened or block-copied collection
+  member in silence** (`DWARF075`, Warning). A node member such as `List<int>` mapped to `List<long>`, or `int[]` to
+  `long[]`, was flattened through a helper that does no reference tracking, so two nodes sharing one source
+  collection each got their own copy, where the same mapper's plain map keeps them one. The values were right and
+  the sharing was lost without a word. Such a member is now left at the destination's default and reported, as an
+  object, dictionary or same-typed collection member already was. **If this warns in your build:** map the member
+  explicitly, or use `ReferenceHandling = None` for that mapper if the graph does not need reference preservation.
+  Outside Preserve nothing changes. (Round 35.)
 - **.NET 11 is supported, and CI holds it.** The package still ships one `net10.0` assembly, which a `net11.0`
   project references as it is; nothing in it changed for this. What is new is the proof: a CI job (`net11`) builds
   the repository under SDK 11.0.100 with warnings as errors, builds the sample and consumer projects as `net11.0` -
