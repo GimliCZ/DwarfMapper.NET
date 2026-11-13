@@ -249,3 +249,37 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   10.0.1 - and never with an idle neighbour (0 of 36,457; 0 of 34,736). After T2 the figures were 108 and 108, 123
   and 113. Never two disturbed windows in a trial on either build. The T2 change did not introduce the reading; the
   allocation counter moves under a background collection on both.
+
+- **The exact-zero tests read on a fresh thread** (the owner, 2026-11-13: "tests must be fixed"). The five-window
+  oracle tolerated the counter's movement; this removes it. Two things measured first:
+  - **The before/after-T2 rates do differ.** Pooled, 306 disturbed trials of about 30,100 before T2 and 452 of about
+    32,000 after: a two-proportion test gives z of about 4.5, so it is not noise, and my earlier "not tested for
+    significance" should not be read as "probably equal". It does not make T2 the cause - the reading occurs on both
+    builds and on neither with an idle neighbour - but the size of the effect depends on what else the assembly
+    holds, and the test must not depend on that.
+  - **A collection counter cannot mark the disturbed windows.** With `GC.CollectionCount(2)` and
+    `GC.GetGCMemoryInfo(GCKind.Background).Index` read around each window, 11,423 of 11,449 disturbed windows saw
+    neither move (runtime 10.0.11, continuous background collections): the collection that moves the counter began
+    before the window. So "discard a window that saw a collection" is not available.
+  - **What is exact: a thread that owns no allocation buffer.** The jump is the unused rest of the measuring
+    thread's buffer; a thread started for the one window, touching only what its caller allocated, has none.
+    [`FreshThreadAllocationProbe.cs`](FreshThreadAllocationProbe.cs), one window of 1,000 `MapSpan` per trial, each
+    on its own thread:
+
+    | runtime | neighbour | trials | window non-zero | thread had allocated before the window |
+    |---|---|---|---|---|
+    | 10.0.11 (Windows) | continuous background collections | 59,227 | 0 | 0 |
+    | 10.0.11 | one every 20 ms | 152,572 | 0 | 0 |
+    | 10.0.11 | idle | 177,613 | 0 | 0 |
+    | 10.0.11 | continuous, **allocation planted** | 19,437 | 19,437 | 0 |
+    | 11.0.0 (sdk:11.0.100 container) | continuous | 26,839 | 0 | 0 |
+    | 11.0.0 | one every 20 ms | 71,752 | 0 | 0 |
+    | 11.0.0 | continuous, **allocation planted** | 7,091 | 7,091 | 0 |
+
+    The same loop on the calling thread, same neighbour, same build: 11,449 of 188,735 windows non-zero.
+  - **The change.** `CostContract.ExactBytesOnFreshThread(operation, iterations)` returns the bytes the thread had
+    allocated when the window opened and the bytes allocated in it. `Span_map_into_caller_memory_allocates_zero_bytes`
+    and `Blittable_struct_map_allocates_zero_bytes` assert both are exactly 0, in one window - the five windows and
+    the "at most one" are gone. Two tests hold the oracle itself: one object allocated in the window is read, and an
+    exception from the operation is rethrown on the calling thread. The test host keeps the runtime's defaults
+    (concurrent collection on), as E3 requires.

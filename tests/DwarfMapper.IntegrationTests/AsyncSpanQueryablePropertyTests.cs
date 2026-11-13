@@ -165,37 +165,17 @@ namespace DwarfMapper.IntegrationTests
 
             for (var i = 0; i < 100; i++) mapper.MapSpan(src, dst); // warm up
 
-            // Five windows of 1,000 maps, of which at most ONE may read non-zero. One window was the whole test
-            // until round 35, when PR #13's net11 job read 4,896 bytes in it once (run 43439030599).
-            //
-            // CAUSE, measured (Issues/round35/AllocationCounterProbe.cs): GC.GetAllocatedBytesForCurrentThread is not
-            // exact across a BACKGROUND collection. A thread that has allocated holds the unused rest of its
-            // allocation buffer (up to about 8 KB); when a background gen-2 collection started by ANOTHER thread
-            // reaches it, the counter jumps by that rest although the thread allocated nothing. Runtime 10.0.1 and
-            // 11.0.0 alike; never with concurrent collection off, never under blocking or gen-0 collections. This
-            // test's thread has just allocated its arrays, and the other test collections of this assembly run
-            // beside it and allocate large objects.
-            //
-            // THE ORACLE, measured with this test's own body beside a thread that keeps background collections
-            // going (Issues/round35/ZeroAllocationOracleProbe.cs; about 8,000 trials a run, two runs a runtime):
-            //   the first window read non-zero in 108 to 123 trials   - the old test, failing on demand
-            //   exactly one of the five did in about a third of them  - the rest was spent, there is no more to add
-            //   two or more did in none of about 32,000               - so two non-zero windows are not the counter
-            //   with an allocation planted in the window, all five did, in every trial.
-            // (This project keeps the runtime's defaults on purpose, concurrent collection among them; see
-            // Directory.Build.targets.)
-            var windows = new long[5];
-            for (var w = 0; w < windows.Length; w++)
-            {
-                var before = GC.GetAllocatedBytesForCurrentThread();
-                for (var i = 0; i < 1000; i++) mapper.MapSpan(src, dst);
-                windows[w] = GC.GetAllocatedBytesForCurrentThread() - before;
-            }
+            // One window of 1,000 maps, exactly zero. Until round 35 it was read on this thread, and PR #13's net11
+            // job read 4,896 bytes in it once (run 43439030599): this thread has just allocated its arrays, so it
+            // holds the unused rest of an allocation buffer, and a background collection started by another test's
+            // thread moved its counter by that rest. Measured, and the reason the window is now read on a thread
+            // that owns no buffer: CostContract.ExactBytesOnFreshThread. (This project keeps the runtime's defaults
+            // on purpose, concurrent collection among them; see Directory.Build.targets.)
+            var reading = CostContract.ExactBytesOnFreshThread(() => mapper.MapSpan(src, dst), 1000);
 
             Assert.Equal(64, dst.Length);
-            Assert.True(windows.Count(w => w != 0) <= 1,
-                $"the span map allocated: bytes per window of 1,000 maps = [{string.Join(", ", windows)}]. One non-zero " +
-                "window is the allocation counter moving under a background collection; two are an allocation.");
+            Assert.Equal(0, reading.BeforeWindow);
+            Assert.Equal(0, reading.InWindow);
         }
     }
 }

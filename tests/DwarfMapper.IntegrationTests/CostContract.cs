@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace DwarfMapper.IntegrationTests
 {
@@ -30,6 +32,12 @@ namespace DwarfMapper.IntegrationTests
     ///         very suite before the guard was added.
     ///     </para>
     /// </remarks>
+    /// <summary>
+    ///     What <see cref="CostContract.ExactBytesOnFreshThread" /> read: the bytes its thread had allocated when the
+    ///     window opened (the premise of an exact reading is that this is zero) and the bytes allocated inside it.
+    /// </summary>
+    internal readonly record struct FreshThreadReading(long BeforeWindow, long InWindow);
+
     internal static class CostContract
     {
         /// <summary>
@@ -53,6 +61,72 @@ namespace DwarfMapper.IntegrationTests
                 operation();
 
             return (GC.GetAllocatedBytesForCurrentThread() - before) / (double)iterations;
+        }
+
+        /// <summary>
+        ///     Bytes allocated by <paramref name="iterations" /> runs of <paramref name="operation" />, EXACTLY: the
+        ///     reading for a contract of zero. Measured on a thread started for this one window, which allocates
+        ///     nothing of its own - everything it touches was allocated by the caller.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>Why a fresh thread.</b> <c>GC.GetAllocatedBytesForCurrentThread</c> is not exact on a thread
+        ///         that has allocated: such a thread holds the unused rest of an allocation buffer (up to about 8 KB),
+        ///         and when a background collection started by ANOTHER thread reaches it, its counter jumps by that
+        ///         rest although it allocated nothing. Round 35 measured it (PR #13's net11 job read 4,896 bytes in a
+        ///         zero-allocation window): with the window on the test's own thread, beside a thread that keeps
+        ///         background collections going, about 6 in 100 windows read non-zero; on a thread that owns no
+        ///         buffer, none of 59,227 did on runtime 10.0.11 and none of 26,839 on 11.0.0, and a planted
+        ///         allocation was read in every one of 19,437 and of 7,091
+        ///         (Issues/round35/FreshThreadAllocationProbe.cs).
+        ///     </para>
+        ///     <para>
+        ///         <see cref="FreshThreadReading.BeforeWindow" /> is that premise, reported so the caller can assert
+        ///         it: the thread had allocated nothing when the window opened. The caller warms the operation up
+        ///         first, on its own thread.
+        ///     </para>
+        /// </remarks>
+        internal static FreshThreadReading ExactBytesOnFreshThread(Action operation, int iterations)
+        {
+            ArgumentNullException.ThrowIfNull(operation);
+
+            var window = new FreshThreadWindow(operation, iterations);
+            var thread = new Thread(window.Run);
+            thread.Start();
+            thread.Join();
+            window.Failure?.Throw();
+
+            return new FreshThreadReading(window.BeforeWindow, window.InWindow);
+        }
+
+        /// <summary>The state of one <see cref="ExactBytesOnFreshThread" /> window, allocated before its thread starts.</summary>
+        private sealed class FreshThreadWindow(Action operation, int iterations)
+        {
+            internal long BeforeWindow { get; private set; }
+
+            internal long InWindow { get; private set; }
+
+            internal ExceptionDispatchInfo? Failure { get; private set; }
+
+            [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+                Justification = "Whatever the operation throws is rethrown on the calling thread by ExactBytesOnFreshThread; left uncaught here it would end the test host.")]
+            internal void Run()
+            {
+                try
+                {
+                    var before = GC.GetAllocatedBytesForCurrentThread();
+                    for (var i = 0; i < iterations; i++)
+                        operation();
+
+                    InWindow = GC.GetAllocatedBytesForCurrentThread() - before;
+                    BeforeWindow = before;
+                }
+                catch (Exception e)
+                {
+                    // Carried to the caller's thread: an exception that leaves a thread's entry point ends the process.
+                    Failure = ExceptionDispatchInfo.Capture(e);
+                }
+            }
         }
 
         /// <summary>
