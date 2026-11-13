@@ -16,7 +16,18 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
         string DstType, // fully-qualified destination type string (may differ from Src)
         string Source, // full C# source (using directives + types + mapper)
         int Seed // deterministic seed for this cell
-    );
+    )
+    {
+        /// <summary>
+        ///     The cell's identity across both matrices, and what a theory row carries instead of the cell. xunit runs a
+        ///     row as its own test case only when it can serialize the row's data, and a record it cannot: a theory over
+        ///     cells was ONE test case reporting hundreds of results, and Stryker's coverage window closed at the first,
+        ///     so every later row ran the generator "outside any test" and each mutant it reached was tested against
+        ///     the whole suite (round 34). The golden corpus keys its combinatorial cases the same way, and its
+        ///     dictionary holds the key unique.
+        /// </summary>
+        public string Key => BasicType + "|" + ShapeName + "|" + Variant;
+    }
 
     public enum MatrixVariant
     {
@@ -153,6 +164,21 @@ internal static class CombinatorialSchema
         ];
 
         // ── Public surface ───────────────────────────────────────────────────────
+
+        private static readonly Lazy<Dictionary<string, MatrixCell>> CellsByKey =
+            new(() => DepthOneMatrix().Concat(DepthTwoMatrix()).ToDictionary(c => c.Key, StringComparer.Ordinal));
+
+        /// <summary>The cell a theory row names by its <see cref="MatrixCell.Key" />.</summary>
+        public static MatrixCell Cell(string key) => CellsByKey.Value[key];
+
+        /// <summary>One theory row per cell, each carrying the cell's <see cref="MatrixCell.Key" />.</summary>
+        public static TheoryData<string> Keys(IEnumerable<MatrixCell> cells)
+        {
+            var rows = new TheoryData<string>();
+            foreach (var cell in cells)
+                rows.Add(cell.Key);
+            return rows;
+        }
 
         /// <summary>
         ///     Enumerate all depth-≤1 cells (exhaustive default tier).

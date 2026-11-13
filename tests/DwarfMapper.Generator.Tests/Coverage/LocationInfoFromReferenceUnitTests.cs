@@ -24,7 +24,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var tree = CSharpSyntaxTree.ParseText("[System.Obsolete]\nclass C { }\n", path: "C.cs");
             var compilation = CSharpCompilation.Create("FromReference", [tree],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var attribute = Assert.Single(compilation.GetTypeByMetadataName("C")!.GetAttributes());
 
             var info = LocationInfo.FromReference(attribute.ApplicationSyntaxReference);
@@ -48,7 +48,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var tree = CSharpSyntaxTree.ParseText("[System.Obsolete]\nclass C { }\n", path: "C.cs");
             var compilation = CSharpCompilation.Create("FromReferenceFallback", [tree],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             var attribute = Assert.Single(compilation.GetTypeByMetadataName("C")!.GetAttributes());
             var fallback = new LocationInfo("Class.cs", new TextSpan(3, 4), new LinePositionSpan(new LinePosition(2, 0), new LinePosition(2, 4)));
 

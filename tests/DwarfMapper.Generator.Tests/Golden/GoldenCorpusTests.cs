@@ -30,18 +30,23 @@ namespace DwarfMapper.Generator.Tests.Golden
         private const int MinimumDwarfGeneratorCases = 950;
         private const int MinimumMapToGeneratorCases = 3;
 
+        /// <summary>
+        ///     The manifest names exactly the corpus's cases. Each case's own fingerprint is compared in its own row
+        ///     (<see cref="GoldenCaseTests" />, round 34 E5), from the one generator run that row makes; this compares
+        ///     only the two id sets, which needs no generator run. Under <c>DWARF_GOLDEN_UPDATE=1</c> it is also the
+        ///     deliberate regeneration, the one place that fingerprints the whole corpus.
+        /// </summary>
         [Fact]
-        public void Generated_output_matches_the_golden_manifest()
+        public void The_manifest_names_exactly_the_corpus_cases()
         {
             var cases = GoldenCorpus.Cases();
-            var actual = cases.ToDictionary(c => c.Id, GoldenFingerprint.Compute, StringComparer.Ordinal);
 
             if (Environment.GetEnvironmentVariable(GoldenManifest.UpdateEnvVar) == "1")
             {
                 Assert.False(IsRunningInCi(),
                     $"{GoldenManifest.UpdateEnvVar}=1 was set in a CI environment. CI must not be able to bless a " + "regenerated manifest — that silently rubber-stamps whatever the generator currently produces. " + "Regenerate the manifest locally, review the diff, and commit it deliberately.");
 
-                GoldenManifest.Write(actual);
+                GoldenManifest.Write(cases.ToDictionary(c => c.Id, GoldenFingerprint.Compute, StringComparer.Ordinal));
                 return;
             }
 
@@ -50,13 +55,11 @@ namespace DwarfMapper.Generator.Tests.Golden
             Assert.True(expected.Count > 0,
                 $"No golden manifest at {GoldenManifest.Path}. It is never auto-created — generate it deliberately " + $"with {GoldenManifest.UpdateEnvVar}=1 and commit the result after reviewing it.");
 
-            var added = actual.Keys.Where(k => !expected.ContainsKey(k)).OrderBy(k => k, StringComparer.Ordinal).ToList();
-            var removed = expected.Keys.Where(k => !actual.ContainsKey(k)).OrderBy(k => k, StringComparer.Ordinal).ToList();
-            var changed = actual.Where(kv => expected.TryGetValue(kv.Key, out var e) && e != kv.Value)
-                .Select(kv => kv.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            var ids = cases.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+            var added = ids.Where(k => !expected.ContainsKey(k)).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            var removed = expected.Keys.Where(k => !ids.Contains(k)).OrderBy(k => k, StringComparer.Ordinal).ToList();
 
-            Assert.True(added.Count == 0 && removed.Count == 0 && changed.Count == 0,
-                BuildFailure(added, removed, changed));
+            Assert.True(added.Count == 0 && removed.Count == 0, BuildFailure(added, removed, []));
         }
 
         [Fact]

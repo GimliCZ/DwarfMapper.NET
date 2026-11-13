@@ -49,10 +49,7 @@ namespace DwarfMapper.Testing
         /// <summary>Render value diffs as a readable string.</summary>
         public static string RenderValueDiff(IReadOnlyList<string> diffs)
         {
-            if (diffs is null)
-            {
-                throw new ArgumentNullException(nameof(diffs));
-            }
+            ArgumentNullException.ThrowIfNull(diffs);
 
             var sb = new StringBuilder();
             foreach (var d in diffs)
@@ -94,10 +91,7 @@ namespace DwarfMapper.Testing
         /// <summary>Render topology diffs as a readable string.</summary>
         public static string RenderTopologyDiff(IReadOnlyList<string> violations)
         {
-            if (violations is null)
-            {
-                throw new ArgumentNullException(nameof(violations));
-            }
+            ArgumentNullException.ThrowIfNull(violations);
 
             var sb = new StringBuilder();
             foreach (var v in violations)
@@ -155,15 +149,9 @@ namespace DwarfMapper.Testing
             Type nodeBaseType,
             Type dtoBaseType)
         {
-            if (nodeBaseType is null)
-            {
-                throw new ArgumentNullException(nameof(nodeBaseType));
-            }
+            ArgumentNullException.ThrowIfNull(nodeBaseType);
 
-            if (dtoBaseType is null)
-            {
-                throw new ArgumentNullException(nameof(dtoBaseType));
-            }
+            ArgumentNullException.ThrowIfNull(dtoBaseType);
 
             var violations = new List<string>();
 
@@ -246,10 +234,7 @@ namespace DwarfMapper.Testing
         /// <summary>Render FlattenGraphDiff violations as a readable string.</summary>
         public static string RenderFlattenGraphDiff(IReadOnlyList<string> violations)
         {
-            if (violations is null)
-            {
-                throw new ArgumentNullException(nameof(violations));
-            }
+            ArgumentNullException.ThrowIfNull(violations);
 
             var sb = new StringBuilder();
             foreach (var v in violations)
@@ -680,6 +665,9 @@ namespace DwarfMapper.Testing
                             diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
                         }
                     }
+                    // Not swallowed: a value outside decimal's range (a double infinity or NaN, or a magnitude past
+                    // 7.9e28) cannot take the decimal route, so it is compared as the scalar it is, and a difference
+                    // is still recorded below.
                     catch (OverflowException)
                     {
                         if (!ScalarEquals(expected, actual))
@@ -910,6 +898,10 @@ namespace DwarfMapper.Testing
                             : y.ToString() ?? "";
                         return StringComparer.Ordinal.Compare(xKey, yKey);
                     }
+                    // A consumer's ToString that throws gives the element no sort key, so it ranks as equal and keeps
+                    // its place; the two sides are then compared element by element. That can report a difference
+                    // that a successful sort would have avoided, which fails loudly, but it can never pass two
+                    // collections that differ.
                     catch (InvalidOperationException)
                     {
                         return 0;

@@ -5,8 +5,6 @@
         <IsPackable>false</IsPackable>
         <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
         <!-- CA5394: SyntheticSchema uses System.Random for deterministic seeded fuzzing, not cryptography -->
-        <!-- CA1707: test methods intentionally use underscores -->
-        <!-- CA5394: deterministic seeded fuzzing uses System.Random -->
         <!-- CA1515: test types need not be sealed -->
         <!-- CA1861: InlineData / inline array literals are acceptable in test code -->
         <!-- CA1508: dead-code analyzer false positive in test assertions -->
@@ -41,8 +39,12 @@
         <Using Include="Xunit"/>
     </ItemGroup>
     <ItemGroup>
-        <!-- The DWARF_DEEP tier knob is ONE shared source of truth, linked (not copied) into every test
-             project that owns a dialable population; DeepTierSelfTests pins its catalog. -->
-        <Compile Include="..\Shared\DeepTier.cs" Link="Shared\DeepTier.cs"/>
+        <!-- The sized test populations are ONE shared source of truth, linked (not copied) into every test
+             project that owns one; TestPopulationsSelfTests pins every size. -->
+        <Compile Include="..\Shared\TestPopulations.cs" Link="Shared\TestPopulations.cs"/>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Round 34 E4: KillersFirstOrderer reads the ranking from the output directory. -->
+        <None Update="MutationKillRanking.tsv" CopyToOutputDirectory="PreserveNewest"/>
     </ItemGroup>
 </Project>

@@ -615,7 +615,7 @@ namespace DwarfMapper.Generator.Tests
                 },
                 new MetadataReference[]
                 {
-                    MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
+                    GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)
                 },
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
@@ -653,7 +653,7 @@ namespace DwarfMapper.Generator.Tests
                 },
                 new MetadataReference[]
                 {
-                    MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
+                    GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)
                 },
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 

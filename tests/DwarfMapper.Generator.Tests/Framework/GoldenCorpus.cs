@@ -16,6 +16,15 @@ namespace DwarfMapper.Generator.Tests.Framework
         /// <summary>Fixed seed range for the fuzz axis. Fixed, not random, or the manifest could never be stable.</summary>
         public const int SyntheticSeedCount = 40;
 
+        private static readonly Lazy<Dictionary<string, GoldenCase>> CasesById =
+            new(() => Cases().ToDictionary(c => c.Id, StringComparer.Ordinal));
+
+        /// <summary>One case by its id, built once per test host: the per-case rows look their case up by id.</summary>
+        public static GoldenCase Case(string id)
+        {
+            return CasesById.Value[id];
+        }
+
         public static IReadOnlyList<GoldenCase> Cases()
         {
             var cases = new List<GoldenCase>();

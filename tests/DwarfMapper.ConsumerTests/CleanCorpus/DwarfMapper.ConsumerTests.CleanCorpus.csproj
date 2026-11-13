@@ -8,7 +8,6 @@
         <!-- CA1515: test types need not be sealed -->
         <!-- CA2227/CA1002/CA1819: the DTOs are written the way application-layer DTOs are actually written —
              settable collection properties are the shape under test, not an oversight to lint away. -->
-        <!-- CA1720/IDE1006: `Format`, `Page<T>` and the DTO member names mirror real application vocabulary. -->
         <!-- CA1034: view models NESTED inside the handler that owns them is the harvested pattern under test
              (ContosoUniversity), not an oversight — a mapper has to cope with types that are not top-level. -->
         <!-- CA1819 was named in the comment above from the start and had no shape to fire on until the

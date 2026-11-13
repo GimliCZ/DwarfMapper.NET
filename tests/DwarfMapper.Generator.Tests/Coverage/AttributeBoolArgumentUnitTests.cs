@@ -30,9 +30,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
         private static readonly Compilation Compilation = CSharpCompilation.Create("AttributeBoolArgumentUnitTests",
             [CSharpSyntaxTree.ParseText(Source)],
-            AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location)));
+            GeneratorTestHarness.LoadedAssemblyReferences());
 
         private static ImmutableArray<TypedConstant> Args(string metadataName) =>
             Compilation.GetTypeByMetadataName(metadataName)!.GetAttributes().Single().ConstructorArguments;

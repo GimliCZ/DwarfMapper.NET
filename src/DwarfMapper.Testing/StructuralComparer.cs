@@ -27,10 +27,7 @@ namespace DwarfMapper.Testing
         /// <summary>Render diffs as readable lines.</summary>
         public static string Render(IReadOnlyList<MemberDiff> diffs)
         {
-            if (diffs is null)
-            {
-                throw new ArgumentNullException(nameof(diffs));
-            }
+            ArgumentNullException.ThrowIfNull(diffs);
 
             var sb = new StringBuilder();
             foreach (var d in diffs)

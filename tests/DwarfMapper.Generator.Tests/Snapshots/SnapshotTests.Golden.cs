@@ -12,7 +12,7 @@ namespace DwarfMapper.Generator.Tests
     {
         private static string GoldenFeature(string featureId)
         {
-            var c = GoldenCorpus.Cases().Single(x => x.Id == "feat:" + featureId);
+            var c = GoldenCorpus.Case("feat:" + featureId);
             var generator = GeneratorRegistry.All.Single(g => g.Name == c.GeneratorName);
 
             return GeneratorRunner.Run(generator.Create(), c.Source).AllOutputsConcatenated;

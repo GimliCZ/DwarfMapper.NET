@@ -6,11 +6,18 @@
         <IsPackable>false</IsPackable>
         <!-- BenchmarkDotNet requires optimizations; benchmarks are Release-only. -->
         <Optimize>true</Optimize>
-        <!-- Benchmark harness conventions clash with the repo's maximal analyzer profile:
-             public benchmark methods/types in an exe (CA1515), members that look static-able
-             (CA1822), Console usage (CA1303), and BDN's own attribute patterns. These are
-             intentional in a benchmark project — relax them here only. -->
-        <NoWarn>$(NoWarn);CA1050;CA1515;CA1819;CA5394;CA1707;CA1815;CA2227;CA1002</NoWarn>
+        <!-- Benchmark harness conventions clash with the repo's maximal analyzer profile; relaxed here only.
+             CA1050: Program.cs is a top-level-statement harness, and its payload DTOs sit in the global
+             namespace beside it (benchmarks/.globalconfig says the same of its Meziantou twin).
+             CA1515: BenchmarkDotNet discovers public benchmark classes, and the payload DTOs are public so
+             every mapper under comparison sees the same consumer-shaped types.
+             CA1707: benchmark method names use underscores (FacadeFlat_Hand); BenchmarkDotNet prints them as
+             the result table's row labels, which is where they are read.
+             CA1819/CA2227/CA1002: the payloads expose arrays, settable List<T> properties and List<T> results
+             exactly as a consumer's DTOs do; those collection shapes are what the mappers are measured on.
+             CA1815: Vec3Src/Vec3Dst are the blit benchmark's payload structs; equality members would change
+             nothing measured. -->
+        <NoWarn>$(NoWarn);CA1050;CA1515;CA1819;CA1707;CA1815;CA2227;CA1002</NoWarn>
         <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a
              known advisory. This is a BENCHMARK-ONLY, non-shipped project (IsPackable=false) that maps
              in-memory POCOs with no untrusted input, so the advisory is not exercised. The shipped

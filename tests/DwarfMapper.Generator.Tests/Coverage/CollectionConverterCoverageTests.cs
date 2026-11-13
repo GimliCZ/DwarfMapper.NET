@@ -68,7 +68,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("CollectionConverterCoverage",
                 [CSharpSyntaxTree.ParseText("namespace Demo { public class SetOnlyCount { public int Count { set { } } } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
             Assert.Equal(CollectionConverter.CountKind.None,
                 CollectionConverter.CountOf(compilation.GetTypeByMetadataName("Demo.SetOnlyCount")!));
@@ -81,7 +81,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         {
             var compilation = CSharpCompilation.Create("CollectionConverterTypeParameters",
                 [CSharpSyntaxTree.ParseText("using System.Collections.Generic; namespace Demo { public class Holder<T> " + constraint + " { } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
             return compilation.GetTypeByMetadataName("Demo.Holder`1")!.TypeParameters[0];
         }
 

@@ -761,11 +761,11 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
 
         private static IEnumerable<MetadataReference> References()
         {
-            return AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            // The sweep already holds DwarfMapper.dll once the host has loaded it, and the harness hands out ONE
+            // instance per file, which a workspace (unlike a compilation) refuses to take twice.
+            return GeneratorTestHarness.LoadedAssemblyReferences()
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(DwarfMapperAttribute).Assembly))
+                .Distinct();
         }
     }
 }

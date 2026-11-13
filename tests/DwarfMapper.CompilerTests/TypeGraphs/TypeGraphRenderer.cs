@@ -24,13 +24,13 @@ namespace DwarfMapper.CompilerTests.TypeGraphs
         ///     <para>
         ///         <b>Opt-in, and it must stay opt-in.</b> Emitting <c>Project</c> unconditionally would
         ///         silently re-cut the sampled space of every population that already exists
-        ///         (<c>CompilerGraphSmokeSeeds</c>, <c>CompilerOracleSeeds</c> and all three MR entries): the
+        ///         (<c>CompilerOracleSeeds</c> and all three MR entries): the
         ///         projection refuses a strictly wider grammar than <c>Map</c> does — a HashSet member, a
         ///         converter, a hook, reference handling — and an error-severity DWARF028 on the projection
         ///         makes the WHOLE run <c>RefusedLoudly</c>. Cases those populations sample today as ACCEPTED
         ///         (and therefore compile-checked, oracle-compared, metamorphically related) would flip to
         ///         "refused" and stop being checked at all, with every digest moving and nothing saying why.
-        ///         A separate flag and a separate <c>DeepPopulation</c> keeps the existing case sets
+        ///         A separate flag and a separate <c>TestPopulation</c> keeps the existing case sets
         ///         byte-identical and makes the projection's own accept/refuse split measurable on its own.
         ///     </para>
         /// </param>

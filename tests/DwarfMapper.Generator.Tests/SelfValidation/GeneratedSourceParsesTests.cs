@@ -27,7 +27,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         ///     in review, on the precedent <c>stryker-config.codefixes.json</c> already states for its own
         ///     four-project list: "adding a fifth is a deliberate act that shows up in review".
         /// </summary>
-        private const int ExpectedDriverMethods = 8;
+        private const int ExpectedDriverMethods = 10;
 
         /// <summary>
         ///     Harness methods that drive a generator. Each MUST call the invariant, or every test that goes
@@ -42,7 +42,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             nameof(GeneratorTestHarness.RunAndGetSource),
             nameof(GeneratorTestHarness.RunAndGetCompilationErrors),
             nameof(GeneratorTestHarness.GeneratedCodeWarnings),
-            nameof(GeneratorTestHarness.EmitAssembly)
+            nameof(GeneratorTestHarness.EmitAssembly),
+            // Round 34 E7: the one-run forms of Run + RunAndGetCompilationErrors and of Run + EmitAssembly.
+            nameof(GeneratorTestHarness.RunWithCompilationErrors),
+            nameof(GeneratorTestHarness.RunAndEmit)
         ];
 
         /// <summary>

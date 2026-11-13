@@ -1595,10 +1595,14 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not string target)
+                if (attr.ConstructorArguments.Length == 0)
                 {
                     continue;
                 }
+
+                // A null target names no member, exactly as a name matching none does. It is kept, so the method reports
+                // DWARF042 (DWARF090 at an element-wise endpoint) instead of the directive vanishing silently.
+                var target = attr.ConstructorArguments[0].Value as string ?? string.Empty;
 
                 var use = TryGetNamedArgument(attr.NamedArguments, "Use", out var u) ? u.Value as string : null;
 

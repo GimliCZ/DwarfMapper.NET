@@ -53,13 +53,14 @@ namespace DwarfMapper.Generator.Tests
             string source,
             NullableContextOptions nullable = NullableContextOptions.Disable)
         {
-            var (diagnostics, generated) = GeneratorTestHarness.Run(source, nullable);
+            // One driver run for both questions (round 34 E7): this used to run the generator for the diagnostics and
+            // again, beside the registry generator, for the compile errors.
+            var (diagnostics, generated, compileErrors) = GeneratorTestHarness.RunWithCompilationErrors(source, nullable);
 
             var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
             Assert.True(errors.Count == 0,
                 "The generator reported error diagnostic(s):\n  " + Describe(errors) + "\n\n--- source ---\n" + source);
 
-            var compileErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source, nullable);
             Assert.True(compileErrors.Length == 0,
                 "The generator ACCEPTED this source but the code it emitted does not compile:\n  " + Describe(compileErrors) + "\n\n--- generated ---\n" + generated + "\n\n--- source ---\n" + source);
 
@@ -76,9 +77,8 @@ namespace DwarfMapper.Generator.Tests
             string source,
             NullableContextOptions nullable = NullableContextOptions.Disable)
         {
-            var (_, generated) = GeneratorTestHarness.Run(source, nullable);
+            var (_, generated, compileErrors) = GeneratorTestHarness.RunWithCompilationErrors(source, nullable);
 
-            var compileErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source, nullable);
             Assert.True(compileErrors.Length == 0,
                 "The generator ACCEPTED this source but the code it emitted does not compile:\n  " + Describe(compileErrors) + "\n\n--- generated ---\n" + generated + "\n\n--- source ---\n" + source);
 

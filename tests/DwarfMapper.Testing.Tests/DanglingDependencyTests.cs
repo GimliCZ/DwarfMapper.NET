@@ -16,6 +16,12 @@ namespace DwarfMapper.Testing.Tests
         int Probe { get; }
     }
 
+    /// <summary>Implemented only by types whose base class lives in an assembly the test below never loads.</summary>
+    public interface IOnlyBrokenProbe
+    {
+        int Probe { get; }
+    }
+
     /// <summary>
     ///     The factory scans every loaded assembly for concrete candidates, and an assembly whose dependency cannot be
     ///     resolved throws <see cref="ReflectionTypeLoadException" /> from <c>GetTypes()</c>. Its loadable types must still
@@ -54,6 +60,56 @@ namespace DwarfMapper.Testing.Tests
             var made = ObjectFactoryV2.Create(typeof(IDanglingProbe), new Random(30), 0, false);
 
             Assert.Equal("Dangling.Fine", made?.GetType().FullName);
+        }
+
+        /// <summary>
+        ///     Record and report (owner ruling 2026-10-27). When the only implementation of an interface is a type that
+        ///     failed to load, the factory used to drop the loader's error and build the member as null, so a fixture
+        ///     quietly lost the subtype it was meant to exercise. It now fails, naming the type that did not load, its
+        ///     assembly and the loader's reason. The assembly is loaded from a FILE: that is what lets the factory read
+        ///     which types it declares, so it names only an implementation it can prove is missing.
+        /// </summary>
+        [Fact]
+        public void An_interface_whose_only_implementation_failed_to_load_is_reported_not_left_null()
+        {
+            var missing = Compile("OnlyBrokenBase",
+                "namespace OnlyBroken { public class MissingBase { } public static class Holder { public interface INested { } } }", []);
+            // Broken and Outer.Inner are the only implementations, and neither can load. FromGlobal and FromLocal cannot
+            // load either: they implement an interface of the missing assembly. The factory reads the supertypes of every
+            // type that did not load, so theirs are the shapes its metadata reader has to name: a base type in the same
+            // assembly, in the global namespace or not, a generic instantiation, and an interface nested in a type of
+            // another assembly.
+            var probe = Compile("OnlyBrokenProbe",
+                "public class GlobalBase { }\n" +
+                "public sealed class FromGlobal : GlobalBase, OnlyBroken.Holder.INested { }\n" +
+                "namespace OnlyBroken\n" +
+                "{\n" +
+                "    public sealed class Broken : MissingBase, DwarfMapper.Testing.Tests.IOnlyBrokenProbe { public int Probe => 3; }\n" +
+                "    public static class Outer { public sealed class Inner : MissingBase, DwarfMapper.Testing.Tests.IOnlyBrokenProbe { public int Probe => 4; } }\n" +
+                "    public class LocalBase { }\n" +
+                "    public interface IGeneric<T> { }\n" +
+                "    public sealed class FromLocal : LocalBase, IGeneric<int>, Holder.INested { }\n" +
+                "}\n",
+                [MetadataReference.CreateFromImage(missing)]);
+            var path = Path.Combine(Path.GetTempPath(), "dwarfmapper-only-broken-" + Guid.NewGuid().ToString("N"), "OnlyBrokenProbe.dll");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, probe);
+            var loaded = new AssemblyLoadContext("only-broken", isCollectible: false).LoadFromAssemblyPath(path);
+            Assert.Throws<ReflectionTypeLoadException>(() => loaded.GetTypes());
+
+            // The same image loaded from memory as well: it has no file to read, so it is recorded but never named.
+            using var image = new MemoryStream(probe);
+            var inMemory = new AssemblyLoadContext("only-broken-in-memory", isCollectible: false).LoadFromStream(image);
+            Assert.Throws<ReflectionTypeLoadException>(() => inMemory.GetTypes());
+
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                ObjectFactoryV2.Create(typeof(IOnlyBrokenProbe), new Random(31), 0, false));
+
+            Assert.Contains(typeof(IOnlyBrokenProbe).FullName!, ex.Message, StringComparison.Ordinal);
+            // Both, sorted, and the nested one under the name reflection gives it.
+            Assert.Contains("OnlyBroken.Broken, OnlyBroken.Outer+Inner in OnlyBrokenProbe", ex.Message, StringComparison.Ordinal);
+            // The loader's own reason, in whatever language the runtime speaks, names the dependency it could not find.
+            Assert.Contains("OnlyBrokenBase", ex.Message, StringComparison.Ordinal);
         }
 
         private static byte[] Compile(string assemblyName, string source, MetadataReference[] extra)

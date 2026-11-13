@@ -17,8 +17,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///     <para>
     ///         <b>The regression this exists for.</b> Round 29 added the tool install to <c>build-test</c> and to
     ///         <c>deep-test</c>, and stopped there. Three other jobs run the suite in a way that reaches the same
-    ///         test — <c>roslyn-forward-compat</c> and <c>preview-sdk-canary</c> with
-    ///         <c>--filter "Category!=SurfaceMatrix"</c>, and <c>cross-platform</c> with no filter at all. The
+    ///         test — <c>roslyn-forward-compat</c> and <c>preview-sdk-canary</c> with the surface matrix filtered
+    ///         out, as every per-push job ran then, and <c>cross-platform</c> with no filter at all. The
     ///         first of those went red the moment the round-29 PR reached CI, with two failures reading
     ///         <i>"ilverify is not on PATH"</i>; the other two are schedule-gated and would have failed on the
     ///         next nightly instead, which is the more expensive place to find out.
@@ -39,14 +39,49 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     public class CiToolPrerequisiteScanTests
     {
         /// <summary>
-        ///     A job whose filter SELECTS one category — <c>Category=SurfaceMatrix</c>, or since round 31
-        ///     <c>Category=Perf</c> — cannot reach the ILVerify tests, which carry neither, so it is exempt. Any other
-        ///     <c>dotnet test</c> invocation can, whether it filters a category OUT (<c>!=</c>, which these strings do
-        ///     not match) or not at all.
+        ///     A job whose filter SELECTS the <c>Category=Perf</c> tests (since round 31) cannot reach the ILVerify tests,
+        ///     which do not carry it, so it is exempt. Any other <c>dotnet test</c> invocation can, whether it filters a
+        ///     category OUT (<c>!=</c>, which this string does not match) or not at all. Until round 34 the surface
+        ///     matrix's own job was exempt the same way; the suite runs as one since then, the matrix included.
         /// </summary>
-        private const string SurfaceMatrixOnly = "Category=SurfaceMatrix";
-
         private const string PerfOnly = "Category=Perf";
+
+        private static readonly Regex FilterOf = new(@"--filter\s+""(?<filter>[^""]*)""", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
+
+        private static readonly Regex SelectedName = new(@"^FullyQualifiedName[~=](?<name>[^&|!~=()]+)$", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
+
+        /// <summary>
+        ///     True only when <paramref name="filter" /> selects tests by name and none of the names can select an ILVerify
+        ///     test: every <c>|</c>-separated term is a <c>FullyQualifiedName~</c> or <c>=</c> selection whose name neither
+        ///     falls inside <see cref="EmittedIlIsVerifiableTests" />' full name (a namespace, the class) nor names the
+        ///     class or a member of it. Any other term (a category, another property, an <c>&amp;</c>) counts as reaching
+        ///     them. Its first version looked for "IlVerif", which the class name does not contain, so it waived the install
+        ///     for a job selecting the ILVerify tests by name.
+        /// </summary>
+        internal static bool NameSelectionCannotReachIlVerify(string filter)
+        {
+            var ilVerify = typeof(EmittedIlIsVerifiableTests).Namespace + "." + nameof(EmittedIlIsVerifiableTests);
+            return filter.Split('|').All(term => SelectedName.Match(term) is { Success: true } selected &&
+                                                 !ilVerify.Contains(selected.Groups["name"].Value, StringComparison.Ordinal) &&
+                                                 !selected.Groups["name"].Value.Contains(nameof(EmittedIlIsVerifiableTests), StringComparison.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path", true)]
+        [InlineData("FullyQualifiedName=DwarfMapper.Generator.Tests.FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path", true)]
+        [InlineData("FullyQualifiedName~" + nameof(EmittedIlIsVerifiableTests), false)]
+        [InlineData("FullyQualifiedName~" + nameof(EmittedIlIsVerifiableTests) + "." + nameof(EmittedIlIsVerifiableTests.Every_method_the_generator_emits_over_the_golden_corpus_is_verifiable), false)]
+        [InlineData("FullyQualifiedName~SelfValidation", false)]
+        [InlineData("FullyQualifiedName~DwarfMapper.Generator.Tests", false)]
+        [InlineData("FullyQualifiedName~FeatureCombinationFuzzTests|FullyQualifiedName~" + nameof(EmittedIlIsVerifiableTests), false)]
+        [InlineData("FullyQualifiedName~FeatureCombinationFuzzTests&Category!=Perf", false)]
+        [InlineData("Category!=Perf", false)]
+        public void A_name_filter_is_exempt_only_when_no_name_it_selects_can_be_an_ILVerify_test(string filter, bool exempt)
+        {
+            ArgumentNullException.ThrowIfNull(filter);
+
+            Assert.Equal(exempt, NameSelectionCannotReachIlVerify(filter));
+        }
 
         private static string Workflow()
         {
@@ -99,8 +134,18 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var offenders = new List<string>();
             foreach (var (name, body) in runners)
             {
-                // Exempt: filtered to the surface matrix, so the ILVerify tests are out of scope for it.
-                if (body.Contains(SurfaceMatrixOnly, StringComparison.Ordinal) || body.Contains(PerfOnly, StringComparison.Ordinal)) { continue; }
+                // Exempt: filtered to the Perf category, so the ILVerify tests are out of scope for it.
+                if (body.Contains(PerfOnly, StringComparison.Ordinal)) { continue; }
+
+                // Exempt: every test run in it selects tests BY NAME, and none of the names can be an ILVerify test
+                // (since round 34, fuzz-exhaustion runs one fact this way). A filter on a continuation line is not
+                // read, so such a job is not exempt: the error this can make is demanding an install, never waiving one.
+                var filters = Regex.Matches(body, @"dotnet test[^\n]*").Select(m => FilterOf.Match(m.Value)).ToList();
+                if (!body.Contains("dotnet stryker", StringComparison.Ordinal) && filters.Count > 0 &&
+                    filters.All(f => f.Success && NameSelectionCannotReachIlVerify(f.Groups["filter"].Value)))
+                {
+                    continue;
+                }
 
                 if (!body.Contains("dotnet-ilverify", StringComparison.Ordinal))
                 {
@@ -112,35 +157,35 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "CI job(s) run the test suite in a way that reaches EmittedIlIsVerifiableTests but do not " +
                 "install ilverify, so they will fail with \"ilverify is not on PATH\" rather than with a real " +
                 "finding: [" + string.Join(", ", offenders) + "]. Add " +
-                "`- run: dotnet tool install --global dotnet-ilverify --version 10.0.11` to each, or filter the " +
-                "job to " + SurfaceMatrixOnly + " if it genuinely should not run them.");
+                "`- run: dotnet tool install --global dotnet-ilverify --version 10.0.11` to each, or select its " +
+                "tests by name if it genuinely should not run them.");
         }
 
         /// <summary>
         ///     The exemption has to be real, or the check above passes by excusing everything. This pins that at
-        ///     least one job IS exempt and that it is exempt for the stated reason — it filters to the surface
-        ///     matrix — rather than because the scan failed to see it.
+        ///     least one job IS exempt and that it is exempt for the stated reason — it filters to the Perf category —
+        ///     rather than because the scan failed to see it.
         /// </summary>
         [Fact]
-        public void The_surface_matrix_exemption_applies_to_a_job_that_really_is_filtered()
+        public void The_category_exemption_applies_to_a_job_that_really_is_filtered()
         {
             var jobs = Jobs(Workflow());
 
             var exempt = jobs.Where(j => j.Value.Contains("dotnet test", StringComparison.Ordinal) &&
-                                         j.Value.Contains(SurfaceMatrixOnly, StringComparison.Ordinal))
+                                         j.Value.Contains(PerfOnly, StringComparison.Ordinal))
                              .Select(j => j.Key)
                              .ToList();
 
             Assert.True(exempt.Count > 0,
-                "no CI job filters to " + SurfaceMatrixOnly + ", so the exemption in the check beside this one " +
+                "no CI job filters to " + PerfOnly + ", so the exemption in the check beside this one " +
                 "excuses nothing and may be silently mis-written.");
 
             // And the exemption must not be swallowing the whole suite: at least one job must still be REQUIRED
             // to install the tool, or the guard above is vacuous.
             var required = jobs.Count(j => j.Value.Contains("dotnet test", StringComparison.Ordinal) &&
-                                           !j.Value.Contains(SurfaceMatrixOnly, StringComparison.Ordinal));
+                                           !j.Value.Contains(PerfOnly, StringComparison.Ordinal));
             Assert.True(required > 0,
-                "every test-running job claims the surface-matrix exemption, so the ilverify requirement is " +
+                "every test-running job claims the Perf exemption, so the ilverify requirement is " +
                 "enforced against nothing.");
         }
 

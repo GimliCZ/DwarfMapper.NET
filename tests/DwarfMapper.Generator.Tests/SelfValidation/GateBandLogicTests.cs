@@ -13,7 +13,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///         file), so the only honest test drives the REAL functions through <c>pwsh</c> against fake
     ///         inputs — a C# re-implementation would prove a copy, not the gate. All seven scenarios run in
     ///         ONE <c>pwsh</c> spawn (a battery script printing one structured line per case) to keep the
-    ///         fast-tier cost to a single process start (the spawn and its H7 termination bound live in
+    ///         suite's cost to a single process start (the spawn and its H7 termination bound live in
     ///         <see cref="PwshBattery" />, shared with the I4 sweep battery). The fake Stryker reports and the
     ///         battery script are written to a temp directory only (ARCH-06: registered in
     ///         <see cref="RepoWriteGuardTests" />).

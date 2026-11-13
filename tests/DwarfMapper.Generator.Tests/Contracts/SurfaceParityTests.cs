@@ -679,6 +679,49 @@ namespace DwarfMapper.Generator.Tests.Contracts
         }
 
         /// <summary>
+        ///     <b>Every counted population of the matrix holds its pin, from ONE sweep of the matrix.</b>
+        ///     <para>
+        ///         Round 34 (E9). Nine facts each classified the matrix for themselves, five over every cell through
+        ///         <see cref="AllCells" /> and four over part of it, so a run classified each cell up to ten times: 5,868
+        ///         compilations of 942 inputs in the surface category. Under Stryker each fact was one test covering 143 of
+        ///         the generator leg's mutants and 175 of the pipeline leg's, so a surviving mutant's session ran every
+        ///         sweep. The sweep is still not shared BETWEEN tests (a verdict cached by one test would be credited to the
+        ///         next one's mutant, see <see cref="AllCells" />): this one test sweeps once and runs every check over it.
+        ///         Each check fails as it did, with its own message, and every check that fails is reported.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void Every_counted_population_holds_its_pin()
+        {
+            var cells = AllCells();
+            var failures = new List<string>();
+            foreach (var (name, check) in new (string Name, Action<List<SurfaceCell>> Check)[]
+                     {
+                         (nameof(The_matrix_is_not_vacuous), The_matrix_is_not_vacuous),
+                         (nameof(The_cells_that_pose_no_question_are_declared_and_counted), The_cells_that_pose_no_question_are_declared_and_counted),
+                         (nameof(The_cells_whose_generated_code_does_not_compile_are_counted), The_cells_whose_generated_code_does_not_compile_are_counted),
+                         (nameof(The_cells_the_compiler_rejects_are_counted), The_cells_the_compiler_rejects_are_counted),
+                         (nameof(The_cells_that_pass_both_claim_branches_are_counted), The_cells_that_pass_both_claim_branches_are_counted),
+                         (nameof(The_cells_with_no_declaration_site_are_counted_by_cause), The_cells_with_no_declaration_site_are_counted_by_cause),
+                         (nameof(The_cells_excused_as_structural_are_counted), The_cells_excused_as_structural_are_counted),
+                         (nameof(Every_declared_divergence_is_still_a_divergence), Every_declared_divergence_is_still_a_divergence),
+                         (nameof(Every_Unmeasured_declaration_excuses_at_least_one_cell), Every_Unmeasured_declaration_excuses_at_least_one_cell)
+                     })
+            {
+                try
+                {
+                    check(cells);
+                }
+                catch (Xunit.Sdk.XunitException e)
+                {
+                    failures.Add(name + ":\n" + e.Message);
+                }
+            }
+
+            Assert.True(failures.Count == 0, string.Join("\n\n", failures));
+        }
+
+        /// <summary>
         ///     Counts an element as acting at <see cref="Endpoint.CreateMap" /> if ANY of its cases does, not just
         ///     the first. The brief specified the first case; measured, that reads 7 elements rather than the 12
         ///     that genuinely act, because <c>CasesFor</c> orders the zero-argument constructor first and a bare
@@ -686,15 +729,13 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///     whole domain stood in for the element. Widening it makes the guard stronger, not looser: it now
         ///     fails if an element loses its LAST acting case rather than only its first-listed one.
         /// </summary>
-        [Fact]
-        public void The_matrix_is_not_vacuous()
+        private static void The_matrix_is_not_vacuous(List<SurfaceCell> cells)
         {
             // If Classify() broke so every cell read NoSuchSite, the theory would return at the first guard and
             // pass without comparing anything.
             var acting = SurfaceCatalog.CrossProductElements
-                .Count(e => SurfaceCatalog.CasesFor(e)
-                    .Any(c => SurfaceProbe.Classify(c, Endpoint.CreateMap).Effect
-                        is SurfaceEffect.Honoured or SurfaceEffect.Refused));
+                .Count(e => cells.Any(x => ReferenceEquals(x.Case.Element, e) && x.Endpoint == Endpoint.CreateMap &&
+                                           x.Effect is SurfaceEffect.Honoured or SurfaceEffect.Refused));
 
             // Measured at 12 (see Issues/round20/SURFACE-MATRIX-FINDINGS.md); the gate sits below that so an
             // ordinary change does not trip it, and a collapse of the instrument does.
@@ -713,10 +754,9 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         coverage this whole arrangement exists to delete, so the total is pinned and the list printed.
         ///     </para>
         /// </summary>
-        [Fact]
-        public void The_cells_that_pose_no_question_are_declared_and_counted()
+        private static void The_cells_that_pose_no_question_are_declared_and_counted(List<SurfaceCell> cells)
         {
-            var unaskable = AllCells()
+            var unaskable = cells
                 .Where(x => SurfaceProbe.PosesNoQuestion(x.Case, x.Effect))
                 .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} — {x.Case.Unmeasured ?? x.Detail}")
                 .OrderBy(s => s, StringComparer.Ordinal)
@@ -745,10 +785,9 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         was <c>CS0037</c>; neither was foreseeable from the other.
         ///     </para>
         /// </summary>
-        [Fact]
-        public void The_cells_whose_generated_code_does_not_compile_are_counted()
+        private static void The_cells_whose_generated_code_does_not_compile_are_counted(List<SurfaceCell> cells)
         {
-            var broken = AllCells()
+            var broken = cells
                 .Where(x => x.Effect is SurfaceEffect.EmittedInvalidCode)
                 .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} — {x.Detail}")
                 .OrderBy(s => s, StringComparer.Ordinal)
@@ -826,10 +865,9 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         architecture exists to delete. That is why this count exists and why it may only shrink.
         ///     </para>
         /// </summary>
-        [Fact]
-        public void The_cells_the_compiler_rejects_are_counted()
+        private static void The_cells_the_compiler_rejects_are_counted(List<SurfaceCell> cells)
         {
-            var rejected = AllCells()
+            var rejected = cells
                 .Where(x => x.Effect is SurfaceEffect.NotCompilable)
                 .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} — {x.Detail}")
                 .OrderBy(s => s, StringComparer.Ordinal)
@@ -863,10 +901,9 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         that they are wrong; it is a claim that their number must not grow unnoticed.
         ///     </para>
         /// </summary>
-        [Fact]
-        public void The_cells_that_pass_both_claim_branches_are_counted()
+        private static void The_cells_that_pass_both_claim_branches_are_counted(List<SurfaceCell> cells)
         {
-            var undecided = AllCells()
+            var undecided = cells
                 .Where(x => x.Effect is SurfaceEffect.UnhonouredButLoud)
                 .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} (probe: {x.Case.ProbeKey ?? "flat"})")
                 .OrderBy(s => s, StringComparer.Ordinal)
@@ -904,13 +941,12 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         population nobody judges: it is where defects go to not be noticed.
         ///     </para>
         /// </summary>
-        [Fact]
-        public void The_cells_with_no_declaration_site_are_counted_by_cause()
+        private static void The_cells_with_no_declaration_site_are_counted_by_cause(List<SurfaceCell> cells)
         {
             // The cause key is everything before the first ':' — the machine-readable half of the reason
             // Endpoints.SiteAbsenceReason states, which is the single source every NoSuchSite verdict flows
             // from, so this grouping cannot disagree with the classifier about what a cause IS.
-            var siteless = AllCells().Where(x => x.Effect is SurfaceEffect.NoSuchSite).ToList();
+            var siteless = cells.Where(x => x.Effect is SurfaceEffect.NoSuchSite).ToList();
             var byCause = siteless
                 .GroupBy(x => CauseOf(x.Detail), StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
@@ -939,13 +975,13 @@ namespace DwarfMapper.Generator.Tests.Contracts
             // as howToClose, and the full breakdown with it, so nothing the messages used to say is lost.
             foreach (var (cause, pinned) in NoSuchSiteCausePins)
             {
-                var cells = siteless
+                var causeCells = siteless
                     .Where(x => string.Equals(CauseOf(x.Detail), cause, StringComparison.Ordinal))
                     .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint}")
                     .OrderBy(s => s, StringComparer.Ordinal)
                     .ToList();
 
-                AssertExactPin(cells,
+                AssertExactPin(causeCells,
                     pinned,
                     $"cells have no declaration site under '{cause}'",
                     $"Full breakdown:\n{breakdown}\n\nPer-cause and exact on purpose (B6): the old total-only " +
@@ -1000,20 +1036,18 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         grow, so a new structural excuse is as deliberate an act as a new divergence.
         ///     </para>
         /// </summary>
-        [Fact]
-        public void The_cells_excused_as_structural_are_counted()
+        private static void The_cells_excused_as_structural_are_counted(List<SurfaceCell> cells)
         {
             var excused = new List<string>();
-            foreach (var element in SurfaceCatalog.CrossProductElements)
-            foreach (var c in SurfaceCatalog.CasesFor(element))
-            foreach (var endpoint in EndpointSources.All)
+            foreach (var (c, endpoint, effect, _, _) in cells)
             {
+                var element = c.Element;
                 if ((SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) == SurfaceEndpoints.None)
                 {
                     continue;
                 }
 
-                if (SurfaceProbe.Classify(c, endpoint).Effect is not SurfaceEffect.Silent)
+                if (effect is not SurfaceEffect.Silent)
                 {
                     continue;
                 }
@@ -1089,8 +1123,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         same cell).
         ///     </para>
         /// </summary>
-        [Fact]
-        public void Every_declared_divergence_is_still_a_divergence()
+        private static void Every_declared_divergence_is_still_a_divergence(List<SurfaceCell> cells)
         {
             var stale = new List<string>();
 
@@ -1116,7 +1149,8 @@ namespace DwarfMapper.Generator.Tests.Contracts
                     continue;
                 }
 
-                var (effect, detail) = SurfaceProbe.Classify(probed, endpoint);
+                var verdict = cells.First(x => ReferenceEquals(x.Case, probed) && x.Endpoint == endpoint);
+                var (effect, detail) = (verdict.Effect, verdict.Detail);
                 if (effect is not SurfaceEffect.Silent)
                 {
                     stale.Add($"{where} — is now {effect} ({detail}), not Silent.");
@@ -1256,8 +1290,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         credited to the wrong one.
         ///     </para>
         /// </summary>
-        private static List<(SurfaceCase Case, Endpoint Endpoint, SurfaceEffect Effect, string Detail,
-            string Rendered)> AllCells()
+        private static List<SurfaceCell> AllCells()
         {
             return SurfaceCatalog.CrossProductElements
                 .SelectMany(SurfaceCatalog.CasesFor)
@@ -1267,11 +1300,14 @@ namespace DwarfMapper.Generator.Tests.Contracts
                 .Select(x =>
                 {
                     var (effect, detail) = SurfaceProbe.Classify(x.c, x.endpoint);
-                    return (x.c, x.endpoint, effect, detail,
+                    return new SurfaceCell(x.c, x.endpoint, effect, detail,
                         x.c.Rendered.Replace("\n", " + ", StringComparison.Ordinal));
                 })
                 .ToList();
         }
+
+        /// <summary>One cell of the matrix as <see cref="AllCells" /> classified it.</summary>
+        private sealed record SurfaceCell(SurfaceCase Case, Endpoint Endpoint, SurfaceEffect Effect, string Detail, string Rendered);
 
         /// <summary>
         ///     Asserts a LARGE counted population against a stated ceiling in both directions: it may not grow,
@@ -1322,14 +1358,13 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///     reviewed decision about a hole that no longer exists — the same failure mode as a site override
         ///     restating the element's own default, and the same reason that one is an error too.
         /// </summary>
-        [Fact]
-        public void Every_Unmeasured_declaration_excuses_at_least_one_cell()
+        private static void Every_Unmeasured_declaration_excuses_at_least_one_cell(List<SurfaceCell> cells)
         {
-            var idle = SurfaceCatalog.CrossProductElements
-                .SelectMany(SurfaceCatalog.CasesFor)
-                .Where(c => c.Unmeasured is not null)
-                .Where(c => !EndpointSources.All.Any(ep =>
-                    SurfaceProbe.PosesNoQuestion(c, SurfaceProbe.Classify(c, ep).Effect)))
+            var idle = cells
+                .Where(x => x.Case.Unmeasured is not null)
+                .GroupBy(x => x.Case, ReferenceEqualityComparer.Instance)
+                .Where(g => !g.Any(x => SurfaceProbe.PosesNoQuestion(x.Case, x.Effect)))
+                .Select(g => g.First().Case)
                 .Select(c => $"{c.Element.UsageName}: {c.Rendered} on a {c.Site}")
                 .Distinct(StringComparer.Ordinal)
                 .ToList();

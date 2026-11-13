@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
+using System.Text.RegularExpressions;
+using DwarfMapper.Generator.Tests.Contracts;
+
+namespace DwarfMapper.Generator.Tests.SelfValidation
+{
+    /// <summary>
+    ///     <b>Server GC runs where it was measured to pay, and nowhere it costs.</b> Round 34.
+    ///     <para>
+    ///         The full suite's and the power set's compilations allocate tens of gigabytes, and workstation GC stops every
+    ///         test thread while one thread collects. Measured on Generator.Tests at what is now the suite's only population
+    ///         (the deep tier until round 34): 53.3 to 44.9 s on 12 logical CPUs and 80.0 to 68.2 s on 4 (a hosted runner's
+    ///         shape); the power set 6:19 to 5:05 on 12. A serial Stryker session is slower under it (5.5 to 7.0 s, E3), so
+    ///         no test project's runtimeconfig turns it on; CI's power-set job sets it, and housekeeping sets it for its
+    ///         suite and exhaustion stages and puts it back before the stages that time code or run Stryker.
+    ///     </para>
+    /// </summary>
+    public class ServerGcScopeScanTests
+    {
+        private static readonly Regex SetsServerGc = new(@"DOTNET_gcServer\s*[:=]\s*['""]?1", RegexOptions.CultureInvariant);
+
+        private static readonly Regex TopLevelKey = new(@"^  (?<key>[A-Za-z0-9_-]+):\s*$", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+        private static readonly Regex StageBanner = new(@"(?=Write-Host [""']== )", RegexOptions.CultureInvariant);
+
+        private const string PutBack = "$env:DOTNET_gcServer = $gcServerBefore";
+
+        /// <summary>
+        ///     The one exception, round 34 hill-climb round 4: CompilerTests. Its population facts run their samples 4-way in
+        ///     parallel even inside a Stryker host (PinnedSampling's <c>Parallel.For</c>), so it is not the serial session E3
+        ///     measured slower; every sample allocates a whole compilation. Measured in the four-CPU container on r2:
+        ///     31.2 -> 27.1 s (-4.1 s ± 0.4 s, 4 runs each). The generator mutation leg is the check that it holds under Stryker.
+        /// </summary>
+        private const string OnlyServerGcProject = "tests/DwarfMapper.CompilerTests/DwarfMapper.CompilerTests.csproj";
+
+        [Fact]
+        public void Only_CompilerTests_turns_server_GC_on_in_its_runtimeconfig()
+        {
+            var files = Directory.GetFiles(Path.Combine(RepoPaths.Root, "tests"), "*.csproj", SearchOption.AllDirectories)
+                                 .Concat(new[] { "Directory.Build.props", "Directory.Build.targets" }.Select(f => Path.Combine(RepoPaths.Root, f)))
+                                 .Where(File.Exists)
+                                 .ToList();
+
+            // Non-vacuity: ten test projects and the two build files.
+            Assert.True(files.Count >= 10, $"read only {files.Count} project files.");
+
+            var offenders = files.Where(f => Regex.IsMatch(File.ReadAllText(f), @"<ServerGarbageCollection>\s*true|System\.GC\.Server", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                                 .Select(f => Path.GetRelativePath(RepoPaths.Root, f).Replace('\\', '/'))
+                                 .ToList();
+
+            Assert.True(offenders.SequenceEqual([OnlyServerGcProject]),
+                "server GC in a test project's runtimeconfig reaches every Stryker session, and a serial one runs slower under " +
+                "it; only " + OnlyServerGcProject + " measured a gain there. Found: [" + string.Join(", ", offenders) +
+                "]. Set DOTNET_gcServer for the run that measured a gain instead.");
+        }
+
+        [Fact]
+        public void In_the_workflows_only_the_power_set_job_sets_server_GC()
+        {
+            var setting = new List<string>();
+            foreach (var workflow in Directory.GetFiles(Path.Combine(RepoPaths.Root, ".github", "workflows"), "*.yml"))
+            {
+                var text = File.ReadAllText(workflow);
+                var keys = TopLevelKey.Matches(text);
+                for (var i = 0; i < keys.Count; i++)
+                {
+                    var end = i + 1 < keys.Count ? keys[i + 1].Index : text.Length;
+                    if (SetsServerGc.IsMatch(text[keys[i].Index..end]))
+                    {
+                        setting.Add(Path.GetFileName(workflow) + ": " + keys[i].Groups["key"].Value);
+                    }
+                }
+            }
+
+            Assert.Equal(new[] { "ci.yml: fuzz-exhaustion" }, setting);
+        }
+
+        [Fact]
+        public void Housekeeping_sets_server_GC_for_the_suite_and_exhaustion_stages_only_and_puts_it_back()
+        {
+            var stages = StageBanner.Split(File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1")));
+            var setting = stages.Where(s => SetsServerGc.IsMatch(s)).ToList();
+
+            Assert.Equal(2, setting.Count);
+            Assert.StartsWith("Write-Host \"== 1/4 ", setting[0], StringComparison.Ordinal);
+            Assert.StartsWith("Write-Host \"== 2/4 ", setting[1], StringComparison.Ordinal);
+
+            foreach (var stage in setting)
+            {
+                Assert.True(stage.IndexOf(PutBack, SetsServerGc.Match(stage).Index, StringComparison.Ordinal) > 0,
+                    "a housekeeping stage sets server GC and does not put it back before the next stage: " + stage[..60]);
+            }
+        }
+    }
+}

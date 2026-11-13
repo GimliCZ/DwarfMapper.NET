@@ -22,7 +22,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                             public class NotEnum { }
                                         }
                                         """)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         private static INamedTypeSymbol Named(string metadataName) =>
             Compilation.GetTypeByMetadataName(metadataName) ?? throw new InvalidOperationException(metadataName + " not found");

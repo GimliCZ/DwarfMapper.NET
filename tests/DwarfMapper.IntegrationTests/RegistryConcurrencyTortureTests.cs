@@ -58,10 +58,10 @@ namespace DwarfMapper.IntegrationTests
     ///         <c>DwarfMapMissingException</c> and the observer spent the contested window unwinding stacks.
     ///     </para>
     ///     <para>
-    ///         The round counts discussed above (60 create / 240 update) are the FAST tier and still run on
-    ///         every <c>dotnet test</c>; under <c>DWARF_DEEP=1</c> both sides run ×4
-    ///         (<see cref="DeepPopulation.TortureCreateRounds" /> /
-    ///         <see cref="DeepPopulation.TortureUpdateRounds" />).
+    ///         The round counts discussed above (60 create / 240 update) are the measured-power counts; every
+    ///         run uses four times each
+    ///         (<see cref="TestPopulation.TortureCreateRounds" /> /
+    ///         <see cref="TestPopulation.TortureUpdateRounds" />).
     ///     </para>
     /// </summary>
     [Collection("registry-torture")]
@@ -112,10 +112,10 @@ namespace DwarfMapper.IntegrationTests
                         barrier.SignalAndWait();
                         body(index);
                     }
-#pragma warning disable CA1031 // Do not catch general exception types
-                    // Deliberate: an unhandled exception on a raw Thread tears down the test PROCESS, so the
-                    // harness would report "the run crashed" instead of "the registry raced". Catching
+                    // CA1031, deliberately: an unhandled exception on a raw Thread tears down the test PROCESS, so
+                    // the harness would report "the run crashed" instead of "the registry raced". Catching
                     // everything and asserting the bag is empty is what turns a crash into a readable failure.
+#pragma warning disable CA1031
                     catch (Exception ex)
 #pragma warning restore CA1031
                     {
@@ -148,9 +148,9 @@ namespace DwarfMapper.IntegrationTests
             // One storm is also not enough: a single key is contested for microseconds and an observer thread
             // may not be scheduled inside that window at all. So the experiment is repeated over many FRESH
             // keys, and the violation counter accumulates across all of them.
-            // Fast 60 (the measured-power count in the class remarks) / deep 240 (×4, the multiplier the
-            // update side needed for a comfortable detection margin) — see DeepPopulation.TortureCreateRounds.
-            var rounds = DeepTier.Count(DeepPopulation.TortureCreateRounds);
+            // 240: four times the measured-power count in the class remarks, the multiplier the update side
+            // needed for a comfortable detection margin — see TestPopulation.TortureCreateRounds.
+            var rounds = TestPopulations.Count(TestPopulation.TortureCreateRounds);
             var replacementsSeen = 0;
             var allFailures = new List<Exception>();
 
@@ -392,9 +392,9 @@ namespace DwarfMapper.IntegrationTests
             // 240, not the create side's 60: the update observer must poll through Update (which invokes the
             // delegate) rather than TryGet, so it samples the contested window far less densely. See the power
             // figures in the class remarks — at 60 rounds the check-then-act mutant scored as low as 1.
-            // Fast 240 (measured power: check-then-act caught 23/54/58 of 240 vs 1/6/7 of 60) / deep 960 (×4,
-            // more samples inside the contested window) — see DeepPopulation.TortureUpdateRounds.
-            var rounds = DeepTier.Count(DeepPopulation.TortureUpdateRounds);
+            // 960: four times the measured-power 240 (check-then-act caught 23/54/58 of 240 vs 1/6/7 of 60), for
+            // more samples inside the contested window — see TestPopulation.TortureUpdateRounds.
+            var rounds = TestPopulations.Count(TestPopulation.TortureUpdateRounds);
             var replacementsSeen = 0;
             var allFailures = new List<Exception>();
 

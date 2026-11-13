@@ -564,9 +564,11 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var roots = new List<string>();
             foreach (var attr in method.GetAttributes())
-                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenFqn) && attr.ConstructorArguments.Length == 1 && attr.ConstructorArguments[0].Value is string s)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenFqn) && attr.ConstructorArguments.Length == 1)
                 {
-                    roots.Add(s);
+                    // A null root names no member, exactly as a name matching none does. It is kept, so the method
+                    // reports DWARF016 (DWARF090 at an element-wise endpoint) instead of the directive vanishing.
+                    roots.Add(attr.ConstructorArguments[0].Value as string ?? string.Empty);
                 }
 
             return roots;
@@ -581,9 +583,12 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var result = new List<(string, string)>();
             foreach (var attr in method.GetAttributes())
-                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenGraphFqn) && attr.ConstructorArguments.Length == 2 && attr.ConstructorArguments[0].Value is string src && attr.ConstructorArguments[1].Value is string tgt)
+                if (KnownNames.IsAttributeClass(attr.AttributeClass, KnownNames.FlattenGraphFqn) && attr.ConstructorArguments.Length == 2)
                 {
-                    result.Add((src, tgt));
+                    // A null navigation or collection name names nothing, exactly as a name matching none does. It is
+                    // kept, so the method reports DWARF034 instead of the directive vanishing silently.
+                    result.Add((attr.ConstructorArguments[0].Value as string ?? string.Empty,
+                        attr.ConstructorArguments[1].Value as string ?? string.Empty));
                 }
 
             return result;

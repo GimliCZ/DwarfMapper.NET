@@ -16,6 +16,13 @@ namespace DwarfMapper.Generator.Tests
     internal static class GeneratorTestHarness
     {
         /// <summary>
+        ///     <see cref="ReferenceTo(string)" />'s cache: one reference per assembly file, for the life of the test host.
+        ///     Declared first so that it exists before any other static initializer could ask for a reference.
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, PortableExecutableReference> ReferencesByPath =
+            new(StringComparer.Ordinal);
+
+        /// <summary>
         ///     The metadata reference set, built ONCE and reused across every compilation. Each
         ///     <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" /> reads assembly metadata from disk under a
         ///     lock — rebuilding it per call (~50 references) serialised parallel compilations on metadata I/O and
@@ -72,6 +79,46 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         internal static IReadOnlyList<MetadataReference> ReferenceSet => References.Value;
 
+        /// <summary>
+        ///     The reference to one assembly FILE, created once for the whole test host and shared by every
+        ///     compilation that names it.
+        ///     <para>
+        ///         <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" />
+        ///         copies the whole image into native memory so that it can close the file, and the copy is freed only
+        ///         when the reference is finalized. About twenty helpers built their references inline on every compile,
+        ///         from the corlib alone or from every assembly the host had loaded. On Linux, in Stryker's serial mode,
+        ///         the host reached 5-7 GB while the GC's committed heap stayed under 0.41 GB: a GC with a small managed
+        ///         heap has no reason to run the finalizers, and glibc keeps what is freed (round 34 A1). The instances
+        ///         are immutable and thread-safe, which <see cref="ReferenceSet" /> already relies on, and sharing them
+        ///         also lets Roslyn reuse the assembly symbols it built for them. <c>MetadataReferenceReuseScanTests</c>
+        ///         holds every other file in this project to calling this rather than the API.
+        ///     </para>
+        /// </summary>
+        internal static PortableExecutableReference ReferenceTo(string path)
+        {
+            return ReferencesByPath.GetOrAdd(path, static p => MetadataReference.CreateFromFile(p));
+        }
+
+        /// <inheritdoc cref="ReferenceTo(string)" />
+        internal static PortableExecutableReference ReferenceTo(Assembly assembly)
+        {
+            ArgumentNullException.ThrowIfNull(assembly);
+            return ReferenceTo(assembly.Location);
+        }
+
+        /// <summary>
+        ///     Every assembly the host has loaded from a file, in load order, each through
+        ///     <see cref="ReferenceTo(string)" />. It is the set the symbol-level helpers have always swept inline, read
+        ///     at the call as before, so a helper compiles against exactly what it did; only the per-call copies are
+        ///     gone.
+        /// </summary>
+        internal static IEnumerable<MetadataReference> LoadedAssemblyReferences()
+        {
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => (MetadataReference)ReferenceTo(a.Location));
+        }
+
         private static MetadataReference[] BuildReferences()
         {
             var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -109,7 +156,7 @@ namespace DwarfMapper.Generator.Tests
             // load rather than only what it has touched. Restricted to the names fixtures actually need, and that
             // restriction is a measurement, not caution: offering the whole TPA set closes the class outright but
             // takes this project from 62s to 83s (~34%), because every one of the thousands of compilations then
-            // binds against ~200 references instead of ~50. That is four times the ~10% fast-tier growth cap.
+            // binds against ~200 references instead of ~50. That is four times the ~10% growth cap the suite had then.
             // HarnessReferenceSetTests turns the residual risk into a loud, named failure instead of a CS0246 the
             // next reader blames on the generator; the cheap way to close the class properly is to retry a failed
             // compilation once against the full TPA set and report what it needed (recorded, not built).
@@ -122,7 +169,7 @@ namespace DwarfMapper.Generator.Tests
                     }
             }
 
-            return byName.Values.Select(p => (MetadataReference)MetadataReference.CreateFromFile(p)).ToArray();
+            return byName.Values.Select(p => (MetadataReference)ReferenceTo(p)).ToArray();
         }
 
         public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(
@@ -136,21 +183,58 @@ namespace DwarfMapper.Generator.Tests
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
             AssertGeneratedSourceParses(output);
 
-            var generated = output.SyntaxTrees
-                                .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
-                                // Exclude the assembly-wide aggregate outputs (convenience facade + DI registration) so single-
-                                // mapper snapshot tests keep selecting the per-mapper file regardless of emit order.
-                                .Where(t => !t.FilePath.EndsWith("DwarfMapper.Extensions.g.cs", StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs",
-                                                StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.AmbientRegistration.g.cs", StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.AmbientRequires.g.cs", StringComparison.Ordinal) &&
-                                            !t.FilePath.EndsWith("DwarfMapper.Validate.g.cs", StringComparison.Ordinal))
-                                .Select(t => t.ToString())
-                                .FirstOrDefault() ??
-                            string.Empty;
+            return (genDiagnostics, PerMapperFile(output.SyntaxTrees));
+        }
 
-            return (genDiagnostics, generated);
+        /// <summary>
+        ///     <see cref="Run(string, NullableContextOptions, bool)" /> and <see cref="RunAndGetCompilationErrors" /> from
+        ///     ONE driver run: <see cref="DwarfGenerator" />'s own diagnostics and per-mapper file, as <c>Run</c> returns
+        ///     them, and the errors of the compilation both shipped generators produce, as
+        ///     <c>RunAndGetCompilationErrors</c> returns them.
+        ///     <para>
+        ///         Round 34 (E7). <see cref="GeneratorAssert" /> called the two in turn on the same source, so every one of
+        ///         its 790 call sites ran <c>DwarfGenerator</c> twice: 3,788 compilations of 1,916 inputs in a normal run.
+        ///         Generators in one driver do not see each other's output, so <c>DwarfGenerator</c>'s diagnostics and
+        ///         files are the same with <see cref="MapToGenerator" /> beside it. The compilation is named as
+        ///         <c>Run</c>'s (the generator reads the name for the assembly-wide files' namespace and the ambient
+        ///         validator), so the diagnostics and the per-mapper file are byte for byte what <c>Run</c> returned.
+        ///     </para>
+        /// </summary>
+        public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource, ImmutableArray<Diagnostic> CompilationErrors)
+            RunWithCompilationErrors(string source, NullableContextOptions nullable = NullableContextOptions.Disable)
+        {
+            var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+
+            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator())
+                .RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+            AssertGeneratedSourceParses(output);
+
+            var dwarfFile = typeof(DwarfGenerator).FullName!;
+            var diagnostics = driver.GetRunResult().Results
+                .Single(r => r.Generator.GetGeneratorType() == typeof(DwarfGenerator))
+                .Diagnostics;
+            var errors = ForErrorsOnly(output).GetDiagnostics()
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .ToImmutableArray();
+
+            return (diagnostics, PerMapperFile(output.SyntaxTrees.Where(t => t.FilePath.Contains(dwarfFile, StringComparison.Ordinal))), errors);
+        }
+
+        /// <summary>
+        ///     The first per-mapper file among <paramref name="trees" />: a <c>.g.cs</c> tree that is not one of the five
+        ///     assembly-wide aggregate outputs, so single-mapper snapshot tests keep selecting it regardless of emit order.
+        /// </summary>
+        private static string PerMapperFile(IEnumerable<SyntaxTree> trees)
+        {
+            return trees.Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+                       .Where(t => !t.FilePath.EndsWith("DwarfMapper.Extensions.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.AmbientRegistration.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.AmbientRequires.g.cs", StringComparison.Ordinal) &&
+                                   !t.FilePath.EndsWith("DwarfMapper.Validate.g.cs", StringComparison.Ordinal))
+                       .Select(t => t.ToString())
+                       .FirstOrDefault() ??
+                   string.Empty;
         }
 
         /// <summary>
@@ -230,7 +314,7 @@ namespace DwarfMapper.Generator.Tests
                     .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
                     .OrderBy(t => t.FilePath, StringComparer.Ordinal)
                     .Select(t => t.ToString()));
-            var errors = output.GetDiagnostics()
+            var errors = ForErrorsOnly(output).GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToImmutableArray();
 
@@ -302,10 +386,34 @@ namespace DwarfMapper.Generator.Tests
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
             AssertGeneratedSourceParses(outputCompilation);
 
-            return outputCompilation.GetDiagnostics()
+            return ForErrorsOnly(outputCompilation).GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToImmutableArray();
         }
+
+        /// <summary>
+        ///     <paramref name="output" /> with Roslyn's nullable flow analysis switched off, for a check that reads only
+        ///     ERRORS or emits: the nullable walker reports warnings, never errors, and emitted IL does not depend on it.
+        ///     <para>
+        ///         Round 34 (E8). Binding the generated code was three quarters of a variation's cost in the power set
+        ///         (15.0 of ~21 CPU-ms), and skipping the walker halved it (7.7 ms) with no error found or lost. The
+        ///         generator has already run against the compilation exactly as a consumer's build sees it, so what it
+        ///         emitted is unchanged; only this check's own binding skips the walker. Checks that read WARNINGS
+        ///         (<see cref="GeneratedCodeWarnings" />) keep the full analysis.
+        ///     </para>
+        /// </summary>
+        internal static Compilation ForErrorsOnly(Compilation output)
+        {
+            var trees = output.SyntaxTrees
+                .Select(t => t.WithRootAndOptions(t.GetRoot(),
+                    ((CSharpParseOptions)t.Options).WithFeatures(t.Options.Features
+                        .Where(f => f.Key != SkipNullableAnalysis.Key)
+                        .Append(SkipNullableAnalysis))))
+                .ToList();
+            return output.RemoveAllSyntaxTrees().AddSyntaxTrees(trees);
+        }
+
+        private static readonly KeyValuePair<string, string> SkipNullableAnalysis = new("run-nullable-analysis", "never");
 
         /// <summary>
         ///     Runs the generator and returns every C# compiler diagnostic of WARNING severity or worse whose
@@ -474,6 +582,30 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     <see cref="Run(string, NullableContextOptions, bool)" /> and <see cref="EmitAssembly(string)" /> from ONE
+        ///     driver run: the generator's diagnostics and per-mapper file, and the emitted assembly (null when the emit
+        ///     failed, with its errors). Round 34 (E7): every combinatorial cell's row ran the generator once for the
+        ///     diagnostics and again to emit. Both ran <see cref="DwarfGenerator" /> alone over the same source; the one
+        ///     run keeps <c>EmitAssembly</c>'s unique assembly name, which only the assembly-wide files read.
+        /// </summary>
+        public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource, Assembly? Assembly, ImmutableArray<Diagnostic> EmitErrors)
+            RunAndEmit(string source)
+        {
+            var compilation = BuildCompilation("FuzzAsm_" + Guid.NewGuid().ToString("N"), source);
+
+            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+            driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+            AssertGeneratedSourceParses(output);
+            var generated = PerMapperFile(output.SyntaxTrees);
+
+            using var ms = new MemoryStream();
+            var result = ForErrorsOnly(output).Emit(ms);
+            return result.Success
+                ? (diagnostics, generated, Assembly.Load(ms.ToArray()), ImmutableArray<Diagnostic>.Empty)
+                : (diagnostics, generated, null, result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToImmutableArray());
+        }
+
+        /// <summary>
         ///     <see cref="EmitAssembly(string)" /> for a compilation the caller built — several syntax trees in a
         ///     chosen order, unsafe code, a specific assembly name. The generator runs against exactly that
         ///     compilation, so what it saw is what the test controls.
@@ -485,7 +617,7 @@ namespace DwarfMapper.Generator.Tests
             AssertGeneratedSourceParses(outputCompilation);
 
             using var ms = new MemoryStream();
-            var result = outputCompilation.Emit(ms);
+            var result = ForErrorsOnly(outputCompilation).Emit(ms);
 
             if (result.Success)
             {
@@ -517,6 +649,14 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     Compilations this thread has built, so a test can hold a helper to compiling its source once (round 34 E7,
+        ///     <c>CompileOnceTests</c>). Per thread because tests run in parallel; a test's body runs on one thread.
+        /// </summary>
+        internal static int CompilationsOnThisThread => compilationsOnThisThread;
+
+        [ThreadStatic] private static int compilationsOnThisThread;
+
+        /// <summary>
         ///     The multi-tree form. Tree order is the order the compiler sees the files in, which is the order it
         ///     lays out a partial struct's fields in — a test that needs a particular file order states it here.
         /// </summary>
@@ -526,6 +666,7 @@ namespace DwarfMapper.Generator.Tests
             NullableContextOptions nullable = NullableContextOptions.Disable,
             bool allowUnsafe = false)
         {
+            compilationsOnThisThread++;
             // Derive from an EMPTY baseline that already carries this exact (name, options, references) triple,
             // rather than calling CSharpCompilation.Create per test. Caching the MetadataReference objects
             // (References, above) stopped the disk reads; it did not stop Roslyn rebuilding a ReferenceManager
@@ -536,23 +677,47 @@ namespace DwarfMapper.Generator.Tests
             // the same compilation Create() would have produced: same identity, same options, same references,
             // and the trees in the order the caller listed them (the baseline holds none, so order is preserved
             // — the multi-tree overload's field-layout contract depends on that).
-            return Baselines
-                .GetOrAdd((assemblyName, nullable, allowUnsafe),
-                    static k => CSharpCompilation.Create(
-                        k.AssemblyName,
-                        Array.Empty<SyntaxTree>(),
-                        References.Value,
-                        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                            nullableContextOptions: k.Nullable,
-                            allowUnsafe: k.AllowUnsafe)))
-                .AddSyntaxTrees(trees);
+            //
+            // A baseline is kept only from a key's SECOND request (round 34 E10). EmitAssembly, RunAndEmit and several
+            // tests name each compilation uniquely (a GUID suffix, to keep emitted assemblies apart), so their keys are
+            // never asked for twice, yet each was cached for the rest of the run: 1,635 entries in build-test's run and
+            // 5,319 in the deep tier, none ever read. Measured, they were small (the deep tier's heap after a full
+            // collection held 420-440 MB live with and without them), so this keeps the cache to what it is for rather
+            // than buying time. A unique key now leaves only its request count behind.
+            var key = (assemblyName, nullable, allowUnsafe);
+            if (Baselines.TryGetValue(key, out var baseline))
+            {
+                return baseline.AddSyntaxTrees(trees);
+            }
+
+            var fresh = CSharpCompilation.Create(
+                assemblyName,
+                Array.Empty<SyntaxTree>(),
+                References.Value,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                    nullableContextOptions: nullable,
+                    allowUnsafe: allowUnsafe));
+            if (BaselineRequests.AddOrUpdate(key, 1, static (_, n) => n + 1) >= 2)
+            {
+                fresh = Baselines.GetOrAdd(key, fresh);
+            }
+
+            return fresh.AddSyntaxTrees(trees);
         }
 
         /// <summary>
-        ///     One empty compilation per distinct (assembly name, nullable context, allowUnsafe) triple, so the
-        ///     reference binding behind it is paid once per triple instead of once per test. The suite uses a
-        ///     handful of assembly names, so this stays small and lives for the test host's lifetime.
+        ///     One empty compilation per (assembly name, nullable context, allowUnsafe) triple that is asked for more than
+        ///     once, so the reference binding behind it is paid once per triple instead of once per test.
         /// </summary>
         private static readonly ConcurrentDictionary<(string AssemblyName, NullableContextOptions Nullable, bool AllowUnsafe), CSharpCompilation> Baselines = new();
+
+        /// <summary>How often each triple has been asked for: a baseline is cached from the second request.</summary>
+        private static readonly ConcurrentDictionary<(string AssemblyName, NullableContextOptions Nullable, bool AllowUnsafe), int> BaselineRequests = new();
+
+        /// <summary>Whether a baseline is cached for this triple, so a test can hold a name used once to leaving none.</summary>
+        internal static bool HasCachedBaseline(string assemblyName, NullableContextOptions nullable = NullableContextOptions.Disable, bool allowUnsafe = false)
+        {
+            return Baselines.ContainsKey((assemblyName, nullable, allowUnsafe));
+        }
     }
 }

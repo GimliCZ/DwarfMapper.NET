@@ -6,6 +6,7 @@ namespace DwarfMapper.Generator.Tests
 // with the EXACT expected diagnostic — not silently ignored or silently producing wrong/broken code. Each
 // case cites the precise DWARF id; if a combination stops erroring (or errors with a different code) this
 // fails, which is how it reveals regressions or newly-introduced silent paths.
+// CA1062: the theory parameters come from [MemberData] and are never null; validating them would be noise.
 #pragma warning disable CA1062
     public class FeatureCombinationInvalidTests
     {

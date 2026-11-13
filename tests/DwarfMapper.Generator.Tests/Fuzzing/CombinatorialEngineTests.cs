@@ -25,36 +25,37 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
 public class CombinatorialEngineTests
     {
         // ── Matrix data ──────────────────────────────────────────────────────────
-        public static IEnumerable<object[]> DepthOneIdentityCells()
+        // Rows are cell KEYS, so xunit runs each cell as its own test case (MatrixCell.Key says why).
+        public static TheoryData<string> DepthOneIdentityCells()
         {
-            return CombinatorialSchema.DepthOneMatrix()
-                .Where(c => c.Variant == MatrixVariant.Identity)
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthOneMatrix().Where(c => c.Variant == MatrixVariant.Identity));
         }
 
-        public static IEnumerable<object[]> DepthOneDivergentCells()
+        public static TheoryData<string> DepthOneDivergentCells()
         {
-            return CombinatorialSchema.DepthOneMatrix()
-                .Where(c => c.Variant == MatrixVariant.TypeDivergent)
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthOneMatrix().Where(c => c.Variant == MatrixVariant.TypeDivergent));
         }
 
         // ── Identity variant ────────────────────────────────────────────────────
 
-        [Theory]
-        [MemberData(nameof(DepthOneIdentityCells))]
-        public void Identity_cell_compiles_emits_and_maps(MatrixCell cell)
-        {
-            ArgumentNullException.ThrowIfNull(cell);
+        /// <summary>
+        ///     The identity cells are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): their 692
+        ///     rows in one class finished build-test's run 5 s after an even spread would have.
+        /// </summary>
+        private const int Parts = 4;
 
-            // 1. Run generator — no unexpected DWARF errors allowed
-            var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
+        public static TheoryData<string> DepthOneIdentityCells(int part)
+        {
+            return CombinatorialSchema.Keys(TheoryParts.Of(
+                CombinatorialSchema.DepthOneMatrix().Where(c => c.Variant == MatrixVariant.Identity), part, Parts));
+        }
+
+        internal static void IdentityCell(string key)
+        {
+            var cell = CombinatorialSchema.Cell(key);
+
+            // 1. Run generator — no unexpected DWARF errors allowed. The same run emits the assembly checked in step 2.
+            var (diagnostics, generatedSource, asm, emitErrors) = GeneratorTestHarness.RunAndEmit(cell.Source);
             var unexpectedErrors = diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToList();
@@ -68,7 +69,6 @@ public class CombinatorialEngineTests
             }
 
             // 2. Emit assembly
-            var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
             if (asm is null)
             {
                 Assert.Fail(FormatCellFailure(cell,
@@ -85,11 +85,11 @@ public class CombinatorialEngineTests
 
         [Theory]
         [MemberData(nameof(DepthOneDivergentCells))]
-        public void Divergent_cell_compiles_emits_and_maps(MatrixCell cell)
+        public void Divergent_cell_compiles_emits_and_maps(string key)
         {
-            ArgumentNullException.ThrowIfNull(cell);
+            var cell = CombinatorialSchema.Cell(key);
 
-            var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
+            var (diagnostics, generatedSource, asm, emitErrors) = GeneratorTestHarness.RunAndEmit(cell.Source);
             var unexpectedErrors = diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 // DWARF027 (unsupported collection) is expected and acceptable
@@ -104,7 +104,6 @@ public class CombinatorialEngineTests
                     generatedSource));
             }
 
-            var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
             if (asm is null)
             {
                 Assert.Fail(FormatCellFailure(cell,
@@ -265,23 +264,21 @@ public class CombinatorialEngineTests
 /// </summary>
 public class CombinatorialDepthTwoTests
     {
-        public static IEnumerable<object[]> DepthTwoCells()
+        // Rows are cell KEYS, so xunit runs each cell as its own test case (MatrixCell.Key says why).
+        public static TheoryData<string> DepthTwoCells()
         {
-            return CombinatorialSchema.DepthTwoMatrix()
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthTwoMatrix());
         }
 
         [Trait("tier", "exhaustive")]
         [Theory]
         [MemberData(nameof(DepthTwoCells))]
-        public void DepthTwo_cell_compiles_and_maps(MatrixCell cell)
+        public void DepthTwo_cell_compiles_and_maps(string key)
         {
-            ArgumentNullException.ThrowIfNull(cell);
+            var cell = CombinatorialSchema.Cell(key);
 
-            var (diagnostics, generatedSource) = GeneratorTestHarness.Run(cell.Source);
+            // One driver run for the diagnostics and the emitted assembly (round 34 E7).
+            var (diagnostics, generatedSource, asm, emitErrors) = GeneratorTestHarness.RunAndEmit(cell.Source);
             var unexpectedErrors = diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id != "DWARF027")
                 .ToList();
@@ -298,7 +295,6 @@ public class CombinatorialDepthTwoTests
                 "\n" +
                 cell.Source);
 
-            var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
             Assert.True(asm is not null,
                 "Cell [" +
                 cell.BasicType +
@@ -373,9 +369,9 @@ public class ExtendedBehavioralFuzzTests
     {
         public static IEnumerable<object[]> Seeds()
         {
-            // Fast 40 (seeds 200-239, no overlap with existing) / deep 400 (seeds 200-599) —
-            // see DeepPopulation.ExtendedBehavioralSeeds.
-            return Enumerable.Range(200, DeepTier.Count(DeepPopulation.ExtendedBehavioralSeeds))
+            // 400 seeds, 200-599, no overlap with the other fuzz families' — see
+            // TestPopulation.ExtendedBehavioralSeeds.
+            return Enumerable.Range(200, TestPopulations.Count(TestPopulation.ExtendedBehavioralSeeds))
                 .Select(i => new object[]
                 {
                     i
@@ -422,6 +418,48 @@ public class ExtendedBehavioralFuzzTests
                 GraphOracleComparer.RenderValueDiff(diffs) +
                 "\n--- source ---\n" +
                 src);
+        }
+    }
+
+    // Round 34 (E12): CombinatorialEngineTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class CombinatorialEngineTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 0, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
+        }
+    }
+
+    public sealed class CombinatorialEngineTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 1, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
+        }
+    }
+
+    public sealed class CombinatorialEngineTestsPart2
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 2, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
+        }
+    }
+
+    public sealed class CombinatorialEngineTestsPart3
+    {
+        [Theory]
+        [MemberData(nameof(CombinatorialEngineTests.DepthOneIdentityCells), 3, MemberType = typeof(CombinatorialEngineTests))]
+        public void Identity_cell_compiles_emits_and_maps(string key)
+        {
+            CombinatorialEngineTests.IdentityCell(key);
         }
     }
 }

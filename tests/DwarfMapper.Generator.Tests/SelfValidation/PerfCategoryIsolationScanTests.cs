@@ -34,6 +34,16 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private static readonly Regex ScriptRun = new(@"scripts/[A-Za-z0-9_.-]+\.(?:ps1|sh)", RegexOptions.CultureInvariant);
 
+        private static readonly Regex SelectsPerf = new(@"--filter\s+[""']?Category=Perf[""'\s]", RegexOptions.CultureInvariant);
+
+        private static readonly Regex OneProjectAtATime = new(@"(?<![\w-])(?:-m|-maxcpucount|--maxcpucount|/m)[:=]1(?!\d)", RegexOptions.CultureInvariant);
+
+        private static readonly Regex PerfTrait = new(@"^\s*\[Trait\(""Category"",\s*""Perf""\)\]", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+        private static readonly Regex ReadsAllocationCounters = new(@"\bGC\.(?:GetAllocatedBytesForCurrentThread|GetTotalAllocatedBytes)\(", RegexOptions.CultureInvariant);
+
+        private static readonly Regex KeepsRuntimeDefaults = new(@"<DwarfKeepRuntimeDefaults>\s*true\s*</DwarfKeepRuntimeDefaults>", RegexOptions.CultureInvariant);
+
         [Fact]
         public void Every_test_run_CI_reaches_keeps_the_Perf_category_out_unless_it_selects_by_name()
         {
@@ -55,12 +65,39 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         /// <summary>
+        ///     The runs that DO time them select <c>Category=Perf</c> from the whole solution, and for that
+        ///     <c>dotnet test</c> starts every test project's host at once: ten hosts discovering their tests on a
+        ///     four-CPU runner while the one ratio test runs. Round 34 (A3) measured it in the perf-tests job's own shape
+        ///     (sdk:10.0.101, four CPUs): with the dispatch path settled, a phase still moved 1.75x when a neighbour's
+        ///     start-up landed on it. So each such run, in the workflows and in the scripts they run (housekeeping's
+        ///     stage 1c among them), takes one project at a time.
+        /// </summary>
+        [Fact]
+        public void Every_run_that_times_the_Perf_category_takes_one_test_project_at_a_time()
+        {
+            var perfRuns = TestInvocations().Where(i => SelectsPerf.IsMatch(i.Command)).ToList();
+
+            // Non-vacuity: the perf-tests job and housekeeping's stage 1c.
+            Assert.True(perfRuns.Count >= 2, $"found only {perfRuns.Count} run(s) selecting Category=Perf; the perf-tests job and housekeeping's stage 1c both should.");
+
+            var offenders = perfRuns.Where(i => !OneProjectAtATime.IsMatch(i.Command)).Select(i => i.Source + ": " + i.Command).ToList();
+
+            Assert.True(offenders.Count == 0,
+                "run(s) timing the Category=Perf ratio tests start every test project's host at once, so the neighbours' " +
+                "start-up decides the verdict: [" + string.Join(" | ", offenders) + "]. Add -m:1.");
+        }
+
+        /// <summary>
         ///     A mutation leg's initial test run is the whole suite as well, and a failure there now stops the leg
         ///     (<c>--break-on-initial-test-failure</c>, <see cref="MutationLaunchContractTests" />). PR #9's pipeline leg
         ///     stopped exactly so, on <c>InterfaceBucketTests</c>' ratio (255.1 to 394.8 ns). Stryker 4.16 takes a test
         ///     filter only from its config file (<c>test-case-filter</c>; its command line has no such option), so
         ///     every config carries it. It costs no score: in the last complete local runtime-leg report the test
-        ///     killed 11 mutants and was the sole killer of none.
+        ///     killed 11 mutants and was the sole killer of none. Round 34 checked all six legs against CI's reports from
+        ///     before the filter (run 40299439526) and after it (run 40477294097). The ratio test was the only recorded
+        ///     killer of three runtime mutants, but each was a bail artifact: Stryker stops a session at its first failing
+        ///     test, the flaky ratio test came first, and the filtered run kills all three with other tests. Its one
+        ///     generator kill was a static mutant in code it never runs. In the other legs it killed nothing.
         /// </summary>
         [Fact]
         public void Every_mutation_leg_keeps_the_Perf_category_out_of_its_runs()
@@ -80,6 +117,84 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "Stryker config(s) let the Category=Perf ratio tests into the leg's runs, where a timing oracle under " +
                 "mutation load fails the initial run and --break-on-initial-test-failure stops the leg: [" +
                 string.Join(", ", offenders) + "]. Add \"test-case-filter\": \"" + ExcludesPerf + "\" to the stryker-config object.");
+        }
+
+        /// <summary>
+        ///     Until round 34 two configs carried that filter under comments that denied it: the generator leg's "No
+        ///     'test-case-filter' and no 'test-projects' key appear here, deliberately", the runtime leg's "WHY THERE IS NO
+        ///     TEST FILTER". Whoever reads a comment to decide whether a filter may be added must not be told there is none.
+        /// </summary>
+        [Fact]
+        public void No_mutation_config_comment_denies_the_filter_it_carries()
+        {
+            var denial = new Regex(@"\bno\s+'?test-case-filter\b|\bno\s+test\s+filter\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            var configs = Directory.GetFiles(RepoPaths.Root, "stryker-config*.json");
+            Assert.True(configs.Length >= 6, $"found {configs.Length} Stryker config(s); each of the six legs has one.");
+
+            var offenders = new List<string>();
+            foreach (var path in configs)
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var carries = doc.RootElement.GetProperty("stryker-config").TryGetProperty("test-case-filter", out _);
+                var comment = doc.RootElement.TryGetProperty("comment", out var c) ? c.GetString() ?? "" : "";
+                if (carries && denial.Match(comment) is { Success: true } said) { offenders.Add(Path.GetFileName(path) + ": \"" + said.Value + "\""); }
+            }
+
+            Assert.True(offenders.Count == 0,
+                "Stryker config comment(s) say there is no test filter while the config carries one: [" + string.Join(", ", offenders) + "].");
+        }
+
+        /// <summary>
+        ///     Round 34 (E3) gives every test host three runtime settings in Directory.Build.targets: call counting from the
+        ///     start, no PGO pass, no background GC (<see cref="TestHostRuntimeTuningTests" />). A test whose oracle is a timing
+        ///     ratio or an allocation count measures the runtime itself, and those settings change it: PGO decides how interface
+        ///     dispatch is compiled, and the tier decides whether the JIT may keep an object off the heap. So every project
+        ///     holding such a test keeps the runtime's defaults (<c>DwarfKeepRuntimeDefaults</c>) and measures what a consumer
+        ///     runs. The population is built, not listed: every source file under tests/ that carries the Perf trait or reads
+        ///     the allocation counters, and the project above it.
+        /// </summary>
+        [Fact]
+        public void Every_project_that_measures_time_or_allocations_keeps_the_runtime_defaults()
+        {
+            var measuring = Directory.GetFiles(Path.Combine(RepoPaths.Root, "tests"), "*.cs", SearchOption.AllDirectories)
+                                     .Where(f => !IsBuildOutput(f))
+                                     .Where(f =>
+                                     {
+                                         var text = File.ReadAllText(f);
+                                         return PerfTrait.IsMatch(text) || ReadsAllocationCounters.IsMatch(text);
+                                     })
+                                     .Select(ProjectOf)
+                                     .Distinct(StringComparer.Ordinal)
+                                     .ToList();
+
+            // Non-vacuity: InterfaceBucketTests and the allocation contracts both live in IntegrationTests.
+            Assert.Contains(measuring, p => Path.GetFileName(p) == "DwarfMapper.IntegrationTests.csproj");
+
+            var offenders = measuring.Where(p => !KeepsRuntimeDefaults.IsMatch(File.ReadAllText(p)))
+                                     .Select(p => Path.GetRelativePath(RepoPaths.Root, p).Replace('\\', '/'))
+                                     .ToList();
+
+            Assert.True(offenders.Count == 0,
+                "test project(s) whose tests time the runtime or count its allocations run with the tuned test-host " +
+                "runtime, so their oracles measure a runtime no consumer runs: [" + string.Join(", ", offenders) + "]. Set " +
+                "<DwarfKeepRuntimeDefaults>true</DwarfKeepRuntimeDefaults> in the project, with the reason beside it.");
+        }
+
+        private static bool IsBuildOutput(string path)
+        {
+            var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return parts.Contains("bin", StringComparer.Ordinal) || parts.Contains("obj", StringComparer.Ordinal);
+        }
+
+        private static string ProjectOf(string sourceFile)
+        {
+            for (var dir = Path.GetDirectoryName(sourceFile); dir is not null; dir = Path.GetDirectoryName(dir))
+            {
+                var project = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
+                if (project is not null) { return project; }
+            }
+
+            throw new InvalidOperationException("no project file above " + sourceFile);
         }
 
         /// <summary>

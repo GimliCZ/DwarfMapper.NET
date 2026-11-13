@@ -16,15 +16,9 @@ namespace DwarfMapper.Testing
             int seed = 12345,
             int iterations = 100)
         {
-            if (forward is null)
-            {
-                throw new ArgumentNullException(nameof(forward));
-            }
+            ArgumentNullException.ThrowIfNull(forward);
 
-            if (backward is null)
-            {
-                throw new ArgumentNullException(nameof(backward));
-            }
+            ArgumentNullException.ThrowIfNull(backward);
 
             var rng = new Random(seed);
             for (var i = 0; i < iterations; i++)

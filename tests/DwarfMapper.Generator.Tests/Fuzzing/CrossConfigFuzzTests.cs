@@ -41,10 +41,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var attrArgs = a + ", " + b;
             var src = SyntheticSchema.GenerateBehavioralWithConfig(seed, attrArgs, SyntheticSchema.EmitMode.None);
 
-            var (diags, _) = GeneratorTestHarness.Run(src);
+            var (diags, _, asm, errors) = GeneratorTestHarness.RunAndEmit(src);
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-
-            var (asm, errors) = GeneratorTestHarness.EmitAssembly(src);
             Assert.True(asm is not null,
                 $"config pair [{attrArgs}] failed to emit: {string.Join(", ", errors.Select(e => e.Id))}\n{src}");
 
@@ -63,10 +61,10 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 $"config pair [{attrArgs}] not value-preserving:\n{CrossTypeComparer.Render(diff)}\n--- source ---\n{src}");
         }
 
-        // Fast 20 / deep 200 — see DeepPopulation.CrossConfigUpdateSeeds.
+        // 200 seeds — see TestPopulation.CrossConfigUpdateSeeds.
         public static IEnumerable<object[]> UpdateModeSeeds()
         {
-            return from seed in Enumerable.Range(0, DeepTier.Count(DeepPopulation.CrossConfigUpdateSeeds))
+            return from seed in Enumerable.Range(0, TestPopulations.Count(TestPopulation.CrossConfigUpdateSeeds))
                 from cfg in new[]
                 {
                     "ReferenceHandling = global::DwarfMapper.ReferenceHandlingStrategy.Preserve", "OnCycle = global::DwarfMapper.OnCycleStrategy.SetNull"
@@ -85,10 +83,8 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             // acyclic input (the mode only changes cycle handling, which acyclic data never exercises).
             var src = SyntheticSchema.GenerateBehavioralWithConfig(seed, cfg, SyntheticSchema.EmitMode.UpdateInto);
 
-            var (diags, _) = GeneratorTestHarness.Run(src);
+            var (diags, _, asm, errors) = GeneratorTestHarness.RunAndEmit(src);
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-
-            var (asm, errors) = GeneratorTestHarness.EmitAssembly(src);
             Assert.True(asm is not null,
                 $"seed={seed} cfg=[{cfg}] failed to emit: {string.Join(", ", errors.Select(e => e.Id))}\n{src}");
 

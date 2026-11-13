@@ -64,10 +64,7 @@ namespace DwarfMapper.Testing
             int seed = 12345,
             int iterations = 100)
         {
-            if (update is null)
-            {
-                throw new ArgumentNullException(nameof(update));
-            }
+            ArgumentNullException.ThrowIfNull(update);
 
             var rng = new Random(seed);
             for (var i = 0; i < iterations; i++)
@@ -98,10 +95,7 @@ namespace DwarfMapper.Testing
             int seed = 12345,
             int iterations = 100)
         {
-            if (update is null)
-            {
-                throw new ArgumentNullException(nameof(update));
-            }
+            ArgumentNullException.ThrowIfNull(update);
 
             var rng = new Random(seed);
             for (var i = 0; i < iterations; i++)

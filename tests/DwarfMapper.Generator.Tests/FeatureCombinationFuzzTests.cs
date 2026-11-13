@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using DwarfMapper.TestInfrastructure;
+using Xunit.Abstractions;
 
 namespace DwarfMapper.Generator.Tests
 {
@@ -21,6 +22,13 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class FeatureCombinationFuzzTests
     {
+        private readonly ITestOutputHelper _output;
+
+        public FeatureCombinationFuzzTests(ITestOutputHelper output)
+        {
+            _output = output;
+        }
+
         // Each feature contributes self-consistent source members, target members, method attributes, and any
         // helper methods. Member names are uniquely prefixed so features never collide when combined. The set
         // spans every member-level EMITTER: direct/rename, constant value, unflatten, deep path, conditional,
@@ -109,10 +117,10 @@ namespace DwarfMapper.Generator.Tests
                     i, j
                 }); // pairs
 
-            // Deep tier only (fast 2 / deep 3 — see DeepPopulation.FeatureCombinationSubsetOrder): the next
-            // complete structural tier, all C(16,3) = 560 triples, on every emit-path consumer of the full
-            // subsets. Fast keeps exactly singles+pairs+all — the surface where the deferred-member bugs hid.
-            if (DeepTier.Count(DeepPopulation.FeatureCombinationSubsetOrder) >= 3)
+            // Order 3 (see TestPopulation.FeatureCombinationSubsetOrder): all C(16,3) = 560 triples, on every
+            // emit-path consumer of the full subsets, on top of the singles and pairs where the deferred-member
+            // bugs hid. Every subset is Full_power_set_compiles_on_every_emit_path, in a job of its own.
+            if (TestPopulations.Count(TestPopulation.FeatureCombinationSubsetOrder) >= 3)
             {
                 for (var i = 0; i < n; i++)
                 for (var j = i + 1; j < n; j++)
@@ -142,25 +150,35 @@ namespace DwarfMapper.Generator.Tests
             }
         }
 
-        [Theory]
-        [MemberData(nameof(Combos))]
-        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        /// <summary>
+        ///     The rows are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): the 3,565 in one class
+        ///     ran alone for the last 14 s of the run they were in.
+        /// </summary>
+        private const int Parts = 4;
+
+        public static IEnumerable<object[]> Combos(int part)
+        {
+            return TheoryParts.Of(Combos(), part, Parts);
+        }
+
+        internal static void ResolvesAsExpected(string label, string kind, string refMode, int[] featureIdx)
         {
             _ = label;
             var src = BuildSource(kind, refMode, featureIdx);
-            var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
             var expected = ExpectedError(refMode, featureIdx);
             if (expected is not null)
             {
                 // A "should error" combination — confirm the exact diagnostic, cited.
+                var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
                 Assert.True(diags.Any(d => d.Id == expected),
                     $"Expected {expected} for '{label}', got: " + string.Join(", ", diags.Select(d => d.Id).Distinct()));
             }
             else
             {
-                // A valid combination — must compile clean with no error diagnostic.
-                Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-                GeneratorAssert.EmitsCompilableCode(src);
+                // A valid combination — must compile clean with no error diagnostic. One generator run answers both
+                // (round 34 E11); this ran Run for the diagnostics and EmitsCompilableCode, a second run, for the
+                // compile errors.
+                GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
             }
         }
 
@@ -173,9 +191,11 @@ namespace DwarfMapper.Generator.Tests
         public void Full_power_set_compiles_on_every_emit_path()
         {
             // The COMPLETE proof: ~262k parallel compilations (full 2^16 power set × 3 construction emit-paths
-            // + update-into), ~6 min wall-clock. Gated behind DWARF_FUZZ_FULL=1 so routine `dotnet test` stays
-            // fast — the always-on pairwise [Theory] above covers the interaction surface where bugs live.
-            // CI/nightly/on-demand runs the full exhaustion. Verified green: 262,144 combinations, 0 failures.
+            // + update-into), ~10 min wall-clock (10.5 min on 6 cores / 12 threads, 2026-10-27). Gated behind
+            // DWARF_FUZZ_FULL=1 so routine `dotnet test` stays fast — the always-on pairwise [Theory] above covers
+            // the interaction surface where bugs live.
+            // Runs nightly in ci.yml's own fuzz-exhaustion job, and locally in housekeeping's stage 2/4. Until
+            // round 34 this said "CI/nightly runs the full exhaustion" while no CI job set the variable.
             if (Environment.GetEnvironmentVariable("DWARF_FUZZ_FULL") != "1")
             {
                 return;
@@ -184,6 +204,7 @@ namespace DwarfMapper.Generator.Tests
             var n = Features.Length;
             var emitModes = Modes.Where(m => m.FullSubsets && m.Name != "strict").Select(m => m.Name).ToArray();
             var failures = new ConcurrentBag<string>();
+            var compiled = 0;
             Parallel.For(0,
                 1 << n,
                 mask =>
@@ -198,9 +219,15 @@ namespace DwarfMapper.Generator.Tests
                     var arr = sub.ToArray();
                     foreach (var mode in emitModes) CompileInto(failures, "construct", mode, arr);
                     CompileInto(failures, "update", "none", arr);
+                    Interlocked.Add(ref compiled, emitModes.Length + 1);
                 });
             Assert.True(failures.IsEmpty,
                 failures.Count + " power-set combination(s) produced non-compiling code, e.g.: " + string.Join(" | ", failures.Take(8)));
+
+            // Complete, not merely green: every subset on every path. The line below is what ci.yml's
+            // fuzz-exhaustion job reads to tell this run from the early return above.
+            Assert.Equal((1 << n) * (emitModes.Length + 1), compiled);
+            _output.WriteLine($"power set: {1 << n} subsets x {emitModes.Length + 1} emit paths = {compiled} compilations, 0 failures");
         }
 
         private static void CompileInto(ConcurrentBag<string> failures, string kind, string mode, int[] sub)
@@ -267,6 +294,48 @@ namespace DwarfMapper.Generator.Tests
             sb.Append(helpers);
             sb.Append("}\n");
             return sb.ToString();
+        }
+    }
+
+    // Round 34 (E12): FeatureCombinationFuzzTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class FeatureCombinationFuzzTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 0, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
+        }
+    }
+
+    public sealed class FeatureCombinationFuzzTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 1, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
+        }
+    }
+
+    public sealed class FeatureCombinationFuzzTestsPart2
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 2, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
+        }
+    }
+
+    public sealed class FeatureCombinationFuzzTestsPart3
+    {
+        [Theory]
+        [MemberData(nameof(FeatureCombinationFuzzTests.Combos), 3, MemberType = typeof(FeatureCombinationFuzzTests))]
+        public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
+        {
+            FeatureCombinationFuzzTests.ResolvesAsExpected(label, kind, refMode, featureIdx);
         }
     }
 }

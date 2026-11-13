@@ -224,24 +224,35 @@ namespace DwarfMapper.Generator.Tests
         // ── Malformed input, through the create map's own reader ─────────────────
 
         [Fact]
-        public void A_null_directive_argument_produces_no_report_and_no_crash()
+        public void A_null_directive_argument_is_reported_as_the_empty_name_and_never_rendered_as_null()
         {
-            // ReadFlattenGraphAttributes — the reader the create-map branch resolves with — requires both
-            // constructor arguments to be strings, so an application it never resolved is never reported as one
-            // it dropped. The gate calls that reader rather than re-parsing the attributes, which is what stops
-            // the word "null" appearing in a remedy. Both of this branch's generator crashes came from a second
-            // reader that did re-parse.
-            GeneratorAssert.DoesNotReport(Types +
-                                          """
+            // ReadFlattenGraphAttributes — the reader the create-map branch resolves with — reads a null name as the
+            // empty name (round 34 B, as d474e9f and fc58fb0 did for the pair-scoped readers). The gate calls that
+            // reader rather than re-parsing the attributes, so it reports exactly what it reports for "", and the
+            // word "null" still never appears in a remedy. Both of this branch's generator crashes came from a
+            // second reader that did re-parse.
+            static string Source(string arguments) => Types + $$"""
 
-                                          [DwarfMapper]
-                                          public partial class M
-                                          {
-                                              [FlattenGraph(null, null)]
-                                              public partial void Update(Src s, Dst d);
-                                          }
-                                          """,
-                "DWARF092");
+                                                                 [DwarfMapper]
+                                                                 public partial class M
+                                                                 {
+                                                                     [FlattenGraph({{arguments}})]
+                                                                     public partial void Update(Src s, Dst d);
+                                                                 }
+                                                                 """;
+
+            static string[] Reports(string source) =>
+                GeneratorTestHarness.Run(source).Diagnostics
+                    .Where(d => d.Id.StartsWith("DWARF", StringComparison.Ordinal))
+                    .Select(d => d.Id + ": " + d.GetMessage(CultureInfo.InvariantCulture))
+                    .OrderBy(x => x, StringComparer.Ordinal)
+                    .ToArray();
+
+            var withNull = Reports(Source("null, null"));
+
+            Assert.Equal(Reports(Source("\"\", \"\"")), withNull);
+            Assert.Contains(withNull, m => m.StartsWith("DWARF092", StringComparison.Ordinal));
+            Assert.DoesNotContain(withNull, m => m.Contains("(null", StringComparison.Ordinal));
         }
 
         [Fact]

@@ -57,11 +57,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Compile(string source, bool allowUnsafe = false)
         {
             var tree = CSharpSyntaxTree.ParseText(source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences()
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(DwarfMapperAttribute).Assembly));
 
             var compilation = CSharpCompilation.Create(
                 "BlitTestAsm_" + Guid.NewGuid().ToString("N"),
@@ -589,10 +586,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                          }
                          """;
             var tree = CSharpSyntaxTree.ParseText(source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>();
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences();
             var compilation = CSharpCompilation.Create(
                 "PtrTestAsm_" + Guid.NewGuid().ToString("N"),
                 new[]
@@ -690,7 +684,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                 },
                 new MetadataReference[]
                 {
-                    MetadataReference.CreateFromFile(typeof(object).Assembly.Location), MetadataReference.CreateFromFile(typeof(Vector2).Assembly.Location)
+                    GeneratorTestHarness.ReferenceTo(typeof(object).Assembly), GeneratorTestHarness.ReferenceTo(typeof(Vector2).Assembly)
                 },
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
@@ -1074,11 +1068,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             var trees = files
                 .Select(f => CSharpSyntaxTree.ParseText(f.Source, path: f.Path))
                 .ToArray();
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences()
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(DwarfMapperAttribute).Assembly));
 
             var compilation = CSharpCompilation.Create(
                 "BlitPartialTestAsm_" + Guid.NewGuid().ToString("N"),

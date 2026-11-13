@@ -35,11 +35,8 @@ namespace DwarfMapper.Generator.Tests
             Compile(string source, bool allowUnsafe = false)
         {
             var tree = CSharpSyntaxTree.ParseText(source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences()
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(DwarfMapperAttribute).Assembly));
 
             var compilation = CSharpCompilation.Create(
                 "LayoutTestAsm_" + Guid.NewGuid().ToString("N"),

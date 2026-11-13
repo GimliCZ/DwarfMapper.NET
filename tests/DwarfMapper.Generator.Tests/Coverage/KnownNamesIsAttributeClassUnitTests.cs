@@ -14,7 +14,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
     {
         private static readonly Compilation Compilation = CSharpCompilation.Create("IsAttributeClass",
             [CSharpSyntaxTree.ParseText("namespace DwarfMapper { public sealed class FlattenAttribute : System.Attribute { } public sealed class OtherAttribute : System.Attribute { } }")],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         [Fact]
         public void No_attribute_class_matches_nothing()

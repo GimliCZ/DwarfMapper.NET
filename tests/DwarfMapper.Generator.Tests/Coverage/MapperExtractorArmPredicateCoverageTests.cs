@@ -23,11 +23,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Compile(string source)
         {
             var tree = CSharpSyntaxTree.ParseText(source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences()
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(DwarfMapperAttribute).Assembly));
 
             var compilation = CSharpCompilation.Create(
                 "ArmPredicateTestAsm_" + Guid.NewGuid().ToString("N"),

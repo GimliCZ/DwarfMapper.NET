@@ -37,7 +37,7 @@ namespace DwarfMapper.Generator.Tests.Round31
         private static readonly MetadataReference FakeEfCore = CSharpCompilation.Create(
                 "Microsoft.EntityFrameworkCore",
                 [CSharpSyntaxTree.ParseText("namespace Microsoft.EntityFrameworkCore { public class DbContext { } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)],
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
             .ToMetadataReference();
 

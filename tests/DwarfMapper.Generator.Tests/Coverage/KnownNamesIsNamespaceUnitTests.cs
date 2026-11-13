@@ -15,7 +15,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
     {
         private static readonly Compilation Compilation = CSharpCompilation.Create("IsNamespace",
             [],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         [Fact]
         public void No_namespace_matches_nothing()

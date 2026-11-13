@@ -5,8 +5,11 @@
         <IsPackable>false</IsPackable>
         <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
         <!-- CA1515: test types need not be sealed/internal - xunit discovers public classes -->
-        <!-- CA1861: inline array literals are acceptable in test code -->
         <NoWarn>$(NoWarn);CA1707;CA1515</NoWarn>
+        <!-- Server GC, the one test project with it (round 34 hill-climb, round 4): every population sample compiles a
+             whole program and the samples run 4-way in parallel even inside a Stryker host, so workstation GC stopped
+             every sampling thread while one collected. 31.2 -> 27.1 s on four CPUs. ServerGcScopeScanTests holds the scope. -->
+        <ServerGarbageCollection>true</ServerGarbageCollection>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
@@ -31,9 +34,9 @@
         <Using Include="Xunit"/>
     </ItemGroup>
     <ItemGroup>
-        <!-- The DWARF_DEEP tier knob is ONE shared source of truth, linked (not copied) into every test
-             project that owns a dialable population; DeepTierSelfTests pins its catalog. -->
-        <Compile Include="..\Shared\DeepTier.cs" Link="Shared\DeepTier.cs"/>
+        <!-- The sized test populations are ONE shared source of truth, linked (not copied) into every test
+             project that owns one; TestPopulationsSelfTests pins every size. -->
+        <Compile Include="..\Shared\TestPopulations.cs" Link="Shared\TestPopulations.cs"/>
         <!-- RepoPaths is the shared repo-root walk (W6 exists to delete private copies; a linked file is the
              sanctioned way for a second test project to reuse it without a cross-test-project reference). -->
         <Compile Include="..\DwarfMapper.Generator.Tests\Contracts\RepoPaths.cs" Link="Shared\RepoPaths.cs"/>

@@ -15,10 +15,25 @@ namespace DwarfMapper.Generator.Tests.Framework
     {
         public static string Compute(GoldenCase c)
         {
+            return Compute(Run(c));
+        }
+
+        /// <summary>The case's source run through the generator the case names.</summary>
+        public static GeneratorRun Run(GoldenCase c)
+        {
             ArgumentNullException.ThrowIfNull(c);
 
             var generator = GeneratorRegistry.All.Single(g => g.Name == c.GeneratorName);
-            var run = GeneratorRunner.Run(generator.Create(), c.Source);
+            return GeneratorRunner.Run(generator.Create(), c.Source);
+        }
+
+        /// <summary>
+        ///     The fingerprint of a run already made, so a caller that inspects the run as well runs the generator
+        ///     once (round 34 E5: <c>GoldenCaseTests</c>).
+        /// </summary>
+        public static string Compute(GeneratorRun run)
+        {
+            ArgumentNullException.ThrowIfNull(run);
 
             var sb = new StringBuilder();
             sb.Append(run.AllOutputsConcatenated);

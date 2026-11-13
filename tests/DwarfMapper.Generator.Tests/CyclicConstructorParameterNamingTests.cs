@@ -482,9 +482,7 @@ namespace DwarfMapper.Generator.Tests
 
         private static readonly Compilation WalkCompilation = CSharpCompilation.Create("CyclicConstructorParameterWalk",
             [CSharpSyntaxTree.ParseText(WalkSource)],
-            AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location)),
+            GeneratorTestHarness.LoadedAssemblyReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
 
         private static INamedTypeSymbol Named(string metadataName) =>

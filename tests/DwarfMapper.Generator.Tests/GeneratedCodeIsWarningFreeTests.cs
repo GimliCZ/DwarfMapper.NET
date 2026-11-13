@@ -26,22 +26,27 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class GeneratedCodeIsWarningFreeTests
     {
-        public static IEnumerable<object[]> AllCells()
+        // Rows are cell KEYS, so xunit runs each cell as its own test case (MatrixCell.Key says why).
+        public static TheoryData<string> AllCells()
         {
-            return CombinatorialSchema.DepthOneMatrix()
-                .Concat(CombinatorialSchema.DepthTwoMatrix())
-                .Select(c => new object[]
-                {
-                    c
-                });
+            return CombinatorialSchema.Keys(CombinatorialSchema.DepthOneMatrix().Concat(CombinatorialSchema.DepthTwoMatrix()));
         }
 
-        [Theory]
-        [MemberData(nameof(AllCells))]
-        public void Combinatorial_cell_emits_warning_free_code(MatrixCell cell)
+        /// <summary>
+        ///     The cells are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): their 938 rows in
+        ///     one class took 16 s of build-test's 21 s run.
+        /// </summary>
+        private const int Parts = 4;
+
+        public static TheoryData<string> AllCells(int part)
         {
-            ArgumentNullException.ThrowIfNull(cell);
-            AssertClean(cell.Source, $"combinatorial cell [{cell.BasicType} / {cell.ShapeName} / {cell.Variant}]");
+            return CombinatorialSchema.Keys(TheoryParts.Of(
+                CombinatorialSchema.DepthOneMatrix().Concat(CombinatorialSchema.DepthTwoMatrix()), part, Parts));
+        }
+
+        internal static string Describe(MatrixCell cell)
+        {
+            return $"combinatorial cell [{cell.BasicType} / {cell.ShapeName} / {cell.Variant}]";
         }
 
         [Theory]
@@ -629,7 +634,7 @@ namespace DwarfMapper.Generator.Tests
             AssertClean(source, $"feature case [{feature}]");
         }
 
-        private static void AssertClean(string source, string what)
+        internal static void AssertClean(string source, string what)
         {
             var warnings = GeneratorTestHarness.GeneratedCodeWarnings(source);
 
@@ -643,6 +648,52 @@ namespace DwarfMapper.Generator.Tests
                     warnings
                         .Select(d => $"{d.Id} at {d.Location.SourceTree?.FilePath}: " + d.GetMessage(CultureInfo.InvariantCulture))
                         .Distinct(StringComparer.Ordinal)));
+        }
+    }
+
+    // Round 34 (E12): GeneratedCodeIsWarningFreeTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class GeneratedCodeIsWarningFreeTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(GeneratedCodeIsWarningFreeTests.AllCells), 0, MemberType = typeof(GeneratedCodeIsWarningFreeTests))]
+        public void Combinatorial_cell_emits_warning_free_code(string key)
+        {
+            var cell = CombinatorialSchema.Cell(key);
+            GeneratedCodeIsWarningFreeTests.AssertClean(cell.Source, GeneratedCodeIsWarningFreeTests.Describe(cell));
+        }
+    }
+
+    public sealed class GeneratedCodeIsWarningFreeTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(GeneratedCodeIsWarningFreeTests.AllCells), 1, MemberType = typeof(GeneratedCodeIsWarningFreeTests))]
+        public void Combinatorial_cell_emits_warning_free_code(string key)
+        {
+            var cell = CombinatorialSchema.Cell(key);
+            GeneratedCodeIsWarningFreeTests.AssertClean(cell.Source, GeneratedCodeIsWarningFreeTests.Describe(cell));
+        }
+    }
+
+    public sealed class GeneratedCodeIsWarningFreeTestsPart2
+    {
+        [Theory]
+        [MemberData(nameof(GeneratedCodeIsWarningFreeTests.AllCells), 2, MemberType = typeof(GeneratedCodeIsWarningFreeTests))]
+        public void Combinatorial_cell_emits_warning_free_code(string key)
+        {
+            var cell = CombinatorialSchema.Cell(key);
+            GeneratedCodeIsWarningFreeTests.AssertClean(cell.Source, GeneratedCodeIsWarningFreeTests.Describe(cell));
+        }
+    }
+
+    public sealed class GeneratedCodeIsWarningFreeTestsPart3
+    {
+        [Theory]
+        [MemberData(nameof(GeneratedCodeIsWarningFreeTests.AllCells), 3, MemberType = typeof(GeneratedCodeIsWarningFreeTests))]
+        public void Combinatorial_cell_emits_warning_free_code(string key)
+        {
+            var cell = CombinatorialSchema.Cell(key);
+            GeneratedCodeIsWarningFreeTests.AssertClean(cell.Source, GeneratedCodeIsWarningFreeTests.Describe(cell));
         }
     }
 }

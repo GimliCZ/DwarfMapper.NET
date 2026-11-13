@@ -438,7 +438,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var compilation = CSharpCompilation.Create(
                 "NoDocsProbe",
                 [CSharpSyntaxTree.ParseText("namespace NoDocs { public sealed class Thing { } }")],
-                [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+                [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)],
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
             using var image = new MemoryStream();

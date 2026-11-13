@@ -166,6 +166,19 @@ namespace DwarfMapper.Generator.Registry
             DiagnosticSeverity.Warning,
             true);
 
+        // The registry's DWARF008: a [MapProperty] that names a destination member the target does not have, or cannot
+        // write. The binding loop skipped such a name in silence, so the misspelled directive itself was never named:
+        // DWARFR02 at most, at the destination it was meant for, and nothing at all when another source member already
+        // satisfied that destination (round 34's silenced-checks inventory). An Error, as DWARF008 is: what the caller
+        // wrote binds nothing.
+        public static readonly DiagnosticDescriptor MapPropertyUnknownTarget = new(
+            "DWARFR17",
+            "[MapProperty] destination member not found",
+            "[MapProperty] destination member {0} does not exist or is not writable (names match exactly, including case)",
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
         // The registry writes its extension methods ON the source type: `ToDto(this Src<T> source)` declares no T, so a
         // generic source failed as CS0246 in a generated file with nothing naming the cause. The class model refuses
         // the same shape as DWARF054. IsGenericType is also true for a type nested in a generic type, which fails the

@@ -18,7 +18,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                                         namespace DwarfMapper { public sealed class ProvidesMapAttribute : System.Attribute { } }
                                         namespace Other { public sealed class ProvidesMapAttribute : System.Attribute { } }
                                         """)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         private static INamedTypeSymbol Named(string metadataName) =>
             Compilation.GetTypeByMetadataName(metadataName) ?? throw new InvalidOperationException(metadataName + " not found");

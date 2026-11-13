@@ -200,7 +200,7 @@ namespace DwarfMapper.Generator.Tests.Golden
         [MemberData(nameof(FeatureMarkers))]
         public void Feature_case_generates_output_that_proves_the_feature_fired(string featureId, string marker)
         {
-            var c = GoldenCorpus.Cases().Single(x => x.Id == "feat:" + featureId);
+            var c = GoldenCorpus.Case("feat:" + featureId);
             var generator = GeneratorRegistry.All.Single(g => g.Name == c.GeneratorName);
             var run = GeneratorRunner.Run(generator.Create(), c.Source);
             var output = run.AllOutputsConcatenated;

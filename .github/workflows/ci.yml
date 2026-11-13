@@ -3,8 +3,9 @@
 #
 # Linux jobs name `ubuntu-24.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` to
 # Ubuntu 26.04 over several weeks (2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside that window
-# two jobs of one run can land on different images. `ubuntu-26-canary` below tries 26.04 meanwhile. The pins move
-# once it has been green, in one commit with CiRunnerImagePinScanTests, which holds this rule.
+# two jobs of one run can land on different images. `ubuntu-26-canary` below runs 26.04, and since round 34 it is
+# blocking while the pins stay (the owner's choice, 2026-10-27). Moving them is a decision of its own, made in one
+# commit with CiRunnerImagePinScanTests, which holds this rule.
 name: CI
 on:
   push:
@@ -81,7 +82,7 @@ jobs:
       # --locked-mode (round-22 S1): restore must resolve EXACTLY the committed packages.lock.json graphs
       # or fail NU1004 — the repeatable-restore proof. The flag here is self-documentation; the load-bearing
       # wiring is Directory.Build.props' RestoreLockedMode on '$(CI)' == 'true', which GitHub sets for every
-      # job, so the IMPLICIT restores (surface-matrix's test, the Stryker legs' builds, codeql's build,
+      # job, so the IMPLICIT restores (the Stryker legs' builds, codeql's build,
       # CycloneDX, the AOT publishes) run locked too without per-job flags. The AOT `-r` publishes work
       # because every project in that P2P closure declares <RuntimeIdentifiers> so its lock file carries
       # both RID graphs. NuGetAudit (level low, mode all) runs inside these restores and NU1901–NU1904 are
@@ -89,10 +90,11 @@ jobs:
       # suppressed per-project with the reason in each csproj — bumping is license-blocked (v15+ is RPL-1.5).
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      # Category!=SurfaceMatrix keeps the executed surface cross-product (854 cells, its own job below) out
-      # of the default leg. It is excluded for isolation, not for speed — it is the one leg whose red is
-      # expected to be a list of findings rather than a regression, so mixing it into the ordinary run would
-      # make every build look broken.
+      # One way to run the suite (round 34; the owner, 2026-10-28: "so we have single way of testing entire
+      # infra"): every test, the surface matrix included, at the one size per population that
+      # tests/Shared/TestPopulations.cs holds, with the same filter in every job that runs the suite. The surface
+      # matrix had a job of its own while its red was expected to be a list of findings; it has been green and
+      # blocking since 2026-08-18, and its census is now measured here on every push.
       # Category!=Perf (round 31 T19) keeps the wall-clock ratio tests out of every per-push leg: a timing
       # oracle on a shared runner is nondeterministic (invariant R4), so those run in their own nightly job,
       # perf-tests, below. Applied to every plain `dotnet test` step here, so no leg can go red on a noisy
@@ -106,20 +108,21 @@ jobs:
       # reads JUnit XML only. Without it the upload below finds nothing and reports success.
       # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
       # show which tests fail and how often, which is precisely the run you must not skip.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
         continue-on-error: true
         id: tests
 
       # ── Publish coverage to Codecov ─────────────────────────────────────────
-      # PREPARATION, not yet the gate. The inline gate below still runs, deliberately: a replacement gate is
-      # not proven until it has produced a verdict on a real push, and removing enforcement before that is
-      # how a repository ends up with neither. The cutover — what to delete, and the evidence required first
-      # — is written down in Issues/round27/PLAN-hosted-reports.md.
+      # Codecov IS the coverage gate now. The inline gate this step once prepared to replace was deleted after
+      # Codecov had produced verdicts on real pushes (see "Coverage is gated by Codecov" below, and
+      # Issues/round27/PLAN-hosted-reports.md for the cutover and its evidence).
       #
       # fail_ci_if_error is FALSE on purpose. An upload failure means Codecov was unreachable; a coverage
       # regression means the code got worse. Conflating them teaches everyone to re-run red builds, which is
-      # the habit that makes a gate worthless. The blocking verdict is the STATUS CHECK, configured in
-      # codecov.yml, which simply does not appear if the upload never arrived.
+      # the habit that makes a gate worthless. The verdict is the STATUS CHECK, configured in codecov.yml,
+      # which simply does not appear if the upload never arrived. It blocks a merge only where the branch
+      # requires it: as of 2026-10-27 master requires no status check at all (round 34's inventory), which is
+      # the owner's setting to change.
       - name: Upload test results to Codecov
         # !cancelled() rather than always(): a cancelled run has no meaningful results, but a FAILED one has
         # the most meaningful results there are. Paired with continue-on-error on the test step above, a red
@@ -168,22 +171,6 @@ jobs:
       # RatchetInvariantScanTests.R5 fails the build if the two ever disagree. Cutover and the evidence it
       # needs: Issues/round27/PLAN-hosted-reports.md.
 
-  surface-matrix:
-    runs-on: ubuntu-24.04
-    steps:
-      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
-      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: '10.0.101'
-      # --blame-hang: the H7-f backstop, same rationale as in build-test.
-      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Mutation testing: ALL THREE legs, nightly ─────────────────────────────────────────────────────────
   # One matrix, six configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
@@ -236,6 +223,8 @@ jobs:
           - leg: generator    # measured 19:41 (2026-08-21, 12 cores; 85 static mutants re-run the suite)
             config: stryker-config.json
             timeout: 200
+            compile-only-mutated: true
+            reroll-bad-order: true
           - leg: doctooling   # measured 5:04-5:30 (2026-08-21, 12 cores)
             config: stryker-config.doctooling.json
             timeout: 60
@@ -256,6 +245,8 @@ jobs:
           - leg: pipeline     # measured 37:00 (2026-08-27, 12 cores, 236 tested mutants)
             config: stryker-config.pipeline.json
             timeout: 350
+            compile-only-mutated: true
+            reroll-bad-order: true
           # Round-29 testing-toolkit VERIFIERS. Added because DwarfMapper.Testing sat at 0 % mutation
           # coverage while Phase 4 put 189 lines of consumer-facing verification code into it — a verifier
           # that silently passes certifies a broken map. Scoped to the five verifier files, not the package:
@@ -315,6 +306,27 @@ jobs:
       # an initially failing test from the tests that may kill. Missing since round 29; CiToolPrerequisiteScanTests
       # now counts `dotnet stryker` as running the suite.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      # Compile only what the leg mutates (round 34). Stryker 4.16 mutates and compiles EVERY source of the project
+      # under test and drops what `mutate` excludes only afterwards: the generator leg created 16,314 mutants, rolled
+      # back 3,808 compile errors over 28 compile passes and threw 12,004 away - 2:20 of a four-CPU run, for mutants
+      # no leg tests. Stryker compiles a source carrying an <auto-generated> header without mutating it, so in this
+      # throwaway checkout every source the globs do not name gets one first (Set-UnmutatedSourcesGenerated in
+      # scripts/gate-checks.ps1): mutate and compile 2:20 -> 0:17 on four CPUs, the same mutants against the same
+      # tests. Only the generator-project legs, whose source scans were run against the marked tree; the other
+      # projects' legs keep the whole-project compile until theirs are. UnmutatedSourcesMarkingTests holds the
+      # function, MutationLaunchContractTests this step and its place before the launch.
+      #   The marking edits tracked sources, and "Assert the tracked tree survived the leg" below is `git diff`: the
+      # working tree against the INDEX. So the edits are staged here. That step then compares against the marked tree
+      # and still proves the run wrote nothing into a tracked file; unstaged, it would fail both legs on the marking
+      # itself (caught reading this job end to end before its first run on a runner, 2026-11-11: the container legs
+      # that verified the marking never ran the steps after Stryker).
+      - name: Compile only what this leg mutates
+        if: matrix.compile-only-mutated
+        env:
+          CONFIG: ${{ matrix.config }}
+        run: |
+          pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Set-UnmutatedSourcesGenerated -ConfigFile $env:CONFIG'
+          git add --update
       # Exits non-zero when the score falls below the config's thresholds.break — each leg keeps its own
       # measured floor (see each config's comment for the measurement it came from, and for why an older,
       # higher number must not be "restored": the runtime leg's 66 counted load-induced timeouts on mutants
@@ -336,9 +348,18 @@ jobs:
       # no later step runs after that signal. This step's live log is the one record that survives, so a
       # background loop writes memory, disk and the largest processes into it every 30 s. It reads and prints,
       # never fails the step, and stops with Stryker.
+      #
+      # REROLL (round 34, the legs on the generator project): Stryker visits the test projects in one order per
+      # launch, drawn from its parallel project analysis, and the draw that puts CompilerTests ahead of
+      # Generator.Tests took the same leg's mutant phase from 20:55 to 48:29 (3 of 12 full legs drew it).
+      # Invoke-StrykerRerollingBadOrder launches the same command, reads the order from the two projects' test hosts
+      # in Stryker's discovery and initial test run (before anything is mutated), and relaunches on that draw - at
+      # most three launches, the last one kept. Same tests, same mutants, same statuses; a killed launch writes no
+      # report, and the steps below take the newest one.
       - name: Run Stryker (with a resource trace)
         env:
           CONFIG: ${{ matrix.config }}
+          REROLL: ${{ matrix.reroll-bad-order }}
         run: |
           ( set +e
             trap 'kill "$nap" 2>/dev/null; exit 0' TERM
@@ -352,7 +373,11 @@ jobs:
             done ) &
           trace=$!
           rc=0
-          dotnet stryker --config-file "$CONFIG" --break-on-initial-test-failure || rc=$?
+          if [ "$REROLL" = true ]; then
+            pwsh -NoProfile -NonInteractive -Command '. ./scripts/gate-checks.ps1; exit (Invoke-StrykerRerollingBadOrder -ConfigFile $env:CONFIG)' || rc=$?
+          else
+            dotnet stryker --config-file "$CONFIG" --break-on-initial-test-failure || rc=$?
+          fi
           kill "$trace" 2>/dev/null || true
           wait "$trace" 2>/dev/null || true
           exit "$rc"
@@ -456,25 +481,20 @@ jobs:
           # 2026-10-16 it accepted the testing leg's 87.8 MB and refused the pipeline leg's 116 MB with 413. That
           # 116 MB was the explicit `coveredBy` lists an initial test failure causes (see the ilverify step).
           REPORT="$report" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Write-DashboardReport -Report $env:REPORT -Out dashboard-report.json'
-          status=$(curl -sS -o dashboard-response.json -w '%{http_code}' -X PUT \
-            "https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module" \
-            -H 'Content-Type: application/json' \
-            -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
-            --data-binary @dashboard-report.json)
-          cat dashboard-response.json; echo
-          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
-            # This step has never run before this workflow first reaches master, and exactly one thing in it is
-            # unverified: `?module=`. The endpoint and the X-Api-Key header are documented; the module
-            # parameter's SPELLING is not, so a first-contact 4xx most likely means that name is wrong rather
-            # than that anything is broken. Say so here, with the pieces needed to fix it in one edit, instead
-            # of leaving six red legs reporting an opaque status code.
-            echo "::error::${{ matrix.leg }}: dashboard upload returned HTTP $status."
-            echo "PUT https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
-            echo "Response body is above. The URL SHAPE is documentation-verified - the dashboard's HTTP API"
-            echo "documents exactly '\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx"
-            echo "suspect the API KEY or the project name before the parameter. The report itself was measured"
-            echo "and gated before this step ran and is attached as an artifact, so a failed upload loses no"
-            echo "measurement: fix the credential or the name and the next nightly publishes."
+          url="https://dashboard.stryker-mutator.io/api/reports/$project/$REF_NAME?module=$module"
+          # Send-DashboardReport sends the report once more, after a pause, when the dashboard gave no answer
+          # about it (a 5xx or no connection), and fails at once on a 4xx (DashboardUploadTests). On 2026-10-27
+          # two legs that had measured and gated everything went red on a 504 here.
+          if ! URL="$url" pwsh -NoProfile -Command '. ./scripts/gate-checks.ps1; Send-DashboardReport -Url $env:URL -Payload dashboard-report.json -Response dashboard-response.json'; then
+            # The module parameter's spelling is proven: on 2026-10-27 the dashboard's badges read a separate
+            # score for each of the six modules. So a 4xx points at the key or the project name.
+            echo "::error::${{ matrix.leg }}: the dashboard upload failed; the status and the response body are above."
+            echo "PUT $url"
+            echo "The URL SHAPE is documentation-verified - the dashboard's HTTP API documents exactly"
+            echo "'\$BASE_URL/api/reports/\$PROJECT/\$VERSION?module=\$MODULE_NAME' - so on a 4xx suspect the API KEY"
+            echo "or the project name. A 5xx or a failed connection was already sent twice. The report itself was"
+            echo "measured and gated before this step ran and is attached as an artifact, so a failed upload loses"
+            echo "no measurement: the next nightly publishes."
             exit 1
           fi
           # NOT asserted: anything about the response BODY. The dashboard documents the endpoint and the module
@@ -491,19 +511,19 @@ jobs:
           name: mutation-report-${{ matrix.leg }}
           path: StrykerOutput/**/reports/mutation-report.*
 
-  # ── The nightly DEEP TIER: DWARF_DEEP suite + coverage floors + ILVerify ──────────────────────────────
-  # The other half of the nightly (round-21 T5): the deep test tier (every registered fuzz/property/torture
-  # population multiplied per tests/Shared/DeepTier.cs — 15,786 tests vs the fast tier's ~7,700), coverage
-  # collected in the SAME run and gated against the measured per-assembly floors, and ILVerify over the
-  # shipped runtime + a generated-consumer assembly. The fast per-push jobs are untouched by this tier.
+  # ── The nightly suite gates: coverage floors + ILVerify + benchmark smoke + NoWarn audit ────────────────
+  # The other half of the nightly (round-21 T5): the suite with coverage collected in the SAME run and gated
+  # against the measured per-assembly floors, ILVerify over the shipped runtime + a generated-consumer assembly,
+  # the benchmark smoke and the NoWarn audit. Until round 34 this was the only job that ran the deep populations;
+  # since then every run uses them (tests/Shared/TestPopulations.cs), build-test included, and the job keeps its
+  # name.
   #
   # The job body is ONE housekeeping invocation on purpose: `-Nightly` pins exactly this recipe
-  # (-Deep -Coverage -ILVerify, exhaustion/AOT skipped), so a maintainer reproduces the nightly locally
+  # (-Coverage -ILVerify -BenchSmoke and the NoWarn audit, exhaustion/AOT skipped), so a maintainer reproduces the
+  # nightly locally
   # with one switch and the CI job and the local gate cannot drift apart — the same reason the mutation
-  # guard is mirrored rather than reinvented. Unlike build-test, this runs the sln WITHOUT the
-  # SurfaceMatrix exclusion, exactly as housekeeping always has locally: the matrix is green and blocking
-  # now, and the deep tier wants the whole population. The floors inside are MEASURED fast-tier values;
-  # deep coverage is a superset, so the gate can only be tighter than its measurement, never looser.
+  # guard is mirrored rather than reinvented. The floors inside were MEASURED on the fast tier; the full
+  # populations cover a superset, so the gate can only be tighter than its measurement, never looser.
   deep-test:
     runs-on: ubuntu-24.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
@@ -594,7 +614,10 @@ jobs:
           dotnet-version: '10.0.101'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
+      # One test project at a time (-m:1). Otherwise the solution starts every project's test host at once, ten of them
+      # discovering their tests on four CPUs while the one ratio test runs, and their start-up lands on a timed phase:
+      # measured in this job's shape in round 34 (A3), a phase moved 1.7x that way with the dispatch path settled.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build -m:1 --filter "Category=Perf" --blame-hang --blame-hang-timeout 5m --logger "trx" --results-directory PerfResults
       - name: Assert the Perf lane ran at least one test
         run: |
           set -euo pipefail
@@ -604,6 +627,87 @@ jobs:
             echo "::error::the Category=Perf filter matched no test, so this lane proved nothing." >&2
             exit 1
           fi
+
+  # ── The complete feature-combination proof (round 34) ──────────────────────────────────────────────────
+  # FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path compiles every subset of the
+  # feature set (2^16) on every member-assigning emit path, ~262k compilations. It is gated behind
+  # DWARF_FUZZ_FULL=1 so routine runs stay fast, and until round 34 no CI job set it: housekeeping -Nightly
+  # skips the exhaustion stage (deep-test's 45-minute budget has no room for it) while the test's own comment
+  # said CI ran it. Its own job now: nightly, dispatch, or a `full-ci` PR, like the rest of the expensive tier.
+  #
+  # The vacuity guard reads the line the test writes only after the whole set compiled: without the variable
+  # the test returns at once, and that reads as a pass.
+  fuzz-exhaustion:
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement on a hosted runner. Measured locally on 2026-10-27: the whole set in 10.5 min
+    # on 6 cores / 12 threads. The compilations run in parallel, so a 4-vCPU runner should take about three times
+    # that, plus ~4 min of restore and build. 90 leaves room for a cold cache and a slow runner; the first full-ci
+    # run pins it. The hang timeout sits below the job's, so a real hang still leaves a dump.
+    timeout-minutes: 90
+    env:
+      DWARF_FUZZ_FULL: '1'
+      # Server GC (round 34, ServerGcScopeScanTests): the power set's compilations run in parallel and allocate heavily,
+      # and workstation GC stops every thread while one collects. 6:19 -> 5:05 on 12 logical CPUs; on 4, the deep
+      # tier, the same kind of load, went 80.0 -> 68.2 s. Never in a runtimeconfig: Stryker's serial sessions are slower
+      # under it.
+      DOTNET_gcServer: '1'
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-restore
+      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path" --blame-hang --blame-hang-timeout 75m --logger "trx" --results-directory FuzzResults
+      - name: Assert the whole power set compiled
+        run: |
+          set -euo pipefail
+          if ! grep -ho 'power set: [0-9]* subsets x [0-9]* emit paths = [0-9]* compilations' FuzzResults/*.trx; then
+            echo "::error::the power-set test reported no complete run: DWARF_FUZZ_FULL did not reach it, or the filter matched nothing." >&2
+            exit 1
+          fi
+
+  # ── Instruction-set matrix (round 34) ──────────────────────────────────────────────────────────────────
+  # scripts/isa-matrix.ps1 runs the runtime suites under five instruction-set configurations (the host's,
+  # 256-bit, 128-bit, SSE only, and no hardware intrinsics at all), so the scalar tails behind the SIMD fast
+  # paths execute under test. It ran only by hand until round 34. InstructionSetMatrixTests asserts that each
+  # configuration really applied, so the matrix cannot pass as five runs of one configuration, and the script
+  # fails when any configuration does.
+  isa-matrix:
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+    # ESTIMATE, not a measurement on a hosted runner: restore and build ~4 min, then two runtime suites five times
+    # over, which took 50 s together on 6 cores / 12 threads (2026-10-27). 30 leaves room for a cold cache.
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - shell: pwsh
+        run: ./scripts/isa-matrix.ps1
 
   aot-trim-gate:
     strategy:
@@ -653,7 +757,8 @@ jobs:
           fi
           echo "NativeAOT confirmed: no managed assembly, no runtimeconfig.json in aot-out."
       # Publishing proves it COMPILES trim/AOT-clean; it says nothing about behaviour. The sample is written
-      # as a behavioural gate (36 `return 1` sites) and was never executed, so CORRECTNESS.md's "runs a
+      # as a behavioural gate (every check returns 1 on failure; AotSampleGateScanTests holds that, after two
+      # printed an ERROR and exited 0) and was never executed, so CORRECTNESS.md's "runs a
       # behavioural gate over the published native binary" was untrue until this step existed.
       - name: Execute the published AOT binary (behavioural gate)
         shell: bash
@@ -701,13 +806,11 @@ jobs:
   # CS9057. Measured locally: referencing 5.6.0 while building on SDK 10.0.101 fails with exactly that,
   # which is why this leg needs its own, newer SDK and cannot live in build-test.
   #
-  # NON-BLOCKING ON PURPOSE, FOR NOW. It was authored without a machine that has a newer 10.0.x SDK, so its
-  # first real run happens here. Flip `continue-on-error` to false once it has been seen green — a gate that
-  # cannot fail is decoration, and leaving it like this permanently would be exactly the kind of thing the
-  # rest of this pipeline exists to prevent.
+  # BLOCKING since round 34. It was authored non-blocking, without a machine that had a newer 10.0.x SDK, to be
+  # flipped "once it has been seen green". It was green on every master nightly read for the flip (2026-10-22 to
+  # 10-27, run 40477294097 among them), so its continue-on-error came off: a gate that cannot fail is decoration.
   roslyn-forward-compat:
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -770,9 +873,8 @@ jobs:
           else
             echo "no new diagnostics: the newer compiler agrees with the pinned one"
           fi
-      # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
-      # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
-      # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)
+      # The suite as build-test runs it (one way to run it, round 34): this leg asks "does the generator still
+      # LOAD in a newer compiler", over the same tests.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
       # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
       # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
@@ -780,7 +882,7 @@ jobs:
       # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
       # stays loud; every job that can reach it gets the tool.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   codeql:
     runs-on: ubuntu-24.04
@@ -1014,10 +1116,8 @@ jobs:
   #
   # NOT per-push, deliberately: runner cost and wall-clock. The plan's budget puts these at ~10 min each.
   #
-  # NO `Category!=SurfaceMatrix` filter, unlike build-test and following deep-test's precedent instead:
-  # the nightly tier wants the whole population, the matrix is green and blocking now, and splitting it
-  # into a second cross-OS job to preserve the isolation argument would double the runner cost for a leg
-  # whose whole purpose is breadth.
+  # The suite as every other job runs it (one way to run it, round 34): the whole population, the surface
+  # matrix included.
   #
   # NO coverage gate here either: the floors are measured on one platform and enforced by deep-test. A
   # second, differently-measured coverage number would be a second thing to keep in sync, and R1's
@@ -1053,8 +1153,10 @@ jobs:
     # with Category!=SurfaceMatrix (the matrix adds ~25 s, so ~81 s for the unfiltered run this leg does).
     # A ~4-core hosted runner is ~3x on the build/test parts and pays a cold NuGet restore on top:
     # reckon ~1 min SDK setup + ~2 min restore + ~3 min build + ~4 min test ≈ 10 min, which is also the
-    # plan's own budget figure. Doubled -> 20. Replace with the first real per-OS wall-clocks.
-    timeout-minutes: 20
+    # plan's own budget figure. Doubled -> 20. Round 34 (E14) made every run the full population: on four
+    # CPUs in the sdk:10.0.101 container the suite went 57 s -> 2:01, about double, so reckon ~8 min of test and
+    # ~14 min in all. Doubled -> 30. Replace with the first real per-OS wall-clocks.
+    timeout-minutes: 30
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -1103,13 +1205,13 @@ jobs:
   # compat asks that question one 10.0.x patch ahead; this asks it one MAJOR ahead, on the .NET 11 preview
   # channel (11.0.100-preview.7 was the published preview SDK when this leg was written).
   #
-  # NON-BLOCKING ON PURPOSE, FOR NOW — a deliberate clone of roslyn-forward-compat's shape and of the
-  # discipline stated in its own comment. FLIP `continue-on-error` TO FALSE once this leg has been seen
-  # GREEN on pushed master, citing that run id in the flip commit; that is the Z3 precedent and it is the
-  # same obligation. A gate that cannot fail is decoration. Until then, understand what a red here means:
-  # it is INFORMATION about a future SDK, not a regression in this commit.
+  # BLOCKING since round 34. It was authored non-blocking, to be flipped "once this leg has been seen GREEN on
+  # pushed master, citing that run id in the flip commit" (the Z3 precedent). Run 40477294097 (master,
+  # b58c6e3, 2026-10-27) is that run, and the leg was green on every nightly read for the flip (2026-10-22 to
+  # 10-27). A red here is still about a future SDK rather than a regression in the commit under test, but it now
+  # has to be answered, as the next paragraph explains, instead of being read past.
   #
-  # It is expected to be red at first, and for a reason worth naming so nobody "fixes" it wrongly:
+  # A red can come for a reason worth naming so nobody "fixes" it wrongly:
   # Directory.Build.props sets TreatWarningsAsErrors with AnalysisLevel=latest-all and AnalysisMode=All,
   # so every analyzer rule a new SDK ADDS arrives as a build error. That is a real forward-compat signal
   # (a consumer on the preview SDK compiling our analyzers sees the same thing), but it is a different
@@ -1131,12 +1233,12 @@ jobs:
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci')
-    continue-on-error: true
     # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
     # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
     # UNPINNED restore. The plan budgets ~5 min; reckon ~12 min on a hosted runner and take 20 so the leg
-    # cannot die of its own download. Replace with the first real wall-clock.
-    timeout-minutes: 20
+    # cannot die of its own download. Round 34 (E14) doubled the suite (57 s -> 2:01 on four CPUs, every run the
+    # full population), so ~16 min; take 30. Replace with the first real wall-clock.
+    timeout-minutes: 30
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -1192,8 +1294,8 @@ jobs:
           else
             echo "no new diagnostics: the preview compiler agrees with the pinned one"
           fi
-      # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
-      # still LOADS and EMITS under the next major, and the matrix has its own job.
+      # The suite as build-test runs it (one way to run it, round 34): the question here is whether the
+      # generator still LOADS and EMITS under the next major, over the same tests.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
       # ilverify, for the same reason build-test installs it: this job runs the suite UNFILTERED, so it
       # reaches EmittedIlIsVerifiableTests, which by design FAILS LOUDLY rather than skipping when the tool
@@ -1201,7 +1303,7 @@ jobs:
       # install to build-test only, so this job went red the first time the round-29 PR reached CI. The rule
       # stays loud; every job that can reach it gets the tool.
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
   # ── Ubuntu 26.04 canary: does this pipeline survive the `ubuntu-latest` move? ───────────────────────────
   # Every other Linux job is pinned to ubuntu-24.04 (the note at the top of this file). This one runs the
@@ -1211,12 +1313,12 @@ jobs:
   # (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29, Python 3.12 -> 3.14. PowerShell and
   # the preinstalled .NET SDKs are the same, and the SDK used is the pinned 10.0.101 either way.
   #
-  # NON-BLOCKING ON PURPOSE, like roslyn-forward-compat: the image's own breakage must not red a PR that
-  # changed nothing. Once it has been green for a few nights, move every pin to ubuntu-26.04 in one commit with
-  # CiRunnerImagePinScanTests, and delete this job.
+  # BLOCKING since round 34, by the owner's choice (2026-10-27). It was authored non-blocking so the image's own
+  # breakage could not red a PR that changed nothing, and it was green on every nightly read for the flip
+  # (2026-10-22 to 10-27). The other Linux jobs stay pinned to ubuntu-24.04; this is the one job that runs
+  # 26.04, and now a break there fails the run instead of passing unread.
   ubuntu-26-canary:
     runs-on: ubuntu-26.04
-    continue-on-error: true
     # ESTIMATE from PR #7's last run on ubuntu-24.04 (2026-10-12): build-test 4.5 min, the linux AOT leg 1 min.
     # 30 leaves room for a slower new image and a cold cache.
     timeout-minutes: 30
@@ -1236,7 +1338,7 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix&Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
       - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -warnaserror -o aot-out
       - name: Assert the publish really was NativeAOT, then execute it (aot-trim-gate's two checks)
         run: |

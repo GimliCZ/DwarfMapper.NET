@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-#pragma warning disable CA1815, CA1062, CA2225, CA1305, IDE0079
 namespace DwarfMapper.IntegrationTests
 {
+    // CA2225/CA1062: the strong types' conversion operators are written the way a consumer's usually are, with
+    // no named alternate (ToInt32) and no null check, because that is the shape the user-conversion path maps.
+#pragma warning disable CA2225, CA1062
     // A strong-type with a user-defined IMPLICIT operator (e.g. a UserId strong-type -> int DTO field).
     public sealed class UcId
     {
@@ -34,6 +36,8 @@ namespace DwarfMapper.IntegrationTests
             return (int)m._cents;
         }
     }
+
+#pragma warning restore CA2225, CA1062
 
     public sealed class UcSrc
     {

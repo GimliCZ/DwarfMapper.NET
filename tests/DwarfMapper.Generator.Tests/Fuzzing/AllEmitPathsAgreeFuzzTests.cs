@@ -13,20 +13,29 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
     ///     exactly the Preserve/SetNull/update-into value-regression class that historically hid behind compile-only
     ///     fuzz coverage).
     /// </summary>
-    public class AllEmitPathsAgreeFuzzTests
+    public static class AllEmitPathsAgreeFuzzTests
     {
-        // Fast 50 / deep 250 (×5, not ×10 — ~300 ms per seed) — see DeepPopulation.AllEmitPathsSeeds.
+        // 250 seeds — see TestPopulation.AllEmitPathsSeeds.
         public static IEnumerable<object[]> Seeds()
         {
-            return Enumerable.Range(0, DeepTier.Count(DeepPopulation.AllEmitPathsSeeds)).Select(i => new object[]
+            return Enumerable.Range(0, TestPopulations.Count(TestPopulation.AllEmitPathsSeeds)).Select(i => new object[]
             {
                 i
             });
         }
 
-        [Theory]
-        [MemberData(nameof(Seeds))]
-        public void All_emit_modes_agree_on_acyclic_input(int seed)
+        /// <summary>
+        ///     The seeds are dealt into four classes (round 34 E12, <see cref="TheoryParts" />): in one class the
+        ///     250 took 30 s, the longest class after the feature combinations.
+        /// </summary>
+        private const int Parts = 4;
+
+        public static IEnumerable<object[]> Seeds(int part)
+        {
+            return TheoryParts.Of(Seeds(), part, Parts);
+        }
+
+        internal static void AllEmitModesAgree(int seed)
         {
             var modes = new[]
             {
@@ -88,6 +97,48 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 Assert.True(diff.Count == 0,
                     $"seed={seed} mode={mode} diverged from None:\n{CrossTypeComparer.Render(diff)}");
             }
+        }
+    }
+
+    // Round 34 (E12): AllEmitPathsAgreeFuzzTests's heavy theory, dealt into parts by TheoryParts so the parts run in
+    // parallel; each part is a class of its own because xunit runs one class's tests one after another.
+    public sealed class AllEmitPathsAgreeFuzzTestsPart0
+    {
+        [Theory]
+        [MemberData(nameof(AllEmitPathsAgreeFuzzTests.Seeds), 0, MemberType = typeof(AllEmitPathsAgreeFuzzTests))]
+        public void All_emit_modes_agree_on_acyclic_input(int seed)
+        {
+            AllEmitPathsAgreeFuzzTests.AllEmitModesAgree(seed);
+        }
+    }
+
+    public sealed class AllEmitPathsAgreeFuzzTestsPart1
+    {
+        [Theory]
+        [MemberData(nameof(AllEmitPathsAgreeFuzzTests.Seeds), 1, MemberType = typeof(AllEmitPathsAgreeFuzzTests))]
+        public void All_emit_modes_agree_on_acyclic_input(int seed)
+        {
+            AllEmitPathsAgreeFuzzTests.AllEmitModesAgree(seed);
+        }
+    }
+
+    public sealed class AllEmitPathsAgreeFuzzTestsPart2
+    {
+        [Theory]
+        [MemberData(nameof(AllEmitPathsAgreeFuzzTests.Seeds), 2, MemberType = typeof(AllEmitPathsAgreeFuzzTests))]
+        public void All_emit_modes_agree_on_acyclic_input(int seed)
+        {
+            AllEmitPathsAgreeFuzzTests.AllEmitModesAgree(seed);
+        }
+    }
+
+    public sealed class AllEmitPathsAgreeFuzzTestsPart3
+    {
+        [Theory]
+        [MemberData(nameof(AllEmitPathsAgreeFuzzTests.Seeds), 3, MemberType = typeof(AllEmitPathsAgreeFuzzTests))]
+        public void All_emit_modes_agree_on_acyclic_input(int seed)
+        {
+            AllEmitPathsAgreeFuzzTests.AllEmitModesAgree(seed);
         }
     }
 }

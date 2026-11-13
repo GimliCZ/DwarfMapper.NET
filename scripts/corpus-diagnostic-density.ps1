@@ -58,9 +58,15 @@ if (-not (Test-Path $target)) {
 # task was editing the classifier's layout table. A number quoted without the revision it was measured against
 # is not evidence, so the script emits the revision itself rather than trusting whoever pastes the table.
 $head = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
-$dirty = @(& git -C $repoRoot status --porcelain -- src 2>$null | Where-Object { $_ })
-
-Write-Output ("Generator revision: {0}{1}" -f $head, $(if ($dirty) { ' + UNCOMMITTED src/ changes' } else { ' (src/ clean)' }))
+if ($LASTEXITCODE -ne 0 -or -not $head) {
+    # Without git there is no revision to quote and no way to tell a clean src/ from a dirty one, so say that
+    # rather than print an empty revision as "(src/ clean)".
+    Write-Output "Generator revision: UNKNOWN (git failed here); these counts cannot be tied to a revision."
+    $dirty = @()
+} else {
+    $dirty = @(& git -C $repoRoot status --porcelain -- src 2>$null | Where-Object { $_ })
+    Write-Output ("Generator revision: {0}{1}" -f $head, $(if ($dirty) { ' + UNCOMMITTED src/ changes' } else { ' (src/ clean)' }))
+}
 foreach ($change in $dirty) {
     Write-Output "  $change"
 }

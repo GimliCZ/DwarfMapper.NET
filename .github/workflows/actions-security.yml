@@ -6,10 +6,11 @@
 # permissions, credential persistence in checkout. zizmor finds those statically. Its SARIF lands in the repository's
 # code-scanning view next to CodeQL's.
 #
-# REPORTING MODE, deliberately: findings do not fail the job. The first run's findings are triaged by the owner (the
-# baseline), and only then does this become blocking — flipping it earlier would turn a first measurement into a wall,
-# the mistake preview-sdk-canary and roslyn-forward-compat both document. What DOES fail the job is the tool not
-# producing a report at all: "no SARIF" must never read as "no findings".
+# BLOCKING since round 34. It was authored in reporting mode, to become blocking once the owner had triaged the first
+# run's findings (the baseline). Every run read for the flip, six on master and PR #11 on 2026-10-27, reported none, so
+# there was nothing to triage. An open finding now fails the job: fix it, or suppress it in the workflow's text with
+# `# zizmor: ignore[<rule>]` and the reason beside it, where review sees it. The tool not producing a report fails it
+# too: "no SARIF" must never read as "no findings". The gate is Assert-ZizmorReportClean in scripts/gate-checks.ps1.
 #
 # Actions are pinned to full commit SHAs; the trailing `# vN` is the human-readable version. Bump BOTH together.
 name: actions-security
@@ -36,23 +37,18 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      # Pinned by version, like every tool whose output feeds a gate here. `|| true` is the reporting mode: zizmor
-      # exits non-zero WHEN IT HAS FINDINGS, which is not a failure of this job. The next step is what fails.
+      # Pinned by version, like every tool whose output feeds a gate here. zizmor exits non-zero WHEN IT HAS
+      # FINDINGS; `|| true` keeps the report it wrote, and the next step is what fails the job on them.
       - name: Run zizmor
         run: pipx run zizmor==1.30.1 --format sarif . > zizmor.sarif || true
-      - name: Assert zizmor produced a report
+      - name: Fail on a missing report or any open finding
+        shell: pwsh
         run: |
-          set -euo pipefail
-          python3 - <<'PYEOF'
-          import json
-          with open("zizmor.sarif", encoding="utf-8") as fh:
-              report = json.load(fh)
-          runs = report.get("runs") or []
-          if not runs:
-              raise SystemExit("zizmor.sarif has no runs: the tool did not analyse anything, so no finding count means anything")
-          print("zizmor findings:", sum(len(r.get("results") or []) for r in runs))
-          PYEOF
+          . ./scripts/gate-checks.ps1
+          Assert-ZizmorReportClean -Path zizmor.sarif
+      # Uploaded even when the step above failed, so the findings that failed it are in code scanning.
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: always() && hashFiles('zizmor.sarif') != ''
         with:
           sarif_file: zizmor.sarif
           category: zizmor

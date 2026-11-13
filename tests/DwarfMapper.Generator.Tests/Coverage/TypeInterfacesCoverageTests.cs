@@ -39,12 +39,9 @@ namespace DwarfMapper.Generator.Tests.Coverage
             BuildCompilation(string source)
         {
             var tree = CSharpSyntaxTree.ParseText(source);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
-                .Append(MetadataReference.CreateFromFile(typeof(Queryable).Assembly.Location));
+            var refs = GeneratorTestHarness.LoadedAssemblyReferences()
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(DwarfMapperAttribute).Assembly))
+                .Append(GeneratorTestHarness.ReferenceTo(typeof(Queryable).Assembly));
 
             var compilation = CSharpCompilation.Create(
                 "TypeInterfacesTestAsm_" + Guid.NewGuid().ToString("N"),

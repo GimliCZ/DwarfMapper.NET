@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Project-scoped global analyzer config for the integration tests. Additive to the repo-root and tests/ files (the
+# SDK discovers every .globalconfig above a compiled file); never repeat a key either of them sets, because an equal
+# global_level conflict DROPS the key from both. A DWARF diagnostic is downgraded here rather than in the project's
+# <NoWarn> (owner ruling 2026-09-27): this is the mechanism the docs give consumers, and the one that can also
+# escalate.
+is_global = true
+
+# DWARF038 (implicit conversion applied): these runtime tests deliberately exercise DwarfMapper's SUPPORTED lossy
+# conversions (narrowing, sign change, parse/format) to pin what they do at runtime, so they have to apply them. The
+# diagnostic is right to flag each one; making them explicit would stop the tests from covering the implicit path.
+dotnet_diagnostic.DWARF038.severity = none

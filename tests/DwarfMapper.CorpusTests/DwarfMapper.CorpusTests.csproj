@@ -3,8 +3,12 @@
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <IsPackable>false</IsPackable>
-        <!-- Corpus DTOs mirror real-world DTO shapes: underscored test names, public helper types, mutable
-             collection properties, value fields, and culture/clock literals are all intentional fixtures. -->
+        <!-- Corpus DTOs mirror real-world DTO shapes, so the analyzer's objections to them are the fixtures.
+             CA1707: underscored test names. CA1515: public test types and helper DTOs. CA1002/CA2227: List<T>
+             and settable collection properties, as consumer DTOs have them. CA1861: constant array arguments in
+             the enum-collection cases. CA1008: two enum fixtures without a zero member, as consumer enums often
+             are. CA2225/CA1062: the Cc_Colour strong type's implicit operator is written as a consumer's usually
+             is, with no named alternate and no null check. -->
         <NoWarn>$(NoWarn);CA1707;CA1515;CA1002;CA2227;CA1861;CA1008;CA2225;CA1062</NoWarn>
     </PropertyGroup>
     <ItemGroup>

@@ -20,10 +20,10 @@ namespace DwarfMapper.Testing.Tests
     /// </summary>
     public class ObjectFactoryV2DistributionTests
     {
-        // Fast 400 / deep 4000 — see DeepPopulation.ObjectFactoryDistributionSeeds. Every reach assertion
+        // 4,000 seeds — see TestPopulation.ObjectFactoryDistributionSeeds. Every reach assertion
         // below is an existence (Contains) or depth-property claim, so more seeds only strengthen it.
         private static readonly int Seeds =
-            DeepTier.Count(DeepPopulation.ObjectFactoryDistributionSeeds);
+            TestPopulations.Count(TestPopulation.ObjectFactoryDistributionSeeds);
 
         private static IEnumerable<object?> Sample(Type t, int? seeds = null, int depth = 0)
         {

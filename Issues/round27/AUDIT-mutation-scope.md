@@ -28,13 +28,19 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 80 | 7 | 36,958 | 2,561 | **6.9 %** | 95.7 % |
-| `DwarfMapper` (runtime) | 47 | 8 | 3,972 | 1,301 | **32.8 %** | 73.9 %† |
+| `DwarfMapper.Generator` | 80 | 7 | 38,100 | 2,620 | **6.9 %** | 95.7 % |
+| `DwarfMapper` (runtime) | 47 | 8 | 4,047 | 1,307 | **32.3 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
-| `DwarfMapper.Testing` | 9 | 5 | 2,204 | 402 | **18.2 %** | 96.4 % |
+| `DwarfMapper.Testing` | 9 | 5 | 2,280 | 387 | **17.0 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **153** | **29** | **45,760** | **5,662** | **12.4 %** | |
+| **all** | **153** | **29** | **47,053** | **5,712** | **12.1 %** | |
+
+Re-measured 2026-10-27 (round 34): `DwarfMapper.Testing` grew by its record-and-report of type-load failures
+(`ObjectFactoryV2`, outside every `mutate` glob) and shrank by fourteen null checks that became
+`ArgumentNullException.ThrowIfNull` (CA1510 fixed, not suppressed), so its share fell 18.2 % -> 17.0 %; the
+generator and runtime rows moved by their own growth since round 32. The line-coverage column is not re-measured
+here.
 
 Re-measured 2026-10-11 (round 32, [MapClone]): one more runtime file, `MapCloneAttribute.cs` - a compile-time marker
 the generator reads and the runtime never executes - outside every `mutate` glob like the other attributes, so

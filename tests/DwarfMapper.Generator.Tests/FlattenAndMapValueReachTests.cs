@@ -278,24 +278,36 @@ namespace DwarfMapper.Generator.Tests
         // ── Malformed input reaches neither the model nor a message ──────────────
 
         [Fact]
-        public void A_null_directive_argument_produces_no_element_wise_report_and_no_crash()
+        public void A_null_directive_argument_is_reported_as_the_empty_name_and_never_rendered_as_null()
         {
-            // ReadFlattenRoots and ReadMapValues each drop an argument that is absent or not a string, and the
-            // gate calls those readers rather than re-parsing — so a directive resolution never saw cannot be
-            // reported as one resolution dropped. The alternative is a message with the word "null" in it.
-            const string source = """
+            // ReadFlattenRoots and ReadMapValues read a null name as the empty name (round 34 B, as d474e9f and
+            // fc58fb0 did for the pair-scoped readers), and the gate calls those readers rather than re-parsing. So
+            // the element-wise gate sees exactly what it sees for "", and no message renders the argument as null,
+            // which is what the old skip was protecting.
+            static string Source(string name) => Flat + $$"""
 
-                                  [DwarfMapper]
-                                  public partial class M
-                                  {
-                                      [Flatten(null)]
-                                      [MapValue(null)]
-                                      public partial void MapSpan(System.ReadOnlySpan<Src> s, System.Span<Dst> d);
-                                  }
-                                  """;
+                                                          [DwarfMapper]
+                                                          public partial class M
+                                                          {
+                                                              [Flatten({{name}})]
+                                                              [MapValue({{name}})]
+                                                              public partial void MapSpan(System.ReadOnlySpan<Src> s, System.Span<Dst> d);
+                                                          }
+                                                          """;
 
-            GeneratorAssert.DoesNotReport(Flat + source, "DWARF090");
-            GeneratorAssert.CompilesClean(Flat + source);
+            static string[] Reports(string source) =>
+                GeneratorTestHarness.Run(source).Diagnostics
+                    .Where(d => d.Id.StartsWith("DWARF", StringComparison.Ordinal))
+                    .Select(d => d.Id + ": " + d.GetMessage(CultureInfo.InvariantCulture))
+                    .OrderBy(x => x, StringComparer.Ordinal)
+                    .ToArray();
+
+            var withNull = Reports(Source("null"));
+
+            Assert.Equal(Reports(Source("\"\"")), withNull);
+            Assert.NotEmpty(withNull);
+            Assert.DoesNotContain(withNull, m => m.Contains("(null", StringComparison.Ordinal));
+            GeneratorAssert.CompilesClean(Source("null"));
         }
 
         [Theory]

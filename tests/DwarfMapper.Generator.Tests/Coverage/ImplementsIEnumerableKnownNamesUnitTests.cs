@@ -31,7 +31,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
         private static readonly Compilation Compilation = CSharpCompilation.Create("ImplementsIEnumerableKnownNames",
             [CSharpSyntaxTree.ParseText("namespace T { " + string.Concat(KnownNames.Select(n => "public class " + n + " { } ")) + "public class Lookalike { } }")],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         public static TheoryData<string> Names => new(KnownNames);
 

@@ -17,7 +17,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
     public class ProjectionHelperUnitTests
     {
         private static readonly Compilation Corlib = CSharpCompilation.Create("ProjectionHelperUnitTests",
-            references: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            references: [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         private static ITypeSymbol T(SpecialType type) => Corlib.GetSpecialType(type);
 

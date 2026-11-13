@@ -15,9 +15,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
 {
     public class MemberFactsUnitTests
     {
-        private static readonly MetadataReference[] References = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
+        private static readonly MetadataReference[] References = GeneratorTestHarness.LoadedAssemblyReferences()
             .ToArray();
 
         private static CSharpCompilation Compile(string name, string source, params MetadataReference[] extra)

@@ -175,6 +175,28 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 string.Join("\n  ", offenders));
         }
 
+        /// <summary>
+        ///     The battery applies each mutant to src/ (or docs/) in place and restores it with <c>git checkout</c>,
+        ///     and every one of those restores swallows its own failure (<c>|| true</c>). A restore that failed left a
+        ///     mutation applied, to be read later as a real regression or committed as fact (round 34's inventory).
+        ///     The run starts from a clean tree, so it must end by proving src/ and docs/ are clean again, and fail
+        ///     if not.
+        /// </summary>
+        [Fact]
+        public void M1c_the_battery_ends_by_proving_src_and_docs_were_restored()
+        {
+            var lines = File.ReadAllLines(Path.Combine(RepoPaths.Root, "scripts", "mutation-battery.sh"));
+
+            var check = Array.FindIndex(lines, l => l.Contains("git diff --quiet -- src docs", StringComparison.Ordinal));
+            var lastRestore = Array.FindLastIndex(lines, l => l.TrimStart().StartsWith("git checkout -- ", StringComparison.Ordinal));
+
+            Assert.True(lastRestore >= 0, "scripts/mutation-battery.sh restores nothing with git checkout; this scan is reading the wrong thing.");
+            Assert.True(check > lastRestore,
+                "scripts/mutation-battery.sh must check `git diff --quiet -- src docs` after its last restore, and fail when " +
+                "the tree is not clean: every restore swallows its own failure.");
+            Assert.Contains(lines.Skip(check).Take(5), l => l.Contains("exit 1", StringComparison.Ordinal));
+        }
+
         [Fact]
         public void M1b_an_entry_that_mutates_several_sites_says_so()
         {

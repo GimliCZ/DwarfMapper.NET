@@ -15,7 +15,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
     {
         private static readonly Compilation Compilation = CSharpCompilation.Create("TransferModelShapeHelpers",
             [CSharpSyntaxTree.ParseText("namespace T { public interface IShape { } public class Plain { } public class Derived : Plain { } }")],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+            [GeneratorTestHarness.ReferenceTo(typeof(object).Assembly)]);
 
         [Fact]
         public void An_assembly_is_named_by_its_name()
