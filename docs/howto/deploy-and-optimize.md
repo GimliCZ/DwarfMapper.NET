@@ -70,13 +70,16 @@ ISA list.) Full detail and the stability-harness results: [`../COMPARISON.md`](.
 
 ## .NET 10 only — and why the generator is netstandard2.0
 
-The consuming project must target **`net10.0`**; this is a hard requirement, not a preference. The single
+The consuming project must target **`net10.0` or later**; this is a hard requirement, not a preference: the
+package ships one `net10.0` assembly, so a net8/net9 project cannot reference it. .NET 11 is verified in CI
+(job `net11`: the repository builds under SDK 11.0.100 with warnings as errors, the consumer projects build and
+run as `net11.0`, and NativeAOT publishes with the 11.0 compiler). The single
 exception is the **generator assembly**, which is `netstandard2.0` — because Roslyn loads source generators
 *into the compiler host*, which only accepts `netstandard2.0` components. This is a Roslyn toolchain
 constraint; the code the generator **emits** targets .NET 10 like the rest of your app. You never reference
 the generator at runtime (it's a `DevelopmentDependency` / analyzer), so its TFM never reaches your output.
 
-If you're not yet on .NET 10, that bump is a prerequisite of the migration — sequence it first.
+If you're not yet on .NET 10 or later, that bump is a prerequisite of the migration — sequence it first.
 
 ---
 

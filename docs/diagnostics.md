@@ -840,6 +840,11 @@ Note this is different from **edge** members (the navigation properties named in
 are deliberately set to `null` — that topology degradation is the whole point of flattening a graph. A *data*
 leaf going missing is not, which is why it is now said out loud instead of silently dropped.
 
+A collection that is block-copied or widened (`int[]` to `long[]`, `List<int>` to `List<long>`) is refused for a
+second reason. Its helper would compile, but it copies without tracking: two nodes that share ONE source list would
+each get their own destination list, where the same mapper's plain `Map` keeps them one. Until round 35 that
+happened in silence; the member is now left at its default and reported, like every other collection leaf.
+
 **Fix:** map the member explicitly (e.g. a `[MapProperty]` binding or a manual assignment in an `AfterMap` hook),
 or use `ReferenceHandling = None` for this mapper if the graph does not need reference preservation.
 

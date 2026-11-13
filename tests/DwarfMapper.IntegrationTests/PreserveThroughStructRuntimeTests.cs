@@ -75,11 +75,28 @@ namespace DwarfMapper.IntegrationTests
         public RsHolderDto H2 { get; set; }
     }
 
+    // The same holders behind Nullable<T> (round 35; the round-33 fast-path audit's untested cell: the wrapper's
+    // mapping was read as running without reference tracking).
+    public sealed class PnRoot
+    {
+        public PsHolder? H1 { get; set; }
+
+        public PsHolder? H2 { get; set; }
+    }
+
+    public sealed class PnRootDto
+    {
+        public PsHolderDto? H1 { get; set; }
+
+        public PsHolderDto? H2 { get; set; }
+    }
+
     [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
     public partial class StructPreserveMapper
     {
         public partial PsRootDto Map(PsRoot r);
         public partial RsRootDto MapRecordStruct(RsRoot r);
+        public partial PnRootDto MapNullable(PnRoot r);
     }
 
     public class PreserveThroughStructRuntimeTests
@@ -128,6 +145,52 @@ namespace DwarfMapper.IntegrationTests
 
             Assert.Equal(7, dto.H1.Ref.V);
             Assert.Same(dto.H1.Ref, dto.H2.Ref);
+        }
+
+        [Fact]
+        public void Shared_reference_through_a_nullable_struct_node_is_deduplicated()
+        {
+            var shared = new PsShared
+            {
+                V = 9
+            };
+            var root = new PnRoot
+            {
+                H1 = new PsHolder
+                {
+                    Ref = shared
+                },
+                H2 = new PsHolder
+                {
+                    Ref = shared
+                }
+            };
+
+            var dto = new StructPreserveMapper().MapNullable(root);
+
+            Assert.Equal(9, dto.H1!.Value.Ref.V);
+            Assert.Equal(9, dto.H2!.Value.Ref.V);
+            // Nullable<T> around the struct changes nothing about the reference inside it.
+            Assert.Same(dto.H1.Value.Ref, dto.H2.Value.Ref);
+        }
+
+        [Fact]
+        public void A_null_nullable_struct_node_maps_to_null()
+        {
+            var dto = new StructPreserveMapper().MapNullable(new PnRoot
+            {
+                H1 = null,
+                H2 = new PsHolder
+                {
+                    Ref = new PsShared
+                    {
+                        V = 1
+                    }
+                }
+            });
+
+            Assert.Null(dto.H1);
+            Assert.Equal(1, dto.H2!.Value.Ref.V);
         }
     }
 }

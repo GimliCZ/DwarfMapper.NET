@@ -254,7 +254,10 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol leafType,
             string? leafConv)
         {
-            if (!req.IsPreserve || !GeneratedNames.IsComplexHelper(leafConv))
+            // Round 35: a block-copied or widened collection too. Its helper would compile - it is never
+            // force-marked - but it copies without tracking, so two nodes sharing one source collection would each
+            // get their own, where this mapper's plain map keeps them one. Not in silence.
+            if (!req.IsPreserve || !(GeneratedNames.IsComplexHelper(leafConv) || GeneratedNames.CopiesACollection(leafConv)))
             {
                 return false;
             }

@@ -391,6 +391,49 @@ function Assert-BlitRatiosHold {
 }
 
 # -----------------------------------------------------------------------------------------------------
+# The net10 REFERENCE PACK the ILVerify stage verifies against - the contract surface the compiler resolved
+# against - wherever this machine's SDK keeps it (round 35).
+#   Looked for under every dotnet root that can be named: DOTNET_ROOT, the folder of the `dotnet` on PATH, the
+# folder that `dotnet` is a LINK to, Program Files on Windows; then in the NuGet package cache, NUGET_PACKAGES
+# first. Both layouts share '<version>/ref/net10.0'. Newest 10.x by [version], not by text (which ranks 10.0.9
+# above 10.0.11), with a prerelease suffix stripped before the cast.
+#   The link is the round-35 fix. Microsoft's SDK container and a distribution's packaged SDK put a symlink on
+# PATH (/usr/bin/dotnet -> /usr/share/dotnet/dotnet) and set no DOTNET_ROOT, so the stage looked in /usr/bin/packs
+# and failed before verifying anything. A hosted runner sets DOTNET_ROOT, which is why CI never showed it.
+# RefPackLookupTests drives this over real folders; -ResolveLink is its seam for the link.
+# -----------------------------------------------------------------------------------------------------
+function Get-Net10RefPack {
+    param(
+        [string[]]$DotnetRoots = @(),
+        [string]$DotnetCommand,
+        [string]$NuGetPackages,
+        [Parameter(Mandatory)][string]$UserProfile,
+        [scriptblock]$ResolveLink = {
+            param($path)
+            $target = [System.IO.File]::ResolveLinkTarget($path, $true)
+            if ($target) { $target.FullName } else { $path }
+        }
+    )
+    $roots = @($DotnetRoots | Where-Object { $_ })
+    if ($DotnetCommand) {
+        $roots += Split-Path -Parent $DotnetCommand
+        $resolved = $DotnetCommand
+        try { $resolved = [string](& $ResolveLink $DotnetCommand) } catch { $null = $_ }
+        if ($resolved -and $resolved -ne $DotnetCommand) { $roots += Split-Path -Parent $resolved }
+    }
+    $packRoots = @($roots | Select-Object -Unique | ForEach-Object { Join-Path $_ 'packs/Microsoft.NETCore.App.Ref' })
+    if ($NuGetPackages) { $packRoots += Join-Path $NuGetPackages 'microsoft.netcore.app.ref' }
+    $packRoots += Join-Path $UserProfile '.nuget/packages/microsoft.netcore.app.ref'
+    $refPack = $packRoots | Where-Object { Test-Path $_ } |
+               ForEach-Object { Get-ChildItem $_ -Directory } |
+               Where-Object { $_.Name -like '10.*' } |
+               Sort-Object { [version]($_.Name -replace '-.*$', '') } -Descending |
+               Select-Object -First 1
+    if (-not $refPack) { throw "ilverify: no net10 ref pack found (searched: $($packRoots -join '; '))" }
+    return $refPack
+}
+
+# -----------------------------------------------------------------------------------------------------
 # A leg compiles only what it mutates (round 34). Stryker 4.16 mutates and compiles EVERY source of the project
 # under test, whatever the config's `mutate` globs say, and drops what they exclude only afterwards: on the
 # generator leg it created 16,314 mutants, rolled back 3,808 compile errors over 28 compile passes and threw

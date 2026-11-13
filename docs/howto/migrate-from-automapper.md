@@ -15,7 +15,8 @@ migrations — but most of the weight is *deleting* AutoMapper's runtime machine
 ## The one mental-model shift
 
 **AutoMapper has a runtime configuration object; DwarfMapper does not.** There is no `MapperConfiguration`,
-no `IMapper`, no `Profile`, no `AddAutoMapper(assembly)` scan. The generated `partial class` you write *is*
+no `Profile`, no `AddAutoMapper(assembly)` scan — `IMapper`'s counterpart is the ambient `IDwarfMapper`, registered
+by the generated `AddDwarfMappers()` (see the note below). The generated `partial class` you write *is*
 the configuration, resolved at compile time. So the migration is: take everything you expressed in a
 `Profile` and re-express it as attributes on one class — then delete the runtime plumbing.
 
@@ -44,7 +45,7 @@ decision down — a migration ledger of "what we chose and why" pays for itself 
 | 3 | **enum→string prefers `[EnumMember]`, then `[Description]`, then the identifier.** AutoMapper used `.ToString()`, i.e. always the identifier. | **The sharpest one.** `[Description]` is usually a *display* annotation, but it becomes your *persistence* format. An enum member `NextDay` carrying `[Description("Next-Day")]` starts writing `"Next-Day"` into a store full of `"NextDay"` — breaking reads of every existing record. `DWARF083` reports it; **`EnumStringSource = Identifier` is the one-line parity switch**, on the mapper or on `[assembly: DwarfMapperDefaults]`, instead of a converter per enum. |
 | 4 | **`SkipNullSourceMembers` guards nullable-*typed* members.** AutoMapper's `Condition(src != null)` was a runtime **value** check. | A non-nullable-typed member holding a runtime null is now copied where AutoMapper skipped it. |
 | 5 | **enum↔string parsing is case-sensitive.** `Enum.Parse` ignored case. | Hand-edited or legacy data throws instead of parsing. Only reachable if something other than your own writer produced the string. |
-| 6 | **`SkipNullSourceMembers` is class-scoped**, but `ForAllMembers` was per-map. | A profile mixing patch-merge maps with ordinary ones must be **split into two mapper classes**. Plan for it rather than discovering it mid-conversion. |
+| 6 | **`SkipNullSourceMembers` is a class-wide policy**, but `ForAllMembers` was per-map. | Left on the class, it applies to every map on it. A profile mixing patch-merge maps with ordinary ones stays in **one mapper class**: narrow the option with `[MapNullSkip]` on a method or `[MapNullSkip<S,T>]` for a pair (`[MapNullSkip(false)]` carves one out). |
 | 7 | **`required` destination members cannot be `[MapIgnore]`d.** AutoMapper built targets reflectively and bypassed the rule. | `DWARF079` tells you so now, with the `[MapValue]` remedy. Before that diagnostic existed, this was the single most-repeated stumble of the migration. |
 | 8 | **A `private` "ctor for automapper" stops working.** It only ever worked because AutoMapper constructs by reflection. | `DWARF026`, no escape — `private` is never usable by design. Widen it to `internal` plus `[InternalsVisibleTo]`: the same grant, but one the compiler checks. |
 | 9 | **`[MapConstructor]` factories cannot assign `init`-only members.** | The factory's value wins and the source value is dropped (`DWARF080`). Prefer binding the **constructor parameters** — direct construction fills an object initializer, where `init` members *are* assignable. |
@@ -55,7 +56,9 @@ Two more that are not behaviour changes but will cost you an afternoon each if y
   be `DWARF078` plus real `DWARF…` errors above it — fix those), or the generator never ran in that project
   at all (no DwarfMapper diagnostics whatsoever — see Step 1). Read the `DWARF…` lines first; the `CS8795`s
   are one-per-mapping-method noise either way.
-- **Ambient `Map<ICollection<T>>(x)` resolves on the *runtime* type.** See Step 6.
+- **Ambient `Map<ICollection<T>>(x)` resolves without a collection pair by default; with
+  `RegisterCollectionShapes = false` the pair must be declared for the *runtime* type.** See "ambient
+  collection maps" under Known divergences.
 
 ## Step 1 — Reference the packages
 
@@ -142,7 +145,7 @@ Register the concrete mapper instead, or just `new` it (it's stateless):
 
 ```diff
 - services.AddAutoMapper(...); /* inject IMapper */
-+ services.AddSingleton<Mappers>();   // inject Mappers directly; or `new Mappers()` at the call site
++ services.AddSingleton<Mappers>();   // inject Mappers directly, `new Mappers()` at the call site, or the generated services.AddDwarfMappers()
 ```
 
 ## Step 4 — Translate `ForMember` and friends
@@ -243,7 +246,8 @@ your `ConvertUsing`/`IValueConverter` code is now dead — delete it and let syn
 Two things to know:
 
 - A **non-lossless** auto-conversion (e.g. `long→int` narrowing, `string→int` parse) is applied but surfaces
-  a **`DWARF038` suggestion** so it's visible, not silent. Want them to be hard errors instead?
+  a **`DWARF038` warning** (Info for a user-defined explicit operator) so it's visible, not silent. Want them
+  to be hard errors instead?
   `[DwarfMapper(ImplicitConversions = false)]` flips them to build errors (Mapperly-strict).
 - **float/double/decimal → int is never silent** — it still requires an explicit `Use=` converter (no
   silent fractional truncation, ever).
@@ -258,7 +262,7 @@ Full conversion table: the [repository README, "Built-in scalar conversions"](..
 | enum **by value** (AM default) | `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]` | DwarfMapper defaults to **by name** — set this for AM parity |
 | enum→string as `.ToString()` (AM default) | `[DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]` | DwarfMapper defaults to the `[EnumMember]`/`[Description]` text — set this for AM parity |
 | `AllowNullCollections = true` | `[DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]` | DwarfMapper defaults to `AsEmpty`; this matches AM's default |
-| `ForAllMembers(o => o.Condition((_,_,src) => src != null))` (skip null source members / patch-merge) | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member keeps the destination's default (`if (src.X is not null) dst.X = …`) — the "don't clobber with nulls" guard. Distinct from a **per-member** `.Condition`, which is `[MapProperty(src, tgt, When = …)]` (above) |
+| `ForAllMembers(o => o.Condition((_,_,src) => src != null))` (skip null source members / patch-merge) | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member keeps the destination's default (`if (src.X is not null) dst.X = …`) — the "don't clobber with nulls" guard. For one map rather than the whole class: `[MapNullSkip]` on the method, or `[MapNullSkip<S,T>]` for a pair. Distinct from a **per-member** `.Condition`, which is `[MapProperty(src, tgt, When = …)]` (above) |
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` | full topology reconstruction |
 | `.MaxDepth(n)` | `[DwarfMapper(MaxDepth = n)]` | throws catchable `DwarfMappingDepthException`, never a silent StackOverflow |
 | `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S> q)` | direct members, renames, ignores, enum→int casts, nested objects, collections, dotted-path flattening (`[MapProperty("A.B", …)]`) and constructor targets (positional records, with `[MapProperty]` binding a parameter and an initializer for whatever the constructor does not take) all translate; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict) are `DWARF028` |
@@ -315,7 +319,9 @@ DwarfMapper deliberately does **not** do these (each has a static replacement; f
 - **`SetMappingOrder` / `RecognizePrefixes` / `ShouldMapProperty` predicates** — order is deterministic; use `[MapProperty]`/`[MapIgnore]` explicitly.
 - **`IncludeBase<S,T>()`** — there is no inheritance primitive. Restate the shared `[MapProperty]`/`[MapIgnore]`
   on each derived pair. Restatement is explicit and keeps every pair readable at its own declaration; the cost
-  is that it can drift, so bracket each restated block with a comment naming the base pair.
+  is that it can drift, so mark each derived pair `[RestatesBase<S,T>]`: the generator then compares it with its
+  base pair member by member and reports drift as `DWARF085` (`DWARF084` if it cannot identify the base pair).
+  Gallery example: [`47_RestateBaseConfig.cs`](../../samples/DwarfMapper.Gallery/47_RestateBaseConfig.cs).
 - **Object↔collection maps** (`CreateMap<ICollection<Rank>, RanksDocument>()`) — not a mapping shape. Map the
   document's inner collection instead, which is what an AutoMapper `ConstructUsing` that called
   `ctx.Mapper.Map<ICollection<T>>(x.Items)` was literally already doing.
@@ -327,7 +333,10 @@ registered automatically.)*
 ### The one that is not a non-goal, but will surprise you: ambient collection maps
 
 `IDwarfMapper.Map<TDest>(object)` resolves through a registry keyed on the **exact** `(source, target)` pair,
-and AutoMapper derived collection maps implicitly from the element map. So this compiles and throws:
+and AutoMapper derived collection maps implicitly from the element map. By default that gap is closed for you:
+`RegisterCollectionShapes` (default `true`) also registers each declared object map under the common collection
+shapes, at compile time, so the call below resolves without a separate collection pair. The rest of this section
+describes a mapper that sets `RegisterCollectionShapes = false`. There, this compiles and throws:
 
 <!-- fence-exempt: illustrates a runtime failure; a compiling sample cannot show "throws at first use" -->
 ```csharp
@@ -347,7 +356,9 @@ Two things make it easy to get wrong, and both cost a false start during the ref
    registry is process-wide, so declaring it beside the element map resolves the far-away call site anyway.
 
 A lazy LINQ source (`Where(...)`, `SelectMany(...)`) can never be declared at all — those are private
-`System.Linq` iterator types that no attribute can name. Materialise with `.ToList()` before mapping; that
-call is load-bearing, so say so in a comment.
+`System.Linq` iterator types that no attribute can name. With `RegisterCollectionShapes = false`, materialise
+with `.ToList()` before mapping; that call is load-bearing, so say so in a comment. Under the default the
+registered shapes are keyed on `IEnumerable<TSource>`, so a `List`, an array, a `HashSet` and a lazy LINQ
+iterator are all served by the same entry.
 
 Every one surfaces a diagnostic or has a typed alternative — none fail silently.

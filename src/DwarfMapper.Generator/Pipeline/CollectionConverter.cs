@@ -996,7 +996,7 @@ namespace DwarfMapper.Generator.Pipeline
             var elem = Fq(tgtElem);
             var srcE = Fq(srcElem);
             var srcFq = Fq(srcArrayType);
-            var name = "__DwarfBlit_" + StableHash.Fnv1a(srcFq + "=>" + elem + "[]");
+            var name = GeneratedNames.Blit + StableHash.Fnv1a(srcFq + "=>" + elem + "[]");
             if (synth.ContainsKey(name))
             {
                 return name;
@@ -1075,7 +1075,7 @@ namespace DwarfMapper.Generator.Pipeline
                 _ => iaFq,
             };
 
-            var name = "__DwarfBlitL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            var name = GeneratedNames.BlitList + StableHash.Fnv1a(srcFq + "=>" + ret);
             if (synth.ContainsKey(name))
             {
                 return name;
@@ -1187,7 +1187,7 @@ namespace DwarfMapper.Generator.Pipeline
             var dst = Fq(tgtElem);
             var srcE = Fq(srcElem);
             var srcFq = Fq(srcArrayType);
-            var name = "__DwarfWiden_" + StableHash.Fnv1a(srcFq + "=>" + dst + "[]");
+            var name = GeneratedNames.Widen + StableHash.Fnv1a(srcFq + "=>" + dst + "[]");
             if (synth.ContainsKey(name))
             {
                 return name;
@@ -1262,7 +1262,7 @@ namespace DwarfMapper.Generator.Pipeline
                 _ => iaFq,
             };
 
-            var name = "__DwarfWidenL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            var name = GeneratedNames.WidenList + StableHash.Fnv1a(srcFq + "=>" + ret);
             if (synth.ContainsKey(name))
             {
                 return name;
