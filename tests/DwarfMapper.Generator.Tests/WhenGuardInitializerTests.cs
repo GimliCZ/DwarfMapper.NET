@@ -88,6 +88,18 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(reported, Run(Positional(parameter)).Any(x => x.Id == "DWARF066"));
         }
 
+        // The search for an initializer walks the base types by NAME, so it can meet a member that is no property,
+        // field or record parameter at all - here a method the property hides. That has no default to offer; the
+        // search goes on, finds none, and the member is reported.
+        [Fact]
+        public void A_member_hiding_a_base_method_of_its_name_finds_no_default_there_and_is_reported()
+        {
+            const string types = "public class BaseB { public string Name() => \"\"; }\npublic class B : BaseB { public new string Name { get; set; } }\n";
+            var source = Source("").Replace("public class B {  }\n", types, StringComparison.Ordinal);
+
+            Assert.Single(Run(source), x => x.Id == "DWARF066");
+        }
+
         [Fact]
         public void A_nullable_member_is_not_reported_at_all()
         {
