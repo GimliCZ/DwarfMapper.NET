@@ -242,3 +242,10 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   the converter. Tests: `FlattenGraphLeafLeadsBackTests` (generator, 6: refused in each mode; a leaf through a
   declared method that does not lead back is flattened; the direct case, a member of the flattened type) and the
   negative case. T15's own tests are unchanged and pass: their nodes have no such member.
+
+- **"The last correction had to break something" - checked directly** (the owner's question, 2026-11-13). The same
+  oracle probe against IntegrationTests built from `6719413`, the commit BEFORE T2, in a fresh clone: the old
+  one-window test fails there too - 75 and 63 of about 7,360 trials on runtime 11.0.0, 86 and 82 of about 7,700 on
+  10.0.1 - and never with an idle neighbour (0 of 36,457; 0 of 34,736). After T2 the figures were 108 and 108, 123
+  and 113. Never two disturbed windows in a trial on either build. The T2 change did not introduce the reading; the
+  allocation counter moves under a background collection on both.

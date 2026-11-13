@@ -1463,9 +1463,29 @@ function Invoke-DecontaminatedMutationLeg {
 # Headroom to the first red byte: DwarfMapper (367 KB = 375,808 B) 238 B on Windows, 424 B on ubuntu - under one
 # small generator change, by design: the next one re-measures. DwarfMapper.Testing (58 KB = 59,392 B) 864 B on
 # Windows, 911 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T16 and T17, at 2b8a480): DwarfMapper 366 -> 368, DwarfMapper.Testing 57.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     a352851 (T12-T15, T4)     DwarfMapper 375,384 B   Testing 58,481 B   floor 366 / 57
+#     2b8a480 (T16, T17)        DwarfMapper 376,858 B   Testing 58,474 B   floor 368 / 57
+#   Windows, SDK 10.0.101, CI=true, 2b8a480: 377,043 B (+185) and 58,521 B (+47) - floor 368 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, a352851 -> 2b8a480, compressed bytes, packed in the container:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll    +1,482   two diagnostics with their messages (DWARF117,
+#                                                             DWARF118); a declared method with a scalar destination
+#                                                             takes the conversion route (T16); a flatten method's
+#                                                             leaf calls are recorded and asked about (T17)
+#   the rest (nuspec, .rels, three dlls' entropy)        -8
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (369 KB = 377,856 B) 813 B on Windows, 998 B on ubuntu.
+# DwarfMapper.Testing (58 KB = 59,392 B) 871 B on Windows, 918 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 366
+    'DwarfMapper'         = 368
     'DwarfMapper.Testing' = 57
 }
 
