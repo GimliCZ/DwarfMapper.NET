@@ -5,7 +5,7 @@ These five changes happen on **every** migration, regardless of which library yo
 per-library guide builds on them, so read this once first.
 
 > **Mental model in one sentence:** in DwarfMapper the **generated class _is_ the configuration** —
-> there is no runtime engine, no fluent builder, no `IMapper`, and no config object to register. You
+> there is no runtime engine, no fluent builder, no `IMapper` to configure (the optional ambient `IDwarfMapper` is generated), and no config object to register. You
 > annotate one `partial class`, the source generator fills in the bodies at compile time, and the mapping
 > either compiles (and is provably complete) or it doesn't.
 

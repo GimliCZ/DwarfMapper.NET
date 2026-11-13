@@ -23,7 +23,7 @@ on the first build.
 ## Step 1 — Reference the packages
 
 Follow [common-changes.md §1](common-changes.md#change-1--reference-the-packages-target-net10):
-the single `DwarfMapper` package, target `net10.0`. Keep `Riok.Mapperly` installed until Step 5.
+the single `DwarfMapper` package, target `net10.0` or later. Keep `Riok.Mapperly` installed until Step 5.
 
 ## Step 2 — Rename the core attributes
 

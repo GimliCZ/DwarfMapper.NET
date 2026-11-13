@@ -145,7 +145,7 @@ Register the concrete mapper instead, or just `new` it (it's stateless):
 
 ```diff
 - services.AddAutoMapper(...); /* inject IMapper */
-+ services.AddSingleton<Mappers>();   // inject Mappers directly; or `new Mappers()` at the call site
++ services.AddSingleton<Mappers>();   // inject Mappers directly, `new Mappers()` at the call site, or the generated services.AddDwarfMappers()
 ```
 
 ## Step 4 — Translate `ForMember` and friends
