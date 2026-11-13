@@ -70,7 +70,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 > The promise was removed and `[SuppressMessage]` was implemented, with a test pinning the pragma behaviour so
 > a future Roslyn change would be noticed.
 
-`DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
+`DWARF004`, `DWARF006`, `DWARF019`, `DWARF029` and `DWARF102` are retired/reserved ids and are never emitted.
 
 The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR17` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
@@ -105,8 +105,8 @@ Every diagnostic below documents its own fix; this table is just the order to ap
 
 The `[MapTo]` registry front door (attribute-on-the-source, no mapper class) has its own `DWARFR##` codes,
 category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `DWARF###` codes below. **`[MapTo]`
-is a prototype/experimental tier**: its diagnostics are deliberately not release-tracked and are exempt from the
-DWARF0xx self-validation scans that the rest of this reference is held to.
+is a prototype/experimental tier**. Its diagnostics are release-tracked like the rest
+(`AnalyzerReleases.Unshipped.md`) and held to scans of their own; only the id prefix and the category differ.
 
 | Code | Meaning & fix |
 |---|---|
@@ -715,7 +715,7 @@ The source member is declared as a concrete class that something else in your co
 mapper resolves members at **compile time from the declared type**, so if that member holds a derived instance
 at run time, the members declared only on the derived type are dropped — silently, with no error:
 
-<!-- fence-exempt: illustrates a type shape that triggers DWARF042; a fragment, not a compilable unit -->
+<!-- fence-exempt: illustrates a type shape that triggers DWARF071; a fragment, not a compilable unit -->
 ```csharp
 public class Animal { public string Name { get; set; } = ""; }
 public sealed class Dog : Animal { public string Breed { get; set; } = ""; }
@@ -809,7 +809,6 @@ and threads, not shift with the ambient culture (see [`SECURITY.md`](SECURITY.md
 `[MapCollectionKey("Member", "Key")]` merges an update-into collection member by key instead of replacing it,
 but the v1 upsert has a defined scope and refuses anything outside it rather than silently replacing:
 
-- the method must be **update-into** (`void Map(TSource, TTarget)`);
 - the named member must be a **`List<T>`** on both source and destination;
 - the element type must be the **same** on both sides (the common Entity↔Entity update);
 - the key must be a **readable member** of the element type.
@@ -1136,7 +1135,7 @@ behalf. The cost is restatement, and that cost splits in two — **typing it** i
 once; **drifting from the base later** is silent, and it only ever drifts toward wrong data.
 
 This closes the second half without introducing override semantics that would have to interact with
-pair-scoped attributes, `[MapDerivedType]` and the policy layer. See `Issues/Rount18/Decisions.md` §D4.
+pair-scoped attributes, `[MapDerivedType]` and the policy layer. See `Issues/round18/Decisions.md` §D4.
 
 ### What is compared
 
@@ -1364,9 +1363,9 @@ be placed is [`DWARF089`](#dwarf089).
 > and [`DWARF087`](#dwarf087) refuse the same duplicate-directive shape on the same class and are both Errors —
 > so it cannot decide the severity of this one. What this id refuses is silent data loss:
 > `[MapProperty("Name", Use = nameof(F))]` on a mapper discards the converter, the `When` predicate, the null
-> substitute and the format string along with the binding, and hands you auto-matching instead. Downgrade with
-> `dotnet_diagnostic.DWARF088.severity = warning` in a `.globalconfig` if you need the build to proceed while you fix the call
-> sites.
+> substitute and the format string along with the binding, and hands you auto-matching instead. A
+> `.globalconfig` downgrade does not let the build proceed: it changes how the diagnostic is reported, and the mapper
+> class is still not generated, so fix the call sites.
 
 ---
 
@@ -1927,7 +1926,7 @@ was *written and discarded*; where nothing was written, nothing was discarded. I
 method that selects the destination, so a mapper with both a `Map` and a `Project` over the same pair reports
 it twice — both methods really did ignore the directive.
 
-The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#dwarfr11): it does not read
+The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#registry-diagnostics-mapto): it does not read
 `[DwarfMapperConstructor]` at all, which is a different statement from reading it and declining it.
 
 ---
@@ -2691,7 +2690,7 @@ The throws you can encounter:
 | Numeric **narrowing** out of range (`long→int`; `enum`↔integral overflow) | `OverflowException` | `CreateChecked` — never silent truncation |
 | `string → int/Guid/DateTime/…` on unparseable input | `FormatException` (or `OverflowException`) | `Parse(…, InvariantCulture)`; there is **no `TryParse`/lenient mode** |
 | `string → enum` unrecognized name, or `enum → enum` **by-name** with an undefined/cast source value | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — these are **not total** (`DWARF015` only checks *declared* members) |
-| Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Info) at build; a raw NRE at runtime |
+| Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Warning) at build; a raw NRE at runtime |
 | `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
 | `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …" |
 | Span/destination too small (span overloads) | `ArgumentException` | |

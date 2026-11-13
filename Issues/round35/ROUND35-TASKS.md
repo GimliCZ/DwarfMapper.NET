@@ -20,7 +20,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T2 | **The last untested audit cell:** an array blit under SetNull against a method-level config on the element pair's partial. | **defect found - decision open**, see Notes |
 | T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | **done** (`93d8b01`) |
 | T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | open |
-| T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | open |
+| T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | **done** - see Notes |
 | T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | open |
 | T7 | **Move the SDK pin** to the current 10.0 servicing release; re-measure every gate tied to it; drop the AOT compiler override if the new pin makes it dead. | open |
 | T8 | **Ubuntu 26.04 for every Linux job**, the canary removed, on a `full-ci` run. | open |
@@ -59,3 +59,9 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   declared partial with method-level directives would be bypassed this way, naming the pair-scoped form
   (`[MapIgnore<D>]`, `[MapProperty<C,D>]`) that the helper does honour. Recommended: B first - it stops the silent
   wrong output at once and is small - then A.
+- **T5.** All 111 sections and 17 registry rows match their descriptors on id, title and severity. Eight prose
+  defects corrected: a `.globalconfig` downgrade of DWARF088 does not let the build proceed; the registry
+  diagnostics ARE release-tracked; DWARF074 never refused a non-update method (that is DWARF092); DWARF044 is a
+  Warning; a dead `#dwarfr11` anchor; a misspelled path; DWARF102 missing from the reserved ids; a wrong id in a
+  fence comment. Two stale source comments fixed with it (`[MapNullSkip<,>]` duplicates are DWARF099, not "first
+  wins"; DWARF103's `in` advice starts at 64 bytes, not 32).

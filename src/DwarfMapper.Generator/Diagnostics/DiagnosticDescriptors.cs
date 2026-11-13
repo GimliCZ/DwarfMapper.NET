@@ -1883,7 +1883,7 @@ namespace DwarfMapper.Generator.Diagnostics
         ///     </para>
         ///     <para>
         ///         The size in the message is the WOULD-BE struct's, and it is worded as a bound whenever a
-        ///         reference member was costed at its x64 width. Over 32 bytes the message adds the <c>in</c>
+        ///         reference member was costed at its x64 width. Over 64 bytes the message adds the <c>in</c>
         ///         advice; for a public unsealed type it says that the derived-type sweep covered this assembly
         ///         only, because a consuming project can still subclass it and nothing here can see that.
         ///     </para>
