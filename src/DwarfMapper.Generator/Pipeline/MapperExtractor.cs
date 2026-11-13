@@ -383,6 +383,7 @@ namespace DwarfMapper.Generator.Pipeline
             // already share and is scoped to exactly this extraction. Wired here, next to `decls`, because this
             // is the single site where every value it reads is decided.
             nestedRegistry.SetPairCustomizationRule((s, t) => DescribeElementPairCustomization(decls, genComp, s, t));
+            nestedRegistry.SetDeclaredRouteRule((name, paramType) => IsDeclaredDispatchMethod(classSymbol, name, paramType));
 
             var policy = new MapperPolicy(allowNonPublic, caseInsensitive, classAutoNest, explicitOnly,
                 ignoreObsolete, implicitConversions, isPreserveMode, isSetNullMode, skipNullSrc, maxDepth,

@@ -680,105 +680,142 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                // Check if any of this method's members/ctor-args uses a recursion-capable synthesized method
-                // OR a self-recursive declared method (which must be redirected to the companion)
-                // OR a Preserve-mode collection helper that already has ConverterNeedsDepthCtx=true.
-                var needsCtx = false;
-                var newMembers = m.Members.ToArray();
-                for (var mi = 0; mi < newMembers.Length; mi++)
-                {
-                    var member = newMembers[mi];
-                    if (member.ConverterMethod is null)
-                    {
-                        continue;
-                    }
+                PropagateContextTo(methods, i, recursionCapableNames, selfRecursivePublicMethods, maxDepth);
+            }
 
-                    if (member.ConverterNeedsDepthCtx)
-                    {
-                        // Already marked (e.g. Preserve-mode collection helper set by ResolveMembers).
-                        needsCtx = true;
-                    }
-                    else if (recursionCapableNames.Contains(member.ConverterMethod))
-                    {
-                        newMembers[mi] = member with
-                        {
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
-                    else if (selfRecursivePublicMethods.Contains(member.ConverterMethod))
-                    {
-                        // Redirect call from declared public method to its depth-guarded companion.
-                        var companionName = GeneratedNames.Depth + member.ConverterMethod;
-                        newMembers[mi] = member with
-                        {
-                            ConverterMethod = companionName,
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
+            // Round 35 T14. One pass is not enough: a method reads recursionCapableNames as the loop found it, so a
+            // caller that sits BEFORE the callee which only becomes context-taking further down the list was passed
+            // by and never looked at again. Under Preserve a second pass repaired the public methods; under SetNull
+            // nothing did, and an arm's helper went on calling a context-taking helper with one argument - CS7036 in
+            // a file no consumer can edit (a concrete-base [MapDerivedType] pair with a cycle through the arm). The
+            // step is idempotent, so it is repeated until a whole pass changes nothing; the set only grows, and it
+            // is bounded by the number of methods.
+            bool changedInPass;
+            do
+            {
+                changedInPass = false;
+                for (var i = 0; i < methods.Count; i++)
+                {
+                    changedInPass |= PropagateContextTo(methods, i, recursionCapableNames, selfRecursivePublicMethods, maxDepth);
+                }
+            } while (changedInPass);
+        }
+
+        /// <summary>
+        ///     Gives <c>methods[i]</c> the context its callees take: every member and constructor argument whose
+        ///     converter is recursion-capable is marked, a call to a self-recursive declared method is turned to its
+        ///     depth companion, and the method itself becomes recursion-capable when any of them was.
+        /// </summary>
+        /// <returns><see langword="true" /> when this call changed the method or the set of names.</returns>
+        private static bool PropagateContextTo(List<MapMethodModel> methods, int i, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
+        {
+            var m = methods[i];
+
+            // Check if any of this method's members/ctor-args uses a recursion-capable synthesized method
+            // OR a self-recursive declared method (which must be redirected to the companion)
+            // OR a Preserve-mode collection helper that already has ConverterNeedsDepthCtx=true.
+            var needsCtx = false;
+            var changed = false;
+            var newMembers = m.Members.ToArray();
+            for (var mi = 0; mi < newMembers.Length; mi++)
+            {
+                var member = newMembers[mi];
+                if (member.ConverterMethod is null)
+                {
+                    continue;
                 }
 
-                var newCtorArgs = m.ConstructorArguments.ToArray();
-                for (var ci = 0; ci < newCtorArgs.Length; ci++)
+                if (member.ConverterNeedsDepthCtx)
                 {
-                    var arg = newCtorArgs[ci];
-                    if (arg.ConverterMethod is null)
-                    {
-                        continue;
-                    }
-
-                    if (arg.ConverterNeedsDepthCtx)
-                    {
-                        // Already marked (e.g. Preserve-mode collection helper set by ResolveConstructorArguments).
-                        needsCtx = true;
-                    }
-                    else if (recursionCapableNames.Contains(arg.ConverterMethod))
-                    {
-                        newCtorArgs[ci] = arg with
-                        {
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
-                    else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
-                    {
-                        var companionName = GeneratedNames.Depth + arg.ConverterMethod;
-                        newCtorArgs[ci] = arg with
-                        {
-                            ConverterMethod = companionName,
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
+                    // Already marked (e.g. Preserve-mode collection helper set by ResolveMembers).
+                    needsCtx = true;
                 }
-
-                if (needsCtx || (m.IsRecursionCapable && !m.IsPartial))
+                else if (recursionCapableNames.Contains(member.ConverterMethod))
                 {
-                    var newRc = m.IsRecursionCapable || needsCtx;
-                    methods[i] = m with
+                    newMembers[mi] = member with
                     {
-                        IsRecursionCapable = newRc,
-                        MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
-                        Members = EquatableArray.From(newMembers),
-                        ConstructorArguments = EquatableArray.From(newCtorArgs)
+                        ConverterNeedsDepthCtx = true
                     };
-                    // ── Preserve-mode propagation fix ──────────────────────────────────
-                    // When a synthesized (non-partial) method is newly marked recursion-capable
-                    // (because its own members need ctx, e.g. a Preserve-mode List<T> helper),
-                    // record it in recursionCapableNames immediately so that public declared
-                    // methods processed LATER in this same loop can see it.
-                    // This handles the case where public methods come BEFORE their synthesized
-                    // callees in the methods list (declaration order: public first, synth second).
-                    // A second pass below handles the reverse order (synth processed first but
-                    // public was already visited).
-                    if (!m.IsPartial && newRc)
+                    needsCtx = true;
+                    changed = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(member.ConverterMethod))
+                {
+                    // Redirect call from declared public method to its depth-guarded companion.
+                    var companionName = GeneratedNames.Depth + member.ConverterMethod;
+                    newMembers[mi] = member with
                     {
-                        recursionCapableNames.Add(m.MethodName);
-                    }
+                        ConverterMethod = companionName,
+                        ConverterNeedsDepthCtx = true
+                    };
+                    needsCtx = true;
+                    changed = true;
                 }
             }
 
+            var newCtorArgs = m.ConstructorArguments.ToArray();
+            for (var ci = 0; ci < newCtorArgs.Length; ci++)
+            {
+                var arg = newCtorArgs[ci];
+                if (arg.ConverterMethod is null)
+                {
+                    continue;
+                }
+
+                if (arg.ConverterNeedsDepthCtx)
+                {
+                    // Already marked (e.g. Preserve-mode collection helper set by ResolveConstructorArguments).
+                    needsCtx = true;
+                }
+                else if (recursionCapableNames.Contains(arg.ConverterMethod))
+                {
+                    newCtorArgs[ci] = arg with
+                    {
+                        ConverterNeedsDepthCtx = true
+                    };
+                    needsCtx = true;
+                    changed = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
+                {
+                    var companionName = GeneratedNames.Depth + arg.ConverterMethod;
+                    newCtorArgs[ci] = arg with
+                    {
+                        ConverterMethod = companionName,
+                        ConverterNeedsDepthCtx = true
+                    };
+                    needsCtx = true;
+                    changed = true;
+                }
+            }
+
+            if (needsCtx || (m.IsRecursionCapable && !m.IsPartial))
+            {
+                var newRc = m.IsRecursionCapable || needsCtx;
+                changed |= newRc != m.IsRecursionCapable;
+                methods[i] = m with
+                {
+                    IsRecursionCapable = newRc,
+                    MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
+                    Members = EquatableArray.From(newMembers),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs)
+                };
+                // ── Preserve-mode propagation fix ──────────────────────────────────
+                // When a synthesized (non-partial) method is newly marked recursion-capable
+                // (because its own members need ctx, e.g. a Preserve-mode List<T> helper),
+                // record it in recursionCapableNames immediately so that public declared
+                // methods processed LATER in this same loop can see it.
+                // This handles the case where public methods come BEFORE their synthesized
+                // callees in the methods list (declaration order: public first, synth second).
+                // A second pass below handles the reverse order (synth processed first but
+                // public was already visited).
+                if (!m.IsPartial && newRc)
+                {
+                    changed |= recursionCapableNames.Add(m.MethodName);
+                }
+            }
+
+            return changed;
         }
 
         // ── None+Throw: upgrade collection/dict helpers whose element method is self-recursive ──
@@ -1014,7 +1051,8 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var key = DeclKey(m, declaredNameCount);
-                if (nodesOnCycle.Contains(key))
+                // ... or a helper already calls its companion (Preserve, round 35 T12): the companion has to exist.
+                if (nodesOnCycle.Contains(key) || nestedRegistry.RequiresDepthCompanion(m.MethodName))
                 {
                     selfRecursivePublicMethods.Add(m.MethodName);
                     // Add the companion name so call-sites in synthesized methods can reference it.

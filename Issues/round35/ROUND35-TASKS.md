@@ -27,9 +27,9 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T9 | **Test and tooling packages** brought up to date, one at a time, gates re-measured. | open |
 | T10 | **The in-process mutation runner** into the repository: tool project, tests, catalogue step, a CI job comparing its report with Stryker's. | open |
 | T11 | **The three Stryker findings filed upstream.** The owner's to send; the write-up is ready. | owner |
-| T12 | **A `[MapDerivedType]` pair used as a list or array element calls the public method with no context** (abstract base, every mode): a cycle through the collection is a stack overflow, and Preserve loses identity between elements. | open - measured, see Notes |
-| T13 | **A `[MapDerivedType]` pair with a concrete base, nested under Preserve or SetNull, skips the dispatch**: a derived instance is mapped as the base, its own members dropped, with DWARF071 (Info) advising the attribute that is already there. | open - measured, see Notes |
-| T14 | **SetNull, a concrete-base `[MapDerivedType]` pair and a cycle through an arm: the generated code does not compile** (CS7036, an arm's helper calls a context-taking helper without one). | open - measured, see Notes |
+| T12 | **A `[MapDerivedType]` pair used as a list or array element calls the public method with no context** (abstract base, every mode): a cycle through the collection is a stack overflow, and Preserve loses identity between elements. | **done** - see Notes |
+| T13 | **A `[MapDerivedType]` pair with a concrete base, nested under Preserve or SetNull, skips the dispatch**: a derived instance is mapped as the base, its own members dropped, with DWARF071 (Info) advising the attribute that is already there. | **done** - see Notes |
+| T14 | **SetNull, a concrete-base `[MapDerivedType]` pair and a cycle through an arm: the generated code does not compile** (CS7036, an arm's helper calls a context-taking helper without one). | **done** - see Notes |
 | T15 | **A `[FlattenGraph]` method's pair nested under Preserve or SetNull is refused as DWARF001**, whose advice (`[MapIgnore("Nodes")]`) would empty the flattened list. | open - measured, see Notes |
 
 ## Notes
@@ -65,8 +65,8 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   class-level ignores; and the block-copy gate counts a directive on that method as customization. Tests:
   `NestedDeclaredPairDirectiveTests` (generator, every new line and branch covered), and at runtime
   `NestedDeclaredPairDirectivesTests` and `ArrayBlitElementConfigTests`, one fact per mode. Not replicated, and
-  not known to be bypassed: `[FlattenGraph]` and `[MapDerivedType]` on such a method (the second has its own
-  dispatch helper) - to be measured as a follow-up.
+  then unmeasured: `[FlattenGraph]` and `[MapDerivedType]` on such a method. Measured since: both are bypassed, and
+  the dispatch pair had older holes beside it - T12 to T15 below.
 
 - **T5.** All 111 sections and 17 registry rows match their descriptors on id, title and severity. Eight prose
   defects corrected: a `.globalconfig` downgrade of DWARF088 does not let the build proceed; the registry
@@ -125,3 +125,35 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   T15: `[FlattenGraph(nameof(G.Entry), nameof(GDto.Nodes))] GDto MapG(G)` alone is clean in all three modes; a
   holder with a `G` member or a `List<G>` is clean without reference handling (it calls `MapG`) and DWARF001 on
   `Nodes` under Preserve and SetNull.
+
+- **T12, T13, T14 fixed.** After the fixes every one of the 24 probe cells is right: a `DogDto` on every route in
+  every mode and with either base, `DwarfMappingDepthException` for a cycle without reference handling, the
+  shared instance under Preserve, `null` on the back edge under SetNull, no process death, and the SetNull case
+  compiles.
+  - **T14, the cause of two things.** `MarkRecursionCapableCallers` read `recursionCapableNames` once per method,
+    in list order, so a caller sitting before a callee that only became context-taking further down was never
+    revisited; a second pass existed for Preserve alone. The step is now repeated until a pass changes nothing
+    (`PropagateContextTo`). That also closed something filed elsewhere: a span or async-stream method over an
+    element with a self-referencing member called the element's helper with one argument (CS7036). The option
+    matrix compares text, both settings of `MaxDepth` produced the same uncompilable text, and the cell was
+    recorded as "silent" - the last row of `DeclaredDivergences`, now removed, both ceilings at 0.
+  - **T12.** A declared mapper method as a collection or dictionary element is a context-upgrade candidate for
+    every pair and under SetNull too (it was: no reference handling and a "mappable object pair" only, which an
+    abstract source is not). Under Preserve the helper calls the method's depth companion from the first synthesis
+    (`NestedMappingRegistry.RequireDepthCompanion`), because identity needs the shared context whether or not
+    there is a cycle; that route was chosen over a Preserve form of `SynthesizeInPlace`, which would have grown two
+    methods already over the parameter ceiling. An overloaded name keeps the public call, as everywhere a
+    companion is chosen by name.
+  - **T13.** `PrefersSynthesizedObjectMap` no longer hands a `[MapDerivedType]` dispatch to a synthesized map of
+    the base type (`IsDeclaredDispatchMethod`, asked through the registry as the pair-customization rule is).
+    Behaviour to know: a plain base instance nested under Preserve/SetNull now throws as the dispatch does
+    everywhere else; it used to be mapped as the base.
+  - Tests: `DispatchPairUnderReferenceHandlingTests` (generator: 46 cases - every mode x base x cyclic for
+    "compiles", "the helper calls the context-taking form", "no map of the base type, no DWARF071"; the overloaded
+    name; the span/stream case; the two predicates) and `DispatchPairNestedRuntimeTests` (runtime: 36 facts over
+    four type families and three modes, member / list / array / dictionary value, identity under Preserve, the
+    four cycles per mode). RED on record: the generator theory failed 1 of 12 before T14 (SetNull, concrete,
+    cyclic); the runtime file could not have been run before T12 (three of its mappers killed the process, one did
+    not compile), and after T12+T13 two Preserve facts still failed (`Assert.Same`, the acyclic families) until
+    the companion route. Patch coverage of the six generator files: 0 uncovered, 0 partial (cobertura, whole
+    Generator.Tests, 18,269 passing).

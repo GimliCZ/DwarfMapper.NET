@@ -16,6 +16,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
     /// <param name="Axis">The case label — <c>ctor(1)</c>, <c>×2</c>, <c>Use="probe"</c>.</param>
     /// <param name="Site">The declaration site the attribute was written at.</param>
     /// <param name="Endpoints">The endpoints where THAT case is silent; one flag per covered cell.</param>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "The list of recorded divergences is empty since round 35, which is its goal and not the end of its use: the next divergence someone records is one of these, and the gates that read the list stay in force.")]
     internal sealed record DivergentCell(
         string UsageName,
         int Arity,
@@ -46,6 +47,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
     ///     findings the OPTION matrix can also see, which consult this store by option name; null for the
     ///     findings only the surface matrix reaches.
     /// </param>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "The list of recorded divergences is empty since round 35, which is its goal and not the end of its use: the next divergence someone records is one of these, and the gates that read the list stay in force.")]
     internal sealed record Divergence(
         string Why,
         string Section,
@@ -83,8 +85,6 @@ namespace DwarfMapper.Generator.Tests.Contracts
     /// </summary>
     internal static class DeclaredDivergences
     {
-        private const string Findings = "Issues/round20/SURFACE-MATRIX-FINDINGS.md";
-
         /// <summary>
         ///     The findings, keyed by the id their write-up carries. 13 findings over 76 cells, every one
         ///     measured by <c>SurfaceParityTests</c> rather than reasoned about.
@@ -107,26 +107,18 @@ namespace DwarfMapper.Generator.Tests.Contracts
         /// </summary>
         public static readonly Dictionary<string, Divergence> Reasons = new(StringComparer.Ordinal)
         {
-            ["MaxDepth"] = new Divergence(
-                "honoured at CreateMap and UpdateInto, silent at the span and async-stream endpoints. Found only " +
-                "once a RECURSIVE fixture existed — a fixed-depth chain never exercises a depth BUDGET, so the " +
-                "row read 'not probed' and claimed nothing. Narrowed but not closed by B33: when the element " +
-                "converter carries the (ctx, depth) tail — a recursive element pair, or any pair under " +
-                "Preserve/SetNull — the span/async models' MaxDepth now sizes the shared DwarfRefContext and " +
-                "IS honoured (ElementWiseReferenceHandlingRuntimeTests pins the depth throw). THESE cells stay " +
-                "divergent because their fixture pair is non-recursive under None handling, so no context is " +
-                "created and the option still changes nothing. Lower severity than it sounds: the default " +
-                "bound of 64 still applies where a guard exists at all, so this is a tighter bound being " +
-                "ignored, not unguarded recursion",
-                Findings + "#MaxDepth",
-                [
-                    new DivergentCell("DwarfMapper",
-                        0,
-                        "MaxDepth=1",
-                        AttributeTargets.Class,
-                        SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
-                ],
-                "MaxDepth")
+            // The MaxDepth row lived here - the last one - and is FIXED (round 35, T14), and it had been filed under
+            // the wrong heading all along. It read "silent at the span and async-stream endpoints: the fixture pair is
+            // non-recursive under None handling, so no context is created and the option changes nothing". The
+            // fixture's element (Src -> Dst) holds a self-referencing member, so its helper DOES take the
+            // (ctx, depth) tail - and the span and stream methods, which sit before that helper in the method
+            // list, were passed by the one-pass caller marking and went on calling it with one argument. The
+            // generated code did not compile (CS7036). The matrix compares text, both settings produced the same
+            // uncompilable text, and "unchanged" was scored Silent: exactly the mislabel this file's own summary
+            // warns about, for a cell nobody compiled. MarkRecursionCapableCallers now repeats until nothing
+            // changes, both methods allocate the shared DwarfRefContext with the option's bound, and the two
+            // cells measure Honoured. Pinned, compiled, in
+            // DispatchPairUnderReferenceHandlingTests.A_span_and_a_stream_map_hand_the_context_to_an_element_with_a_recursive_member.
 
             // The NullCollections row lived here and is FIXED, not deleted for convenience — and it is the one
             // entry on this list that was closed by the resolution IT ITSELF named. Projection read the option

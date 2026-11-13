@@ -15,6 +15,29 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **A `[MapDerivedType]` method used inside another map now dispatches, keeps the shared context and survives a
+  cycle - as a member, a list or array element, a dictionary key or value, in every mode.** Three defects, all
+  older than this round (round 35, T12 to T14):
+  - With an **abstract or interface base**, the collection and dictionary helpers called the public method, each
+    call on a fresh context. **A cycle through the collection was a stack overflow - the process died - without
+    reference handling, under `Preserve` and under `OnCycle = SetNull` alike**; it is now
+    `DwarfMappingDepthException`, the shared instance, or `null` on the back edge, as each mode documents. Under
+    `Preserve`, two references to one element became two objects; they are one again. This holds for any declared
+    mapping method reached as an element, not only a dispatch.
+  - With a **concrete base** under `Preserve` or `SetNull`, the dispatch was skipped: a `Dog` held as an `Animal`
+    came out as an `AnimalDto`, its own members dropped, with DWARF071 (Info) advising the attribute that was
+    already there. It is a `DogDto` now. **One consequence to check:** an instance of the base type itself, which
+    no arm names, used to be mapped there; it now throws `ArgumentException`, exactly as the same method does when
+    called directly or nested without reference handling. Add an arm for the base type if it can occur.
+  - Under `SetNull`, a concrete base and an arm whose type leads back into the graph **generated code that did
+    not compile** (CS7036 inside the `.g.cs`).
+- **A span or async-stream map whose element holds a self-referencing member compiles** (`Src { Node? Root }`,
+  `Node { Node? Next }`). The span method called the element's helper with one argument where it takes the
+  context too - CS7036 in generated code, without reference handling. Both methods now allocate one context per
+  call and `MaxDepth` bounds them, which the option matrix had recorded as "silent at the span and async-stream
+  endpoints": the last entry on the list of recorded divergences, which is now empty. One cause for this and for
+  the `SetNull` case above: the pass that hands the context to callers ran once and never returned to a method it
+  had already passed.
 - **Under `ReferenceHandling = Preserve` or `OnCycle = SetNull`, the directives written on a mapping method now
   apply when its pair is mapped as a nested member or a collection element.** In those modes a nested use of a
   declared pair goes through a generated helper (the public method cannot take the shared tracking context), and

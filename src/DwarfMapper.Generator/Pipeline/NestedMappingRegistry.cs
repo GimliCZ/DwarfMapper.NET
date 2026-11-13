@@ -70,6 +70,10 @@ namespace DwarfMapper.Generator.Pipeline
         // answer is "no" — the same verdict a mapper with no pair-scoped attributes produces.
         private Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?>? _pairIsCustomized;
 
+        private Func<string, ITypeSymbol, bool> _keepsDeclaredRoute = static (_, _) => false;
+
+        private readonly HashSet<string> _requiredDepthCompanions = new(StringComparer.Ordinal);
+
         // Cached result; empty until ComputeRecursionCapability() replaces it.
         private HashSet<string> _recursionCapable = new(StringComparer.Ordinal);
 
@@ -92,6 +96,29 @@ namespace DwarfMapper.Generator.Pipeline
         public IReadOnlyList<(string HelperName, string[] ElemMethods, Action<Func<string, string>> ReSynth)>
             CtxUpgradeCandidates
             => _ctxUpgradeCandidates;
+
+        /// <summary>
+        ///     True for a declared mapper method whose context-taking depth companion must be emitted although nothing
+        ///     found it on a recursion cycle: under Preserve a collection or dictionary helper calls the companion
+        ///     from the start (see <see cref="RequireDepthCompanion" />).
+        /// </summary>
+        public bool RequiresDepthCompanion(string methodName)
+        {
+            return _requiredDepthCompanions.Contains(methodName);
+        }
+
+        /// <summary>
+        ///     Records that the declared method <paramref name="methodName" /> is called by a helper through its depth
+        ///     companion, and returns that companion's name. Round 35 T12: under Preserve an element that resolves to
+        ///     a declared mapper method (a <c>[MapDerivedType]</c> dispatch, a map from an abstract source) was called
+        ///     as the PUBLIC method, each call on a fresh context - two references to one element became two objects,
+        ///     and a cycle through the collection never met itself.
+        /// </summary>
+        public string RequireDepthCompanion(string methodName)
+        {
+            _requiredDepthCompanions.Add(methodName);
+            return GeneratedNames.Depth + methodName;
+        }
 
         /// <summary>The recorded helper → element-method edges (see <see cref="RecordHelperElementEdge" />).</summary>
         public IReadOnlyList<(string HelperName, string ElemMethod, string? ElemParamTypeFqn)> HelperElementEdges => _helperElementEdges;
@@ -139,6 +166,30 @@ namespace DwarfMapper.Generator.Pipeline
         public void SetPairCustomizationRule(Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?> rule)
         {
             _pairIsCustomized = rule;
+        }
+
+        /// <summary>
+        ///     Installs the rule that answers "is the declared method <c>name(paramType)</c> one whose nested uses must
+        ///     stay calls of that method?" - a <c>[MapDerivedType]</c> dispatch, which decides the destination TYPE
+        ///     from the source's runtime type. Under Preserve and SetNull a declared pair otherwise yields to a
+        ///     synthesized object map built from the declared types' members, which cannot make that decision: a
+        ///     derived instance came out as the base type, its own members dropped (round 35 T13). Travels on the
+        ///     registry for the reason <see cref="SetPairCustomizationRule" /> does: the conversion resolver is handed
+        ///     types and names, never the mapper's declarations.
+        /// </summary>
+        public void SetDeclaredRouteRule(Func<string, ITypeSymbol, bool> rule)
+        {
+            _keepsDeclaredRoute = rule;
+        }
+
+        /// <summary>
+        ///     True when nested uses of the declared method <paramref name="name" /> taking
+        ///     <paramref name="paramType" /> must call it (through its context-taking companion or wrapper) instead of
+        ///     a synthesized object map. False until <see cref="SetDeclaredRouteRule" /> installs a rule.
+        /// </summary>
+        public bool KeepsDeclaredRoute(string name, ITypeSymbol paramType)
+        {
+            return _keepsDeclaredRoute(name, paramType);
         }
 
         /// <summary>

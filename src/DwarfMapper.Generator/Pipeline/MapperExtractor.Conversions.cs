@@ -242,7 +242,7 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            if (found is not null && !PrefersSynthesizedObjectMap(req, found))
+            if (found is not null && !PrefersSynthesizedObjectMap(req, found, foundParamType!))
             {
                 converterMethod = found;
                 converterParamTypeFqn = foundParamType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -436,13 +436,35 @@ namespace DwarfMapper.Generator.Pipeline
         ///         cost every Preserve-mode collection of a declared struct pair its fast path for nothing.
         ///     </para>
         /// </remarks>
-        private static bool PrefersSynthesizedObjectMap(ConversionRequest req, string found)
+        private static bool PrefersSynthesizedObjectMap(ConversionRequest req, string found, ITypeSymbol foundParamType)
         {
+            // Round 35 T13: a [MapDerivedType] dispatch does NOT yield. The synthesized form maps the declared
+            // types' members and cannot choose the destination type from the runtime type, so a Dog held as an
+            // Animal came out as an AnimalDto. The dispatch is reached with the shared context all the same:
+            // through its depth companion when it is on a recursion cycle, through its Preserve wrapper otherwise.
             return (req.IsPreserve || req.IsSetNull) &&
                    req.AutoNest &&
                    req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
                    req.TgtType is INamedTypeSymbol namedTgt &&
-                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt);
+                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt) &&
+                   !req.NestedRegistry.KeepsDeclaredRoute(found, foundParamType);
+        }
+
+        /// <summary>
+        ///     True when the class declares a partial mapping method <paramref name="name" /> taking exactly
+        ///     <paramref name="paramType" /> that is a <c>[MapDerivedType]</c> dispatch. A method that also carries
+        ///     <c>[FlattenGraph]</c> is not one: there the arms describe the graph's node types, and the method is
+        ///     read as a flatten (Plan 22).
+        /// </summary>
+        internal static bool IsDeclaredDispatchMethod(INamedTypeSymbol classSymbol, string name, ITypeSymbol paramType)
+        {
+            return classSymbol.GetMembers(name)
+                              .OfType<IMethodSymbol>()
+                              .Any(m => m.IsPartialDefinition &&
+                                        m.Parameters.Length == 1 &&
+                                        SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, paramType) &&
+                                        ReadDerivedTypeAttributes(m).Count > 0 &&
+                                        ReadFlattenGraphAttributes(m).Count == 0);
         }
 
         /// <summary>

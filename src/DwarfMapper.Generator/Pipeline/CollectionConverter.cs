@@ -381,7 +381,8 @@ namespace DwarfMapper.Generator.Pipeline
         ///     post-pass when a None-mode collection's element method is discovered to be self-recursive:
         ///     the originally-emitted body (which called the public entry on a fresh context → StackOverflow)
         ///     is overwritten in place with a depth-guarded, ctx-threaded body. Never register-before-fills
-        ///     (that is Preserve-only). Overwriting in place keeps the helper name stable, so existing member
+        ///     (that is Preserve-only, and under Preserve a declared element is routed through its depth companion
+        ///     when the helper is first built - round 35 T12). Overwriting in place keeps the helper name stable, so existing member
         ///     references stay valid — they just gain <c>ConverterNeedsDepthCtx = true</c>.
         /// </summary>
         public static void SynthesizeInPlace(

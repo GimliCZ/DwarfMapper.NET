@@ -359,8 +359,8 @@ namespace DwarfMapper.Generator.Pipeline
             // Ambiguity counts as "the user wrote a conversion for this pair": the resolver refuses it with
             // DWARF013, and a block copy that quietly resolved the ambiguity by ignoring both candidates would
             // be the loudest possible bypass.
-            FindUserDeclaredConversion(elemReq, out var found, out _, out var ambiguous);
-            if (ambiguous || (found is not null && !PrefersSynthesizedObjectMap(elemReq, found)))
+            FindUserDeclaredConversion(elemReq, out var found, out var foundParamType, out var ambiguous);
+            if (ambiguous || (found is not null && !PrefersSynthesizedObjectMap(elemReq, found, foundParamType!)))
             {
                 return true;
             }
@@ -1284,12 +1284,16 @@ namespace DwarfMapper.Generator.Pipeline
                     diagnostics,
                     NullSourceKind.CollectionElement);
 
+                // Round 35 T12, Preserve: a declared mapper method as the element is called through its depth
+                // companion from the start, so every element shares the one context. (Everything above asked its
+                // questions of the declared name; only the call changes.)
+                var elemCall = PreserveCompanionFor(req, elemConv, ref elemNeedsCtx);
                 converterMethod = CollectionConverter.Synthesize(synthesized,
                     req.SrcType,
                     srcElem,
                     tgtElem,
                     collShape,
-                    elemConv,
+                    elemCall,
                     elemNull,
                     req.IsPreserve,
                     elemNeedsCtx,
@@ -1316,7 +1320,16 @@ namespace DwarfMapper.Generator.Pipeline
                 // collection helper calling it was never re-synthesized, so it still called it with one argument.
                 // That emitted code which did not compile (CS7036). The equivalent partial-method mapper worked,
                 // because its element resolved to a declared method and so WAS recorded here.
-                if (!req.IsPreserve && !req.IsSetNull && !elemNeedsCtx && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))
+                //
+                // Round 35 T12: a DECLARED MAPPER METHOD as the element is recorded for every pair, and under
+                // SetNull as well. It used to be recorded only without reference handling and only for a "mappable
+                // object pair", which an abstract or interface source is not - so the helper for a list of a
+                // [MapDerivedType] pair with an abstract base called the public dispatch with one argument, each call
+                // on a fresh context: a cycle through the list was a stack overflow. (Under Preserve the element was
+                // given its companion above and elemNeedsCtx is already set.)
+                if (!elemNeedsCtx && elemConv is not null && tgtElem is INamedTypeSymbol tgtElemNamed &&
+                    (IsDeclaredMapperMethod(req, elemConv) ||
+                     (!req.IsPreserve && !req.IsSetNull && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))))
                 {
                     var hName = converterMethod;
                     var capSrc = req.SrcType;
@@ -1350,6 +1363,36 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return false;
+        }
+
+        /// <summary>
+        ///     True when <paramref name="converter" /> names one of the class's declared partial mapping methods (an
+        ///     auto-candidate), as opposed to a synthesized helper or a hand-written converter. Such a method takes no
+        ///     context, so a collection or dictionary helper that calls it is a candidate for re-synthesis once the
+        ///     method turns out to be on a recursion cycle - whatever the mode, and whether or not the pair is one the
+        ///     generator would auto-nest.
+        /// </summary>
+        private static bool IsDeclaredMapperMethod(ConversionRequest req, string converter)
+        {
+            return req.AutoCandidates.Any(ac => string.Equals(ac.Name, converter, StringComparison.Ordinal));
+        }
+
+        /// <summary>
+        ///     Under Preserve, the name a collection or dictionary helper calls for an element that resolved to a
+        ///     declared mapper method: its depth companion, which takes the shared context. Otherwise
+        ///     <paramref name="converter" /> unchanged. An overloaded name is left alone, as everywhere a companion is
+        ///     chosen by name: it cannot be told which overload the companion would stand for.
+        /// </summary>
+        private static string? PreserveCompanionFor(ConversionRequest req, string? converter, ref bool needsCtx)
+        {
+            if (!req.IsPreserve || converter is null || needsCtx ||
+                req.AutoCandidates.Count(ac => string.Equals(ac.Name, converter, StringComparison.Ordinal)) != 1)
+            {
+                return converter;
+            }
+
+            needsCtx = true;
+            return req.NestedRegistry.RequireDepthCompanion(converter);
         }
 
         /// <summary>
@@ -1508,15 +1551,18 @@ namespace DwarfMapper.Generator.Pipeline
                     diagnostics,
                     NullSourceKind.CollectionElement);
 
+                // Round 35 T12, Preserve: as for a collection element above.
+                var keyCall = PreserveCompanionFor(req, keyConv, ref keyNeedsCtx);
+                var valCall = PreserveCompanionFor(req, valConv, ref valNeedsCtx);
                 converterMethod = DictionaryConverter.Synthesize(synthesized,
                     req.SrcType,
                     tgtKey,
                     tgtVal,
                     dictHasCount,
                     dictTargetKind,
-                    keyConv,
+                    keyCall,
                     keyNull,
-                    valConv,
+                    valCall,
                     valNull,
                     dictEffectiveNullAsNull,
                     req.IsPreserve,
@@ -1540,20 +1586,22 @@ namespace DwarfMapper.Generator.Pipeline
                 var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
                 converterNeedsCtx = (req.IsPreserve && isMutableDict) || keyNeedsCtx || valNeedsCtx;
 
-                // None+Throw: a key/value resolved to a PUBLIC declared method. Record a re-synthesis
-                // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
-                if (!req.IsPreserve && !req.IsSetNull)
+                // A key/value resolved to a PUBLIC declared method. Record a re-synthesis closure so the
+                // post-pass can upgrade this dict helper if that method is self-recursive. A declared mapper
+                // method is recorded in every mode and for every pair (round 35 T12, as for collections above);
+                // any other public method only without reference handling and for a mappable object pair.
                 {
+                    var noReferenceHandling = !req.IsPreserve && !req.IsSetNull;
                     var keyIsPublicObj = keyConv is not null &&
                                          !keyNeedsCtx &&
-                                         !GeneratedNames.IsAnySynthesized(keyConv) &&
                                          tgtKey is INamedTypeSymbol tk &&
-                                         IsMappableObjectPair(req.Compilation, srcKey, tk);
+                                         (IsDeclaredMapperMethod(req, keyConv) ||
+                                          (noReferenceHandling && !GeneratedNames.IsAnySynthesized(keyConv) && IsMappableObjectPair(req.Compilation, srcKey, tk)));
                     var valIsPublicObj = valConv is not null &&
                                          !valNeedsCtx &&
-                                         !GeneratedNames.IsAnySynthesized(valConv) &&
                                          tgtVal is INamedTypeSymbol tv &&
-                                         IsMappableObjectPair(req.Compilation, srcVal, tv);
+                                         (IsDeclaredMapperMethod(req, valConv) ||
+                                          (noReferenceHandling && !GeneratedNames.IsAnySynthesized(valConv) && IsMappableObjectPair(req.Compilation, srcVal, tv)));
                     if (keyIsPublicObj || valIsPublicObj)
                     {
                         var hName = converterMethod;
