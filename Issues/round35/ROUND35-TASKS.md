@@ -23,7 +23,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | **done** - see Notes |
 | T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | open |
 | T7 | **Move the SDK pin** to the current 10.0 servicing release; re-measure every gate tied to it; drop the AOT compiler override if the new pin makes it dead. | open |
-| T8 | **Ubuntu 26.04 for every Linux job**, the canary removed, on a `full-ci` run. | open |
+| T8 | **Ubuntu 26.04 for every Linux job**, the canary removed, on a `full-ci` run. | **done on its own branch** (`feat/round35-t8`), the owner's yes of 2026-11-13 - see Notes |
 | T9 | **Test and tooling packages** brought up to date, one at a time, gates re-measured. | open |
 | T10 | **The in-process mutation runner** into the repository: tool project, tests, catalogue step, a CI job comparing its report with Stryker's. | open |
 | T11 | **The three Stryker findings filed upstream.** The owner's to send; the write-up is ready. | owner |
@@ -324,3 +324,15 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   clean build. Measured: `B: plain=(n,'') alias=(n,'')` against `A: plain=(n,'') alias=(n,'al')` with the ignore on
   the dispatch method instead. It is the same adoption rule "an arm may resolve to any declared method" (F43)
   applied to a method whose parameter is a BASE of the arm's source. Older than this round.
+
+- **T8: one Ubuntu.** The owner asked why the pipeline used two, and said yes to moving. 16 `runs-on` lines in
+  `ci.yml` (the `aot-trim-gate` matrix entry among them), 2 in `release.yml` and 1 in `actions-security.yml` name
+  `ubuntu-26.04`; `ubuntu-26-canary` is removed, with its row in `CiGateScanTests` and its allowance in
+  `CiRunnerImagePinScanTests`, whose constant moved in the same commit as the rule asks. What the canary had already
+  proven on 26.04, blocking and green since 2026-10-22: the push-time suite and the linux NativeAOT gate. What it had
+  NOT: the six mutation legs, deep-test (coverage floors, ILVerify, benchmark smoke), reproducible-build, sbom,
+  codeql, package-size, fuzz-exhaustion, isa-matrix, perf-tests, net11, and the release workflow - the `full-ci`
+  run of the T8 pull request is their first measurement there, and the release workflow gets none until a tag.
+  The check named `aot-trim-gate (linux-x64, ubuntu-24.04)` becomes `(linux-x64, ubuntu-26.04)` and
+  `ubuntu-26-canary` disappears: a ruleset that requires either by name has to be edited by the owner
+  (`master` has no classic branch protection - the API answers 404 - so nothing was found to edit).
