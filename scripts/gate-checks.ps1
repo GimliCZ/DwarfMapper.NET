@@ -1440,9 +1440,32 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (365 KB = 373,760 B) 810 B on Windows, 997 B on ubuntu.
 # DwarfMapper.Testing (58 KB = 59,392 B) 861 B on Windows, 919 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T12-T15 and T4, at a352851): DwarfMapper 364 -> 366, DwarfMapper.Testing 57.
+# Again on a red PRE-push rehearsal of this job (366 KB over 364), not on a red run.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     bb67d0e (T2)              DwarfMapper 372,763 B   Testing 58,473 B   floor 364 / 57
+#     a352851 (T12-T15, T4)     DwarfMapper 375,384 B   Testing 58,481 B   floor 366 / 57
+#   Windows, SDK 10.0.101, CI=true, a352851: 375,570 B (+186) and 58,528 B (+47) - floor 366 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, bb67d0e -> a352851, compressed bytes, packed in the container:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll    +2,617   the context reaches every caller (a fixed point, T14);
+#                                                             a declared mapper method as a collection or dictionary
+#                                                             element goes through its context-taking form (T12); a
+#                                                             dispatch or flatten method keeps its nested route (T13,
+#                                                             T15); DWARF066 reads a positional record's parameter (T4)
+#   the rest (.rels, the two runtime dlls' entropy)       +4 and +8
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (367 KB = 375,808 B) 238 B on Windows, 424 B on ubuntu - under one
+# small generator change, by design: the next one re-measures. DwarfMapper.Testing (58 KB = 59,392 B) 864 B on
+# Windows, 911 B on ubuntu.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 364
+    'DwarfMapper'         = 366
     'DwarfMapper.Testing' = 57
 }
 
