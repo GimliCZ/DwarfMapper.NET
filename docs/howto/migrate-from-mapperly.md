@@ -23,7 +23,7 @@ on the first build.
 ## Step 1 — Reference the packages
 
 Follow [common-changes.md §1](common-changes.md#change-1--reference-the-packages-target-net10):
-the single `DwarfMapper` package, target `net10.0`. Keep `Riok.Mapperly` installed until Step 5.
+the single `DwarfMapper` package, target `net10.0` or later. Keep `Riok.Mapperly` installed until Step 5.
 
 ## Step 2 — Rename the core attributes
 
@@ -79,7 +79,7 @@ Or, if you'd rather drop the method signatures entirely:
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive = true)]` |
 | `RequiredMappingStrategy.Target` / `Both` | `[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Target/Both)]` |
 | `EnumMappingStrategy.ByName` / `ByValue` | `[DwarfMapper(EnumStrategy = EnumStrategy.ByName/ByValue)]` — **Mapperly defaults to ByValue, DwarfMapper to ByName**; set it explicitly for parity |
-| strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions = false)]` (flips `DWARF038` suggestions into build errors) |
+| strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions = false)]` (flips `DWARF038` — a Warning for lossy conversions, Info otherwise — into build errors) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` — DwarfMapper reconstructs the **full** topology (Mapperly's is partial) |
 | `[UseMapper]` / `[UseStaticMapper]` (compose mappers) | call another mapper from a `Use=` method, or nest types — no first-class mapper-injection attribute |
 
@@ -116,7 +116,8 @@ These have no Mapperly equivalent (see [`../COMPARISON.md`](../COMPARISON.md#cap
   resolve explicitly rather than a per-value remap attribute.
 - **`[UseMapper]` / `[UseStaticMapper]` mapper injection** — no first-class attribute; compose by calling
   another mapper from a `Use=` method or by nesting types.
-- **`[MapperIgnoreObsoleteMembers]`** — obsolete constructors are excluded automatically; otherwise mark
-  members with `[MapIgnore]` per-member.
+- **`[MapperIgnoreObsoleteMembers]`** — not a non-goal: the equivalent is
+  `[DwarfMapper(IgnoreObsoleteMembers = true)]` (off by default; an explicit `[MapProperty]`/`[MapValue]` opts
+  one member back in). Obsolete constructors are excluded automatically either way.
 
 Full divergence notes: [`../MIGRATION.md` §3](../MIGRATION.md#3-from-riokmapperly-4x).

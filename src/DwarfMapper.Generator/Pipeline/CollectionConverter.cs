@@ -381,7 +381,8 @@ namespace DwarfMapper.Generator.Pipeline
         ///     post-pass when a None-mode collection's element method is discovered to be self-recursive:
         ///     the originally-emitted body (which called the public entry on a fresh context → StackOverflow)
         ///     is overwritten in place with a depth-guarded, ctx-threaded body. Never register-before-fills
-        ///     (that is Preserve-only). Overwriting in place keeps the helper name stable, so existing member
+        ///     (that is Preserve-only, and under Preserve a declared element is routed through its depth companion
+        ///     when the helper is first built - round 35 T12). Overwriting in place keeps the helper name stable, so existing member
         ///     references stay valid — they just gain <c>ConverterNeedsDepthCtx = true</c>.
         /// </summary>
         public static void SynthesizeInPlace(
@@ -996,7 +997,7 @@ namespace DwarfMapper.Generator.Pipeline
             var elem = Fq(tgtElem);
             var srcE = Fq(srcElem);
             var srcFq = Fq(srcArrayType);
-            var name = "__DwarfBlit_" + StableHash.Fnv1a(srcFq + "=>" + elem + "[]");
+            var name = GeneratedNames.Blit + StableHash.Fnv1a(srcFq + "=>" + elem + "[]");
             if (synth.ContainsKey(name))
             {
                 return name;
@@ -1075,7 +1076,7 @@ namespace DwarfMapper.Generator.Pipeline
                 _ => iaFq,
             };
 
-            var name = "__DwarfBlitL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            var name = GeneratedNames.BlitList + StableHash.Fnv1a(srcFq + "=>" + ret);
             if (synth.ContainsKey(name))
             {
                 return name;
@@ -1187,7 +1188,7 @@ namespace DwarfMapper.Generator.Pipeline
             var dst = Fq(tgtElem);
             var srcE = Fq(srcElem);
             var srcFq = Fq(srcArrayType);
-            var name = "__DwarfWiden_" + StableHash.Fnv1a(srcFq + "=>" + dst + "[]");
+            var name = GeneratedNames.Widen + StableHash.Fnv1a(srcFq + "=>" + dst + "[]");
             if (synth.ContainsKey(name))
             {
                 return name;
@@ -1262,7 +1263,7 @@ namespace DwarfMapper.Generator.Pipeline
                 _ => iaFq,
             };
 
-            var name = "__DwarfWidenL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            var name = GeneratedNames.WidenList + StableHash.Fnv1a(srcFq + "=>" + ret);
             if (synth.ContainsKey(name))
             {
                 return name;

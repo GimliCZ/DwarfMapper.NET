@@ -13,6 +13,7 @@ public partial class M
     /// </list></remarks>
     public partial global::Demo.B Map(global::Demo.A a)
     {
+        global::System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();
         global::System.ArgumentNullException.ThrowIfNull(a);
         var __dwarf_target = new global::Demo.B
         {

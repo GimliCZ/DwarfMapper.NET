@@ -27,6 +27,13 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>= new()</c> - so a member a When guard leaves unassigned still holds a non-null value. <c>= null!</c>
         ///     and <c>= default!</c> are nulls in disguise and do not count; a member declared in metadata has no syntax
         ///     to ask and does not count either, so DWARF066 errs towards reporting.
+        ///     <para>
+        ///         A member declared by a positional record's parameter list (<c>record R(string Name)</c>) counts
+        ///         (round 35 T4): every constructor of the record has to pass that parameter, whose type is the
+        ///         member's, so what a false guard leaves behind is the value the constructor was given. Only a
+        ///         parameter DEFAULT that is a null in disguise (<c>string Name = null!</c>) does not. It was reported
+        ///         for four rounds as a known false positive, "no initializer to read".
+        ///     </para>
         /// </summary>
         private static bool HasNonNullInitializer(ITypeSymbol type, string name)
         {
@@ -34,10 +41,17 @@ namespace DwarfMapper.Generator.Pipeline
                 foreach (var member in t.GetMembers(name))
                     foreach (var reference in member.DeclaringSyntaxReferences)
                     {
-                        var initializer = reference.GetSyntax() switch
+                        var syntax = reference.GetSyntax();
+                        if (syntax is ParameterSyntax { Default: null })
+                        {
+                            return true; // a positional record's member: always passed, never defaulted
+                        }
+
+                        var initializer = syntax switch
                         {
                             PropertyDeclarationSyntax p => p.Initializer,
                             VariableDeclaratorSyntax v => v.Initializer,
+                            ParameterSyntax positional => positional.Default,
                             _ => null
                         };
                         if (initializer is null)

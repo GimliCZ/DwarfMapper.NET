@@ -243,6 +243,54 @@ namespace DwarfMapper.Generator.Pipeline
             }
         }
 
+        // ── DWARF118: a [FlattenGraph] method on a recursion cycle through its own node leaves ──
+        // The flatten walk keeps a set of the NODES it has visited; a node member that is not an edge is a leaf,
+        // converted by an ordinary call from inside the flat-node helper. When that call leads back to the flatten
+        // method the walk is entered again from inside itself, with a fresh visited set and no depth. Round 35 (T17),
+        // measured one process per case: a node holding a reference to the object that holds the graph ended in a
+        // stack overflow without reference handling, under Preserve and under SetNull. The flat-node helper is text
+        // with one parameter - nothing here can hand it a context - so the shape is refused.
+        //
+        // On the call graph as DetectDeclaredMethodsOnRecursionCycle left it, like DWARF030 above: the question is
+        // "does the leaf's converter reach this method", asked for each recorded leaf of each flatten method.
+        private static void ReportFlattenLeavesLeadingBack(List<MapMethodModel> methods, Dictionary<string, HashSet<string>> allCallGraph, NestedMappingRegistry nestedRegistry, Dictionary<int, LocationInfo?> publicMethodLocs, List<DiagnosticInfo> diagnostics, Dictionary<string, int> declaredNameCount)
+        {
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                if (!m.IsPartial || m.FlattenGraphDirectives.Count == 0)
+                {
+                    continue;
+                }
+
+                var methodKey = DeclKey(m, declaredNameCount);
+                foreach (var leaf in nestedRegistry.FlattenLeafCalls)
+                {
+                    if (!string.Equals(leaf.FlattenSourceFqn, m.ParameterTypeFullName, StringComparison.Ordinal) ||
+                        !string.Equals(leaf.FlattenTargetFqn, m.ReturnTypeFullName, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var leafKey = ExactOverloadKey(leaf.Converter, leaf.ConverterParamTypeFqn, declaredNameCount) ?? leaf.Converter;
+                    if (!string.Equals(leafKey, methodKey, StringComparison.Ordinal) && !CanReach(allCallGraph, leafKey, methodKey))
+                    {
+                        continue;
+                    }
+
+                    publicMethodLocs.TryGetValue(i, out var location);
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.FlattenGraphLeafLeadsBack,
+                        location,
+                        "[FlattenGraph] on '" + m.MethodName + "': the node member '" + leaf.LeafName + "' is converted by '" + leaf.Converter +
+                        "', which leads back to '" + m.MethodName + "'. The walk tracks the nodes it has visited and nothing else, so a " +
+                        "cycle through a node's own member would enter it again from inside itself until the stack ends. Keep '" +
+                        leaf.LeafName + "' out of the flattened node (ignore it for the node's destination type, or give it a type " +
+                        "that does not lead back, such as an identifier)"));
+                }
+            }
+        }
+
         // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
         // After recursion-capability is finalised, mark the methods that need register-before-populate emission.
         private static void MarkPreserveModeMethods(List<MapMethodModel> methods, bool isPreserveMode)
@@ -680,105 +728,142 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                // Check if any of this method's members/ctor-args uses a recursion-capable synthesized method
-                // OR a self-recursive declared method (which must be redirected to the companion)
-                // OR a Preserve-mode collection helper that already has ConverterNeedsDepthCtx=true.
-                var needsCtx = false;
-                var newMembers = m.Members.ToArray();
-                for (var mi = 0; mi < newMembers.Length; mi++)
-                {
-                    var member = newMembers[mi];
-                    if (member.ConverterMethod is null)
-                    {
-                        continue;
-                    }
+                PropagateContextTo(methods, i, recursionCapableNames, selfRecursivePublicMethods, maxDepth);
+            }
 
-                    if (member.ConverterNeedsDepthCtx)
-                    {
-                        // Already marked (e.g. Preserve-mode collection helper set by ResolveMembers).
-                        needsCtx = true;
-                    }
-                    else if (recursionCapableNames.Contains(member.ConverterMethod))
-                    {
-                        newMembers[mi] = member with
-                        {
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
-                    else if (selfRecursivePublicMethods.Contains(member.ConverterMethod))
-                    {
-                        // Redirect call from declared public method to its depth-guarded companion.
-                        var companionName = GeneratedNames.Depth + member.ConverterMethod;
-                        newMembers[mi] = member with
-                        {
-                            ConverterMethod = companionName,
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
+            // Round 35 T14. One pass is not enough: a method reads recursionCapableNames as the loop found it, so a
+            // caller that sits BEFORE the callee which only becomes context-taking further down the list was passed
+            // by and never looked at again. Under Preserve a second pass repaired the public methods; under SetNull
+            // nothing did, and an arm's helper went on calling a context-taking helper with one argument - CS7036 in
+            // a file no consumer can edit (a concrete-base [MapDerivedType] pair with a cycle through the arm). The
+            // step is idempotent, so it is repeated until a whole pass changes nothing; the set only grows, and it
+            // is bounded by the number of methods.
+            bool changedInPass;
+            do
+            {
+                changedInPass = false;
+                for (var i = 0; i < methods.Count; i++)
+                {
+                    changedInPass |= PropagateContextTo(methods, i, recursionCapableNames, selfRecursivePublicMethods, maxDepth);
+                }
+            } while (changedInPass);
+        }
+
+        /// <summary>
+        ///     Gives <c>methods[i]</c> the context its callees take: every member and constructor argument whose
+        ///     converter is recursion-capable is marked, a call to a self-recursive declared method is turned to its
+        ///     depth companion, and the method itself becomes recursion-capable when any of them was.
+        /// </summary>
+        /// <returns><see langword="true" /> when this call changed the method or the set of names.</returns>
+        private static bool PropagateContextTo(List<MapMethodModel> methods, int i, HashSet<string> recursionCapableNames, HashSet<string> selfRecursivePublicMethods, int maxDepth)
+        {
+            var m = methods[i];
+
+            // Check if any of this method's members/ctor-args uses a recursion-capable synthesized method
+            // OR a self-recursive declared method (which must be redirected to the companion)
+            // OR a Preserve-mode collection helper that already has ConverterNeedsDepthCtx=true.
+            var needsCtx = false;
+            var changed = false;
+            var newMembers = m.Members.ToArray();
+            for (var mi = 0; mi < newMembers.Length; mi++)
+            {
+                var member = newMembers[mi];
+                if (member.ConverterMethod is null)
+                {
+                    continue;
                 }
 
-                var newCtorArgs = m.ConstructorArguments.ToArray();
-                for (var ci = 0; ci < newCtorArgs.Length; ci++)
+                if (member.ConverterNeedsDepthCtx)
                 {
-                    var arg = newCtorArgs[ci];
-                    if (arg.ConverterMethod is null)
-                    {
-                        continue;
-                    }
-
-                    if (arg.ConverterNeedsDepthCtx)
-                    {
-                        // Already marked (e.g. Preserve-mode collection helper set by ResolveConstructorArguments).
-                        needsCtx = true;
-                    }
-                    else if (recursionCapableNames.Contains(arg.ConverterMethod))
-                    {
-                        newCtorArgs[ci] = arg with
-                        {
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
-                    else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
-                    {
-                        var companionName = GeneratedNames.Depth + arg.ConverterMethod;
-                        newCtorArgs[ci] = arg with
-                        {
-                            ConverterMethod = companionName,
-                            ConverterNeedsDepthCtx = true
-                        };
-                        needsCtx = true;
-                    }
+                    // Already marked (e.g. Preserve-mode collection helper set by ResolveMembers).
+                    needsCtx = true;
                 }
-
-                if (needsCtx || (m.IsRecursionCapable && !m.IsPartial))
+                else if (recursionCapableNames.Contains(member.ConverterMethod))
                 {
-                    var newRc = m.IsRecursionCapable || needsCtx;
-                    methods[i] = m with
+                    newMembers[mi] = member with
                     {
-                        IsRecursionCapable = newRc,
-                        MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
-                        Members = EquatableArray.From(newMembers),
-                        ConstructorArguments = EquatableArray.From(newCtorArgs)
+                        ConverterNeedsDepthCtx = true
                     };
-                    // ── Preserve-mode propagation fix ──────────────────────────────────
-                    // When a synthesized (non-partial) method is newly marked recursion-capable
-                    // (because its own members need ctx, e.g. a Preserve-mode List<T> helper),
-                    // record it in recursionCapableNames immediately so that public declared
-                    // methods processed LATER in this same loop can see it.
-                    // This handles the case where public methods come BEFORE their synthesized
-                    // callees in the methods list (declaration order: public first, synth second).
-                    // A second pass below handles the reverse order (synth processed first but
-                    // public was already visited).
-                    if (!m.IsPartial && newRc)
+                    needsCtx = true;
+                    changed = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(member.ConverterMethod))
+                {
+                    // Redirect call from declared public method to its depth-guarded companion.
+                    var companionName = GeneratedNames.Depth + member.ConverterMethod;
+                    newMembers[mi] = member with
                     {
-                        recursionCapableNames.Add(m.MethodName);
-                    }
+                        ConverterMethod = companionName,
+                        ConverterNeedsDepthCtx = true
+                    };
+                    needsCtx = true;
+                    changed = true;
                 }
             }
 
+            var newCtorArgs = m.ConstructorArguments.ToArray();
+            for (var ci = 0; ci < newCtorArgs.Length; ci++)
+            {
+                var arg = newCtorArgs[ci];
+                if (arg.ConverterMethod is null)
+                {
+                    continue;
+                }
+
+                if (arg.ConverterNeedsDepthCtx)
+                {
+                    // Already marked (e.g. Preserve-mode collection helper set by ResolveConstructorArguments).
+                    needsCtx = true;
+                }
+                else if (recursionCapableNames.Contains(arg.ConverterMethod))
+                {
+                    newCtorArgs[ci] = arg with
+                    {
+                        ConverterNeedsDepthCtx = true
+                    };
+                    needsCtx = true;
+                    changed = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
+                {
+                    var companionName = GeneratedNames.Depth + arg.ConverterMethod;
+                    newCtorArgs[ci] = arg with
+                    {
+                        ConverterMethod = companionName,
+                        ConverterNeedsDepthCtx = true
+                    };
+                    needsCtx = true;
+                    changed = true;
+                }
+            }
+
+            if (needsCtx || (m.IsRecursionCapable && !m.IsPartial))
+            {
+                var newRc = m.IsRecursionCapable || needsCtx;
+                changed |= newRc != m.IsRecursionCapable;
+                methods[i] = m with
+                {
+                    IsRecursionCapable = newRc,
+                    MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
+                    Members = EquatableArray.From(newMembers),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs)
+                };
+                // ── Preserve-mode propagation fix ──────────────────────────────────
+                // When a synthesized (non-partial) method is newly marked recursion-capable
+                // (because its own members need ctx, e.g. a Preserve-mode List<T> helper),
+                // record it in recursionCapableNames immediately so that public declared
+                // methods processed LATER in this same loop can see it.
+                // This handles the case where public methods come BEFORE their synthesized
+                // callees in the methods list (declaration order: public first, synth second).
+                // A second pass below handles the reverse order (synth processed first but
+                // public was already visited).
+                if (!m.IsPartial && newRc)
+                {
+                    changed |= recursionCapableNames.Add(m.MethodName);
+                }
+            }
+
+            return changed;
         }
 
         // ── None+Throw: upgrade collection/dict helpers whose element method is self-recursive ──
@@ -1014,7 +1099,8 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 var key = DeclKey(m, declaredNameCount);
-                if (nodesOnCycle.Contains(key))
+                // ... or a helper already calls its companion (Preserve, round 35 T12): the companion has to exist.
+                if (nodesOnCycle.Contains(key) || nestedRegistry.RequiresDepthCompanion(m.MethodName))
                 {
                     selfRecursivePublicMethods.Add(m.MethodName);
                     // Add the companion name so call-sites in synthesized methods can reference it.
@@ -1640,6 +1726,13 @@ namespace DwarfMapper.Generator.Pipeline
                     methodLocation,
                     acc.Diagnostics);
 
+                // DWARF119: a base that can be instantiated needs an arm of its own.
+                ReportInstantiableBaseWithoutArm(sourceType,
+                    rawDerivedPairs.Select(p => p.Item1),
+                    "'" + method.Name + "'",
+                    methodLocation,
+                    acc.Diagnostics);
+
                 var armModels = sortedArms
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
@@ -1754,7 +1847,13 @@ namespace DwarfMapper.Generator.Pipeline
                                    out _,
                                    out _);
 
-            if (isCollReturn || isDictReturn)
+            // Round 35 T16: an enum or a built-in scalar is a VALUE to convert too. [GenerateMap] was given this
+            // route for it in an earlier round ("An ENUM target needs the same treatment", below); the declared
+            // method was not, and `partial StatusDto Map(Status s)` went on being built as an object with no members:
+            // `return new StatusDto { };`, the default for every input, in a clean build.
+            var isValueLikeReturn = IsValueLikeDestination(targetType);
+
+            if (isCollReturn || isDictReturn || isValueLikeReturn)
             {
                 // The route emits `return helper(param);` — there is nowhere for an extra parameter to go, so a
                 // second parameter is refused here rather than dropped from the implementing half (which emitted
@@ -1785,7 +1884,7 @@ namespace DwarfMapper.Generator.Pipeline
                     method.Name,
                     acc.Diagnostics,
                     out var tlConverter,
-                    out _,
+                    out var tlNull,
                     out var tlNeedsCtx,
                     out _,
                     acc.NestedRegistry,
@@ -1797,6 +1896,16 @@ namespace DwarfMapper.Generator.Pipeline
                     // objects, silently. The [GenerateMap] path was fixed for this; the DECLARED-METHOD path
                     // was the same bug at the other door.
                     reservedConverters: decls.MapperReservedConverters);
+
+                // A scalar pair this route cannot emit as `return helper(value);` - a null to handle first, or no
+                // helper because the value is assigned as it is - is refused by name (DWARF117). It used to be a
+                // bare CS8795, or the wrong id.
+                if (tlResolved && isValueLikeReturn &&
+                    ScalarMapRefusal(sourceType, targetType, "Mapping method '" + method.Name + "'", tlConverter, tlNull) is { } scalarRefusal)
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ScalarMapNeedsNoConversion, methodLocation, scalarRefusal));
+                    return;
+                }
 
                 if (!tlResolved || tlConverter is null)
                     // Element conversion failed (diagnostic already reported). Skip this method.
@@ -2886,6 +2995,20 @@ namespace DwarfMapper.Generator.Pipeline
             var pair = "'" + srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) + "' → '" +
                        tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) + "'";
 
+            // Round 35 T2. Directives written ON the pair's declared partial customize the pair exactly as the
+            // pair-scoped forms below do. Without reference handling the element resolves to that method and the loop
+            // is kept anyway; under Preserve/SetNull the method yields to a synthesized helper
+            // (PrefersSynthesizedObjectMap), the user-conversion question answers no, and an array of
+            // layout-identical structs was block-copied past an [MapIgnore] the method carries.
+            // Any attribute of ours on the method, whichever: the gate keeps the loop for the sake of meaning, and
+            // a directive that turns out not to touch the copy costs a fast path, never a wrong value.
+            if (DeclaredPartialFor(decls, srcElem, tgtElem) is { } declaredPartial &&
+                declaredPartial.GetAttributes().Any(a =>
+                    string.Concat(KnownNames.AttributeClassName(a.AttributeClass)).StartsWith(KnownNames.Ns + ".", StringComparison.Ordinal)))
+            {
+                return ("the directives on '" + declaredPartial.Name + "', the method declared for " + pair, "applying");
+            }
+
             if (AnyPairIgnore(decls.PairIgnores, tgtElem))
             {
                 return ("the pair-scoped [MapIgnore<T>] declared for " + pair, "applying");
@@ -3397,7 +3520,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // and a follow-up audit caught [GenerateMap<int, long>] emitting `return new long { };` for
                 // exactly the same reason. SpecialType covers the primitives, string, decimal, char and bool;
                 // TypeKind.Enum covers the rest of the family.
-                var genIsValueLike = genTgt.TypeKind == TypeKind.Enum || genTgt.SpecialType != SpecialType.None;
+                // The one predicate the declared method asks as well, since round 35 (it looks through Nullable<T>).
+                var genIsValueLike = IsValueLikeDestination(genTgt);
 
                 if (genIsColl || genIsDict || genIsValueLike)
                 {
@@ -3414,7 +3538,7 @@ namespace DwarfMapper.Generator.Pipeline
                         "Map",
                         acc.Diagnostics,
                         out var gConv,
-                        out _,
+                        out var gNull,
                         out var gNeedsCtx,
                         out _,
                         acc.NestedRegistry,
@@ -3422,6 +3546,15 @@ namespace DwarfMapper.Generator.Pipeline
                         // dedicated to one pair — a [MapConstructor] factory over the same types matches by
                         // signature and wins, so the loop constructs each element and assigns nothing.
                         reservedConverters: decls.MapperReservedConverters);
+
+                    // The same refusal the declared method gets: a scalar pair that needs null handling, or no
+                    // conversion at all (which generated nothing here and said nothing).
+                    if (gResolved && genIsValueLike &&
+                        ScalarMapRefusal(genSrc, genTgt, "[GenerateMap<" + genSrc.ToDisplayString() + ", " + genTgt.ToDisplayString() + ">]", gConv, gNull) is { } genScalarRefusal)
+                    {
+                        acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ScalarMapNeedsNoConversion, genLoc, genScalarRefusal));
+                        continue;
+                    }
 
                     if (!gResolved || gConv is null)
                     {
@@ -3697,6 +3830,21 @@ namespace DwarfMapper.Generator.Pipeline
         ///     anything moved, which is the check this round added after three boundary bugs found the other
         ///     way round.
         /// </remarks>
+        /// <summary>
+        ///     The partial mapping method this class declares for exactly <paramref name="src" /> →
+        ///     <paramref name="tgt" /> - one source parameter, that return type - or <see langword="null" /> when there
+        ///     is none. Two declarations of one pair are not arbitrated here: a nested use of such a pair is DWARF013
+        ///     before any helper for it matters (NestedDeclaredPairDirectiveTests).
+        /// </summary>
+        private static IMethodSymbol? DeclaredPartialFor(MapperDeclarations decls, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return decls.ClassSymbol.GetMembers()
+                        .OfType<IMethodSymbol>()
+                        .FirstOrDefault(m => m.IsPartialDefinition && m.Parameters.Length == 1 &&
+                                             SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, src) &&
+                                             SymbolEqualityComparer.Default.Equals(m.ReturnType, tgt));
+        }
+
         private static void DrainNestedMappingQueue(
             GeneratorAttributeSyntaxContext ctx,
             MapperDeclarations decls,
@@ -3718,6 +3866,67 @@ namespace DwarfMapper.Generator.Pipeline
                 // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.
                 var (nestedExplicit, nestedExtras) = MatchPairProps(decls.PairProps, nestedSrc, nestedTgt);
                 var nestedIgnores = MatchPairIgnores(decls.PairIgnores, nestedTgt);
+                var nestedValues = MatchPairValues(decls.PairValues, nestedTgt);
+
+                // Round 35 T2. A helper synthesized for a pair the class DECLARES AS A PARTIAL must map it the way that
+                // partial does - with the directives written on the method, not only the class's pair-scoped ones.
+                // Under Preserve/SetNull a nested use of the pair is REQUIRED to go through this helper (the public
+                // method cannot take the shared context; PrefersSynthesizedObjectMap), so the method's own
+                // [MapIgnore]/[MapProperty]/[MapValue]/... were dropped on exactly that route: an ignored member was
+                // mapped, with no diagnostic. Merged as the declared path merges them: the method's win, the
+                // pair-scoped ones fill the gaps, class-level ignores apply as they do to the method.
+                var declaredPartial = DeclaredPartialFor(decls, nestedSrc, nestedTgt);
+                Dictionary<string, string>? nestedStringFormats = null;
+                var nestedFlattenRoots = new List<string>();
+                var nestedReinterpret = new List<string>();
+                List<string>? nestedShare = null;
+                List<(string Member, int Offset)>? nestedDense = null;
+                var nestedIgnoredSources = ClassIgnoredSources(decls);
+                if (declaredPartial is not null)
+                {
+                    var methodExplicit = ReadExplicitMaps(declaredPartial);
+                    // Inherited [ReverseMap] renames too; what they have to report was reported at the method.
+                    methodExplicit.AddRange(CollectReverseRenames(decls.ClassSymbol, declaredPartial, nestedSrc, nestedTgt,
+                        methodExplicit, new List<DiagnosticInfo>(), nestedOrigin));
+                    var explicitTargets = new HashSet<string>(methodExplicit.Select(m => m.Target), StringComparer.Ordinal);
+                    foreach (var pe in nestedExplicit)
+                        if (explicitTargets.Add(pe.Target))
+                        {
+                            methodExplicit.Add(pe);
+                        }
+
+                    nestedExplicit = methodExplicit;
+
+                    var methodExtras = ReadMapPropertyExtras(declaredPartial);
+                    var extraTargets = new HashSet<string>(methodExtras.Select(e => e.Target), StringComparer.Ordinal);
+                    foreach (var pe in nestedExtras)
+                        if (extraTargets.Add(pe.Target))
+                        {
+                            methodExtras.Add(pe);
+                        }
+
+                    nestedExtras = methodExtras;
+
+                    foreach (var name in decls.ClassIgnores) nestedIgnores.Add(name);
+                    foreach (var name in ReadIgnores(declaredPartial)) nestedIgnores.Add(name);
+
+                    var methodValues = ReadMapValues(declaredPartial);
+                    var valueTargets = new HashSet<string>(methodValues.Select(v => v.Target), StringComparer.Ordinal);
+                    foreach (var pv in nestedValues)
+                        if (valueTargets.Add(pv.Target))
+                        {
+                            methodValues.Add(pv);
+                        }
+
+                    nestedValues = methodValues;
+
+                    nestedStringFormats = ReadStringFormats(declaredPartial);
+                    nestedFlattenRoots = ReadFlattenRoots(declaredPartial);
+                    nestedReinterpret = ReadReinterpretMembers(declaredPartial);
+                    nestedShare = ReadShareMembers(declaredPartial);
+                    nestedDense = ReadDenseEnumKeys(declaredPartial);
+                    nestedIgnoredSources = IgnoredSourcesFor(decls, declaredPartial);
+                }
 
                 // Inform the registry that we are now building this pair's body,
                 // so subsequent GetOrReserve calls record edges in the dependency graph.
@@ -3846,7 +4055,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // one, otherwise the enclosing class's policy. Without the pair-scoped lookup the
                         // enclosing class's value is the ONLY input, which is how one logical nested pair
                         // reached from two classes ended up with opposite null semantics.
-                        SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, null, nestedSrc, nestedTgt, policy.SkipNullSrc),
+                        SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, declaredPartial, nestedSrc, nestedTgt, policy.SkipNullSrc),
                         AllowNonPublic: policy.AllowNonPublic,
                         // FALSE on purpose: this is the auto-acc.Synthesized NESTED mapper. Explicit-only guards
                         // the TOP-LEVEL trust boundary; reaching a nested pair already required the developer
@@ -3866,20 +4075,23 @@ namespace DwarfMapper.Generator.Pipeline
                     decls.AllMethods,
                     decls.MapperMethods,
                     acc.Synthesized,
-                    new List<string>(),
-                    new List<string>(), // no flatten/reinterpret
+                    nestedFlattenRoots,
+                    nestedReinterpret, // empty unless the pair's declared partial names some
                     // A synthesized nested mapper must not adopt a dedicated converter either — the author never wrote
                     // this pair, so they certainly did not offer it one.
                     decls.MapperReservedConverters,
                     nestedConsumed,
                     nestedRequiredMustInit,
                     acc.NestedRegistry,
-                    MatchPairValues(decls.PairValues, nestedTgt),
+                    nestedValues,
                     decls.ValueProviders,
                     mapPropertyExtras: nestedExtras,
+                    stringFormats: nestedStringFormats,
                     requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
                     factoryExcludedMembers: nestedFactoryExcluded,
-                    ignoredSourceMembers: ClassIgnoredSources(decls));
+                    ignoredSourceMembers: nestedIgnoredSources,
+                    shareMembers: nestedShare,
+                    denseEnumMembers: nestedDense);
 
                 // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
                 // because source coverage has never applied at depth and turning it on for every acc.Synthesized pair

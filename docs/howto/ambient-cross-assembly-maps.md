@@ -58,7 +58,7 @@ do **not** declare the map in the consuming assembly — it is declared once, an
 | Both types in this assembly (or a referenced one) | the concrete generated mapper / `order.ToOrderDto()` extension — fully compile-checked |
 | Map declared in an assembly you don't reference | `IDwarfMapper.Map<TDest>(src)` (ambient) |
 | You want the ambient call without injecting anything | `Dwarf.Map<TSrc, TDest>(src)` / `Dwarf.Map(src, existing)` — see below |
-| Collections | project at the call site: `list.Select(mapper.Map<Dst>)` (the ambient registry holds single-object maps) |
+| Collections | `mapper.Map<ICollection<Dst>>(listOfSources)` — by default (`RegisterCollectionShapes = true`) each declared object map is also registered under the common collection shapes, so no separate collection pair is needed. With `RegisterCollectionShapes = false` the registry holds single-object maps only: project at the call site, `list.Select(mapper.Map<Dst>)` |
 
 ### `Dwarf.Map`: the ambient call, bound at compile time where possible
 

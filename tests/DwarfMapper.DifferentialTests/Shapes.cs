@@ -246,6 +246,7 @@ namespace DwarfMapper.DifferentialTests
         ///     <c>DispatchSrc</c> pair above then reuses this declared pair for its <c>Only</c> member.
         /// </summary>
         [MapDerivedType<AliasCommand, AliasCommandDto>]
+        [MapDerivedType<Command, CommandDto>]
         public partial CommandDto ToCommand(Command src);
     }
 

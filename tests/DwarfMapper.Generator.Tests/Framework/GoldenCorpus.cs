@@ -482,7 +482,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                           public class ADerived : A { public int Y { get; set; } }
                                           public class B { public int X { get; set; } }
                                           public class BDerived : B { public int Y { get; set; } }
-                                          [DwarfMapper] public partial class M { [MapDerivedType(typeof(ADerived), typeof(BDerived))] public partial B Map(A a); }
+                                          [DwarfMapper] public partial class M { [MapDerivedType(typeof(ADerived), typeof(BDerived))] [MapDerivedType(typeof(A), typeof(B))] public partial B Map(A a); }
                                           """, "DwarfGenerator");
 
             yield return ("Hooks", """

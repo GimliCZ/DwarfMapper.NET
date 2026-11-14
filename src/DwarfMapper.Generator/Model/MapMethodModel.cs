@@ -239,6 +239,13 @@ namespace DwarfMapper.Generator.Model
     ///     <see cref="IsProjection" /> method's tree (round 31 T16), or <see langword="null" /> when none is emitted —
     ///     any other method shape, or a projection whose name is taken (DWARF112).
     /// </param>
+    /// <param name="ChecksStack">
+    ///     Whether the method opens with <c>RuntimeHelpers.EnsureSufficientExecutionStack()</c>: true for every declared
+    ///     mapping method of a mapper that holds user-written code (round 35, T20; see
+    ///     <c>MapperExtractor.HoldsUserWrittenCode</c>). The depth guard counts the calls the generator emits; a
+    ///     converter, a hook or a factory the user wrote can call a mapping method again, and that loop the generator
+    ///     never sees.
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -284,7 +291,8 @@ namespace DwarfMapper.Generator.Model
         bool ReturnIsNullableRef = false,
         string AsyncStreamTargetElementFullName = "",
         string ProjectionSourceElementFullName = "",
-        string? ProjectionExpressionName = null) : IEquatable<MapMethodModel>
+        string? ProjectionExpressionName = null,
+        bool ChecksStack = false) : IEquatable<MapMethodModel>
     {
         /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
         /// <remarks>

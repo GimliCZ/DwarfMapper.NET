@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF116`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF120`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -70,7 +70,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 > The promise was removed and `[SuppressMessage]` was implemented, with a test pinning the pragma behaviour so
 > a future Roslyn change would be noticed.
 
-`DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
+`DWARF004`, `DWARF006`, `DWARF019`, `DWARF029` and `DWARF102` are retired/reserved ids and are never emitted.
 
 The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR17` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
@@ -105,8 +105,8 @@ Every diagnostic below documents its own fix; this table is just the order to ap
 
 The `[MapTo]` registry front door (attribute-on-the-source, no mapper class) has its own `DWARFR##` codes,
 category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `DWARF###` codes below. **`[MapTo]`
-is a prototype/experimental tier**: its diagnostics are deliberately not release-tracked and are exempt from the
-DWARF0xx self-validation scans that the rest of this reference is held to.
+is a prototype/experimental tier**. Its diagnostics are release-tracked like the rest
+(`AnalyzerReleases.Unshipped.md`) and held to scans of their own; only the id prefix and the category differ.
 
 | Code | Meaning & fix |
 |---|---|
@@ -583,7 +583,9 @@ A `[MapProperty(When=)]` guards a non-nullable reference target with no non-null
 false the member is not assigned and keeps its default (which for a non-nullable reference is `null`). A member
 declared with its own non-null initializer (`= ""`, `= string.Empty`, `= new()`) is not reported - the remedy
 this entry has always named, which until round 32 did not actually clear it; `= null!` and `= default!` are nulls
-in disguise and still report. An update-into (`partial void Patch(Src s, Dst d)`) is not reported either: it
+in disguise and still report. A member a positional record declares (`record Base(string Name)`) is not
+reported either: every constructor has to pass it, so a false guard leaves what the constructor was given - unless
+the parameter's own default is a null in disguise (`string Name = null!`). An update-into (`partial void Patch(Src s, Dst d)`) is not reported either: it
 writes into an instance the caller already holds, so a false guard leaves the member at its current value, which
 is the point of a guarded update. **Fix:** give the member a non-null default initializer, make it nullable, or
 state that the unset default is intended, for that one member:
@@ -715,7 +717,7 @@ The source member is declared as a concrete class that something else in your co
 mapper resolves members at **compile time from the declared type**, so if that member holds a derived instance
 at run time, the members declared only on the derived type are dropped — silently, with no error:
 
-<!-- fence-exempt: illustrates a type shape that triggers DWARF042; a fragment, not a compilable unit -->
+<!-- fence-exempt: illustrates a type shape that triggers DWARF071; a fragment, not a compilable unit -->
 ```csharp
 public class Animal { public string Name { get; set; } = ""; }
 public sealed class Dog : Animal { public string Breed { get; set; } = ""; }
@@ -809,7 +811,6 @@ and threads, not shift with the ambient culture (see [`SECURITY.md`](SECURITY.md
 `[MapCollectionKey("Member", "Key")]` merges an update-into collection member by key instead of replacing it,
 but the v1 upsert has a defined scope and refuses anything outside it rather than silently replacing:
 
-- the method must be **update-into** (`void Map(TSource, TTarget)`);
 - the named member must be a **`List<T>`** on both source and destination;
 - the element type must be the **same** on both sides (the common Entity↔Entity update);
 - the key must be a **readable member** of the element type.
@@ -839,6 +840,11 @@ one, so emitting the call would not compile. Outside Preserve the leaf **is** fl
 Note this is different from **edge** members (the navigation properties named in `[FlattenGraph(...)]`), which
 are deliberately set to `null` — that topology degradation is the whole point of flattening a graph. A *data*
 leaf going missing is not, which is why it is now said out loud instead of silently dropped.
+
+A collection that is block-copied or widened (`int[]` to `long[]`, `List<int>` to `List<long>`) is refused for a
+second reason. Its helper would compile, but it copies without tracking: two nodes that share ONE source list would
+each get their own destination list, where the same mapper's plain `Map` keeps them one. Until round 35 that
+happened in silence; the member is now left at its default and reported, like every other collection leaf.
 
 **Fix:** map the member explicitly (e.g. a `[MapProperty]` binding or a manual assignment in an `AfterMap` hook),
 or use `ReferenceHandling = None` for this mapper if the graph does not need reference preservation.
@@ -1131,7 +1137,7 @@ behalf. The cost is restatement, and that cost splits in two — **typing it** i
 once; **drifting from the base later** is silent, and it only ever drifts toward wrong data.
 
 This closes the second half without introducing override semantics that would have to interact with
-pair-scoped attributes, `[MapDerivedType]` and the policy layer. See `Issues/Rount18/Decisions.md` §D4.
+pair-scoped attributes, `[MapDerivedType]` and the policy layer. See `Issues/round18/Decisions.md` §D4.
 
 ### What is compared
 
@@ -1359,9 +1365,9 @@ be placed is [`DWARF089`](#dwarf089).
 > and [`DWARF087`](#dwarf087) refuse the same duplicate-directive shape on the same class and are both Errors —
 > so it cannot decide the severity of this one. What this id refuses is silent data loss:
 > `[MapProperty("Name", Use = nameof(F))]` on a mapper discards the converter, the `When` predicate, the null
-> substitute and the format string along with the binding, and hands you auto-matching instead. Downgrade with
-> `dotnet_diagnostic.DWARF088.severity = warning` in a `.globalconfig` if you need the build to proceed while you fix the call
-> sites.
+> substitute and the format string along with the binding, and hands you auto-matching instead. A
+> `.globalconfig` downgrade does not let the build proceed: it changes how the diagnostic is reported, and the mapper
+> class is still not generated, so fix the call sites.
 
 ---
 
@@ -1922,7 +1928,7 @@ was *written and discarded*; where nothing was written, nothing was discarded. I
 method that selects the destination, so a mapper with both a `Map` and a `Project` over the same pair reports
 it twice — both methods really did ignore the directive.
 
-The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#dwarfr11): it does not read
+The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#registry-diagnostics-mapto): it does not read
 `[DwarfMapperConstructor]` at all, which is a different statement from reading it and declining it.
 
 ---
@@ -2666,6 +2672,93 @@ with that change.
 
 ---
 
+## dwarf117
+**A scalar map cannot be generated as declared** · Error
+
+A partial mapping method, or a `[GenerateMap<S, T>]` pair, whose destination is an enum or a built-in scalar
+(`int`, `string`, `decimal`, `DateTime`, ...) is a **conversion of the value** and is generated as one:
+`partial StatusDto Map(Status s)` maps by name, `partial int Parse(string s)` parses, `partial int Narrow(long v)`
+is a checked narrowing - the conversions a member of the same pair would get, under the same options and with the
+same [`DWARF038`](#dwarf038) where one is lossy. Two kinds of pair have no such body and are refused:
+
+- **nothing to convert** - the same type on both sides, or an implicit conversion (`int` to `long`). The value is
+  assigned as it is, so there is no conversion to return. **Fix:** remove the declaration and assign the value.
+- **a null to handle first** - a nullable value type on either side (`Status?` to `StatusDto?`, `int?` to `int`).
+  **Fix:** declare the map between the non-nullable types and decide about null where it is called, or write the
+  conversion as an ordinary (non-partial) method; the mapper calls a hand-written method of that signature wherever
+  the pair appears.
+
+Until round 35 a **declared method** with such a destination was not converted at all. It was built as an object
+with no members - `return new StatusDto { };` - and returned the default for every input, in a clean build. If you
+have such a method, its results change: they are the converted value now. (`[GenerateMap]` of the same pair always
+converted.)
+
+## dwarf118
+**[FlattenGraph] node member leads back to the flatten method** · Error
+
+A `[FlattenGraph]` method walks a graph of nodes and tracks the nodes it has visited - and nothing else. A node
+member that is not an edge of the graph is a *leaf*, converted by an ordinary call. This error is reported when
+that call leads back to the flatten method: a node that points at the object holding the graph, whose own map
+flattens the graph again; or a node member of the flattened type itself.
+
+On data that closes the loop the walk would be entered again from inside itself, with a fresh visited set and no
+depth, until the stack ends - a `StackOverflowException`, which cannot be caught. That is what happened before
+round 35, in every reference-handling mode. **Fix:** keep that member out of the flattened node - ignore it for the
+node's destination type, or give it a type that does not lead back (an identifier in place of the object).
+
+## dwarf119
+**A [MapDerivedType] dispatch has no arm for its own instantiable base type** · Error
+
+A method with `[MapDerivedType]` arms maps nothing itself: at run time an instance either matches an arm or reaches
+the fallback, which throws `ArgumentException`. An instance of *exactly the base type* matches no derived arm. When
+the base is a class that is not abstract, such instances can exist, and the declaration shows it - so the missing
+arm is a build error, not an exception for whoever passes one first.
+
+<!-- fence-exempt: illustrates the declaration DWARF119 refuses and its two fixes; a fragment, not a compilable unit -->
+```csharp
+public class Command { ... }                 // not abstract: `new Command()` is possible
+public class AliasCommand : Command { ... }
+
+[MapDerivedType<AliasCommand, AliasCommandDto>]
+public partial CommandDto ToDto(Command c);  // DWARF119: nothing maps a plain Command
+```
+
+**Fix** - whichever is true of your model:
+
+- **The base is never instantiated:** make it `abstract`. Nothing else changes.
+- **The base is instantiated:** add an arm for it, `[MapDerivedType<Command, CommandDto>]`. Arms are tried most
+  derived first whatever order they are written in, so the derived arms still win. When the base arm's pair is the
+  method's own pair, the method's `[MapProperty]` and `[MapIgnore]` are read for it - which is how a destination
+  member only a derived type can fill is ignored for the base.
+
+Note what an arm for the base matches: every instance that no more derived arm claims, **a subtype without an arm
+of its own included**, mapped as the base. If that would drop members you care about, give the subtype its arm.
+
+The same rule holds for the node dispatch of a `[FlattenGraph]` method with `[MapDerivedType]` arms. `object` as
+the dispatch's source is not asked for an arm. Before round 35 this shape built, and a base instance threw at run
+time - or, nested under `ReferenceHandling.Preserve` or `OnCycle.SetNull`, was mapped as the base by a route that
+skipped the dispatch altogether (and mapped derived instances as the base too).
+
+## dwarf120
+**[DwarfMapper] and [GenerateMap] are not read on a record** · Error
+
+The generator reads **class** declarations. A `record` that carries `[DwarfMapper]`, or `[GenerateMap<S, T>]` in
+its co-located form, is not one, and until round 35 it was passed over without a word: a record mapper's partial
+methods failed with the compiler's `CS8795` and nothing from DwarfMapper to explain it, and a record with
+`[GenerateMap]` simply had no maps.
+
+**Fix:** declare the mapper as a `partial class`. A record is as good a source or destination as any other type -
+write the map on a mapper class:
+
+<!-- fence-exempt: illustrates the declaration DWARF120 reports and its replacement; a fragment, not a compilable unit -->
+```csharp
+[GenerateMap<Order, OrderDto>] public record OrderDto(int Id);   // DWARF120
+
+[DwarfMapper]
+[GenerateMap<Order, OrderDto>]
+public partial class OrderMapper;                                // the same map, on a class
+```
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather
@@ -2686,10 +2779,11 @@ The throws you can encounter:
 | Numeric **narrowing** out of range (`long→int`; `enum`↔integral overflow) | `OverflowException` | `CreateChecked` — never silent truncation |
 | `string → int/Guid/DateTime/…` on unparseable input | `FormatException` (or `OverflowException`) | `Parse(…, InvariantCulture)`; there is **no `TryParse`/lenient mode** |
 | `string → enum` unrecognized name, or `enum → enum` **by-name** with an undefined/cast source value | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — these are **not total** (`DWARF015` only checks *declared* members) |
-| Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Info) at build; a raw NRE at runtime |
+| Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Warning) at build; a raw NRE at runtime |
 | `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
-| `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …" |
+| `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …". An instance of the base type itself is not among these: a base that can be instantiated must have an arm (`DWARF119`) |
 | Span/destination too small (span overloads) | `ArgumentException` | |
+| A converter, hook or factory on the mapper calls the mapper again, on an input too deep for the stack | `InsufficientExecutionStackException` | catchable; raised by the stack check that opens every declared mapping method of a mapper holding user-written code. `MaxDepth` does not count this loop - the generator cannot see it |
 | Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
 | Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
 | `DwarfMap.Validate()` finds an unregistered required pair (call it explicitly, via `services.AddDwarfMappers().ValidateDwarfMaps()`, or automatically with `[DwarfMapperValidationRoot(AutoValidate = true)]`) | `DwarfMapValidationException` | reflection-free fail-fast listing the missing pairs |

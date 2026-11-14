@@ -15,6 +15,112 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **New: DWARF120 (Error), "[DwarfMapper] and [GenerateMap] are not read on a record".** A record carrying either
+  attribute was ignored without a diagnostic - a record mapper's partial methods then failed with `CS8795` alone,
+  and a record with a co-located `[GenerateMap]` had no maps at all. It is now reported where it is written.
+  Nothing that built before stops building: a record mapper never compiled, and a record host generated nothing.
+  (Round 35, T22.)
+- **Security: a converter, hook or factory that calls the mapper again can no longer overflow the stack.** The depth
+  guard counts the calls the generator emits; a `[MapProperty(Use = ...)]` converter, a method adopted by its
+  signature, a `[MapConstructor]` factory or a `[BeforeMap]`/`[AfterMap]` hook that calls a mapping method is a loop
+  it never saw. On a deep input that loop ran until the stack ended - **a `StackOverflowException`, which cannot be
+  caught and ends the process** - in every reference-handling mode, on create, update-into and span maps, and
+  through the ambient facade. It is the failure class of AutoMapper's CVE-2026-128081 ("recursive type converters
+  ignore MaxDepth"), found by testing that advisory's shapes here. Every declared mapping method of a mapper that has
+  a method body of its own now opens with `RuntimeHelpers.EnsureSufficientExecutionStack()`, so the same input ends
+  in a catchable `InsufficientExecutionStackException`. Cost, measured: about 1 ns a call, and only for such
+  mappers - a mapper with no method of its own is emitted as before. `MaxDepth` still does not count that loop.
+  Not covered: code outside the mapper that reaches one by itself (a property getter or a conversion operator on a
+  mapped type). (Round 35, T20.)
+- **New: DWARF119 (Error), "a [MapDerivedType] dispatch has no arm for its own instantiable base type".** A
+  dispatch over a class that is not abstract, with arms for derived types only, used to build; an instance of
+  exactly the base type then reached the fallback and threw `ArgumentException` at run time. The declaration shows
+  that case, so it is refused there: make the base `abstract`, or add an arm for it
+  (`[MapDerivedType<Command, CommandDto>]` - the method's own `[MapIgnore]`/`[MapProperty]` are read for that arm).
+  The node dispatch of a `[FlattenGraph]` method is held to the same rule; `object` is not. **A mapper of this
+  shape that built before no longer builds.** This replaces the run-time exception this round's dispatch fix had
+  introduced for a base instance nested under Preserve or SetNull: with the arm, a base instance is mapped as the
+  base on every route and in every mode. Know what the arm matches - every instance no more derived arm claims,
+  a subtype without an arm of its own included. (Round 35.)
+- **New: DWARF118 (Error), "[FlattenGraph] node member leads back to the flatten method".** A node member that
+  is not an edge of the graph is converted by an ordinary call; when that call leads back to the flatten method
+  (a node pointing at the object that holds the graph), data that closes the loop **overflowed the stack - the
+  process died - in every reference-handling mode**. The walk tracks visited nodes and nothing else, and its
+  helpers cannot carry a context, so the shape is now refused where it is declared. **A mapper of this shape that
+  built before no longer builds**; it was only ever safe on data that never closed the loop. (Round 35, T17.)
+- **A declared mapping method whose destination is an enum or a built-in scalar now converts its value.**
+  `partial StatusDto Map(Status s)` was generated as `return new StatusDto { };` - an object with no members - and
+  returned the default **for every input, in a clean build**. So were a `string` to an enum, an enum to `int` and
+  back, `long` to `int`, `string` to `int`. `[GenerateMap<Status, StatusDto>]` of the same pair converted all
+  along; the declared method, the same map at the other door, had been missed when that was fixed. Both now
+  return the conversion a member of that pair gets (by name between enums, a checked narrowing, a parse, a
+  format), under the same options and with DWARF038 where it is lossy. **If you declared such a method, its
+  results change: they were always the default and are the converted value now.** A `string` destination, which
+  did not build (DWARF024 for the parameters of `string`'s constructors), builds and converts. (Round 35, T16.)
+- **New: DWARF117 (Error), "a scalar map cannot be generated as declared"** - a mapping method or a
+  `[GenerateMap]` pair between scalars that has no conversion to return: the same type or an implicit conversion
+  (`int` to `long`; the declared method was left as a bare CS8795 and the attribute generated nothing and said
+  nothing), or a nullable value type on either side (it was DWARF007 on `HasValue`, or the silent default). The
+  message says what to write instead.
+- **DWARF066 no longer reports a `When`-guarded member that a positional record declares**
+  (`record Base(string Name)`). Every constructor of the record has to pass that parameter, so a false guard
+  leaves the value the constructor was given, not a null; only a parameter default that is a null in disguise
+  (`string Name = null!`) still reports. It had been a known false positive since round 32, with
+  `KeepDefault = true` as the way round it. **If you wrote `KeepDefault = true` for such a member, it now reports
+  DWARF116** (it accepts nothing): remove it. (Round 35, T4.)
+- **A `[FlattenGraph]` method's pair can be used inside another map under `Preserve` and `OnCycle = SetNull`.**
+  A holder with a member or a list of the flattened pair built without reference handling (it calls the method)
+  and stopped with DWARF001 on the flattened collection under the other two modes - with advice,
+  `[MapIgnore("Nodes")]`, that would have emptied the list. The nested use now goes through the flatten method in
+  every mode, and under `Preserve` one source graph is one target wherever it is met. (Round 35, T15.)
+- **A `[MapDerivedType]` method used inside another map now dispatches, keeps the shared context and survives a
+  cycle - as a member, a list or array element, a dictionary key or value, in every mode.** Three defects, all
+  older than this round (round 35, T12 to T14):
+  - With an **abstract or interface base**, the collection and dictionary helpers called the public method, each
+    call on a fresh context. **A cycle through the collection was a stack overflow - the process died - without
+    reference handling, under `Preserve` and under `OnCycle = SetNull` alike**; it is now
+    `DwarfMappingDepthException`, the shared instance, or `null` on the back edge, as each mode documents. Under
+    `Preserve`, two references to one element became two objects; they are one again. This holds for any declared
+    mapping method reached as a reference-type element, not only a dispatch: a pair under `AutoNest = false`, a
+    plain map from an abstract source.
+  - With a **concrete base** under `Preserve` or `SetNull`, the dispatch was skipped: a `Dog` held as an `Animal`
+    came out as an `AnimalDto`, its own members dropped, with DWARF071 (Info) advising the attribute that was
+    already there. It is a `DogDto` now. An instance of the base type itself, which no arm named, used to be
+    mapped there and thrown for everywhere else; a base that can be instantiated must now have an arm of its own
+    (DWARF119, above), and with it such an instance is mapped as the base on every route.
+  - Under `SetNull`, a concrete base and an arm whose type leads back into the graph **generated code that did
+    not compile** (CS7036 inside the `.g.cs`).
+- **A span or async-stream map whose element holds a self-referencing member compiles** (`Src { Node? Root }`,
+  `Node { Node? Next }`). The span method called the element's helper with one argument where it takes the
+  context too - CS7036 in generated code, without reference handling. Both methods now allocate one context per
+  call and `MaxDepth` bounds them, which the option matrix had recorded as "silent at the span and async-stream
+  endpoints": the last entry on the list of recorded divergences, which is now empty. One cause for this and for
+  the `SetNull` case above: the pass that hands the context to callers ran once and never returned to a method it
+  had already passed.
+- **Under `ReferenceHandling = Preserve` or `OnCycle = SetNull`, the directives written on a mapping method now
+  apply when its pair is mapped as a nested member or a collection element.** In those modes a nested use of a
+  declared pair goes through a generated helper (the public method cannot take the shared tracking context), and
+  that helper applied the class's pair-scoped directives but not the ones on the method. A member the method
+  `[MapIgnore]`s was **mapped anyway, with no diagnostic**; an array of layout-identical structs was block-copied
+  past it under `SetNull`. A method-level rename, `[MapValue]`, guard or format was not applied either (those
+  usually failed the build as an unmapped member, so they were at least loud). The helper now takes the method's
+  directives, merged with the pair-scoped ones exactly as the method itself merges them, and a class-level
+  `[MapIgnore]` reaches it too. **If you relied on `[MapIgnore]` to keep a member out of a mapped object in one of
+  these modes, check what was mapped: nested and element values carried it.** Nothing changes without reference
+  handling, where the method was always called directly. (Round 35.)
+- **`[FlattenGraph]` under `ReferenceHandling = Preserve` no longer copies a widened or block-copied collection
+  member in silence** (`DWARF075`, Warning). A node member such as `List<int>` mapped to `List<long>`, or `int[]` to
+  `long[]`, was flattened through a helper that does no reference tracking, so two nodes sharing one source
+  collection each got their own copy, where the same mapper's plain map keeps them one. The values were right and
+  the sharing was lost without a word. Such a member is now left at the destination's default and reported, as an
+  object, dictionary or same-typed collection member already was. **If this warns in your build:** map the member
+  explicitly, or use `ReferenceHandling = None` for that mapper if the graph does not need reference preservation.
+  Outside Preserve nothing changes. (Round 35.)
+- **.NET 11 is supported, and CI holds it.** The package still ships one `net10.0` assembly, which a `net11.0`
+  project references as it is; nothing in it changed for this. What is new is the proof: a CI job (`net11`) builds
+  the repository under SDK 11.0.100 with warnings as errors, builds the sample and consumer projects as `net11.0` -
+  generated code included - and runs their tests there, and publishes the NativeAOT sample with the 11.0 compiler.
+  Measured before the job was written: no finding in the library, the generator or the code it emits. (Round 35.)
 - **The generator no longer binds every `.Map(…)` call in your project.** To find `Dwarf.Map` call sites it sent every
   invocation *named* `Map` - above all `mapper.Map(x)`, the commonest call in a DwarfMapper codebase - to a semantic
   bind on its own compilation, a second binding of each enclosing method on top of the real compile. It now admits

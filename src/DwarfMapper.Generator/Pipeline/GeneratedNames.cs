@@ -38,6 +38,17 @@ namespace DwarfMapper.Generator.Pipeline
         // them by their real prefix where they DO need to be recognized (FlattenGraph leaf degradation).
         public const string Collection = "__DwarfMapColl_";
         public const string Dictionary = "__DwarfMapDict_";
+
+        // ── The fast-path collection copies: block copy and SIMD widen, into an array or into a List<T> ──
+        // Outside Root altogether, like the two above and for the same reason. They take one argument and do no
+        // reference tracking, which is what CopiesACollection is for.
+        public const string Blit = "__DwarfBlit_";
+        public const string BlitList = "__DwarfBlitL_";
+        public const string Widen = "__DwarfWiden_";
+        public const string WidenList = "__DwarfWidenL_";
+
+        // The dense enum-keyed dictionary helper ([MapDenseEnumKeys]).
+        public const string DenseEnum = "__DwarfDense_";
         public const string UserConv = Base + "UserConv_"; // user-defined conversion operator
         public const string EnumToStr = Base + "EnumStr_"; // enum -> string (by name)
         public const string StrToEnum = Base + "StrEnum_"; // string -> enum (by name)
@@ -52,9 +63,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///     True for ANY DwarfMapper-synthesized helper (object/scalar/enum AND collection/dict) — i.e.
         ///     <paramref name="name" /> is NOT a user-declared method. This is the widest classification.
         /// </summary>
+        /// <summary>
+        ///     Whether <paramref name="name" /> is a helper this generator wrote, of ANY family - as opposed to a method
+        ///     the mapper's author declared. Round 35: that includes the families named outside <see cref="Root" />
+        ///     (the fast-path collection copies and the dense enum helper). It answered no for those, so a diagnostic
+        ///     told the reader their value "goes through '__DwarfWidenL_21d8533...'" as if that were a converter of theirs.
+        /// </summary>
         public static bool IsAnySynthesized(string? name)
         {
-            return name is not null && name.StartsWith(Root, StringComparison.Ordinal);
+            return name is not null &&
+                   (name.StartsWith(Root, StringComparison.Ordinal) || CopiesACollection(name) || name.StartsWith(DenseEnum, StringComparison.Ordinal));
         }
 
         /// <summary>
@@ -91,6 +109,18 @@ namespace DwarfMapper.Generator.Pipeline
         ///     collection, or dictionary maps. Used where a leaf must fall back to topology degradation rather than
         ///     inline such a helper (e.g. FlattenGraph leaves).
         /// </summary>
+        /// <summary>
+        ///     Whether <paramref name="name" /> is one of the fast-path helpers that copy a whole collection without
+        ///     tracking it: a block copy or a widen. Under Preserve such a copy gives every caller its own collection,
+        ///     so a <c>[FlattenGraph]</c> leaf must not go through one in silence (DWARF075).
+        /// </summary>
+        public static bool CopiesACollection(string? name)
+        {
+            return name is not null &&
+                   (name.StartsWith(Blit, StringComparison.Ordinal) || name.StartsWith(BlitList, StringComparison.Ordinal) ||
+                    name.StartsWith(Widen, StringComparison.Ordinal) || name.StartsWith(WidenList, StringComparison.Ordinal));
+        }
+
         public static bool IsComplexHelper(string? name)
         {
             return name is not null && (name.StartsWith(ObjectMap, StringComparison.Ordinal) || name.StartsWith(Collection, StringComparison.Ordinal) || name.StartsWith(Dictionary, StringComparison.Ordinal));

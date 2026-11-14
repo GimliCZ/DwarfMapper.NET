@@ -50,21 +50,26 @@ namespace DwarfMapper.DifferentialTests
         }).CreateMapper();
 
         [Fact]
-        public void A_runtime_type_with_no_dispatch_arm_throws_here_and_in_Mapperly_and_not_in_AutoMapper()
+        public void A_base_instance_nobody_declared_is_a_build_error_here_a_throw_in_Mapperly_and_silent_in_AutoMapper()
         {
-            // Only AliasCommand is registered. A plain Command reaching the same method is a case the author did
-            // not declare, and the two source generators agree about what to do with it: refuse.
+            // Mapperly's mapper registers only AliasCommand. A plain Command reaching it is a case the author did
+            // not declare, and both source generators refuse it - at different times.
             var plain = new Command
             {
                 Name = "pwd"
             };
 
-            var dwarf = Assert.Throws<ArgumentException>(() => Dwarf.ToCommand(plain));
-            Assert.Contains("MapDerivedType", dwarf.Message, StringComparison.Ordinal);
+            // DwarfMapper refuses it in the BUILD since round 35: Command can be instantiated, so a dispatch over it
+            // with no arm for Command itself is DWARF119 (held by NegativeCases and DispatchBaseArmTests - a
+            // declaration that does not compile cannot sit in this assembly). DwarfShapes therefore declares the
+            // arm, and what it returns is what its author wrote down, not a fallback nobody chose. Until then it
+            // threw ArgumentException here, as Mapperly does below.
+            var dwarf = Dwarf.ToCommand(plain);
+            Assert.Equal(typeof(CommandDto), dwarf.GetType());
+            Assert.Equal("pwd", dwarf.Name);
 
-            // Mapperly takes the same line — worth asserting rather than assuming, since the first draft of this
-            // test claimed it fell back and was wrong. Two independent generators reaching the same answer is a
-            // stronger argument for the answer than either one making it alone.
+            // Mapperly refuses at run time — worth asserting rather than assuming, since the first draft of this
+            // test claimed it fell back and was wrong.
             var mapperly = Assert.Throws<ArgumentException>(() => Mapperly.ToCommand(plain));
             Assert.Contains("derived type", mapperly.Message, StringComparison.OrdinalIgnoreCase);
 

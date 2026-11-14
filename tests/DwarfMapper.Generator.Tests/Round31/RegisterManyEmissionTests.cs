@@ -38,7 +38,7 @@ namespace DwarfMapper.Generator.Tests.Round31
         {
             var generated = GeneratorTestHarness.RunAll(Src).GeneratedSource;
             // Two pairs, each with itself plus six collection shapes.
-            Assert.Equal(14, Regex.Matches(generated, @"^\s+\(typeof\(", RegexOptions.Multiline | RegexOptions.CultureInvariant).Count);
+            Assert.Equal(14, Regex.Count(generated, @"^\s+\(typeof\(", RegexOptions.Multiline | RegexOptions.CultureInvariant));
             Assert.Contains("(typeof(global::System.Collections.Generic.IEnumerable<global::T11.S>)", generated, StringComparison.Ordinal);
         }
     }

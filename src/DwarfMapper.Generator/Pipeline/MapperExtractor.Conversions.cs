@@ -242,7 +242,7 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            if (found is not null && !PrefersSynthesizedObjectMap(req, found))
+            if (found is not null && !PrefersSynthesizedObjectMap(req, found, foundParamType!))
             {
                 converterMethod = found;
                 converterParamTypeFqn = foundParamType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -436,13 +436,38 @@ namespace DwarfMapper.Generator.Pipeline
         ///         cost every Preserve-mode collection of a declared struct pair its fast path for nothing.
         ///     </para>
         /// </remarks>
-        private static bool PrefersSynthesizedObjectMap(ConversionRequest req, string found)
+        private static bool PrefersSynthesizedObjectMap(ConversionRequest req, string found, ITypeSymbol foundParamType)
         {
+            // Round 35 T13: a [MapDerivedType] dispatch does NOT yield. The synthesized form maps the declared
+            // types' members and cannot choose the destination type from the runtime type, so a Dog held as an
+            // Animal came out as an AnimalDto. The dispatch is reached with the shared context all the same:
+            // through its depth companion when it is on a recursion cycle, through its Preserve wrapper otherwise.
+            // T15: nor does a [FlattenGraph] method, whose destination collection has no source member at all -
+            // the synthesized form could only report it unmapped (DWARF001, advising an ignore that would have
+            // emptied the list).
             return (req.IsPreserve || req.IsSetNull) &&
                    req.AutoNest &&
                    req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
                    req.TgtType is INamedTypeSymbol namedTgt &&
-                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt);
+                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt) &&
+                   !req.NestedRegistry.KeepsDeclaredRoute(found, foundParamType);
+        }
+
+        /// <summary>
+        ///     True when the class declares a partial mapping method <paramref name="name" /> taking exactly
+        ///     <paramref name="paramType" /> whose body is not a member-by-member map of its two types: a
+        ///     <c>[MapDerivedType]</c> dispatch, which chooses the destination type at run time, or a
+        ///     <c>[FlattenGraph]</c> method, which fills a collection from a walk (with arms, when both are written:
+        ///     Plan 22). A synthesized object map of the same pair cannot stand in for either.
+        /// </summary>
+        internal static bool IsDeclaredDispatchOrFlattenMethod(INamedTypeSymbol classSymbol, string name, ITypeSymbol paramType)
+        {
+            return classSymbol.GetMembers(name)
+                              .OfType<IMethodSymbol>()
+                              .Any(m => m.IsPartialDefinition &&
+                                        m.Parameters.Length == 1 &&
+                                        SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, paramType) &&
+                                        (ReadDerivedTypeAttributes(m).Count > 0 || ReadFlattenGraphAttributes(m).Count > 0));
         }
 
         /// <summary>
@@ -1159,6 +1184,41 @@ namespace DwarfMapper.Generator.Pipeline
         private const string UnionAttributeFqn = "System.Runtime.CompilerServices.UnionAttribute";
 
         /// <summary>
+        ///     True when <paramref name="type" /> - the destination of a create map - is a VALUE to convert and not an
+        ///     object to construct: an enum or a built-in scalar (the primitives, <c>string</c>, <c>decimal</c>,
+        ///     <c>DateTime</c>), with or without a <c>Nullable&lt;T&gt;</c> around it. Asked by both doors of the create
+        ///     map, the declared method and <c>[GenerateMap]</c>, so that they cannot disagree again (round 35 T16).
+        /// </summary>
+        internal static bool IsValueLikeDestination(ITypeSymbol type)
+        {
+            var unwrapped = Unwrapped(type);
+            return unwrapped.TypeKind == TypeKind.Enum || unwrapped.SpecialType != SpecialType.None;
+        }
+
+        /// <summary>
+        ///     The DWARF117 message when the scalar pair <paramref name="what" /> declares cannot be emitted as
+        ///     <c>return helper(value);</c>, else <see langword="null" />: a null to handle first
+        ///     (<paramref name="nullHandling" />), or no helper at all (<paramref name="converter" /> is null - the
+        ///     value is assigned as it is).
+        /// </summary>
+        internal static string? ScalarMapRefusal(ITypeSymbol srcType, ITypeSymbol tgtType, string what, string? converter, NullHandling nullHandling)
+        {
+            var pair = what + " maps '" + srcType.ToDisplayString() + "' to '" + tgtType.ToDisplayString() + "', ";
+            if (nullHandling != NullHandling.None)
+            {
+                return pair + "and a null has to be handled before the value can be converted, which a map of the value " +
+                       "itself does not do. Declare it between the non-nullable types and decide about null where it " +
+                       "is called, or write the conversion as an ordinary method (not partial): the mapper calls it " +
+                       "wherever the pair appears";
+            }
+
+            return converter is null
+                ? pair + "which needs no conversion: the value is assigned as it is, so there is nothing to generate. " +
+                  "Remove the declaration and assign the value directly"
+                : null;
+        }
+
+        /// <summary>
         ///     The DWARF113 message when <paramref name="srcType" /> and <paramref name="tgtType" /> differ and either is a
         ///     C# 15 union type, else <see langword="null" />. Nullability and <c>Nullable&lt;T&gt;</c> are looked
         ///     through on both sides, so <c>Pet?</c> into <c>Pet</c> is the same union, not a refusal.
@@ -1183,13 +1243,14 @@ namespace DwarfMapper.Generator.Pipeline
                    "automatic mapping would treat the union as an ordinary struct and copy or box the wrapper instead of " +
                    "its case value. Convert it yourself with [MapProperty(Use = nameof(...))], or keep the same union " +
                    "type on both sides, which is copied as-is";
+        }
 
-            static ITypeSymbol Unwrapped(ITypeSymbol t)
-            {
-                return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
-                    ? n.TypeArguments[0]
-                    : t;
-            }
+        /// <summary><paramref name="t" /> without a <c>Nullable&lt;T&gt;</c> around it: the type the two refusals above judge.</summary>
+        private static ITypeSymbol Unwrapped(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
+                ? n.TypeArguments[0]
+                : t;
         }
 
         private static bool IsUnionType(ITypeSymbol type)
