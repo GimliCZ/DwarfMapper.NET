@@ -1090,6 +1090,12 @@ jobs:
         run: |
           . ./scripts/gate-checks.ps1
           Assert-PackageSizeWithinCeiling -PackageDir "$env:RUNNER_TEMP/pack"
+      # Round 35 T23: the package carries the generator twice (analyzers/dotnet/roslyn5.0/cs and roslyn5.12/cs) and
+      # the SDK must load exactly one. No other job consumes the PACKAGE - every project here references the
+      # generator directly - so this restores a throwaway consumer from the pack just made, with the pinned SDK
+      # (Roslyn 5.0), and requires the roslyn5.0 build, alone, to load and map. The net11 job asks the same of SDK 11.
+      - name: The pinned SDK loads the Roslyn 5.0 build of the generator, and only that one
+        run: bash scripts/analyzer-selection-check.sh "$RUNNER_TEMP/pack" roslyn5.0
       # Kept on failure only: a ceiling red is a claim about a specific package's bytes, and diagnosing it
       # means opening that package and finding what started shipping.
       - if: failure()

@@ -18,6 +18,10 @@ Measured 2026-08-22 on Windows, SDK 10.0.101, at `81c4ace`, two packs from a `gi
         lib/net10.0/DwarfMapper.xml, [Content_Types].xml, and the .snupkg PDBs
   * DwarfMapper.1.0.2-rc.1.nupkg even differed in LENGTH, by one byte (253420 vs 253421)
 
+  (Round 35 T23: the generator now ships twice, as analyzers/dotnet/roslyn5.0/cs/DwarfMapper.Generator.dll and
+  analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll; the code fixes stay in analyzers/dotnet/cs. Nothing
+  below names an entry, so both builds are compared like every other entry.)
+
 The whole-file hash moves for exactly two reasons, both of them OPC packaging metadata written by
 NuGet.Packaging and neither of them build output:
 

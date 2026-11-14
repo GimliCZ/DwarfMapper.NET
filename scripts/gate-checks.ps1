@@ -1513,9 +1513,28 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (371 KB = 379,904 B) 886 B,
 # DwarfMapper.Testing (58 KB = 59,392 B) 794 B.
+#
+# RE-MEASURED 2026-11-14 (round 35 T23, the multi-version generator): DwarfMapper 370 -> 624, DwarfMapper.Testing 57.
+#
+# The owner asked for it (2026-11-14, "Prepare multiversion and if detected .net 11 enable Union mapping"): the
+# package now carries the generator TWICE, built against Roslyn 5.0 and against Roslyn 5.12, in
+# analyzers/dotnet/roslyn5.0/cs and analyzers/dotnet/roslyn5.12/cs, and the SDK loads one of the two
+# (scripts/analyzer-selection-check.sh proves which). The second build is the whole of the growth.
+#
+#   sdk:10.0.101 container, base 811d735 against the branch, entry by entry, compressed bytes:
+#     analyzers/dotnet/cs/DwarfMapper.Generator.dll         260,020 -> moved, byte-identical, to roslyn5.0/cs
+#     analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll       +259,973   the Roslyn 5.12 build
+#     the rest (CodeFixes, lib dll, zip entropy)                            +9
+#   package-size job rehearsed on the branch: DwarfMapper 639,207 B (floor 624), Testing 58,599 B (floor 57).
+#
+# Intended content; nothing started shipping that should not. Each later generator change now lands TWICE in this
+# number, once per build.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (625 KB = 640,000 B) 793 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 793 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 370
+    'DwarfMapper'         = 624
     'DwarfMapper.Testing' = 57
 }
 
