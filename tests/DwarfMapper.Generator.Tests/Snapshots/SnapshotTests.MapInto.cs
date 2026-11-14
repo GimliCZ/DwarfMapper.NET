@@ -40,12 +40,14 @@ namespace DwarfMapper.Generator.Tests
         [Fact]
         public Task Snap_SpanMap_Scalar()
         {
+            // int -> double: an implicit conversion that is not one Vector.Widen step, so the element loop (round 35 T6
+            // moved int -> long onto the widen loop, which Snap_Golden_SpanMapWiden shows).
             const string src = """
                                using System;
                                using DwarfMapper;
                                namespace Demo;
                                [DwarfMapper]
-                               public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+                               public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<double> dst); }
                                """;
             var (_, generated) = GeneratorTestHarness.Run(src);
             return Verify(generated);
