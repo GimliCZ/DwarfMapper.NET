@@ -112,12 +112,19 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Unions
             AssertNoCs9327(run);
         }
 
+        /// <summary>
+        ///     A union conversion builds a NEW union around the value, so it is not what "a source assignable to the hook's
+        ///     parameter" means. Counted, a hook written for <c>Pet</c> ran for every <c>Cat</c> map too, and inside a union
+        ///     map whose arm calls the <c>Cat</c> map it would run twice (measured first as DWARF109 on each case pair of a
+        ///     <c>ref</c> after-hook).
+        /// </summary>
         [Fact]
-        public void In_CSharp15_the_hook_matches_a_case_source_as_the_hook_rule_says_assignable_sources_do()
+        public void A_hook_taking_the_union_is_not_matched_by_a_case_source_in_CSharp15_either()
         {
             var run = Roslyn512Harness.CompilesClean(HookSource, polyfill: false, libraries: [Library.Value]);
 
-            Assert.Equal("1", Roslyn512Harness.Invoke(run, "Demo.Probe", "Run", Library.Value));
+            Assert.DoesNotContain("Before(", run.Generated, StringComparison.Ordinal);
+            Assert.Equal("0", Roslyn512Harness.Invoke(run, "Demo.Probe", "Run", Library.Value));
         }
 
         [Fact]

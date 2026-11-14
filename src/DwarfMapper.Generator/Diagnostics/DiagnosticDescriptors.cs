@@ -2224,13 +2224,17 @@ namespace DwarfMapper.Generator.Diagnostics
             helpLinkUri: HelpBase + "dwarf113");
 
         /// <summary>
-        ///     <c>DWARF114</c> (Error) — a <c>[MapDerivedType]</c> dispatch over a C# 15 <c>closed</c> source type leaves a
-        ///     direct descendant without an arm. See <c>MapperExtractor.ReportMissingClosedHierarchyArms</c> for the
-        ///     coverage rule and the one case detection does not reach yet. Args: {0} = the whole message.
+        ///     <c>DWARF114</c> (Error) — a dispatch over a closed set of types leaves a member without an arm: a
+        ///     <c>[MapDerivedType]</c> dispatch over a C# 15 <c>closed</c> source type and one of its direct descendants
+        ///     (see <c>MapperExtractor.ReportMissingClosedHierarchyArms</c> for the coverage rule and the one case detection
+        ///     does not reach yet), or - round 35 T23, the Roslyn 5.12 build - a C# 15 union map and one of the source
+        ///     union's case types that nothing pairs with a target case, or that two declared methods could each pair
+        ///     (see <c>MapperExtractor.Unions.cs</c>: pairing is strict, never by members or names). Args: {0} = the whole
+        ///     message.
         /// </summary>
         public static readonly DiagnosticDescriptor ClosedHierarchyArmMissing = new(
             "DWARF114",
-            "A closed hierarchy has a direct descendant with no [MapDerivedType] arm",
+            "A closed set of types has a member with no [MapDerivedType] arm",
             "{0}",
             Category,
             DiagnosticSeverity.Error,

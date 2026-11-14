@@ -348,8 +348,9 @@ A `[FlattenGraph]` is misconfigured; the message states the specific problem. **
 ## dwarf035
 **Invalid [MapDerivedType] configuration** · Error
 
-A `[MapDerivedType]` arm is invalid; the message states the specific problem. **Fix:** correct the source/target
-derived-type pair.
+A `[MapDerivedType]` arm is invalid; the message states the specific problem. On a C# 15 union map (Roslyn 5.12 or
+newer) an arm's source must be one of the source union's case types, or derive from or be a base of one, and its
+target must convert to the target union - be one of its case types. **Fix:** correct the source/target pair.
 
 ## dwarf036
 **Ambiguous [MapDerivedType] dispatch arms** · Error
@@ -2611,11 +2612,15 @@ The package carries the generator twice, and the compiler decides which one runs
   union. A mapping between two **different** types where either one is a union is refused everywhere: a member
   (`Pet` → `PetDto`, `Pet` → `object`, `Cat` → `Pet`), a mapping method's own endpoints
   (`partial PetDto Map(Pet p)`), and a projection member.
-- **Roslyn 5.12 or newer** (the .NET 11 SDK) runs the build that knows unions. A case type converts into its union
-  (`Cat` → `Pet`) by the language's own union conversion. Refused there: a project compiled as C# 14 or older (the
-  generated map would need C# 15 and fail with CS9327), a union in a projection, a union with no case types, and a
-  union into or out of a type that is neither a union nor one of its cases (`Pet` → `object`, `string` → `Pet`).
-  Two different unions are refused as well, until union-to-union mapping lands.
+- **Roslyn 5.12 or newer** (the .NET 11 SDK) runs the build that maps unions, in a C# 15 project: one union into
+  another case by case (see DWARF114 for how cases are paired), and a case type into its union (`Cat` → `Pet`) by the
+  language's own union conversion. Refused there: a project compiled as C# 14 or older (the generated map would
+  need C# 15 and fail with CS9327), a union in a projection, a union with no case types, a union into or out of a type
+  that is neither a union nor one of its cases (`Pet` → `object`, `string` → `Pet`), a union map declared between
+  nullable unions (declare it between the union types; a `Pet?` member maps through it), and an empty source union
+  into a non-nullable class union when the source can be empty (one of its case types is nullable).
+- The `[MapTo]` registry maps no union in either build: the same union is copied, a case type converts into its union
+  under C# 15, and anything else is refused here — map the pair in a `[DwarfMapper]` class.
 
 Not refused anywhere: the **same** union type on both sides (a struct copy, which is exactly right), and a member
 with an explicit converter.
@@ -2625,7 +2630,22 @@ with an explicit converter.
 over the cases), or keep the same union type on both sides.
 
 ## dwarf114
-**A closed hierarchy has a direct descendant with no [MapDerivedType] arm** · Error
+**A closed set of types has a member with no [MapDerivedType] arm** · Error
+
+Two closed sets of types are checked: a C# 15 `closed` class hierarchy, and a C# 15 union's case types.
+
+**A union map** (the build for Roslyn 5.12 or newer, in a C# 15 project) is a switch over the source union's case types,
+and every case needs an arm that produces one of the target union's case types. A case is paired, in this order, by an
+explicit `[MapDerivedType<Cat, CatDto>]` on the union map; by the same type among the target's cases (the value is
+passed through); or by exactly one declared method from the case type to a case type of the target. A case is never
+paired by its members or its name — two records that both have a `Name` are not evidence that they mean the same thing.
+A case nothing pairs, and a case two declared methods could each pair, is this error; a value of an unpaired case would
+fail the switch at run time.
+
+**Fix (union):** name the arm with `[MapDerivedType<Case, TargetCase>]` on the declared union map (the `typeof` form for
+a value-type case: `[MapDerivedType(typeof(int), typeof(long))]`), or declare the method that maps the case.
+
+**A closed class hierarchy:**
 
 A C# 15 `closed` class can only be derived from inside its own assembly, so its direct descendants are a known,
 complete set. When a `[MapDerivedType]` dispatch maps a closed source type, DwarfMapper checks that every direct

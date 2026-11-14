@@ -112,7 +112,10 @@ namespace DwarfMapper.Generator.Pipeline
             if (useMethod is not null)
             {
                 foreach (var m in allMethods)
-                    if (string.Equals(m.Name, useMethod, StringComparison.Ordinal) && HasImplicitConversion(compilation, srcType, m.ParamType) && HasImplicitConversion(compilation, m.ReturnType, tgtType))
+                    // Union conversions count here (round 35 T23): an explicit converter whose parameter is the union
+                    // receives a case-typed member the way a call written by hand would, and so may its result go
+                    // into a union member.
+                    if (string.Equals(m.Name, useMethod, StringComparison.Ordinal) && HasImplicitOrUnionConversion(compilation, srcType, m.ParamType) && HasImplicitOrUnionConversion(compilation, m.ReturnType, tgtType))
                     {
                         // B4 / DWARF032: Under Preserve mode, a Use= converter pointing to an
                         // arbitrary user function cannot participate in reference-identity tracking —
@@ -169,7 +172,9 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            if (HasImplicitConversion(compilation, srcType, tgtType))
+            // A case type into its union member is the language's own union conversion, assigned directly (round 35
+            // T23; UnionRefusal above let the pair through only where union mapping is on).
+            if (HasImplicitOrUnionConversion(compilation, srcType, tgtType))
             {
                 // Cross-category numeric (integer ↔ floating/decimal, e.g. int→double, int→float) is implicit
                 // in C# but crosses kinds (and int→float / long→double silently lose precision). Same-category
@@ -1124,10 +1129,28 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     True when <paramref name="source" /> converts to <paramref name="target" /> implicitly, without a
-        ///     user-defined operator - and, for a C# 15 union conversion, only where this build maps unions in this
-        ///     compilation (<see cref="IsUnionConversion" />, round 35 T23).
+        ///     user-defined operator and without a C# 15 union conversion (<see cref="IsUnionConversion" />).
         /// </summary>
+        /// <remarks>
+        ///     Round 35 T23. Every check this answers - hook matching, declared-method adoption, arm validation,
+        ///     flattening - asks whether a value of one type already IS a value of another, which is what implicit
+        ///     conversions meant before C# 15. A union conversion builds a new union around the value; counting it here
+        ///     made a hook written for <c>Pet</c> match every <c>Cat</c> map too (measured: DWARF109 for each case pair of
+        ///     a <c>ref</c> after-hook, and a by-value hook would have run twice inside a union map). The few places a
+        ///     value really goes INTO a union slot ask <see cref="HasImplicitOrUnionConversion" />.
+        /// </remarks>
         private static bool HasImplicitConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
+        {
+            var conversion = ((CSharpCompilation)compilation).ClassifyConversion(source, target);
+            return conversion.IsImplicit && !conversion.IsUserDefined && !IsUnionConversion(conversion);
+        }
+
+        /// <summary>
+        ///     <see cref="HasImplicitConversion" />, where a C# 15 union conversion also counts when this build maps unions
+        ///     in this compilation (the Roslyn 5.12 build, C# 15 or newer). For the places a value goes into a union slot:
+        ///     a member assigned into a union, an explicit converter's parameter, an arm's target.
+        /// </summary>
+        private static bool HasImplicitOrUnionConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
         {
             var conversion = ((CSharpCompilation)compilation).ClassifyConversion(source, target);
             return conversion.IsImplicit && !conversion.IsUserDefined &&

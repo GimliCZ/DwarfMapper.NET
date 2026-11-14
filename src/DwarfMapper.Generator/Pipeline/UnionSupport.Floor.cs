@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Pipeline
@@ -30,6 +31,18 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+            return false;
+        }
+
+        /// <summary>No union pair reaches here: <see cref="UnionRefusal" /> refused it first.</summary>
+        private static partial bool TryHandleUnionEndpoint(
+            DeclaredEndpoint endpoint,
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            ref bool classIgnoreLivenessBlinded)
+        {
             return false;
         }
 

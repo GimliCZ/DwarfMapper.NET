@@ -78,7 +78,7 @@ namespace DwarfMapper.Generator.Pipeline
                        "and no IUnionMembers.Create): no value of it can be mapped";
             }
 
-            if (tgtIsUnion && !srcIsUnion && HasImplicitConversion(compilation, srcType, tgtType))
+            if (tgtIsUnion && !srcIsUnion && HasImplicitOrUnionConversion(compilation, srcType, tgtType))
             {
                 // A case type into its union: the language's own union conversion, which the caller assigns directly.
                 return null;
@@ -86,7 +86,8 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (srcIsUnion && tgtIsUnion)
             {
-                return pair + ". This build does not generate union-to-union maps yet";
+                // Two different unions: a case dispatch (MapperExtractor.Unions.cs).
+                return null;
             }
 
             return srcIsUnion

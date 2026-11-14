@@ -1305,36 +1305,41 @@ namespace DwarfMapper.Generator.Pipeline
                 .Append('(').Append(src).Append(' ').Append(p)
                 .AppendLine(", global::DwarfMapper.DwarfRefContext ctx, int depth)");
             sb.AppendLine("    {");
-            if (dispatchMethod.ParameterIsReferenceType)
+
+            // Round 35 T23: a union is a VALUE. There is no identity of its own to keep - its case values keep theirs, in
+            // the helpers the arms call - so a union dispatch's wrapper only threads the context into its arms.
+            var isUnion = dispatchMethod.UnionEmpty != UnionEmptyArm.NotUnion;
+            if (dispatchMethod.ParameterIsReferenceType && !isUnion)
             {
                 sb.Append("        if (").Append(p).AppendLine(" is null) return null!;");
             }
 
-            sb.Append("        if (ctx.TryGetReference(").Append(p)
-                .Append(", out var __dwarf_cached)) return (").Append(tgt).AppendLine(")__dwarf_cached;");
+            if (!isUnion)
+            {
+                sb.Append("        if (ctx.TryGetReference(").Append(p)
+                    .Append(", out var __dwarf_cached)) return (").Append(tgt).AppendLine(")__dwarf_cached;");
+            }
+
             sb.AppendLine("        if (depth >= ctx.MaxDepth)");
             sb.AppendLine("            throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
-            sb.Append("        var __dwarf_t = ").Append(p).AppendLine(" switch");
+            sb.Append(isUnion ? "        return " : "        var __dwarf_t = ").Append(p).AppendLine(" switch");
             sb.AppendLine("        {");
             foreach (var arm in arms)
             {
-                sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
-                if (arm.ConverterNeedsDepthCtx)
-                {
-                    sb.Append(", ctx, depth + 1");
-                }
-
-                sb.AppendLine("),");
+                sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ");
+                MapEmitter.AppendArmValue(sb, arm, "ctx", "depth + 1");
+                sb.AppendLine(",");
             }
 
-            // Wildcard arm matching the public dispatch method's throw.
-            sb.Append("            _ => throw new global::System.ArgumentException(")
-                .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
-                .Append(p).Append(".GetType() + \"' mapping to '").Append(tgt).Append("'.\", nameof(")
-                .Append(p).AppendLine(")),");
+            // The public dispatch method's own tail: its wildcard throw, or a union's empty arm.
+            MapEmitter.AppendDispatchTail(sb, "            ", dispatchMethod, p);
             sb.AppendLine("        };");
-            sb.Append("        ctx.SetReference(").Append(p).AppendLine(", __dwarf_t);");
-            sb.AppendLine("        return __dwarf_t;");
+            if (!isUnion)
+            {
+                sb.Append("        ctx.SetReference(").Append(p).AppendLine(", __dwarf_t);");
+                sb.AppendLine("        return __dwarf_t;");
+            }
+
             sb.AppendLine("    }");
             return sb.ToString();
         }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -39,6 +40,32 @@ namespace DwarfMapper.Generator.Pipeline
         internal static partial string? UnionRefusal(ITypeSymbol srcType, ITypeSymbol tgtType, string what, Compilation compilation, bool inProjection);
 
         /// <summary>
+        ///     Claims a declared create map between two different unions and records its case dispatch (or its refusal);
+        ///     <see langword="false" /> for every other method. The Roslyn 5.0 build claims nothing: its
+        ///     <see cref="UnionRefusal" /> has already refused every pair with a union.
+        /// </summary>
+        private static partial bool TryHandleUnionEndpoint(
+            DeclaredEndpoint endpoint,
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            ref bool classIgnoreLivenessBlinded);
+
+        /// <summary>
+        ///     A declared create map as an endpoint handler reads it: the method, its source and destination types, where
+        ///     it reports, and where its diagnostics begin in the class's list (for
+        ///     <c>TryScopeCompletenessRefusalToItsMethod</c>). One bundle, so that the handler stays within the six
+        ///     parameters a pipeline method may take (<c>ResolverParameterDisciplineTests</c>).
+        /// </summary>
+        private sealed record DeclaredEndpoint(
+            IMethodSymbol Method,
+            ITypeSymbol Source,
+            ITypeSymbol Target,
+            LocationInfo? Location,
+            int DiagnosticsStart);
+
+        /// <summary>
         ///     True when <paramref name="conversion" /> is a C# 15 union conversion: case type to union, carried out by
         ///     calling the union's creation member.
         /// </summary>
@@ -47,7 +74,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         Shared by both builds because both meet union conversions. A Roslyn 5.9 or newer compiler classifies
         ///         one as IMPLICIT even in a C# 14 compilation (measured on Roslyn 5.12, 2026-11-14), while C# 14 code
         ///         that uses one fails with CS9327 - so a check that trusts "implicit" would write CS9327 into a
-        ///         consumer's <c>.g.cs</c>. <see cref="HasImplicitConversion" /> asks this before it counts a conversion.
+        ///         consumer's <c>.g.cs</c>. <see cref="HasImplicitConversion" /> never counts one, and <see cref="HasImplicitOrUnionConversion" /> only where union mapping is on.
         ///     </para>
         ///     <para>
         ///         Read from the Roslyn 5.0 API on purpose: a union conversion is the one implicit conversion that is
@@ -64,7 +91,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>
         ///     The DWARF113 message for a <c>[MapTo]</c> member whose pair has a union on either side, else
         ///     <see langword="null" />. The registry generator maps no union in either build: the same union on both sides
-        ///     is copied, and a case type converts into its union where <see cref="HasImplicitConversion" /> lets a union
+        ///     is copied, and a case type converts into its union where <see cref="HasImplicitOrUnionConversion" /> lets a union
         ///     conversion count (the Roslyn 5.12 build, C# 15). Everything else is refused here.
         /// </summary>
         /// <remarks>
@@ -90,7 +117,7 @@ namespace DwarfMapper.Generator.Pipeline
                 return null;
             }
 
-            if (tgtIsUnion && !srcIsUnion && HasImplicitConversion(compilation, srcType, tgtType))
+            if (tgtIsUnion && !srcIsUnion && HasImplicitOrUnionConversion(compilation, srcType, tgtType))
             {
                 return null;
             }
