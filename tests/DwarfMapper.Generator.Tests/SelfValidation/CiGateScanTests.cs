@@ -58,9 +58,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             yield return ["sbom", "the release artifacts would stop carrying a signed bill of materials"];
             // Blocking since round 34 (A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error).
             yield return ["roslyn-forward-compat", "the generator would stop being built and tested against " + "an unpinned newer SDK"];
-            // Blocking since round 34, by the owner's choice; the only job that runs 26.04 while the other Linux
-            // jobs stay pinned to 24.04 (CiRunnerImagePinScanTests).
-            yield return ["ubuntu-26-canary", "the image ubuntu-latest is moving to would stop being tried before " + "the Linux jobs' pins move onto it"];
+            // ubuntu-26-canary had a row here until round 35 (T8): every Linux job runs 26.04 now
+            // (CiRunnerImagePinScanTests), so the job that tried that image ahead of the pins is gone.
 
             // Round 34: .NET 11 shipped on 2026-11-10. The one job that builds under its SDK with warnings as errors,
             // builds and runs the consumers as net11.0, and publishes NativeAOT with the 11.0 compiler.
@@ -95,7 +94,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         /// <summary>
         ///     Round 34 made three legs blocking. roslyn-forward-compat and preview-sdk-canary met the criterion their own
-        ///     comments set, green on pushed master (run 40477294097); ubuntu-26-canary was the owner's choice. A
+        ///     comments set, green on pushed master (run 40477294097); ubuntu-26-canary, the third, was the owner's
+        ///     choice and was removed in round 35 when every Linux job moved onto its image. A
         ///     job-level <c>continue-on-error: true</c> put back on one of them would make it decoration again, and nothing
         ///     would say so. Only the job's own keys (a four-space indent) are read: a step-level one, which
         ///     bench-wall-time-alert and build-test keep by design, is a different decision.
@@ -103,7 +103,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Theory]
         [InlineData("roslyn-forward-compat")]
         [InlineData("preview-sdk-canary")]
-        [InlineData("ubuntu-26-canary")]
         [InlineData("net11")]
         public void A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error(string job)
         {
