@@ -90,7 +90,44 @@ namespace DwarfMapper.Generator.Tests.Round31
             var hits = diagnostics.Where(d => string.Equals(d.Id, "DWARF113", StringComparison.Ordinal)).ToList();
             Assert.True(hits.Count > 0, shape + ": expected DWARF113, got [" + string.Join(", ", diagnostics.Select(d => d.Id)) + "]");
             Assert.All(hits, d => Assert.Contains("is a C# 15 union type", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal));
+            // Round 35 T23: this project runs the Roslyn 5.0 build, whose refusal names the remedy that build cannot
+            // provide - a C# 15 compiler, which loads the build that maps unions.
+            Assert.All(hits, d => Assert.Contains("Mapping a union needs a C# 15 compiler", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal));
             Assert.DoesNotContain(diagnostics, d => string.Equals(d.Id, "DWARF025", StringComparison.Ordinal));
+        }
+
+        public static TheoryData<string, string> RefusedByMapTo()
+        {
+            return new TheoryData<string, string>
+            {
+                {
+                    "union member into object (boxed the wrapper silently before round 35 T23)",
+                    "[DwarfMapper.MapTo(typeof(D))] public class S { public Pet P { get; set; } } public class D { public object? P { get; set; } }"
+                },
+                {
+                    "union member into another union (a synthesized struct map, no diagnostic, before round 35 T23)",
+                    "[DwarfMapper.MapTo(typeof(D))] public class S { public Pet P { get; set; } } public class D { public PetDto P { get; set; } }"
+                },
+                {
+                    "case type into a union member",
+                    "[DwarfMapper.MapTo(typeof(D))] public class S { public Cat P { get; set; } = new(\"x\"); } public class D { public Pet P { get; set; } }"
+                },
+            };
+        }
+
+        /// <summary>
+        ///     Round 35 T23: the <c>[MapTo]</c> registry classifies conversions itself, so round 31's refusal never reached
+        ///     it. One explained refusal per member - DWARF113, not DWARFR05 "incompatible types" on top.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(RefusedByMapTo))]
+        public void A_MapTo_member_between_different_types_where_one_is_a_union_is_refused_as_DWARF113(string shape, string body)
+        {
+            var diagnostics = GeneratorTestHarness.RunMapTo(Src(body));
+            var hit = Assert.Single(diagnostics, d => string.Equals(d.Id, "DWARF113", StringComparison.Ordinal));
+            Assert.Contains("[MapTo] does not map union types", hit.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            Assert.True(!diagnostics.Any(d => string.Equals(d.Id, "DWARFR05", StringComparison.Ordinal)),
+                shape + ": DWARFR05 reported beside the union refusal");
         }
 
         [Fact]

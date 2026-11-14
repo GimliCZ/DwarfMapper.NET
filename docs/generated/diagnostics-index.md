@@ -115,7 +115,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF110` | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry |
 | `DWARF111` | Warning | [ProvidesMap] method is not registered because its pair is already provided |
 | `DWARF112` | Info | Projection expression property was not generated |
-| `DWARF113` | Error | Union types are not mapped yet |
+| `DWARF113` | Error | A union type cannot be mapped here |
 | `DWARF114` | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm |
 | `DWARF115` | Warning | EF Core cannot precompile a query built by a projection method |
 | `DWARF116` | Warning | A statement of intent matches nothing |

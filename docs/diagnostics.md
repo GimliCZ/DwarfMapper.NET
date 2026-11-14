@@ -2597,20 +2597,32 @@ the property existed must not start failing a warnings-as-errors build.
 a `.globalconfig` (`dotnet_diagnostic.DWARF112.severity = none`).
 
 ## dwarf113
-**Union types are not mapped yet** · Error
+**A union type cannot be mapped here** · Error
 
 C# 15 (.NET 11) adds union types — `union Pet(Cat, Dog)`, lowered to a struct marked
-`System.Runtime.CompilerServices.UnionAttribute` with one constructor per case type and an `object? Value`.
-DwarfMapper has no mapping policy for them yet, so a mapping between two **different** types where either one is
-a union is refused: a member (`Pet` → `PetDto`, `Pet` → `object`, `Cat` → `Pet`), a mapping method's own
-endpoints (`partial PetDto Map(Pet p)`), and a projection member. Before this refusal a union was handled as an
-ordinary struct — mapped into `object` it boxed the union **wrapper** rather than its case value, silently.
+`System.Runtime.CompilerServices.UnionAttribute` with one constructor per case type and an `object? Value`. A
+hand-written `[Union]` type, and a union whose members come from an `IUnionMembers` interface, are unions too.
+Before this diagnostic a union was handled as an ordinary struct — mapped into `object` it boxed the union
+**wrapper** rather than its case value, silently.
 
-Not refused: the **same** union type on both sides (a struct copy, which is exactly right), and a member with an
-explicit converter.
+The package carries the generator twice, and the compiler decides which one runs:
 
-**Fix:** convert it yourself — `[MapProperty(nameof(Src.Pet), nameof(Dst.Pet), Use = nameof(ToDto))]` with a
-`PetDto ToDto(Pet p)` that switches over the cases — or keep the same union type on both sides.
+- **Compilers older than Roslyn 5.12** (the .NET 10 SDKs, Visual Studio before 18.12) run the build that maps no
+  union. A mapping between two **different** types where either one is a union is refused everywhere: a member
+  (`Pet` → `PetDto`, `Pet` → `object`, `Cat` → `Pet`), a mapping method's own endpoints
+  (`partial PetDto Map(Pet p)`), and a projection member.
+- **Roslyn 5.12 or newer** (the .NET 11 SDK) runs the build that knows unions. A case type converts into its union
+  (`Cat` → `Pet`) by the language's own union conversion. Refused there: a project compiled as C# 14 or older (the
+  generated map would need C# 15 and fail with CS9327), a union in a projection, a union with no case types, and a
+  union into or out of a type that is neither a union nor one of its cases (`Pet` → `object`, `string` → `Pet`).
+  Two different unions are refused as well, until union-to-union mapping lands.
+
+Not refused anywhere: the **same** union type on both sides (a struct copy, which is exactly right), and a member
+with an explicit converter.
+
+**Fix:** what the message names — build with the .NET 11 SDK as C# 15, or convert it yourself
+(`[MapProperty(nameof(Src.Pet), nameof(Dst.Pet), Use = nameof(ToDto))]` with a `PetDto ToDto(Pet p)` that switches
+over the cases), or keep the same union type on both sides.
 
 ## dwarf114
 **A closed hierarchy has a direct descendant with no [MapDerivedType] arm** · Error

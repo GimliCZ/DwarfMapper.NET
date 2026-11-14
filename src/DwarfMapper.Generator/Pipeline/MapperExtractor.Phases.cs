@@ -1558,7 +1558,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // DWARF113 at the endpoint itself: `partial PetDto Map(Pet p)` would otherwise be resolved member by
             // member as an ordinary struct pair (and refused as DWARF025, which names the wrong problem).
-            if (UnionRefusal(sourceType, targetType, method.Name) is { } unionMessage)
+            if (UnionRefusal(sourceType, targetType, method.Name, ctx.SemanticModel.Compilation, false) is { } unionMessage)
             {
                 acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, methodLocation, unionMessage));
                 return;
