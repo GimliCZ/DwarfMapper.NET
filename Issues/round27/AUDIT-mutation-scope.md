@@ -7,7 +7,7 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**11.8 % of `src/` is inside any leg's `mutate` globs** — 5,738 of 48,620 lines (the table's `all` row, re-measured
+**11.8 % of `src/` is inside any leg's `mutate` globs** — 5,738 of 48,817 lines (the table's `all` row, re-measured
 2026-11-14).
 
 > **Corrected 2026-09-07.** This line said 12.0 % while the table below said 11.5 %, and the two are
@@ -29,14 +29,14 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 83 | 7 | 39,167 | 2,643 | **6.7 %** | 95.7 % |
-| `DwarfMapper.Generator.Roslyn512` | 2 | **0** | 498 | 0 | **0 %** | — |
+| `DwarfMapper.Generator` | 83 | 7 | 39,287 | 2,643 | **6.7 %** | 95.7 % |
+| `DwarfMapper.Generator.Roslyn512` | 2 | **0** | 575 | 0 | **0 %** | — |
 | `DwarfMapper` (runtime) | 47 | 8 | 4,047 | 1,307 | **32.3 %** | 73.9 %† |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,219 | 685 | **56.2 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,279 | 387 | **17.0 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **158** | **29** | **48,620** | **5,738** | **11.8 %** | |
+| **all** | **158** | **29** | **48,817** | **5,738** | **11.8 %** | |
 
 Re-measured 2026-11-14 (round 35 T23, the multi-version generator): the generator gains `Pipeline/UnionSupport.cs`,
 `Pipeline/UnionSupport.Floor.cs` and `Model/UnionEmptyArm.cs` (files 80 -> 83), outside every `mutate` glob like the

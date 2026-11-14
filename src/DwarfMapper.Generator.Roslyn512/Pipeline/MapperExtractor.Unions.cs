@@ -122,6 +122,74 @@ namespace DwarfMapper.Generator.Pipeline
             return true;
         }
 
+        /// <remarks>
+        ///     <para>
+        ///         The helper is a private dispatch method with the same arms a declared union map of the pair would have:
+        ///         that map's own <c>[MapDerivedType]</c> arms when the class declares one (a helper exists beside a
+        ///         declared map where the route has to carry the shared context, Preserve and SetNull), the implicit arms
+        ///         otherwise. Collection, dictionary, <c>Nullable&lt;T&gt;</c> and update-into routes call it like any
+        ///         converter, and the recursion passes treat it like any dispatch.
+        ///     </para>
+        ///     <para>
+        ///         Beside a declared map, what the arms have to report was reported at the map, so the helper's own
+        ///         resolution reports into a list nobody reads - the object path's rule for a declared pair.
+        ///     </para>
+        /// </remarks>
+        private static partial bool TryBuildUnionHelper(
+            (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest, LocationInfo? Origin) pending,
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels)
+        {
+            var compilation = ctx.SemanticModel.Compilation;
+            var (src, tgt, name, autoNest, origin) = pending;
+            if (!UnionMappingAvailable(compilation) || SameType(src, tgt) || !IsUnionType(src) || !IsUnionType(tgt))
+            {
+                return false;
+            }
+
+            var declared = DeclaredPartialFor(decls, src, tgt);
+            var reporting = declared is null ? acc : acc with { Diagnostics = new List<DiagnosticInfo>() };
+            var pair = new UnionPair(src,
+                tgt,
+                declared is null
+                    ? $"The map of '{src.ToDisplayString()}' to '{tgt.ToDisplayString()}' synthesized for a member or element"
+                    : "'" + declared.Name + "'",
+                origin);
+            var explicitArms = declared is null
+                ? new List<(ITypeSymbol, ITypeSymbol)>()
+                : ReadDerivedTypeAttributes(declared).Select(p => ((ITypeSymbol)p.Src, (ITypeSymbol)p.Tgt)).ToList();
+
+            // Arms resolved under this pair's name, so that the helpers they reserve are this helper's edges in the
+            // recursion graph, as an object helper's members' are.
+            acc.NestedRegistry.SetCurrentPair(name);
+            var arms = ResolveUnionArms(PolicySettings(policy, compilation, autoNest), pair, explicitArms, decls, reporting);
+            acc.NestedRegistry.ClearCurrentPair();
+            var empty = UnionEmptyArmFor(pair, false, reporting.Diagnostics);
+            var (before, after) = CollectDispatchHooks(compilation, decls, src, tgt, origin, reporting.Diagnostics);
+
+            pendingNestedModels.Add((new MapMethodModel(
+                name,
+                "private",
+                tgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                "s",
+                src.IsReferenceType,
+                EquatableArray.From(Array.Empty<MemberMap>()),
+                EquatableArray.From(before),
+                EquatableArray.From(after),
+                false,
+                "",
+                EquatableArray.From(Array.Empty<MemberMap>()),
+                false,
+                tgt.IsReferenceType,
+                DerivedTypeArms: EquatableArray.From(arms),
+                UnionEmpty: empty), name, origin));
+            return true;
+        }
+
         /// <summary>
         ///     The arms of a dispatch from one union of <paramref name="pair" /> to the other, most-derived first.
         ///     <paramref name="explicitArms" /> are the declared union map's <c>[MapDerivedType]</c> pairs (none when no map

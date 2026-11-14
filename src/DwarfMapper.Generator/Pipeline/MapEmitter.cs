@@ -1684,9 +1684,11 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else
                 {
+                    // A union destination types the null arm (MemberMap.LiftTargetFqn, round 35 T23).
                     sb.Append(srcAccess).Append(".HasValue ? ")
                         .Append(member.EmitConverterMethod).Append('(').Append(srcAccess).Append(".Value")
-                        .Append(extraArgs).Append(')').Append(resultBang).Append(" : null");
+                        .Append(extraArgs).Append(')').Append(resultBang)
+                        .Append(member.LiftTargetFqn is { } liftTarget ? " : default(" + liftTarget + "?)" : " : null");
                 }
 
                 return;

@@ -3898,7 +3898,16 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 ct.ThrowIfCancellationRequested();
 
-                var (nestedSrc, nestedTgt, nestedName, pairAutoNest, nestedOrigin) = acc.NestedRegistry.Dequeue();
+                var pending = acc.NestedRegistry.Dequeue();
+
+                // Round 35 T23: two different C# 15 unions are a case dispatch, which only the Roslyn 5.12 build builds
+                // (UnionSupport.cs). Before anything below reads the pair as an object to construct.
+                if (TryBuildUnionHelper(pending, ctx, decls, policy, acc, pendingNestedModels))
+                {
+                    continue;
+                }
+
+                var (nestedSrc, nestedTgt, nestedName, pairAutoNest, nestedOrigin) = pending;
 
                 // Pair-scoped member config for this acc.Synthesized pair (empty when none declared on the class), so a
                 // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.

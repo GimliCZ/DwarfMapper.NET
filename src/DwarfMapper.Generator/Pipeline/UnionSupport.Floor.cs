@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Diagnostics;
+using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Pipeline
@@ -31,6 +32,18 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+            return false;
+        }
+
+        /// <summary>No union pair reaches the nested queue in this build: <see cref="UnionRefusal" /> refused it first.</summary>
+        private static partial bool TryBuildUnionHelper(
+            (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest, LocationInfo? Origin) pending,
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels)
+        {
             return false;
         }
 

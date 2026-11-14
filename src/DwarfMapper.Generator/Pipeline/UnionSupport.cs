@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
+using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -53,6 +55,20 @@ namespace DwarfMapper.Generator.Pipeline
             ref bool classIgnoreLivenessBlinded);
 
         /// <summary>
+        ///     Builds the helper for a nested pair of two different unions - a member, a collection element, a
+        ///     <c>Nullable&lt;T&gt;</c> value - as a case dispatch, adds it to <paramref name="pendingNestedModels" />, and
+        ///     returns <see langword="true" />; <see langword="false" /> for every other pair, which the drain maps as an
+        ///     object. The Roslyn 5.0 build builds none: no union pair reaches its queue.
+        /// </summary>
+        private static partial bool TryBuildUnionHelper(
+            (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest, LocationInfo? Origin) pending,
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            List<(MapMethodModel Model, string MethodName, LocationInfo? Origin)> pendingNestedModels);
+
+        /// <summary>
         ///     A declared create map as an endpoint handler reads it: the method, its source and destination types, where
         ///     it reports, and where its diagnostics begin in the class's list (for
         ///     <c>TryScopeCompletenessRefusalToItsMethod</c>). One bundle, so that the handler stays within the six
@@ -86,6 +102,78 @@ namespace DwarfMapper.Generator.Pipeline
         internal static bool IsUnionConversion(Conversion conversion)
         {
             return conversion.IsImplicit && !conversion.IsUserDefined && !conversion.IsMethodGroup && conversion.MethodSymbol is not null;
+        }
+
+        /// <summary>
+        ///     Gives every member lifted through <c>Nullable&lt;T&gt;</c> into a union - its converter a union dispatch of
+        ///     this class, under any of the names the passes before this one call it by - that union's type in
+        ///     <see cref="MemberMap.LiftTargetFqn" />, so the emitter writes the lift's null arm as <c>default(T?)</c>.
+        /// </summary>
+        /// <remarks>
+        ///     A pass over the finished models rather than a field set at resolution: the lift is decided inside
+        ///     <c>TryResolveConversion</c>, which hands back a converter NAME, and the converter is a method of this very
+        ///     class whose model knows its return type. A no-op in the Roslyn 5.0 build, which builds no union dispatch, and
+        ///     for every member whose converter is not one.
+        /// </remarks>
+        private static void TypeTheUnionLifts(List<MapMethodModel> methods)
+        {
+            var unionReturns = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var m in methods)
+            {
+                if (m.UnionEmpty == UnionEmptyArm.NotUnion)
+                {
+                    continue;
+                }
+
+                // The method itself, its depth companion, and its Preserve dispatch wrapper: the names a member's
+                // converter can carry by now.
+                unionReturns[m.MethodName] = m.ReturnTypeFullName;
+                unionReturns[GeneratedNames.Depth + m.MethodName] = m.ReturnTypeFullName;
+                unionReturns[NestedMappingRegistry.BuildDispatchWrapperName(m.ParameterTypeFullName, m.ReturnTypeFullName)] = m.ReturnTypeFullName;
+            }
+
+            if (unionReturns.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                var members = Typed(m.Members, unionReturns, out var membersChanged);
+                var arguments = Typed(m.ConstructorArguments, unionReturns, out var argumentsChanged);
+                if (membersChanged || argumentsChanged)
+                {
+                    methods[i] = m with
+                    {
+                        Members = members,
+                        ConstructorArguments = arguments
+                    };
+                }
+            }
+        }
+
+        private static EquatableArray<MemberMap> Typed(EquatableArray<MemberMap> maps, Dictionary<string, string> unionReturns, out bool changed)
+        {
+            changed = false;
+            if (maps.Count == 0)
+            {
+                return maps;
+            }
+
+            var array = maps.ToArray();
+            for (var i = 0; i < array.Length; i++)
+                if (array[i].NullHandling == NullHandling.NullableProject && array[i].ConverterMethod is { } converter &&
+                    unionReturns.TryGetValue(converter, out var union))
+                {
+                    array[i] = array[i] with
+                    {
+                        LiftTargetFqn = union
+                    };
+                    changed = true;
+                }
+
+            return changed ? EquatableArray.From(array) : maps;
         }
 
         /// <summary>
