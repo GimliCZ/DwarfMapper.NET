@@ -15,7 +15,7 @@
 
 # The SDK global.json pins (rollForward: disable - any other SDK refuses the build outright), held by digest like
 # the workflow actions are held by SHA. Docker resolves the digest; the tag is what OssScannerImageTests compares.
-FROM mcr.microsoft.com/dotnet/sdk:10.0.101@sha256:5504edd1267dd4deab3443f960cfab219249c8bd935fbcc358f1c24aeae23fe0
+FROM mcr.microsoft.com/dotnet/sdk:10.0.404@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
 
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \

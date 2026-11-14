@@ -53,7 +53,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
 
       # ── SDK pin drift check (ISSUE-038) ─────────────────────────────────────
       # global.json pins an exact SDK with rollForward: disable, but that only constrains what the SDK
@@ -270,7 +270,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # A mis-ordered config silently disables the leg (H4): Stryker 4.16 refuses to run when
       # thresholds.break > thresholds.low ("Threshold low must be more than or equal to threshold break")
       # AND EXITS 0 — exactly how the doctooling leg sat unrunnable-and-green from 2026-08-19 until H1
@@ -295,7 +295,7 @@ jobs:
       # DISCOVERY and its TIMEOUT arithmetic both feed the score directly, and both are version behaviour —
       # an unpinned upgrade could move the number with no repo change to point at.
       # The tool targets net8.0, but its runtimeconfig sets rollForwardOnNoCandidateFx=2 (Major), so it runs
-      # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
+      # on the pinned SDK's runtime with no .NET 8 installed. Verified locally on a machine carrying only
       # runtimes 7/9/10.
       - run: dotnet tool install --global dotnet-stryker --version 4.16.0
       # ilverify, because without it every leg's INITIAL test run fails: EmittedIlIsVerifiableTests' two facts
@@ -561,7 +561,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # Pinned for the same reason as Stryker and CycloneDX: both tools' output feeds a gate (the floors
       # read ReportGenerator's Summary.json; ILVerify's verdict IS the stage), so the thing computing the
       # number must not move under the gate. Versions are the locally-verified ones.
@@ -615,7 +615,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
       # One test project at a time (-m:1). Otherwise the solution starts every project's test host at once, ten of them
@@ -670,7 +670,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-restore
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path" --blame-hang --blame-hang-timeout 75m --logger "trx" --results-directory FuzzResults
@@ -708,7 +708,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - shell: pwsh
         run: ./scripts/isa-matrix.ps1
@@ -733,7 +733,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # Fails the build on any IL2xxx (trim) or IL3xxx (AOT) warning.
       #
       # PublishAot is deliberately NOT passed on the command line. The sample's csproj already sets
@@ -794,7 +794,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: chmod +x scripts/conformance-gate.sh
       - run: ./scripts/conformance-gate.sh linux-x64
       - name: Publish the dated conformance artifact
@@ -804,11 +804,13 @@ jobs:
           path: conformance/results/
 
   # ── Forward-compatibility leg: does the generator still load in a NEWER compiler? ────────────────────
-  # The floor (Microsoft.CodeAnalysis 5.0.0) is what every other job builds, and it is what the pinned SDK
-  # 10.0.101 carries. This job answers the other half: a consumer on a newer 10.0.x SDK runs our generator
+  # The floor (Microsoft.CodeAnalysis 5.0.0) is what the generator is compiled against, and toolchain-floor below
+  # builds on an SDK that carries it. This job answers the other half: a consumer on a newer 10.0.x SDK runs our generator
   # inside THEIR compiler, and a generator built against a newer Roslyn than the host refuses to load with
   # CS9057. Measured locally: referencing 5.6.0 while building on SDK 10.0.101 fails with exactly that,
-  # which is why this leg needs its own, newer SDK and cannot live in build-test.
+  # which is why this leg needs its own, newer SDK and cannot live in build-test. While the pin IS the newest 10.0
+  # SDK (round 35 moved it to 10.0.404, the newest of the day), this leg and build-test run on the same one; it starts
+  # looking ahead again the day a newer 10.0 SDK ships, before the pin follows.
   #
   # BLOCKING since round 34. It was authored non-blocking, without a machine that had a newer 10.0.x SDK, to be
   # flipped "once it has been seen green". It was green on every master nightly read for the flip (2026-10-22 to
@@ -888,6 +890,55 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
+  # ── Toolchain floor: the oldest SDK band the README promises (round 35, T7) ────────────────────────────────
+  # README: "Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+)". Until round 35 every job built on the
+  # pinned 10.0.101, whose compiler is Roslyn 5.0, so the promise was held by every build without being written
+  # down anywhere. T7 moved the pin to 10.0.404, which carries Roslyn 5.9. From then on the floor compiler ran only
+  # inside the suite (the tests reference Microsoft.CodeAnalysis 5.0.0 and compile the generated code with it) and
+  # no consumer project - the samples, the consumer tests, the integration tests - was built by it. This job builds
+  # and tests the whole solution on the newest SDK of the 10.0.1xx band.
+  #
+  # Installed into a directory of its own: the runner image carries newer 10.0 SDKs, and with the pin dropped
+  # `dotnet` picks the newest it can see. From that directory it sees only this one, and the step below proves it.
+  # Locked mode stays ON and warnings stay errors. A 10.0.1xx SDK resolves its implicit AOT and trim packages at
+  # its runtime's patch - 10.0.15 for 10.0.115, the same as the pinned 10.0.404 - so the lock files hold; and an
+  # older band's analyzers are a subset of the pinned one's. If either stops being true, that is this job's
+  # finding, not noise to exempt.
+  toolchain-floor:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-floor
+        with:
+          dotnet-version: '10.0.1xx'   # deliberately NOT the pin: the newest SDK of the oldest supported band
+      - name: Drop the SDK pin for this job only, and PROVE a 10.0.1xx SDK is what we got
+        run: |
+          set -euo pipefail
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          actual=$(dotnet --version)
+          echo "SDK resolved: $actual"
+          dotnet --list-sdks
+          case "$actual" in
+            10.0.1[0-9][0-9]) ;;
+            *) echo "::error::toolchain-floor resolved SDK $actual, not a 10.0.1xx SDK - it would prove nothing about the floor" >&2
+               exit 1 ;;
+          esac
+      # ilverify, for the reason every job that runs the suite installs it (CiToolPrerequisiteScanTests).
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      - name: Build on the floor SDK, locked, warnings as errors
+        run: dotnet build DwarfMapper.NET.sln -c Release
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
+
   codeql:
     runs-on: ubuntu-26.04
     permissions:
@@ -903,7 +954,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: csharp
@@ -927,7 +978,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet tool install --global CycloneDX --version 6.2.0
       - run: dotnet CycloneDX DwarfMapper.NET.sln -o ./sbom
       # SLSA build-provenance attestation for the generated SBOM artifact.
@@ -1003,7 +1054,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # ONE step for both rounds on purpose: if the two rounds' command lines could drift apart, the
       # comparison would be measuring two different builds and calling the difference non-determinism.
       # The output directories live under RUNNER_TEMP because `git clean -xdf` is what separates the
@@ -1077,7 +1128,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - name: Pack the shipped packages
         run: |
@@ -1160,7 +1211,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # The ISSUE-038 drift assertion, per-runner. build-test proves the pin holds on ubuntu and says
       # nothing about the other two images, which is precisely the gap this job exists to close.
       # `shell: bash` is mandatory here: on windows-latest the default shell is pwsh and this is sh.
