@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF119`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF120`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -2738,6 +2738,26 @@ The same rule holds for the node dispatch of a `[FlattenGraph]` method with `[Ma
 the dispatch's source is not asked for an arm. Before round 35 this shape built, and a base instance threw at run
 time - or, nested under `ReferenceHandling.Preserve` or `OnCycle.SetNull`, was mapped as the base by a route that
 skipped the dispatch altogether (and mapped derived instances as the base too).
+
+## dwarf120
+**[DwarfMapper] and [GenerateMap] are not read on a record** · Error
+
+The generator reads **class** declarations. A `record` that carries `[DwarfMapper]`, or `[GenerateMap<S, T>]` in
+its co-located form, is not one, and until round 35 it was passed over without a word: a record mapper's partial
+methods failed with the compiler's `CS8795` and nothing from DwarfMapper to explain it, and a record with
+`[GenerateMap]` simply had no maps.
+
+**Fix:** declare the mapper as a `partial class`. A record is as good a source or destination as any other type -
+write the map on a mapper class:
+
+<!-- fence-exempt: illustrates the declaration DWARF120 reports and its replacement; a fragment, not a compilable unit -->
+```csharp
+[GenerateMap<Order, OrderDto>] public record OrderDto(int Id);   // DWARF120
+
+[DwarfMapper]
+[GenerateMap<Order, OrderDto>]
+public partial class OrderMapper;                                // the same map, on a class
+```
 
 ## Runtime exceptions
 

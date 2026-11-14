@@ -37,6 +37,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T19 | **A derived arm adopts a declared method that takes the BASE type**, and the derived members are dropped with no diagnostic. Found while proving T18's advice. | **analysed: not the defect I called it** - the owner's to rule, recommendation "no change"; see Notes |
 | T20 | **A hand-written converter, hook or factory that calls the mapper again overflows the stack** (process death) in every mode. Found by probing the 2026-11-13 AutoMapper advisories' shapes. Older than this round. | **done** - a stack check at every declared mapping method of a mapper holding user-written code, see Notes |
 | T21 | A class whose only constructor takes one parameter of its own type is refused (DWARF026). | **not a defect** - a deliberate, tested rule (`AnnotatedConstructorUnusableTests`: "COPY constructor"); see Notes |
+| T22 | **A record carrying `[DwarfMapper]` or `[GenerateMap]` is ignored without a diagnostic.** Met while testing T20. | **done** - DWARF120, see Notes |
 
 ## Notes
 
@@ -448,3 +449,12 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   and tested for classes as well as records (`AnnotatedConstructorUnusableTests`, the "COPY constructor" row). A
   linked-list class built only through `Node(Node? next)` is therefore not a destination DwarfMapper can construct;
   DWARF026's text for that case does not say why. Left as it is.
+
+- **T22: DWARF120.** A test of T20 wrote `[DwarfMapper] public partial record M` and got the compiler's CS8795 and
+  nothing from DwarfMapper: every pipeline in `DwarfGenerator.Initialize` filters on `ClassDeclarationSyntax`, so a
+  record carrying `[DwarfMapper]` - or `[GenerateMap]` in its co-located form, which is the likelier thing to write
+  on a record DTO - never reached an extractor. The first failed loudly but unexplained; the second generated
+  nothing and said nothing, which is the "never silent" tenet broken. A ninth, collected pipeline reports both where
+  they are written (Error, at the record's name, naming the attribute). Supporting a record host was not attempted:
+  seven pipelines read class syntax, and that is a feature of its own. Nothing that built before stops building.
+  Tests: `MapperOnRecordTests` (5) and the negative case.

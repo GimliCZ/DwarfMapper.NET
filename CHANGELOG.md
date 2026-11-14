@@ -15,6 +15,11 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **New: DWARF120 (Error), "[DwarfMapper] and [GenerateMap] are not read on a record".** A record carrying either
+  attribute was ignored without a diagnostic - a record mapper's partial methods then failed with `CS8795` alone,
+  and a record with a co-located `[GenerateMap]` had no maps at all. It is now reported where it is written.
+  Nothing that built before stops building: a record mapper never compiled, and a record host generated nothing.
+  (Round 35, T22.)
 - **Security: a converter, hook or factory that calls the mapper again can no longer overflow the stack.** The depth
   guard counts the calls the generator emits; a `[MapProperty(Use = ...)]` converter, a method adopted by its
   signature, a `[MapConstructor]` factory or a `[BeforeMap]`/`[AfterMap]` hook that calls a mapping method is a loop

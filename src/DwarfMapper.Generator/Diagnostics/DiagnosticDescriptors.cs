@@ -2345,5 +2345,19 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Error,
             true,
             helpLinkUri: HelpBase + "dwarf119");
+
+        /// <summary>
+        ///     <c>DWARF120</c> (Error) — <c>[DwarfMapper]</c> or <c>[GenerateMap]</c> is written on a <c>record</c>.
+        ///     Every pipeline of the generator reads class declarations, so a record carrying either attribute was
+        ///     passed over without a word (round 35, T22). Args: {0} = the record, {1} = the attribute as written.
+        /// </summary>
+        public static readonly DiagnosticDescriptor MapperOnRecord = new(
+            "DWARF120",
+            "[DwarfMapper] and [GenerateMap] are not read on a record",
+            "'{0}' is a record, and {1} is read on classes only: nothing is generated for it. Declare the mapper as a partial class; a record can still be the source or the destination of a map declared on one.",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf120");
     }
 }
