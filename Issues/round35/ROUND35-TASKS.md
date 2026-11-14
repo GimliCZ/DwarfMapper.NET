@@ -38,6 +38,8 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T20 | **A hand-written converter, hook or factory that calls the mapper again overflows the stack** (process death) in every mode. Found by probing the 2026-11-13 AutoMapper advisories' shapes. Older than this round. | **done** - a stack check at every declared mapping method of a mapper holding user-written code, see Notes |
 | T21 | A class whose only constructor takes one parameter of its own type is refused (DWARF026). | **not a defect** - a deliberate, tested rule (`AnnotatedConstructorUnusableTests`: "COPY constructor"); see Notes |
 | T22 | **A record carrying `[DwarfMapper]` or `[GenerateMap]` is ignored without a diagnostic.** Met while testing T20. | **done** - DWARF120, see Notes |
+| T23 | **Multi-version generator, and C# 15 union mapping on the Roslyn 5.12 build** (the owner, 2026-11-14: "Prepare multiversion and if detected .net 11 enable Union mapping ... with tests"). Design: `docs/superpowers/specs/2026-11-14-multiversion-generator-union-mapping-design.md`. | open (`feat/round35-t23`) |
+| T24 | **A performance comparison of union mapping** ("After that prepare performance comparison testing"). Same design document. | open |
 
 ## Notes
 
