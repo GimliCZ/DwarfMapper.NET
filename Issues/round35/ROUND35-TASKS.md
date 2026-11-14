@@ -498,6 +498,12 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     Locked mode can stay on: 10.0.115 implies the same 10.0.15 packages the lock files hold.
   - **roslyn-forward-compat** runs on `10.0.x`, which is the pin itself until a newer 10.0 SDK ships; its comment
     says so. It starts looking ahead again then, before the pin follows.
+  - **reproducible-build, found by rehearsing it:** NuGet 7.9 (in 10.0.404; 10.0.101 carried 7.0) names the
+    core-properties part `nuget.psmdcp` instead of a fresh GUID, and the check required the GUID form - "0 .psmdcp
+    part(s), expected exactly 1" on all four packages. Two packs compared entry by entry: every entry identical,
+    the .psmdcp and `_rels/.rels` included; the whole-file hash differs only by the pack time in the zip headers of
+    the four OPC entries. The check accepts the fixed name by its exact spelling beside the GUID form. Also
+    rehearsed at this head: build-test, aot-trim-gate (linux; native binary published and run), conformance-gate.
   - **For the owner:** the branch needs SDK 10.0.404 installed to build on this machine (`global.json` refuses any
     other, by design). I could not install it here (no administrator rights), so every check of this branch ran
     in containers.
