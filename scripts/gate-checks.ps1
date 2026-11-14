@@ -1790,6 +1790,36 @@ function Get-OwnWarningCodes {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The target frameworks a project file declares (TargetFramework and TargetFrameworks, split on ';'), and the
+# ones among them that an SDK of major version -SdkMajor cannot build, for scripts/nowarn-audit.ps1 (round 35
+# T23). The audit builds every project from the repository root, where global.json pins the SDK; a net11.0
+# project there (samples/DwarfMapper.Unions, benchmarks/DwarfMapper.UnionBenchmarks) fails with NETSDK1045
+# before a single analyzer runs, so every code it declares would read as stale and fail the audit for a reason
+# that has nothing to do with suppressions. The audit skips such a project and the net11 job audits it, with an
+# SDK that builds it. Only a netN.M name can be newer: netstandard2.0, net48 or an inherited (empty) framework
+# never is.
+function Get-DeclaredFrameworks {
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $ProjectText)
+
+    $xml = [xml]$ProjectText
+    @($xml.SelectNodes('//*[local-name()="TargetFramework" or local-name()="TargetFrameworks"]') |
+        ForEach-Object { $_.InnerText -split ';' } |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ } |
+        Select-Object -Unique)
+}
+
+function Get-FrameworksNewerThanSdk {
+    param(
+        # AllowNull as well: a function that returns no frameworks hands its caller $null, not an empty array.
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [string[]] $Frameworks,
+        [Parameter(Mandatory)] [int] $SdkMajor
+    )
+
+    @($Frameworks | Where-Object { $_ -match '^net(\d+)\.\d+$' -and [int]$Matches[1] -gt $SdkMajor })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # The upload itself, sent once more when the dashboard gave no answer about the report. On 2026-10-27
 # the first nightly on round 33's code measured and gated all six legs, and two still went red here: the
 # dashboard answered the runtime and codefixes PUTs (09:09:41 and 09:09:59 UTC) with HTTP 504 four

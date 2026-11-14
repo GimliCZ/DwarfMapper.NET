@@ -1353,6 +1353,12 @@ jobs:
         run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
       - name: The suite, rolled forward to the newest runtime
         run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      # Round 35 T23: the NoWarn audit for the projects that target net11.0 themselves (samples/DwarfMapper.Unions,
+      # benchmarks/DwarfMapper.UnionBenchmarks). The nightly audit (deep-test, housekeeping -Nightly) runs on the
+      # pinned SDK 10, which cannot build them, so it skips and names them; this SDK can. Before the retargeting
+      # below, so it audits exactly those projects; the script fails if none matched.
+      - name: NoWarn audit of the net11.0 projects
+        run: pwsh scripts/nowarn-audit.ps1 -FailOnStale -Framework net11.0
       - name: Retarget the consumers to net11.0
         run: |
           set -euo pipefail

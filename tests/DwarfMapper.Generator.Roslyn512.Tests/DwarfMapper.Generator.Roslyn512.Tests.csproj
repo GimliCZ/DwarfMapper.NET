@@ -14,10 +14,10 @@
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <IsPackable>false</IsPackable>
-        <!-- CA1707: test methods use underscores. CA1515: xunit needs the test classes public. CA5394, CA1861 and
-             CA1508 are Generator.Tests' own exemptions, for the corpus files linked below: SyntheticSchema draws from a
-             SEEDED Random so that the corpus is fixed (no security in it), and both schemas build constant arrays. -->
-        <NoWarn>$(NoWarn);CA1707;CA1515;CA5394;CA1861;CA1508</NoWarn>
+        <!-- CA1707: test methods use underscores. CA1515: xunit needs the test classes public. CA5394 is Generator.Tests'
+             own exemption, for the corpus files linked below: SyntheticSchema draws from a SEEDED Random so that the
+             corpus is fixed (no security in it). -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA5394</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

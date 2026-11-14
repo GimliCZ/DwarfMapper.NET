@@ -22,10 +22,10 @@
         <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
         <!-- The package mode references the one package under test, at the version it was packed with. -->
         <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
-        <!-- An examples program, as the Gallery: CA1303 for its fixed console lines, CA1515 for the public types a
-             consumer's DTOs are, CA2227/CA1002 for the settable List<T> members such DTOs have, and CA1815 because a
-             C# 15 union declaration is a struct, which that rule asks for Equals and operators. -->
-        <NoWarn>$(NoWarn);CA1303;CA1515;CA2227;CA1002;CA1815</NoWarn>
+        <!-- An examples program, as the Gallery: CA1515 for the public types a consumer's DTOs are, CA2227/CA1002 for
+             the settable List<T> members such DTOs have, and CA1815 because a C# 15 union declaration is a struct, which
+             that rule asks for Equals and operators. -->
+        <NoWarn>$(NoWarn);CA1515;CA2227;CA1002;CA1815</NoWarn>
     </PropertyGroup>
     <ItemGroup Condition="'$(UsePackedDwarfMapper)' != 'true'">
         <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
