@@ -2763,6 +2763,7 @@ The throws you can encounter:
 | `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
 | `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …". An instance of the base type itself is not among these: a base that can be instantiated must have an arm (`DWARF119`) |
 | Span/destination too small (span overloads) | `ArgumentException` | |
+| A converter, hook or factory on the mapper calls the mapper again, on an input too deep for the stack | `InsufficientExecutionStackException` | catchable; raised by the stack check that opens every declared mapping method of a mapper holding user-written code. `MaxDepth` does not count this loop - the generator cannot see it |
 | Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
 | Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
 | `DwarfMap.Validate()` finds an unregistered required pair (call it explicitly, via `services.AddDwarfMappers().ValidateDwarfMaps()`, or automatically with `[DwarfMapperValidationRoot(AutoValidate = true)]`) | `DwarfMapValidationException` | reflection-free fail-fast listing the missing pairs |

@@ -612,11 +612,17 @@ namespace DwarfMapper.Generator.Pipeline
                                  AccessibilityText(hidingLink.DeclaredAccessibility)));
             }
 
+            // Round 35 T20: user-written code on the mapper can call a mapping method again, and that loop is one
+            // the depth guard never counts. Every declared mapping method of such a mapper checks the stack on entry.
+            var emittedMethods = HoldsUserWrittenCode(classSymbol)
+                ? methods.Select(m => m.IsPartial ? m with { ChecksStack = true } : m).ToList()
+                : methods;
+
             return new MapperClassModel(
                 classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
                 emitClassName,
                 emitAccessibility,
-                EquatableArray.From(methods),
+                EquatableArray.From(emittedMethods),
                 EquatableArray.From(diagnostics),
                 EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, StringComparer.Ordinal)),
                 EquatableArray.From(roundTrips),
@@ -627,6 +633,43 @@ namespace DwarfMapper.Generator.Pipeline
                 registerCollectionShapes,
                 EquatableArray.From(handWrittenProvides),
                 hidingLink is null);
+        }
+
+        /// <summary>
+        ///     True when the mapper class, or a class it derives from, declares a method with a body the user wrote.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 35 T20. Everything a mapper can be told to call is a method on the mapper: a
+        ///         <c>[MapProperty(Use = ...)]</c> converter, a method adopted by its signature, a
+        ///         <c>[MapConstructor]</c> factory, a <c>When</c> predicate, a <c>[MapValue(Use = ...)]</c> source, a
+        ///         <c>[BeforeMap]</c> or <c>[AfterMap]</c> hook. Any of them can call a mapping method again - directly,
+        ///         through the ambient facade, through another mapper - and the generator's cycle analysis sees only
+        ///         the calls it emits. Measured, one process per case, on a chain 200,000 levels deep: a member
+        ///         converter, an adopted method, an after-hook in each mode, an update-into converter, a converter
+        ///         calling <c>Dwarf.Map</c> and a span map's element converter each ended in a stack overflow, which
+        ///         cannot be caught.
+        ///     </para>
+        ///     <para>
+        ///         Asked of the class rather than of what a given method binds, on purpose: the set of ways a method
+        ///         comes to be called is long and grows, and one missed kind is a process death. A mapper with no
+        ///         method of its own - the <c>[GenerateMap]</c> form, or partial declarations only - is not asked to
+        ///         pay for the check (about 1 ns a call, measured), which is what keeps a plain map at its cost.
+        ///         Code that reaches a mapper from OUTSIDE it (a property getter or a conversion operator on a mapped
+        ///         type that holds a mapper of its own) is beyond this rule, and the docs say so.
+        ///     </para>
+        /// </remarks>
+        private static bool HoldsUserWrittenCode(INamedTypeSymbol mapper)
+        {
+            for (var type = mapper; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
+                foreach (var member in type.GetMembers())
+                    if (member is IMethodSymbol { MethodKind: MethodKind.Ordinary, IsAbstract: false } method &&
+                        !(method.IsPartialDefinition && method.PartialImplementationPart is null))
+                    {
+                        return true;
+                    }
+
+            return false;
         }
 
         /// <summary>

@@ -134,6 +134,10 @@ attribute. Two consequences follow from it, and both are enforced:
 > mapping the whole collection to blanks. Both behind green builds. The behaviour is now pinned by
 > `ConverterAdoptionPolicyTests`.
 
+A converter may call the mapper again (`Rest(n) => Map(n)`). The depth guard does not count that loop - it is
+your code, not generated code - so each mapping method of a mapper with a method body of its own checks the stack on
+entry, and an input too deep for it ends in `InsufficientExecutionStackException` rather than a stack overflow.
+
 Adding an unrelated helper to a mapper class can therefore change existing maps, if its signature happens to
 fit a conversion nothing else provides. That is the cost of the convenience; the reservation rules bound it
 to methods you have not already dedicated elsewhere.

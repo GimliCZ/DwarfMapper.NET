@@ -744,6 +744,9 @@ Ideal for mapping a streamed data source (DB cursor, network stream) to DTOs wit
 
 Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator
 time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead.
+A loop that runs through **your own code** (a converter or hook that calls the mapper again) is outside what the
+generator can count; a mapper that has methods of its own checks the stack at each mapping method's entry, so that
+loop ends in a catchable `InsufficientExecutionStackException` too.
 The behaviour for shared references and cycles is controlled per mapper:
 
 <!-- snippet: reference-cycles -->
