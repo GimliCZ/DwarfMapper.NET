@@ -504,6 +504,14 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     the .psmdcp and `_rels/.rels` included; the whole-file hash differs only by the pack time in the zip headers of
     the four OPC entries. The check accepts the fixed name by its exact spelling beside the GUID form. Also
     rehearsed at this head: build-test, aot-trim-gate (linux; native binary published and run), conformance-gate.
+  - **cross-platform (macos-latest), found by the full run (43596272659):** from the 10.0.4xx SDK on, an executable
+    with PublishAot and no RuntimeIdentifier gets the host's portable RID as its default publish RID, appended to
+    RuntimeIdentifiers (`Microsoft.NET.RuntimeIdentifierInference.targets`; 10.0.101 had no such rule). Linux and
+    Windows hosts are already in the two AOT projects' list; macOS arm64 is not, so the locked restore refused the
+    lock file there (NU1004). Reproduced on Linux with `-p:NETCoreSdkPortableRuntimeIdentifier=osx-arm64`; both
+    projects now set `UseDefaultPublishRuntimeIdentifier=false` (every publish names its RID), and the same
+    restore passes, the native solution restore passes, the explicit-RID AOT publish still runs green, and no lock
+    file changed.
   - **For the owner:** the branch needs SDK 10.0.404 installed to build on this machine (`global.json` refuses any
     other, by design). I could not install it here (no administrator rights), so every check of this branch ran
     in containers.
