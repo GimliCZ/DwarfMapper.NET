@@ -1494,9 +1494,28 @@ function Invoke-DecontaminatedMutationLeg {
 # Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper 395 B, DwarfMapper.Testing 914 B.
 # Windows was not packed again; by the +185 B measured above it would stand about 210 B under. The next generator
 # change of any size moves this ceiling.
+#
+# RE-MEASURED 2026-11-14 (round 35 T20 and T22, at bdb0f1b): DwarfMapper 368 -> 370, DwarfMapper.Testing 57.
+#
+#   the same container and commands:
+#     420e7f8                            DwarfMapper 377,455 B   Testing 58,482 B   floor 368 / 57
+#     bdb0f1b (T20, T22, the advisories)  DwarfMapper 379,018 B   Testing 58,598 B   floor 370 / 57
+#
+# ENTRY BY ENTRY, 420e7f8 -> bdb0f1b, compressed bytes:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll   +1,445   DWARF120 with its message and its pipeline (T22); the
+#                                                            stack check and the rule that decides who gets it (T20)
+#   README.md                                         +122   the paragraph on a loop through user-written code (both
+#                                                            packages carry the README)
+#   the rest (nuspec, .rels, dlls' entropy)             -4
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (371 KB = 379,904 B) 886 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 794 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 368
+    'DwarfMapper'         = 370
     'DwarfMapper.Testing' = 57
 }
 
