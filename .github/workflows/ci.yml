@@ -110,9 +110,14 @@ jobs:
       # would fight it.
       # --logger junit: `dotnet test` ships trx/html/console and NO junit, and Codecov test analytics
       # reads JUnit XML only. Without it the upload below finds nothing and reports success.
+      # The path is ROOTED at the workspace (round 35). A relative LogFilePath is resolved against each TEST
+      # PROJECT's directory, not the repository root, so the files had been landing in
+      # tests/<project>/TestResults/junit/ while the upload below looks in ./TestResults/junit/: its log read
+      # "Some files were not found", and the uploads went through only because the Codecov CLI then searched
+      # the whole tree on its own ("Found 9 test_results files"). A gate should not rest on a fallback.
       # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
       # show which tests fail and how often, which is precisely the run you must not skip.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=$GITHUB_WORKSPACE/TestResults/junit/{assembly}.junit.xml"
         continue-on-error: true
         id: tests
 
