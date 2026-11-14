@@ -32,7 +32,7 @@
     <PackageVersion Include="CsCheck" Version="4.7.0" />
     <PackageVersion Include="Verify.Xunit" Version="28.16.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- Benchmark-only competitors. AutoMapper pinned to 14.0.0 — the last MIT release; v15+ is
          RPL-1.5 (GPL-incompatible). Mapperly + Mapster are MIT (GPL-compatible). -->
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
