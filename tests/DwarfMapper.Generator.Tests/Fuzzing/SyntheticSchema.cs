@@ -633,13 +633,16 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             }
 
             // A nullable REFERENCE (`string?`, `FuzzRef?`) is meant to be null — that is the shape. No initialiser.
-            if (type.EndsWith('?') && !type.StartsWith("global::", StringComparison.Ordinal))
+            // The span forms, here and below: this file also compiles into Roslyn512.Tests, which the net11 job builds
+            // as net11.0, where string gains StartsWith/EndsWith(char, StringComparison) and CA1307 asks for them -
+            // overloads net10.0 does not have. The span forms take no comparison on either.
+            if (type.AsSpan().EndsWith('?') && !type.StartsWith("global::", StringComparison.Ordinal))
             {
                 return string.Empty;
             }
 
             // ValueTuple is a struct: default(...) is valid, no initialiser needed.
-            if (type.StartsWith('('))
+            if (type.AsSpan().StartsWith('('))
             {
                 return string.Empty;
             }

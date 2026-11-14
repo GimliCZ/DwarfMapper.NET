@@ -23,7 +23,9 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Golden
                     continue;
                 }
 
-                var space = line.LastIndexOf(' ');
+                // The span form: the net11 job builds this project as net11.0, where string.LastIndexOf(char) draws
+                // CA1307 (net11.0 adds an overload with a StringComparison; net10.0 has none). The span form has none.
+                var space = line.AsSpan().LastIndexOf(' ');
                 if (space <= 0)
                 {
                     throw new InvalidDataException($"Malformed manifest line {i + 1}: '{line}'.");

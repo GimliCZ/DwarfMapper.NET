@@ -2613,8 +2613,8 @@ The package carries the generator twice, and the compiler decides which one runs
   (`Pet` → `PetDto`, `Pet` → `object`, `Cat` → `Pet`), a mapping method's own endpoints
   (`partial PetDto Map(Pet p)`), and a projection member.
 - **Roslyn 5.12 or newer** (the .NET 11 SDK) runs the build that maps unions, in a C# 15 project: one union into
-  another case by case (see DWARF114 for how cases are paired), and a case type into its union (`Cat` → `Pet`) by the
-  language's own union conversion. Refused there: a project compiled as C# 14 or older (the generated map would
+  another case by case (see [Map C# 15 unions](howto/map-unions.md), and DWARF114 for how cases are paired), and a
+  case type into its union (`Cat` → `Pet`) by the language's own union conversion. Refused there: a project compiled as C# 14 or older (the generated map would
   need C# 15 and fail with CS9327), a union in a projection, a union with no case types, a union into or out of a type
   that is neither a union nor one of its cases (`Pet` → `object`, `string` → `Pet`), a union map declared between
   nullable unions (declare it between the union types; a `Pet?` member maps through it), and an empty source union

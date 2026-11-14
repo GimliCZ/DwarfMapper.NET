@@ -560,7 +560,10 @@ internal static class CombinatorialSchema
         private static string TypeArgsOf(string type)
         {
             var lt = type.IndexOf('<', StringComparison.Ordinal);
-            var gt = type.LastIndexOf('>');
+            // The span form, here and in DefaultInit: this file also compiles into Roslyn512.Tests, which the net11 job
+            // builds as net11.0, where string gains LastIndexOf/StartsWith/EndsWith(char, StringComparison) and CA1307
+            // asks for them - overloads net10.0 does not have. The span forms take no comparison on either.
+            var gt = type.AsSpan().LastIndexOf('>');
             return lt >= 0 && gt > lt ? type.Substring(lt + 1, gt - lt - 1).Trim() : "object";
         }
 
@@ -572,13 +575,13 @@ internal static class CombinatorialSchema
             }
 
             // `string?` — a nullable REFERENCE. No initialiser: null is the whole point of the shape.
-            if (type.EndsWith('?'))
+            if (type.AsSpan().EndsWith('?'))
             {
                 return string.Empty;
             }
 
             // ValueTuple is a struct; default(...) is valid and needs no initialiser.
-            if (type.StartsWith('('))
+            if (type.AsSpan().StartsWith('('))
             {
                 return string.Empty;
             }
@@ -595,8 +598,8 @@ internal static class CombinatorialSchema
                 // Use ImmutableArray<T>.Empty for a safe non-null init
                 // E.g. "global::System.Collections.Immutable.ImmutableArray<int>"
                 // Extract the element type: everything between "<" and ">"
-                var lt = type.LastIndexOf('<');
-                var gt = type.LastIndexOf('>');
+                var lt = type.AsSpan().LastIndexOf('<');
+                var gt = type.AsSpan().LastIndexOf('>');
                 if (lt >= 0 && gt > lt)
                 {
                     var elemT = type.Substring(lt + 1, gt - lt - 1).Trim();

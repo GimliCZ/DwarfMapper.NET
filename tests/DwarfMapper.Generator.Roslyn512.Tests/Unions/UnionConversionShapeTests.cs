@@ -57,7 +57,9 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Unions
 
         private static ITypeSymbol Resolve(CSharpCompilation compilation, string name)
         {
-            var nullable = name.EndsWith('?');
+            // The span form: the net11 job builds this project as net11.0, where string.EndsWith(char) draws CA1307
+            // (net11.0 adds an overload with a StringComparison; net10.0 has none). The span form has none on either.
+            var nullable = name.AsSpan().EndsWith('?');
             var bare = nullable ? name[..^1] : name;
             ITypeSymbol type = bare switch
             {

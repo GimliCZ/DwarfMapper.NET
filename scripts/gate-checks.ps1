@@ -1532,9 +1532,25 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (625 KB = 640,000 B) 793 B,
 # DwarfMapper.Testing (58 KB = 59,392 B) 793 B.
+#
+# RE-MEASURED 2026-11-14 (round 35 T23, union mapping and its docs): DwarfMapper 624 -> 636, DwarfMapper.Testing 57.
+#
+#   sdk:10.0.101 container, 14f8e2d (the two-folder package) against the branch, entry by entry, compressed bytes:
+#     analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll   +8,987   union mapping: the endpoint and nested
+#                                                                         dispatch, pairing, DWARF113/114/035 texts
+#     analyzers/dotnet/roslyn5.0/cs/DwarfMapper.Generator.dll    +3,003   the shared half: the seam, the conversion
+#                                                                         gate, the [MapTo] refusal, the typed lift
+#     README.md                                                    +494   the C# 15 unions section (both packages)
+#     the rest (nuspec, CodeFixes, lib dll)                         +10
+#   package-size job rehearsed on the branch: DwarfMapper 651,693 B (floor 636), Testing 59,092 B (floor 57).
+#
+# Intended content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (637 KB = 652,288 B) 595 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 300 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 624
+    'DwarfMapper'         = 636
     'DwarfMapper.Testing' = 57
 }
 

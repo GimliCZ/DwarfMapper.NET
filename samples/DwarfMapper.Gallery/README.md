@@ -14,6 +14,10 @@ It exists because the orphan rule went STRICT in round 27. Before that, a region
 declared example was exempt from needing a quoting document, and 32 of them were quoted nowhere.
 The alternative to this page was deleting those markers — removing evidence to satisfy a guard.
 
+**C# 15 unions** have examples of their own in [`../DwarfMapper.Unions`](../DwarfMapper.Unions): they need the .NET 11
+SDK, and this Gallery builds with the solution on the pinned .NET 10 one. The walkthrough is
+[Map C# 15 unions](../../docs/howto/map-unions.md).
+
 ## Index
 
 <!-- table: gallery-index -->
