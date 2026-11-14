@@ -2,15 +2,16 @@
 //
 // Round 35 probe, not part of any build: a console program (net10.0, RollForward LatestMajor) that references the
 // built DwarfMapper.IntegrationTests.dll and DwarfMapper.dll for Item19Mapper.
-// Results and reading: ROUND35-TASKS.md, "The exact-zero tests read on a fresh thread".
+// Results and reading: ROUND35-TASKS.md, "The exact-zero tests read on a fresh thread" and the note after it.
 
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using DwarfMapper.IntegrationTests;
 
-// One window of 1000 maps per trial, measured on a FRESH thread that allocates nothing itself (everything it touches
-// is allocated by the caller before it starts). Usage: gcwin <map|plant> <bgc|rare|idle> <seconds>
+// One window of 1000 maps per trial, measured on a FRESH thread after a blocking gen-0 collection on that thread, which
+// retires its allocation buffer. "dirty": the thread allocates first, as a thread start does on macOS (152 B measured
+// there). Usage: gcwin <map|mapdirty|plant|plantdirty> <bgc|rare|idle> <seconds>
 internal static class Program
 {
     private static object? _sink;
@@ -21,11 +22,14 @@ internal static class Program
         public Item19StructSrc[] Src = null!;
         public Item19StructDst[] Dst = null!;
         public bool Plant;
+        public bool Dirty;
         public long Moved;
         public long AtStart;
 
         public void Run()
         {
+            if (Dirty) _sink = new byte[152];                      // what macOS's thread start leaves: the thread has allocated
+            GC.Collect(0, GCCollectionMode.Forced, true);          // retires this thread's allocation buffer, exactly
             var before = GC.GetAllocatedBytesForCurrentThread();
             AtStart = before;
             for (var i = 0; i < 1000; i++) Mapper.MapSpan(Src, Dst);
@@ -36,7 +40,8 @@ internal static class Program
 
     private static void Main(string[] args)
     {
-        var plant = args[0] == "plant";
+        var plant = args[0].StartsWith("plant");
+        var dirty = args[0].EndsWith("dirty");
         var neighbour = args[1];
         var seconds = int.Parse(args[2]);
         var stop = false;
@@ -63,7 +68,7 @@ internal static class Program
         var until = Environment.TickCount64 + seconds * 1000L;
         while (Environment.TickCount64 < until)
         {
-            var w = new Window { Mapper = mapper, Src = new Item19StructSrc[64], Dst = new Item19StructDst[64], Plant = plant };
+            var w = new Window { Mapper = mapper, Src = new Item19StructSrc[64], Dst = new Item19StructDst[64], Plant = plant, Dirty = dirty };
             var t = new Thread(w.Run);
             t.Start();
             t.Join();

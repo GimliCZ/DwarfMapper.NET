@@ -29,7 +29,7 @@ namespace DwarfMapper.IntegrationTests
     /// <summary>
     ///     IMPROVEMENT-PLAN item 16 (allocation half): a value-type (struct) map must allocate ZERO heap bytes — no
     ///     boxing, no hidden capture, no temporary. Measured with GC.GetAllocatedBytesForCurrentThread() on a thread of
-    ///     its own (<see cref="CostContract.ExactBytesOnFreshThread" />), so neither a parallel test nor a background
+    ///     its own with its allocation buffer retired (<see cref="CostContract.ExactBytesOnFreshThread" />), so neither a parallel test nor a background
     ///     collection can move the reading. Complements the static AOT-token meta-test
     ///     (ReflectionFreeMetaTests) with a dynamic zero-allocation guarantee.
     /// </summary>
@@ -51,14 +51,13 @@ namespace DwarfMapper.IntegrationTests
             AllocPointDst sink = default;
             for (var i = 0; i < 200; i++) sink = mapper.Map(src);
 
-            // One window, exactly zero, read on a thread that owns no allocation buffer: on this thread, which has
-            // allocated, a background collection can move the counter (CostContract.ExactBytesOnFreshThread).
-            var reading = CostContract.ExactBytesOnFreshThread(() => sink = mapper.Map(src), 10_000);
+            // One window, exactly zero, read on a thread whose allocation buffer has been retired: on a thread that
+            // holds one, a background collection can move the counter (CostContract.ExactBytesOnFreshThread).
+            var allocated = CostContract.ExactBytesOnFreshThread(() => sink = mapper.Map(src), 10_000);
 
             // Keep the result observable so the JIT cannot elide the loop.
             Assert.Equal(3, sink.Z);
-            Assert.Equal(0, reading.BeforeWindow);
-            Assert.Equal(0, reading.InWindow);
+            Assert.Equal(0, allocated);
         }
 
         // The oracle's own two halves: a zero that could not read an allocation would pass everything above.
@@ -67,11 +66,10 @@ namespace DwarfMapper.IntegrationTests
         {
             object? planted = null;
 
-            var reading = CostContract.ExactBytesOnFreshThread(() => planted = new object(), 1);
+            var allocated = CostContract.ExactBytesOnFreshThread(() => planted = new object(), 1);
 
             Assert.NotNull(planted);
-            Assert.Equal(0, reading.BeforeWindow);
-            Assert.True(reading.InWindow > 0, $"one object allocated in the window read as {reading.InWindow} bytes");
+            Assert.True(allocated > 0, $"one object allocated in the window read as {allocated} bytes");
         }
 
         [Fact]
