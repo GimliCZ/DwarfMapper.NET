@@ -36,7 +36,7 @@
     <!-- Benchmark-only competitors. AutoMapper pinned to 14.0.0 — the last MIT release; v15+ is
          RPL-1.5 (GPL-incompatible). Mapperly + Mapster are MIT (GPL-compatible). -->
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
-    <PackageVersion Include="Mapster" Version="10.0.8" />
+    <PackageVersion Include="Mapster" Version="10.0.14" />
     <PackageVersion Include="AutoMapper" Version="14.0.0" />
   </ItemGroup>
 </Project>
