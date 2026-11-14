@@ -38,7 +38,7 @@ namespace DwarfMapper.Generator.Tests
         // A method's body opens with the check: the line after its opening brace.
         private static int MethodsOpeningWithTheCheck(string generated)
         {
-            return Regex.Matches(generated.Replace("\r\n", "\n", StringComparison.Ordinal), @"\)\n\s*\{\n\s*" + Regex.Escape(Check), RegexOptions.CultureInvariant).Count;
+            return Regex.Count(generated.Replace("\r\n", "\n", StringComparison.Ordinal), @"\)\n\s*\{\n\s*" + Regex.Escape(Check), RegexOptions.CultureInvariant);
         }
 
         // Every kind of method a caller can enter: create, update-into, span, async stream and dispatch.
@@ -65,7 +65,7 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(5, MethodsOpeningWithTheCheck(generated));
             // And nothing else carries it: the helpers the generator writes for itself are not entered from outside.
-            Assert.Equal(5, Regex.Matches(generated, Regex.Escape(Check)).Count);
+            Assert.Equal(5, Regex.Count(generated, Regex.Escape(Check)));
         }
 
         // Each kind of user-written code on the mapper, by itself.
