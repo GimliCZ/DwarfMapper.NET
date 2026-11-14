@@ -34,7 +34,10 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T16 | **A declared mapping method with an enum or scalar destination returns the default for every input** (`return new StatusDto { };`), where `[GenerateMap]` of the same pair converts. | **done** - see Notes |
 | T17 | **A cycle that runs through a `[FlattenGraph]` method's own node leaf is a stack overflow** in every mode (a node pointing at the object that holds the graph). | **done** - refused as DWARF118, see Notes |
 | T18 | **A base instance at a dispatch is refused in the build, not at run time** (the owner, 2026-11-13, on T13's "now throws": "compile time error would be better"). | **done** - DWARF119, see Notes |
-| T19 | **A derived arm adopts a declared method that takes the BASE type**, and the derived members are dropped with no diagnostic. Found while proving T18's advice. | open - see Notes |
+| T19 | **A derived arm adopts a declared method that takes the BASE type**, and the derived members are dropped with no diagnostic. Found while proving T18's advice. | **analysed: not the defect I called it** - the owner's to rule, recommendation "no change"; see Notes |
+| T20 | **A hand-written converter, hook or factory that calls the mapper again overflows the stack** (process death) in every mode. Found by probing the 2026-11-13 AutoMapper advisories' shapes. Older than this round. | **done** - a stack check at every declared mapping method of a mapper holding user-written code, see Notes |
+| T21 | A class whose only constructor takes one parameter of its own type is refused (DWARF026). | **not a defect** - a deliberate, tested rule (`AnnotatedConstructorUnusableTests`: "COPY constructor"); see Notes |
+| T22 | **A record carrying `[DwarfMapper]` or `[GenerateMap]` is ignored without a diagnostic.** Met while testing T20. | **done** - DWARF120, see Notes |
 
 ## Notes
 
@@ -353,6 +356,108 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   - **The change.** `ExactBytesOnFreshThread` runs that collection on its thread before the window and returns the
     bytes of the window alone; the `BeforeWindow` reading and the three assertions on it are gone. macOS itself is
     not available here: its verdict is the `cross-platform (macos-latest)` job of the next run.
+
+- **T19 read again, in the code (2026-11-14): I over-called it.** The adoption rule is one rule for every site
+  (`FindUserDeclaredConversion`): a declared method is adopted when the source converts implicitly to its parameter
+  and its return converts to the target. So a method declared for a base type serves a derived source - a member, an
+  element or an arm. What that can lose is narrow: the adopted method maps base to target COMPLETELY (the
+  completeness gate holds every target member to a source member or an explicit ignore), so the only target member a
+  derived source could have filled and did not is one the author **ignored by name on that method**. In my probe
+  that was `[MapIgnore(nameof(OverviewDto.Alias))]` on `PlainToDto(Command)`, written by me, and the alias arm then
+  honoured it. Nothing was dropped that the declaration did not say to drop.
+  - The two changes I considered, and why neither is made. (1) *An arm adopts only a method declared for exactly its
+    own source type.* That breaks a sound pattern loudly: an abstract `Item`, arms `Audio -> ItemDto` and
+    `Book -> ItemDto`, and ONE declared `ItemDto ToBaseDto(Item)` carrying the `[MapProperty]` configuration for
+    both - each arm would synthesize a map of its own that knows none of it and fail completeness. (2) *A warning
+    when the adopted method ignores a target member the derived source has.* Precise, but it second-guesses an
+    explicit `[MapIgnore]`, and it needs the adopted method's attributes at a point that today carries only its
+    name and two types.
+  - Recommendation: no change; the base-arm form of the same intent (`[MapIgnore]` on the dispatch method, read for
+    the arm of the method's own pair only) is what the docs and F44 show. If the owner wants (2), it is a small
+    feature, not a fix.
+
+- **The 2026-11-13 AutoMapper advisories** (GHSA-6vhm-j9h7-f9gh / CVE-2026-128082 and GHSA-gpwp-5797-mjff /
+  CVE-2026-128081, both high, published the evening PR #13 was pushed). NU1903 failed every restore: six jobs red on
+  the next run, none from this branch's changes; `master`'s nightly is red from the same hour.
+  - **The gate.** AutoMapper 14.0.0 is the last MIT release; the fixes are in 15.1.4 and 16.3.0 only, which are
+    RPL-1.5. The repository's answer to the first advisory (round 31, T01) was an advisory-scoped
+    `NuGetAuditSuppress` in the three projects that use AutoMapper as a comparison oracle, so that the NEXT advisory
+    would fail the restore - which is what happened. The two are suppressed the same way, at the same three sites,
+    with the reason beside them. **This is an audit exception and was the owner's decision, asked and answered on
+    2026-11-14** (the safety classifier, rightly, would not let me add it unasked).
+  - **The same shapes against DwarfMapper.** Probe `cveprobe` (one process per case, because the failure looked for
+    is a process death), 30,000 levels deep, every shape the two advisories name that can be declared here:
+
+    | shape | none | Preserve | SetNull |
+    |---|---|---|---|
+    | constructor parameter (`Ctor(int v, Ctor? next)`) | depth exception | build error DWARF030 | depth exception |
+    | positional record | depth exception | build error DWARF030 | depth exception |
+    | constructor parameter that is a list | depth exception | build error DWARF030 | depth exception |
+    | chain of derived objects (dispatch), direct and as a member | depth exception | depth exception | depth exception |
+    | interface-typed member (dispatch) | depth exception | depth exception | depth exception |
+    | dictionary value | depth exception | depth exception | depth exception |
+    | **hand-written converter that calls the mapper** (`Use = nameof(Conv)`, `Conv` calls `MapN`) | **PROCESS DIED** | build error DWARF032 | **PROCESS DIED** |
+
+    "depth exception" is `DwarfMappingDepthException`, catchable. Held from now on by
+    `AdvisoryRecursionShapesRuntimeTests` (7 facts, depth 500 as in `DeepRecursionGuardRuntimeTests`, so a regressed
+    guard fails an assertion and does not end the test host).
+  - **T20, the last row.** `MapN` is emitted as a plain object initializer that calls `Conv(n.Next)`; `Conv` is the
+    user's code and calls `MapN`; nothing on that loop counts depth, because the generator's cycle analysis sees
+    only the calls it emits. It is the analogue of the advisory's "recursive type converters ignore MaxDepth", and
+    it contradicts SEC-01 and COR-06 as they are worded ("no configuration yields a silent
+    StackOverflowException"). Open: the fix is a design change to what a mapping method emits at its entry, to be
+    measured before it is made.
+  - **T21, met on the way.** The advisory's own PoC class, `CircularClass(CircularClass? Next)`, does not build as a
+    destination: `ConstructorSelector.IsUsableCandidate` drops any constructor with a single parameter of the target's
+    own type as "the record copy constructor", for classes that are not records too, and the report is DWARF026 "no
+    accessible non-obsolete instance constructor". The probe's class was given a second parameter to get past it.
+
+- **T20 done: a stack check where user-written code can come back in.**
+  - **RED, widened first** (probe `ReentryProbe.cs`, one process per case, a chain 200,000 levels deep): a
+    `Use=` member converter, a hand-written method adopted by its signature, an `[AfterMap]` hook without reference
+    handling and under Preserve, the converter under SetNull, an update-into method re-entered from its converter, a
+    converter that calls `Dwarf.Map`, and a span map whose element converter maps a span - **eight of eight
+    "PROCESS DIED"**. After the fix, eight of eight `THROWS InsufficientExecutionStackException`.
+  - **Why a stack check and not the depth counter.** The loop runs through code the generator did not write and
+    cannot thread a context through; the only thing every such loop has in common is that it comes back in through a
+    declared mapping method. `RuntimeHelpers.EnsureSufficientExecutionStack()` there is the BCL's own answer (and
+    AutoMapper's fix for the same class), written inline: nothing new in the runtime library.
+  - **Why not everywhere.** Measured (`50,000,000` calls, best of five, three rounds): a four-member class map
+    4.7 ns -> 5.8 ns (+1.1 ns, about a quarter), a three-field struct map 1.8 ns -> 2.8 ns (+0.9 ns, half). So the
+    check is emitted only for a mapper that holds user-written code.
+  - **The rule** (`MapperExtractor.HoldsUserWrittenCode`): the mapper class or a class it derives from declares an
+    ordinary method with a body - anything but an abstract method or a partial declaration nobody implemented, which
+    is what the mapping methods themselves are while the generator runs. Asked of the class, not of what each method
+    binds: converters, adopted methods, factories, `When` predicates, `[MapValue(Use=)]` and hooks are all methods on
+    the mapper, the list of ways one comes to be called is long, and a missed kind is a process death; the price of
+    asking the class is a nanosecond on a mapper whose helpers never call back. Every declared method of such a
+    mapper gets the check - create, dispatch, flatten, projection, update-into, span, async stream; the helpers the
+    generator writes for itself do not, they are not entered from outside.
+  - **Not covered, and said in the docs:** code that is not on the mapper and reaches one by itself (a property
+    getter or conversion operator on a mapped type). And `MaxDepth` still does not count the loop: the exception is
+    `InsufficientExecutionStackException`, not `DwarfMappingDepthException`.
+  - **What moved:** four golden cases (`Hooks`, `KeepDefault`, `WhenGuardDefaults`, `ElementViaDeclaredMap` - each
+    mapper has a method body of its own) and three snapshots, each by the one added line; `MapMethodModel` has a
+    19th flag, `ChecksStack`, classified in `StructuralSurfaceCoverageTests`. Claims SEC-08 and COR-07 are bound to
+    `ReentryStackCheckRuntimeTests`.
+  - Tests: `ReentryStackCheckTests` (generator, 10: each entry kind of such a mapper opens with the check and
+    nothing else carries it; a hook, any method with a body, an inherited method; none for partial declarations
+    only, `[GenerateMap]` only, an abstract method, a property) and `ReentryStackCheckRuntimeTests` (8: the eight
+    routes on a thread with a one-megabyte stack, so three platforms agree; and a chain the stack can hold maps
+    level for level).
+- **T21 corrected.** The single-parameter-of-own-type rule in `ConstructorSelector.IsUsableCandidate` is deliberate
+  and tested for classes as well as records (`AnnotatedConstructorUnusableTests`, the "COPY constructor" row). A
+  linked-list class built only through `Node(Node? next)` is therefore not a destination DwarfMapper can construct;
+  DWARF026's text for that case does not say why. Left as it is.
+
+- **T22: DWARF120.** A test of T20 wrote `[DwarfMapper] public partial record M` and got the compiler's CS8795 and
+  nothing from DwarfMapper: every pipeline in `DwarfGenerator.Initialize` filters on `ClassDeclarationSyntax`, so a
+  record carrying `[DwarfMapper]` - or `[GenerateMap]` in its co-located form, which is the likelier thing to write
+  on a record DTO - never reached an extractor. The first failed loudly but unexplained; the second generated
+  nothing and said nothing, which is the "never silent" tenet broken. A ninth, collected pipeline reports both where
+  they are written (Error, at the record's name, naming the attribute). Supporting a record host was not attempted:
+  seven pipelines read class syntax, and that is a feature of its own. Nothing that built before stops building.
+  Tests: `MapperOnRecordTests` (5) and the negative case.
 - **T8: one Ubuntu.** The owner asked why the pipeline used two, and said yes to moving. 16 `runs-on` lines in
   `ci.yml` (the `aot-trim-gate` matrix entry among them), 2 in `release.yml` and 1 in `actions-security.yml` name
   `ubuntu-26.04`; `ubuntu-26-canary` is removed, with its row in `CiGateScanTests` and its allowance in

@@ -24,6 +24,7 @@ namespace DwarfMapper.Generator.Pipeline
                 .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
                 .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
+            AppendStackCheck(sb, method, indent);
 
             // Defensive length guard — never silently truncate.
             sb.Append(indent).Append("    if (").Append(dst).Append(".Length < ").Append(src).AppendLine(".Length)");

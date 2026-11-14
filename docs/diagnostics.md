@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF119`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF120`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -2739,6 +2739,26 @@ the dispatch's source is not asked for an arm. Before round 35 this shape built,
 time - or, nested under `ReferenceHandling.Preserve` or `OnCycle.SetNull`, was mapped as the base by a route that
 skipped the dispatch altogether (and mapped derived instances as the base too).
 
+## dwarf120
+**[DwarfMapper] and [GenerateMap] are not read on a record** · Error
+
+The generator reads **class** declarations. A `record` that carries `[DwarfMapper]`, or `[GenerateMap<S, T>]` in
+its co-located form, is not one, and until round 35 it was passed over without a word: a record mapper's partial
+methods failed with the compiler's `CS8795` and nothing from DwarfMapper to explain it, and a record with
+`[GenerateMap]` simply had no maps.
+
+**Fix:** declare the mapper as a `partial class`. A record is as good a source or destination as any other type -
+write the map on a mapper class:
+
+<!-- fence-exempt: illustrates the declaration DWARF120 reports and its replacement; a fragment, not a compilable unit -->
+```csharp
+[GenerateMap<Order, OrderDto>] public record OrderDto(int Id);   // DWARF120
+
+[DwarfMapper]
+[GenerateMap<Order, OrderDto>]
+public partial class OrderMapper;                                // the same map, on a class
+```
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather
@@ -2763,6 +2783,7 @@ The throws you can encounter:
 | `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
 | `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …". An instance of the base type itself is not among these: a base that can be instantiated must have an arm (`DWARF119`) |
 | Span/destination too small (span overloads) | `ArgumentException` | |
+| A converter, hook or factory on the mapper calls the mapper again, on an input too deep for the stack | `InsufficientExecutionStackException` | catchable; raised by the stack check that opens every declared mapping method of a mapper holding user-written code. `MaxDepth` does not count this loop - the generator cannot see it |
 | Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
 | Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
 | `DwarfMap.Validate()` finds an unregistered required pair (call it explicitly, via `services.AddDwarfMappers().ValidateDwarfMaps()`, or automatically with `[DwarfMapperValidationRoot(AutoValidate = true)]`) | `DwarfMapValidationException` | reflection-free fail-fast listing the missing pairs |

@@ -17,6 +17,15 @@
     <ItemGroup>
         <!-- AutoMapper 14.0.0 (last MIT release, benchmark/differential only): CVE-2026-32933 uncontrolled recursion. -->
         <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-rvv3-g6hj-g44x" />
+        <!-- AutoMapper 14.0.0 again, both published 2026-11-13 and both the same failure class - recursion that the
+             MaxDepth mitigation for CVE-2026-32933 does not stop: through constructor parameters and positional
+             records (CVE-2026-128082), and through derived maps, interface-typed members, dictionary sources and
+             recursive converters (CVE-2026-128081). Fixed only in 15.1.4 and 16.3.0, which are RPL-1.5 and cannot be
+             referenced from this GPL-2.0-only repository; 14.0.0 stays the comparison oracle and ships nowhere.
+             Suppressed by advisory, as above, so the next one fails the restore as these two did. What DwarfMapper
+             itself does with those shapes is held by DeepRecursionGuardRuntimeTests. -->
+        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-6vhm-j9h7-f9gh" />
+        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gpwp-5797-mjff" />
     </ItemGroup>
 
     <ItemGroup>

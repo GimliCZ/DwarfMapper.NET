@@ -15,6 +15,23 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **New: DWARF120 (Error), "[DwarfMapper] and [GenerateMap] are not read on a record".** A record carrying either
+  attribute was ignored without a diagnostic - a record mapper's partial methods then failed with `CS8795` alone,
+  and a record with a co-located `[GenerateMap]` had no maps at all. It is now reported where it is written.
+  Nothing that built before stops building: a record mapper never compiled, and a record host generated nothing.
+  (Round 35, T22.)
+- **Security: a converter, hook or factory that calls the mapper again can no longer overflow the stack.** The depth
+  guard counts the calls the generator emits; a `[MapProperty(Use = ...)]` converter, a method adopted by its
+  signature, a `[MapConstructor]` factory or a `[BeforeMap]`/`[AfterMap]` hook that calls a mapping method is a loop
+  it never saw. On a deep input that loop ran until the stack ended - **a `StackOverflowException`, which cannot be
+  caught and ends the process** - in every reference-handling mode, on create, update-into and span maps, and
+  through the ambient facade. It is the failure class of AutoMapper's CVE-2026-128081 ("recursive type converters
+  ignore MaxDepth"), found by testing that advisory's shapes here. Every declared mapping method of a mapper that has
+  a method body of its own now opens with `RuntimeHelpers.EnsureSufficientExecutionStack()`, so the same input ends
+  in a catchable `InsufficientExecutionStackException`. Cost, measured: about 1 ns a call, and only for such
+  mappers - a mapper with no method of its own is emitted as before. `MaxDepth` still does not count that loop.
+  Not covered: code outside the mapper that reaches one by itself (a property getter or a conversion operator on a
+  mapped type). (Round 35, T20.)
 - **New: DWARF119 (Error), "a [MapDerivedType] dispatch has no arm for its own instantiable base type".** A
   dispatch over a class that is not abstract, with arms for derived types only, used to build; an instance of
   exactly the base type then reached the fallback and threw `ArgumentException` at run time. The declaration shows

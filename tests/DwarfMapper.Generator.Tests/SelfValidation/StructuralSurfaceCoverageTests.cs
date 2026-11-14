@@ -40,7 +40,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // shipped Func<object, object> cannot carry a null and therefore coalesces to a loud throw. Anchored by
         // ConsumerReportedEmissionWarningsTests (both directions: the guard is emitted for the declared shape
         // and for no other) and by the NullableReturnType feature and golden cases.
-        private const int MapMethodModelBoolFlagBaseline = 18;
+        // 18 -> 19: `ChecksStack` (round 35, T20). An INTERNAL CODEGEN FLAG: no signature turns it on, and it
+        // changes nothing about what a method maps. It is set for every declared mapping method of a mapper that
+        // holds user-written code, and makes the method open with a stack check, because such code can call the
+        // mapper again on a loop the depth guard never counts. Anchored by ReentryStackCheckTests.cs (generator:
+        // emitted for each entry kind of such a mapper, and for no mapper without user-written code) and
+        // ReentryStackCheckRuntimeTests.cs (runtime).
+        private const int MapMethodModelBoolFlagBaseline = 19;
         private static readonly Assembly GeneratorAssembly = typeof(DwarfGenerator).Assembly;
 
         // The signature-triggered map modes, each mapped to the test files that must exercise it. There is no

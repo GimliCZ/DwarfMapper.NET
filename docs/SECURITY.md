@@ -33,6 +33,7 @@ and `CORRECTNESS.md` asserted CI "runs a behavioural gate over the published nat
 | Id | Claim | Mechanised by |
 |---|---|---|
 | SEC-01 | Cyclic/over-deep input throws a **catchable** `DwarfMappingDepthException`, never an uncatchable `StackOverflowException` | `DepthSafetyRuntimeTests` |
+| SEC-08 | A converter, hook or factory on the mapper that calls the mapper again - a loop the depth guard cannot count - ends in a **catchable** `InsufficientExecutionStackException`, never a `StackOverflowException` | `ReentryStackCheckRuntimeTests` |
 | SEC-02 | The **generator** terminates on recursive type graphs via the `DWARF031` nesting cap instead of hanging or crashing the compiler | `NestedAutoMapTests` |
 | SEC-03 | Cross-width narrowing emits `CreateChecked` and throws `OverflowException` — never a silent wrap | `NumericConversionRuntimeTests` |
 | SEC-04 | Generated `Parse`/`ToString` always pass an explicit culture; the generator emits zero `CurrentCulture` calls | `DeterminismSourceScanTests` |

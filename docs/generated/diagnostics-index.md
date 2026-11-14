@@ -122,5 +122,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF117` | Error | A scalar map cannot be generated as declared |
 | `DWARF118` | Error | [FlattenGraph] node member leads back to the flatten method |
 | `DWARF119` | Error | A [MapDerivedType] dispatch has no arm for its own instantiable base type |
+| `DWARF120` | Error | [DwarfMapper] and [GenerateMap] are not read on a record |
 
-114 diagnostics.
+115 diagnostics.
