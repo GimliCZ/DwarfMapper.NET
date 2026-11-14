@@ -1008,6 +1008,9 @@ jobs:
   # GUID each pack, and `_rels/.rels` names it back. DwarfMapper's own bytes reproduce; NuGet's envelope
   # does not. scripts/repro-pack-check.py's header carries the full measurement and normalises exactly
   # those two parts BY NAME, comparing their content — it is not a tolerance and it does not skip them.
+  # Since round 35 (T7, SDK 10.0.404 with NuGet 7.9) the part is named `nuget.psmdcp` and `_rels/.rels` is
+  # byte-identical across packs: every entry reproduces, and only the zip headers' pack time still moves the
+  # whole-file hash. The script accepts both exact names.
   #
   # Deterministic-build inputs are already set repo-wide and were NOT added for this leg: Directory.Build
   # .props sets Deterministic, ContinuousIntegrationBuild on '$(CI)' == 'true' (GitHub sets CI for every

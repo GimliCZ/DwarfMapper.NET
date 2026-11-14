@@ -40,6 +40,20 @@ compares what is left of them:
   * the entry-NAME sets are compared with the psmdcp GUID canonicalised, so an added or removed entry
     still fails
 
+RE-MEASURED 2026-11-14 (round 35, T7: the SDK pin moved 10.0.101 -> 10.0.404, NuGet 7.0 -> 7.9), two packs of
+one commit in mcr.microsoft.com/dotnet/sdk:10.0.404 with `CI=true`:
+
+  * NuGet 7.9 names the core-properties part `package/services/metadata/core-properties/nuget.psmdcp` - a FIXED
+    name, no GUID - and its content was byte-identical across the packs;
+  * `_rels/.rels` was byte-identical too (it names that fixed part, with a stable Id);
+  * every other entry was byte-identical, as before;
+  * the whole-file SHA-256 still differs, now only because the zip headers of the four OPC entries
+    (`_rels/.rels`, the .nuspec, `[Content_Types].xml`, the .psmdcp) carry the pack time.
+
+So under the pinned SDK nothing needs normalising any more: the fixed name is matched by its exact spelling, and
+`_rels/.rels` is compared byte-for-byte because the GUID pattern below no longer occurs in it. The GUID form is
+still accepted, by its exact pattern, for a pack made with an older SDK (scripts/repro-pack.ps1 run locally).
+
 R4 note: the oracle here is file CONTENT. Nothing in this check reads a clock, a duration or a
 percentage; two packs of one commit either produce the same bytes or they do not.
 
@@ -56,8 +70,9 @@ import sys
 import zipfile
 from pathlib import Path
 
-# The two OPC parts measured non-deterministic, each handled by name — never by a wildcard.
-PSMDCP_RE = re.compile(r"^package/services/metadata/core-properties/[0-9a-f]{32}\.psmdcp$")
+# The two OPC parts measured non-deterministic, each handled by name — never by a wildcard. The core-properties
+# part has had two exact names: a fresh GUID per pack (NuGet 7.0, SDK 10.0.101) and `nuget` (NuGet 7.9, SDK 10.0.404).
+PSMDCP_RE = re.compile(r"^package/services/metadata/core-properties/(?:[0-9a-f]{32}|nuget)\.psmdcp$")
 PSMDCP_CANONICAL = "package/services/metadata/core-properties/<guid>.psmdcp"
 RELS_ENTRY = "_rels/.rels"
 
@@ -182,8 +197,8 @@ def main(argv: list[str]) -> int:
 
     print(f"\nReproducible-build check PASSED: {compared_entries} entries compared byte-for-byte across "
           f"{len(names_a)} package(s), {compared_binaries} of them compiled assemblies/symbols. The only "
-          f"normalised parts are NuGet's random .psmdcp part NAME and the one _rels/.rels relationship "
-          f"that targets it; their contents were compared.")
+          f"normalised parts are the core-properties part's NAME (a fresh GUID before NuGet 7.9, `nuget` "
+          f"since) and a _rels/.rels relationship that targets a GUID-named part; their contents were compared.")
     return 0
 
 
