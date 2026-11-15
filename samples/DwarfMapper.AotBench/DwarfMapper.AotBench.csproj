@@ -11,6 +11,15 @@
              refuses NU1004 any graph the committed packages.lock.json does not carry — declaring the
              RIDs here writes both graphs into the lock file at generation time. -->
         <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+        <!-- Round 35 (T7, SDK 10.0.404). From the 10.0.4xx SDK on, an executable with PublishAot and no
+             RuntimeIdentifier gets the HOST's portable RID as its default PublishRuntimeIdentifier, and that RID is
+             appended to RuntimeIdentifiers (Microsoft.NET.RuntimeIdentifierInference.targets; 10.0.101 had no such
+             rule). On a linux-x64 or win-x64 host that changes nothing; on macos-latest (osx-arm64) the list became
+             linux-x64;osx-arm64;win-x64 and the locked restore refused the committed lock file, NU1004, in
+             cross-platform (macos-latest). Every publish of this project names its RID (-r), so the default is
+             never used; opting out keeps the RID list - and the lock file - the same on every host. Reproduced on
+             Linux with -p:NETCoreSdkPortableRuntimeIdentifier=osx-arm64 before and after. -->
+        <UseDefaultPublishRuntimeIdentifier>false</UseDefaultPublishRuntimeIdentifier>
         <!-- Single-file sample. CA1515: its types are public in an exe that exposes no API. CA1303: the
              report lines it prints are fixed strings, not localizable UI. CA1819: the payloads expose arrays,
              the SIMD widen/blit shape being timed. CA1815: Vec3Src/Vec3Dst are blit payload structs;

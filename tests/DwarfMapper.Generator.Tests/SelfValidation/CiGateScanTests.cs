@@ -58,6 +58,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             yield return ["sbom", "the release artifacts would stop carrying a signed bill of materials"];
             // Blocking since round 34 (A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error).
             yield return ["roslyn-forward-compat", "the generator would stop being built and tested against " + "an unpinned newer SDK"];
+            // Round 35 (T7): the pin left the 10.0.1xx band, and with it the compiler the README names as the floor.
+            yield return ["toolchain-floor", "no consumer project would be built on the oldest SDK band the README promises " + "(10.0.100, Roslyn 5.0) any more"];
             // ubuntu-26-canary had a row here until round 35 (T8): every Linux job runs 26.04 now
             // (CiRunnerImagePinScanTests), so the job that tried that image ahead of the pins is gone.
 
@@ -104,6 +106,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [InlineData("roslyn-forward-compat")]
         [InlineData("preview-sdk-canary")]
         [InlineData("net11")]
+        [InlineData("toolchain-floor")]
         public void A_leg_flipped_to_blocking_carries_no_job_level_continue_on_error(string job)
         {
             var text = Workflow.Replace("\r\n", "\n", StringComparison.Ordinal);

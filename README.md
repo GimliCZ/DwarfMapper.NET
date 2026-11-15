@@ -1012,8 +1012,9 @@ against a *newer* compiler than the host (`CS9057`), so the package carries the 
 `Microsoft.CodeAnalysis` 5.0.0 in `analyzers/dotnet/roslyn5.0/cs`, which every .NET 10 SDK loads, and against 5.12
 in `analyzers/dotnet/roslyn5.12/cs`, which the .NET 11 SDK loads instead — the build that maps C# 15 unions. The SDK
 picks exactly one; CI proves which from the packed package on each SDK. The floor is the .NET 10 line itself, not a
-specific patch. (The repo's own `global.json` pins one exact patch, but that is about reproducing *this* build
-byte-for-byte; it is not a requirement on consumers.)
+specific patch, and the CI job `toolchain-floor` builds and tests the solution on the newest 10.0.1xx SDK to hold
+it. (The repo's own `global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte;
+it is not a requirement on consumers.)
 
 | Reference                                                   | Purpose                                                                                                                                                                                                                                                                                                                          | TFM       |
 |-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
