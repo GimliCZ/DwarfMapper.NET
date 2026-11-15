@@ -16,13 +16,14 @@ namespace DwarfMapper.Generator.Tests
                                using DwarfMapper;
                                namespace Demo;
                                [DwarfMapper]
-                               public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+                               public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<double> dst); }
                                """;
             var generated = GeneratorAssert.CompilesClean(src);
             // Defensive length guard (no silent truncation).
             Assert.Contains("dst.Length < src.Length", generated, StringComparison.Ordinal);
             Assert.Contains("ArgumentException", generated, StringComparison.Ordinal);
-            // Element loop, direct (implicit int→long) assignment.
+            // Element loop, direct (implicit int→double) assignment. int→long takes the Vector.Widen loop since round 35
+            // (SpanMapWidenTests), so the scalar loop is shown on a pair that is not one widen step.
             Assert.Contains("for (int __i = 0; __i < src.Length; __i++)", generated, StringComparison.Ordinal);
             Assert.Contains("dst[__i] = src[__i];", generated, StringComparison.Ordinal);
         }

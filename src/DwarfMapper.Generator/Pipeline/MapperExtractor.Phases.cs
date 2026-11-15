@@ -3325,6 +3325,11 @@ namespace DwarfMapper.Generator.Pipeline
                     IsSpanMap: true,
                     SpanTargetParameterName: method.Parameters[1].Name,
                     SpanMapBlits: spanBlits,
+                    // Round 35 T6: the array arm's own test and for its reason - the resolver assigns an implicit pair
+                    // directly, ahead of any user method, so the element loop would widen implicitly too. A widen pair
+                    // is never also a blit (the sizes differ). Nothing here is a reference, so Preserve has nothing to
+                    // track and does not change the answer.
+                    SpanMapWidens: CollectionConverter.IsWidenPair(spanSrcElem, spanDstElem),
                     SpanSourceElementFullName: spanSrcElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     SpanTargetElementFullName: spanDstElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     // The create and update models carry MaxDepth and these did not, which was an omission
