@@ -41,6 +41,14 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T23 | **Multi-version generator, and C# 15 union mapping on the Roslyn 5.12 build** (the owner, 2026-11-14: "Prepare multiversion and if detected .net 11 enable Union mapping ... with tests"). Design: `docs/superpowers/specs/2026-11-14-multiversion-generator-union-mapping-design.md`. | **done on its own branch** (`feat/round35-t23`) - see Notes |
 | T25 | **DwarfMapper against today's Mapperly and Mapster** (the owner, 2026-11-14: "run entire performance and usage comparison against dwarf mapper? Afcource up to date versions (not automaller afcourse) ... Target will be performance, security, validations, docs and samples validations"). Design: `docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md`. | **measured** (`feat/round35-t25`, stacked on T23) - see Notes |
 | T24 | **A performance comparison of union mapping** ("After that prepare performance comparison testing"). Same design document. | **done on T23's branch** - `benchmarks/DwarfMapper.UnionBenchmarks`, results in `benchmarks/results/2026-11-14-round35-t24-union-mapping.md`; see Notes |
+| T26 | **Release readiness for the next NuGet upload** (the owner, 2026-11-15: "For the nuget, I am pretty sure we should do an update in close future"). The version, the CHANGELOG, the analyzer release files, the release procedure and every claim about releases made true before a tag. | open - needs owner decisions D1, D2; see Notes, "Documentation review" |
+| T27 | **README.md as the package page** (the owner: "I saw for example in readme some old mid statistics from old tests, that are probably not that apropriate to have"). Broken first-screen rendering, relative links NuGet cannot resolve, stale statistics, overclaims, internal noise. | open; see Notes |
+| T28 | **The two security documents**: one policy page, one claim register, no contradiction between them. | open; see Notes |
+| T29 | **`docs/diagnostics.md` in product terms**: present-tense entries under one rule for history, no round/task/finding labels, no ledger links, no benchmark figures, two rendering defects and one contradiction. | open; see Notes |
+| T30 | **The how-to guides**: versions, the testing package, the packaging story told once, a sample region that stops before its call, the index. | open; see Notes |
+| T31 | **The core docs**: wrong enum advice in the migration material, COMPARISON's performance section rebuilt around the current run, PERFORMANCE.md's views story, the dated plan and research files, the API reference renderer. | open - owner decisions D4, D5; see Notes |
+| T32 | **Samples, benchmarks and contributor notes**: stale comments and SDK images, the Gallery's hand-written headings, a samples index, subject names for round-named files. | open; see Notes |
+| T33 | **Repository layout as an outsider sees it**: `Issues/` and `docs/superpowers/` under one clearly internal folder, user docs stop linking into round ledgers, `benchmarks/results/` indexed. | open - owner decision D3; see Notes |
 
 ## Notes
 
@@ -633,3 +641,188 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     picked BenchmarkDotNet lock file failed locked-mode restore (NU1004, it named T9's DependencyInjection 10.0.15).
   - **Left, proposed in the write-up**: the probes as DifferentialTests tests; the Gallery run and its output pinned in
     CI; the link check as a test.
+- **Documentation review (2026-11-15), the source of T26-T33.** Four read-only reviews of every user-facing document
+  (README/CONTRIBUTING/security; docs/; diagnostics and how-tos; samples, benchmarks, CHANGELOG, layout), the key claims
+  re-checked by hand. Line numbers are as of `feat/round35-t25` at the review. Ground rules for every task:
+  - **The pipeline owns part of the text.** Code fences in the 19 documents of `src/DwarfMapper.DocTooling/DocSet.cs`
+    are injected from sample regions (`DocsAreSnippetCurrentTests`), the options tables and the Gallery index are
+    rendered, and `docs/generated/*` is rebuilt by `GeneratedDocsAreCurrentTests`. A wrong code block or table is
+    fixed in its sample, renderer or XML doc - never in the Markdown. Only prose outside the markers is hand-written.
+  - **README.md is packed into both packages**, and the package-size ceilings are exact KB: re-measure and re-pin in
+    the same commit as any README change (`readme-moves-package-size`).
+  - **Published facts** (api.nuget.org, 2026-11-15): DwarfMapper 1.0.0-rc.1, 1.0.1-rc.1, 1.0.2-rc.1, all pushed by
+    hand (no tag, no GitHub Release, no SBOM or attestation); DwarfMapper.Testing never. 1.0.2-rc.1 was packed from
+    `fed98c4c` (2026-08-03): one generator in `analyzers/dotnet/cs`, 82 diagnostic ids (DWARF001-077 live, DWARFR01-09).
+    Since then: 50 new ids (DWARF078-120 but 102, DWARFR10-17), unions, the two-build package.
+  - **Owner decisions** (the tasks wait on these):
+    - **D1** the next version: a minor bump (1.1.0-rc.1) fits unions, the two-build package and 50 new diagnostics.
+      `PackageValidationBaselineVersion` stays 1.0.2-rc.1.
+    - **D2** publish DwarfMapper.Testing in that release, or exclude it (`IsPackable=false`). `release.yml` packs the
+      whole solution and pushes every `.nupkg`, so today the next tag publishes it with no decision recorded. Until it
+      is published, `[RoundTrip]` - a headline feature, a no-op without the package - is unreachable from NuGet.
+    - **D3** move `Issues/` (127 files) and `docs/superpowers/` (52) under one internal folder, e.g. `maintainers/`
+      (scripts/gate-checks.ps1:75 reads `Issues/ledgers/equivalent-mutants.md`; move it along).
+    - **D4** COMPARISON.md:295/302 says the dictionary lead "must not be reintroduced" while PERFORMANCE.md:224-230
+      quotes it per platform - rule which stands.
+    - **D5** AutoMapper 14's default depth: MIGRATION.md:146 says no default limit, the `MaxDepth` XML doc
+      (src/DwarfMapper/DwarfMapperAttribute.cs:268) says it matches AutoMapper's default.
+  - **Found and fixed during the review** (not a task): 22 XML-doc crefs the IDE reported as unresolved while CI stayed
+    green - 18 `cref="System.X"` (the owner's hint) and 4 found by building both generator projects with documentation
+    on (`42a99c5`, `ccc046d`; memory `ide-only-cref-errors`).
+- **T26 release readiness.**
+  - Version: bump `<Version>` (Directory.Build.props:71); version strings in README:24, :1026, :1157, :1197,
+    SECURITY.md:4, docs/howto/README.md:68, docs/howto/common-changes.md:24-28 - better, drop the number from prose.
+  - CHANGELOG.md: one `[Unreleased]` of 2,045 lines / 200 KB, no version sections. Add `[1.0.0-rc.1]`, `[1.0.1-rc.1]`,
+    `[1.0.2-rc.1]` (dates from nuget.org); condense the rest into `[next]` (Highlights, Breaking, Security, New
+    diagnostics one line each, Fixed; "DwarfMapper.Testing: first release" if D2 says so); fresh empty `[Unreleased]`.
+    Wrong today: :1915-1918 "has never shipped"; :2046-2049 "No security-relevant change" (the stack-overflow fixes
+    :61-72, DWARF118 :83-88, :117-120 are); "Fixed:"/"New:"/"Security:" entries under Changed (:39, :43, :56, :61, :73,
+    :83); stale :2037 (pin 10.0.101), :2033 (continue-on-error removed), :11-12, :653 vs :246-252, :665 vs :462, :224,
+    "1.1.0-rc5" :1148; internal noise (87 "round N", 41 task ids, commit `4190ace`, links into Issues/).
+  - Release body: `release.yml:81-95/123` passes the section through `GITHUB_ENV` into `--notes "$NOTES"` - 200 KB is
+    over GitHub's 125,000-character body and Linux's 128 KiB argument limit. Switch to `--notes-file` and rehearse.
+  - AnalyzerReleases: Shipped.md is empty by a stable-only policy while PublicAPI.Shipped.txt marks the never-published
+    Testing package shipped. Add `## Release 1.0.2-rc.1` (the 82 ids) and `## Release <next>` (the 50), reset Unshipped;
+    give DWARF068/069 titles, mark DWARF102 retired.
+  - docs/RELEASING.md: tag example :81-86 is the published 1.0.2-rc.1 (use `vX.Y.Z`); missing steps: version bump,
+    baseline move after publishing, CHANGELOG section (the release job exits 1 without it), AnalyzerReleases, the D2
+    decision; say the three hand-pushed rcs cannot be verified (and consider deprecating them on nuget.org); split the
+    consumer-verification half (user material, README links it 3x) from the maintainer checklist; :67-73 task history.
+  - Claims to qualify: README:921-931, :1034-1035, :1156-1157 (names tag `v1.0.2-rc.1`, which does not exist), :1199;
+    SECURITY.md:134-136 ("released packages ship with an SBOM ... provenance") - true from the first tagged release on.
+  - SECURITY.md:8-9 "nothing published to compare it against": state supported versions (latest nuget.org + master).
+  - Help links point at `blob/master` (DiagnosticDescriptors.cs:15-16); consider tag-pinned links; DWARFR descriptors
+    have none.
+- **T27 README.md.**
+  - Rendering (first screen on nuget.org): `**bold**` spans split across lines show as asterisks - :18-19, :30-31,
+    :433-435, :568-569, :598-599, :847-848; rejoin each. 27 relative links do not resolve on nuget.org: make them
+    absolute GitHub URLs (:1192 already is).
+  - Stale statistics: the performance study :942-1000 (BenchmarkDotNet 0.14.0, `Job=short`, 3 iterations, one machine,
+    round 29; already in docs/PERFORMANCE.md) - delete, keep three sentences on DWARF103/DWARF101 and a link; :901,
+    :1070 "78 runtime assertions" (hand-counted, drifted 47-72-75-78) - drop the number; :1208 the quality-gates
+    footnote - keep "badges are live CI figures", move the rest (and its Issues/ links) to CONTRIBUTING.
+  - Wrong or overclaimed: :117-118, :917 "every source member must be consumed" (source side is opt-in,
+    `RequiredMapping = Both`, DWARF039 Info); :85-86, :913-914 over-posting (by-name matching wires a same-named field;
+    at a trust boundary `AutoMatchMembers = false`, DWARF072 - link docs/SECURITY.md); :72, :87, :915
+    "`Unsafe`"/"provably-safe unsafe" (Unsafe is banned in shipped assemblies, BannedSymbols.txt:9 - say "proof-gated
+    blit"); :66, :41-43 Mapperly's RMG012 is on by default; :69-74 "pulls ahead only where blittable" (also
+    dictionaries and graph fills; Mapperly 17 % ahead on reference arrays on Windows) - keep it qualitative and link
+    COMPARISON; :222 "once it's on nuget.org" (it is); :13, :28, :49-51, :819-822, :841, :853, :1022 the Testing package
+    (D2); :1029-1032 "DevelopmentDependency" (no effect on the shipped package); :486-487 "(documented follow-up)".
+  - Samples (fix the sources): :1141-1151 a stray `}` - samples/DwarfMapper.Gallery/ex15/dtos/PersonDto.cs `// </snippet>`
+    after the namespace brace; :225-245, :828-839, :855-866 none shows the call - widen regions around
+    Gallery/16_MapToRegistry.cs:67-71, 25_RoundTrip.cs:50, 26_InformedDumps.cs:52; :414 back the fence with
+    Conformance/Features.cs:599.
+  - Internal noise: :343-344 links a June design spec - point at docs/diagnostics.md#registry-diagnostics-mapto; :956,
+    :966-976 round-29 raw output; :1078-1152 "Roadmap" is a changelog - delete or list what is next; :1064-1065 layout
+    misses UnionBenchmarks, comparison-probes, results.
+  - CONTRIBUTING.md: :34 "(round 35 T23)"; :52 the full-ci paragraph (needs triage rights; "round-closing" jargon);
+    :11 an older SDK fails at SDK resolution, not NETSDK1045.
+- **T28 security documents.** Root SECURITY.md and docs/SECURITY.md duplicate the CVE-2026-32933 story, the
+  reflection-free claim, the report address and two claim lists; they contradict on reflection (root :21 omits the
+  Testing caveat of docs :93-100), on `unsafe` (root :22-24, :152-153 vs root :42), and on release SBOMs (root
+  :134-136). Make the root a policy page (versions, reporting, scope, response times); move "Trust model" and
+  "Auditing" into docs/SECURITY.md's register with the scan that checks "Held by" names (ClaimMechanismScanTests).
+  docs/SECURITY.md:19 lists one suppressed advisory of three (also GHSA-6vhm-j9h7-f9gh, GHSA-gpwp-5797-mjff) and :7-8
+  contradicts :19; :28-31 the AutoValidate story is obsolete. Link `.oss-scanner/threat_model.md`. Keep :73-78 (the
+  endpoint-parity notice for the published rcs).
+- **T29 docs/diagnostics.md.** Accurate: all 115 ids, titles and severities (DiagnosticProseIsCurrentTests); the 17
+  DWARFR rows match RegistryDiagnostics.cs but nothing guards that table. **Rule for every entry:** present tense - what
+  triggers it, why this severity, the fix, when it stays quiet; a before/after note only if it crossed a published
+  version, written as a version, one sentence; never round/task/finding ids, paths into Issues/ or docs/superpowers/,
+  test or classifier vocabulary, internal type names, benchmark figures, or anecdotes from the maintainer's
+  migrations. Apply to the DWARFR table too.
+  - :1488-1495, :1672-1681 the matrix column "What the matrix measures"; :1491 labels the recommended remedy
+    "Refused" and links B19 - call the column "Result", write "applied; also reports DWARF038".
+  - Labels: :68, :418, :586, :632, :679, :687, :702, :1971, :2172; "finding D1-D14" :1440, :1444, :1458, :1473, :1578,
+    :1583, :1602, :1622. Ledger links :1141, :1491, :2052, :2133.
+  - Figures: DWARF101 :2052-2056, DWARF103 :2132-2143, :2150 - one sentence on the mechanism plus a PERFORMANCE link.
+  - Anecdotes :68-71, :989, :1034-1036, :1077-1081, :1146-1147, :1153, :1192-1193, :1235, :2014, :2437, :2403-2405;
+    "used to" history in ~20 places incl. the "What used to happen" table :1533-1539, :698, :1287-1291, :1326, :1405,
+    :1760, :1913, :1941, :2606, :2654, and 9 DWARFR rows (R02: "a project that built yesterday ...").
+  - "Until round 35 ..." :847-848, :2723-2726, :2737-2738, :2770-2772, :2778-2780 - "Before <version>" or delete.
+  - Internal names :2159 `CanReinterpret`, :2182 `TransferModelShape`, :2154-2155, :107-109.
+  - Contradiction :578 DWARF065 "Collections are always rebuilt" vs DWARF074 keyed merge (`[MapCollectionKey]`); the
+    same omission in migrate-from-automapper.md:318, migrate-from-mapster.md:133-134, migrate-from-handwritten.md:139-141.
+  - Rendering: :1961-1964 and :2016-2023 a paragraph directly above `---` renders as a heading - blank line before it.
+  - Polish: :4-9 three pages then "Both"; 084/085 before 082/083; DWARFR table order and severity on 6 of 17 rows;
+    `---` separators stop after DWARF108; :11 says "each build error" (help links exist for DWARF### only).
+- **T30 how-to guides.**
+  - migrate-from-mapperly.md:104-105 "~2x on widening" - the current run says 1.2-1.3x (blit 2.1-2.3x holds).
+  - Testing package (D2): common-changes.md:16-22, :173-174; migrate-from-automapper.md:299; -mapperly.md:92, :102;
+    -mapster.md:119; -handwritten.md:125 - lead with the old-vs-new equivalence test until it is published.
+  - Packaging told once: diagnostics.md:947-949 (DWARF078) and migrate-from-automapper.md:71 contradict
+    common-changes.md:24 ("a single reference") - "each project that declares mappers needs its own PackageReference".
+    common-changes.md:32-42 the from-source recipe misses `InterceptorsNamespaces;DwarfMapper.Generated` and
+    `CompilerVisibleProperty PublishAot` (or: import src/DwarfMapper/build/DwarfMapper.props), wires only the 5.0 build.
+  - common-changes.md:189-201 "verify ad-hoc" shows no verify call - widen region `informed-dumps`
+    (Gallery/26_InformedDumps.cs) to lines 50-63 (README:855 has the same gap).
+  - docs/howto/README.md:2-4, :18 "three questions" then four; ambient-cross-assembly-maps.md is not listed.
+  - common-changes.md:162-163 "full catalog in MIGRATION.md" - link diagnostics.md; :137-138 "no severity override"
+    vs diagnostics.md:24.
+  - deploy-and-optimize.md:25 "allocation zero" (Preserve allocates one dictionary per call); :23, :80
+    DevelopmentDependency; :125 "2.3-3.3x" has no source; :66 "rejected by ILC 10.0.1" - re-verify or date.
+  - Small: automapper.md:37-38, :49, :347 "a real ~300-map migration"; :255 README link without anchor; mapster.md:130
+    "silently dropped" (DWARF071/033 report); handwritten.md:72 `nameof(Order.PasswordHash)` should be `OrderDto`;
+    CI job names in README:47, common-changes.md:45, deploy-and-optimize.md:74-76; ambient-cross-assembly-maps.md:1
+    lacks the SPDX header, :74-75 "as this repository's tests do".
+  - Duplication: the guides' tables restate MIGRATION.md - keep steps in the guides, link MIGRATION for the rows.
+- **T31 core docs.**
+  - MIGRATION.md:139 and migrate-from-automapper.md:44, :262 advise `EnumStrategy = ByValue` "for AutoMapper's
+    default": AutoMapper 14 maps defined members BY NAME (EnumOrderSensitivityTests.AutoMapper_maps_by_name_as_well) -
+    the advice introduces the reorder bug it claims to prevent. Delete. :44-46 add CVE-2026-128081/-128082 (not stopped
+    by MaxDepth). :2 "methodics" -> "guide"; :263 vs COMPARISON:52.
+  - COMPARISON.md: :73, :104 "Mapperly reaches the same conclusion by default" - measured only under
+    `[MapEnum(ByName)]`; its default is a cast. :114-116 Mapster is in the harness since 2026-08-26. :54 AutoMapper's
+    depth cap is opt-in. :17-29 "left out at the owner's direction" - "AutoMapper 14.0.0 is not re-measured: the last
+    MIT release, unchanged, three open advisories". :308-435 rebuild the performance section around the 2026-11-15
+    table (add Flatten, Enum by name, List, Widen), delete the old table :318-335, keep three reading notes rewritten
+    (blit size curve, the reference-array null-guard trade, enum strategies), link the August sweep for AutoMapper
+    figures only; session language :287, :367-368, :372, :398, :412, :450, :489, :530; :315 "none run in CI" (allocations
+    are gated nightly); :22 the union table was measured 2026-11-14 (date it); :498-532 the AOT block (ILC 10.0.1) -
+    date it and drop the ISA claim, or re-run; :188-189 vs :183; :175-183 competitor cells nothing here verifies;
+    :191-245 repeats MIGRATION §0.
+  - PERFORMANCE.md: :108-127 views were built and WITHDRAWN on 2026-09-07 (a view of a mutable source can return a
+    record that never existed) - say so; the file is a struct-DTO study under the name an evaluator opens: fold §2a and
+    §5 into diagnostics.md#dwarf103, §6 into COMPARISON, move the rest to docs/research/ (update DocSet.cs, README:957,
+    :972, :996, diagnostics.md:2056, :2141).
+  - CORRECTNESS.md:137 points at IMPROVEMENT-PLAN.md; :121 "before round 35".
+  - Delete or move as dated history: docs/IMPROVEMENT-PLAN.md (plans DWARF059-062 that now mean other things; :16, :130
+    contradict diagnostics.md:25-28) - drop its SuppressionAdviceTests.cs:32-33 exemption; docs/research/* (June
+    numbers; RESEARCH.md:27 **exposes a home-directory path**; `_raw-harvest.jsonl` missing) - fix the
+    DocPipelinePropertyTests.cs:11 comment.
+  - Generated docs (fix the sources): `ApiReferenceRenderer` drops `<typeparamref>`, generic arity and `<code>`, and
+    lists members inherited from System.Attribute/System.Exception (api-reference :167, :254, :295, :301, :305, :320,
+    :347, :443, :550, :560); the `GenerateMapAttribute` XML doc should name DWARF060; `RenderDiagnosticsIndex` leaves out
+    the 17 DWARFR ids and should say "default severity"; `RenderOptionMatrix`'s legend conflates refusal with intended
+    diagnostics (AutoNest-005, ImplicitConversions-038, AutoMatchMembers-072, RequiredMapping-039).
+  - options.md: :4 "every knob" omits [MapTo], [ProvidesMap], [UsesMap], [DwarfMapperValidationRoot], MapConfig; link
+    the generated reference and matrix; :86 "v1:".
+- **T32 samples, benchmarks, contributor notes.**
+  - Gallery: 26_InformedDumps.cs:11 `ObjectFactory` -> `ObjectFactoryV2`; 21_BlittableSimd.cs:3 "the one place
+    DwarfMapper is faster" -> "one of the places"; 06_DeepPaths.cs:9 DWARF044 is a Warning; 27_PatchMerge.cs:43-44
+    indentation; 25_RoundTrip.cs comment `(seed, count)` -> `(seed, iterations)`. README.md:189 broken text, :734 #51's
+    heading disagrees with the generated index (:46), :13-15 round-27 noise: render the section headings from the
+    example catalogue (`GalleryIndexRenderer`) so they cannot drift. DocSet.cs lists the Gallery README twice (:19,
+    :37).
+  - Add `samples/README.md`: AotSample (the AOT gate), AotBench (built, never run), Conformance ("every feature" is no
+    longer true: no [MapShare], [MapClone], Dwarf.Map, [MapDenseEnumKeys], unions), Gallery, Unions.
+  - Benchmarks: comparison-probes/README.md:18, security/run.sh:5, validation/run.sh:5 name sdk:10.0.101 (the pin is
+    10.0.404, rollForward disable); Benchmarks/README.md:57 and DifferentialTests/README.md:110 Mapster 10.0.8 ->
+    10.0.14; Benchmarks/README.md:45-47 "CI does not run benchmarks" (nightly smoke gates allocations); :7-20 the
+    scenario table misses eight categories and the other classes; :68-69 three suppressed advisories, not one;
+    `Round31*.cs`, `Round33*.cs`, `Round35SpanWidenBenchmarks.cs` and "round 35 T24/T25" in READMEs - name by subject;
+    `comparison-probes/linkcheck.py` is a repo-wide link checker - move to scripts/ (and make it the T25 link test).
+  - conformance/results: only the newest file is read (scripts/conformance-gate.sh:76, floor 78) - keep one floor (or
+    the number in the script), drop the dated copies, add a README.
+  - tests notes: CorpusTests/CORPUS.md:50-51 (`SkipNullSourceMembers` exists now), :17 date the survey;
+    ConsumerTests/README.md:36-43, :51 (23 assertions, CleanCorpus missing), :70; CleanCorpus/PATTERN-PROVENANCE.md:30
+    "this session"; CONVERSION-NOTES.md:25 dangling "see below", numbering 4 -> 7 (:115).
+- **T33 repository layout** (D3). User docs linking into internal trees: Issues/ - README:956, :1208;
+  PERFORMANCE.md:20-24, :166, :240; diagnostics.md:1141, :1491, :2052, :2133; RELEASING.md:70; CHANGELOG :538, :614,
+  :682, :1913, :2057. docs/superpowers/ - README:344, IMPROVEMENT-PLAN.md:63. benchmarks/results/ - COMPARISON.md:21,
+  :124, :301, :388, :415, :422, :449; UnionBenchmarks README:41; probes README:7; CHANGELOG :54, :172. Keep
+  benchmarks/results/ (the evidence) with an index marking current vs superseded, subject file names, and the four
+  process measurements (test-host memory, test start-up, mutation legs, the fusedchat build share - **names the owner's
+  private app**) moved to the internal folder. `.oss-scanner/` stays (the scanner reads that path,
+  OssScannerImageTests). Also visible at the root: tracked `.claude/hooks`, `.mcp.json`, six `stryker-config*.json`.
