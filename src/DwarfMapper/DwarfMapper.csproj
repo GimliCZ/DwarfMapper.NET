@@ -59,6 +59,14 @@
       analyzers/dotnet/cs - the SDK loads every file there regardless, so a copy there would run beside the versioned
       one and generate every mapper twice. The code fixes reference no generator type and stay unversioned.
       scripts/analyzer-selection-check.sh proves the selection from the packed package.
+
+      ONLY WHILE PACKING (the SDK sets _IsPacking for `dotnet pack`). Both generator builds write
+      DwarfMapper.Generator.dll, and a build that passes one global OutDir to its whole graph - BenchmarkDotNet's child
+      build does - puts both in one folder, where the last one written wins: the nightly benchmark smoke loaded the
+      Roslyn 5.12 build through the benchmarks' analyzer reference to the 5.0 build and failed with CS9057 (2026-11-15).
+      This project compiles without them and never loads them, so it references them only to pack them. A solution
+      build builds them as solution members, and a pack that skips the build (release.yml's) packs what that build made.
+      PackageProjectAnalyzerReferencesTests holds it.
     -->
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
@@ -71,7 +79,7 @@
         <AdditionalFiles Include="BannedSymbols.txt"/>
     </ItemGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition="'$(_IsPacking)' == 'true'">
         <ProjectReference Include="..\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
                           ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>
         <ProjectReference Include="..\DwarfMapper.Generator.Roslyn512\DwarfMapper.Generator.Roslyn512.csproj"

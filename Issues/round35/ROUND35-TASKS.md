@@ -522,3 +522,18 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   list in c1c67c5 for the linked corpus files, fire nowhere there - removed; its three remaining codes all fire. The
   net11 job's audit, rehearsed, found the third: CA1303 in both net11.0 projects, taken over from the Gallery's list,
   while they print only interpolated strings - removed.
+- **Two more, from running deep-test's recipe (`housekeeping.ps1 -Nightly`) on the host before the push.**
+  - **The generator's 100.0 % line floor: 99.9 %.** Eleven lines no test reached - ten in the 5.12 build's
+    `MapperExtractor.Unions.cs` (two DWARF035 paths, a member-provider SOURCE union, a guard no caller reaches) and the
+    5.0 build's `UnionMappingAvailable`, which only a Roslyn 5.9+ compiler loading that build reaches. Closed:
+    `HasImplicitOrUnionConversion` is implemented per build (the 5.0 one IS `HasImplicitConversion`), the guard is
+    gone, `AppendDispatchTail` tests two values instead of switching over three, and nine tests on the 5.12 build. The
+    partial branches left are the base's four (measured on 98a2c3b). One measurement limit, recorded: coverage tools do
+    not combine one shared line's branch outcomes across two builds, so a shared line whose union side only the 5.12
+    build takes is covered whole on that build (its non-union side tested there too), not split.
+  - **Both generator builds in one folder.** BenchmarkDotNet's child build passes one global `OutDir` to the whole
+    graph; the package project referenced both generator builds (to pack them), both write `DwarfMapper.Generator.dll`,
+    and the last one written won: the benchmark smoke loaded the Roslyn 5.12 build under SDK 10 - CS9057. The package
+    project now references the analyzer projects only while packing (`_IsPacking`); `PackageProjectAnalyzerReferencesTests`
+    (RED on the old file) holds it. The union benchmark had the same collision, and only worked because the 5.12 build
+    happened to be written last.
