@@ -1548,9 +1548,29 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (637 KB = 652,288 B) 595 B,
 # DwarfMapper.Testing (58 KB = 59,392 B) 300 B.
+#
+# RE-MEASURED 2026-11-15 (round 35, T6 merged into T23): DwarfMapper 636 -> 637, DwarfMapper.Testing 57.
+#
+# PR #16 (T6, the span map's Vector.Widen loop) landed on feat/round35-t8 and was merged into this branch. On its own
+# branch it cost the one-build package 590 B and fit; here its generator code lands twice, once per build.
+#
+#   sdk:10.0.101 container, 72d85a1 (this branch before the merge) against the merge, entry by entry, compressed bytes:
+#     analyzers/dotnet/roslyn5.0/cs/DwarfMapper.Generator.dll    +449   the widen loop: SpanMapWidens, the decision
+#                                                                       and the emitted loop
+#     analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll   +413   the same code in the Roslyn 5.12 build
+#     README.md                                                    +57   the span-map sentence on the seven widenings
+#                                                                       (both packages)
+#     the rest (CodeFixes, lib dll, .rels)                          -2
+#   CI measured 72d85a1 at DwarfMapper 651,572 B and Testing 59,111 B (run 43688254637); the container read 17 B under
+#   both (651,555 / 59,094), so the merge stands at about 652,489 B and 59,162 B on the runner.
+#
+# Intended content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (638 KB = 653,312 B) 823 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 230 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 636
+    'DwarfMapper'         = 637
     'DwarfMapper.Testing' = 57
 }
 
