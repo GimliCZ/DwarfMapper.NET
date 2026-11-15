@@ -615,8 +615,12 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   - **Performance**, Windows and Linux, one run each: DwarfMapper ahead where it has a path the others lack (blit
     2.1-2.3x, value-element list 2.4-2.8x, SIMD widen, nested fills), level on flat/flatten/nested/by-name enum,
     Mapperly 17 % ahead on the reference array on Windows (the documented null-guard trade); platform-dependent: the
-    dictionary (2.3x Windows, 1.16x Linux) and the by-value enum (level on Windows, 2.1x Mapperly on Linux - not yet
-    separated from the runtime patch, 10.0.1 against 10.0.11). Mapster 1.5-3.5x on single objects.
+    dictionary (2.3x Windows, 1.16x Linux). Mapster 1.5-3.5x on single objects.
+  - **The Linux by-value enum gap** (2.1x Mapperly on Linux, level on Windows) is a measurement artefact, not the
+    emitted code (`benchmarks/comparison-probes/enum-gap`). It is the same on runtimes 10.0.1 and 10.0.15. The JIT
+    output of the two methods differs only by DwarfMapper's `ThrowIfNull`. In the probe, the method without any check
+    (Mapperly's 73 bytes) measured 5.5 ns in one Linux process and 19.6 ns in the next, while every variant is within
+    0.3 ns on Windows on the same CPU. The emitted check stays.
   - **Validation** (`benchmarks/comparison-probes/validation`, 8 mistakes x 3 libraries + Mapster strict): DwarfMapper
     5 build errors and 2 warnings; Mapperly 1 error and 5 warnings, each warned case compiling to a mapper whose output
     is quietly wrong; Mapster nothing before run time.
@@ -628,4 +632,4 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   - **Found and fixed here**: BenchmarkDotNet 0.15.8 cannot run .NET 11 (the union suite stays on 0.14.0); the cherry-
     picked BenchmarkDotNet lock file failed locked-mode restore (NU1004, it named T9's DependencyInjection 10.0.15).
   - **Left, proposed in the write-up**: the probes as DifferentialTests tests; the Gallery run and its output pinned in
-    CI; the link check as a test; the Linux enum gap on a matching runtime patch.
+    CI; the link check as a test.

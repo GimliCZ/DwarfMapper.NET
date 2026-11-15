@@ -298,11 +298,12 @@ machine, .NET 10.0.11) / Linux (the `sdk:10.0.101` image, .NET 10.0.1, four CPUs
 | Nested graph, mixed fills | **0.83 / 1.23 µs** | 1.70 / 2.03 µs | 1.02 / 1.46 µs | — |
 
 The full table, with the rest of the rows and how to read them, is in
-[`2026-11-15-round35-t25-comparison.md`](../benchmarks/results/2026-11-15-round35-t25-comparison.md). Two rows depend on
-the platform and must not be quoted across it: the dictionary (2.3× over Mapperly on Windows, 1.16× on Linux) and the
-by-value enum (level on Windows, 2.1× in Mapperly's favour on Linux — not yet separated from the runtime patch, 10.0.1
-against 10.0.11). Allocations are identical in every row except the dictionary (Mapster 3.3×) and the nested graph
-(Mapperly +17 %).
+[`2026-11-15-round35-t25-comparison.md`](../benchmarks/results/2026-11-15-round35-t25-comparison.md). The dictionary row
+depends on the platform and must not be quoted across it (2.3× over Mapperly on Windows, 1.16× on Linux). The by-value
+enum row reads 2.1× in Mapperly's favour on Linux and level on Windows, and the Linux figure is a measurement artefact,
+not a cost of the generated code. The two methods compile to the same instructions but for one null check, and the same
+method measured 5.5 and 19.6 ns in two Linux processes; the results document has the probe. Allocations are identical
+in every row except the dictionary (Mapster 3.3×) and the nested graph (Mapperly +17 %).
 
 ### The August–September record (with AutoMapper 14.0.0)
 

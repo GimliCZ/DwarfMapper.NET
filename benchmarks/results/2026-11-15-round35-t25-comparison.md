@@ -51,15 +51,44 @@ Read with the two runs side by side:
 - **Mapperly ahead**: the reference-element array on Windows (17 %), the null guard DwarfMapper puts on each element and
   Mapperly does not — the trade `docs/COMPARISON.md` already states, measured again. On Linux the three are level.
 - **Platform-dependent — never quote one platform's figure as the other's**: the dictionary is 2.3× over Mapperly on
-  Windows and 1.16× on Linux (the split `2026-08-11-dict-windows-rerun.md` recorded); the by-value enum is level on Windows and **2.1× in
-  Mapperly's favour on Linux** (10.8 against 5.2 ns). The Linux run's runtime is the image's 10.0.1 against the host's
-  10.0.11, so the enum gap is not yet separated into platform and runtime patch; it is recorded, not explained.
+  Windows and 1.16× on Linux (the split `2026-08-11-dict-windows-rerun.md` recorded). The by-value enum reads level on
+  Windows and 2.1× in Mapperly's favour on Linux (10.8 against 5.2 ns), and the Linux gap is **not a cost of the
+  generated code**: see "The Linux by-value enum gap" below.
 - **Mapster** takes 1.5–3.5× as long as the generators on every single-object row, and allocates 3.3× on the
   dictionary.
 
 The union suite (`benchmarks/DwarfMapper.UnionBenchmarks`, BenchmarkDotNet 0.14.0 — 0.15.8 cannot run .NET 11) was run
 again against Mapster 10.0.14 on both platforms: the same picture as round 35 T24's, the generated union map level with
 the same code hand-written in its shape (Windows 6.42 against 6.35 ns) and Mapster about 3× on the hierarchy.
+
+### The Linux by-value enum gap
+
+Measured until it had a cause, because a 2× row would otherwise have been read as a defect in what DwarfMapper emits.
+
+- **Not the runtime patch.** The suite's two by-value enum methods on Linux runtimes 10.0.1 and 10.0.15 (images
+  sdk:10.0.101 and sdk:10.0.404): 10.5 against 5.1 ns, and 10.9 against 5.5 ns.
+- **Not the emitted code.** BenchmarkDotNet's disassembler (`--disasm`, runtime 10.0.1) shows both methods fully
+  inlined, the enum conversion compiled to one `mov` in each — `int.CreateChecked` leaves nothing behind — and the same
+  allocation helper. DwarfMapper's differs by its `ArgumentNullException.ThrowIfNull` (a `test`/`je` pair) and the frame
+  its cold throw path needs: 127 bytes against 79.
+- **Not that null check either.** [`comparison-probes/enum-gap/`](../comparison-probes/enum-gap) rebuilds both methods
+  verbatim, and each with other forms of the check:
+
+| Method, ns | Linux run 1 | Linux run 2 | Windows |
+|---|---|---|---|
+| Mapperly's, verbatim | 5.46 | 5.42 | 3.71 |
+| Mapperly's + `ThrowIfNull` | 9.66 | 6.45 | 3.83 |
+| DwarfMapper's, verbatim | 9.85 | 9.36 | 3.87 |
+| DwarfMapper's without the check | 5.48 | **19.63** | 3.69 |
+| DwarfMapper's with `if (src is null) Throw();` | 5.36 | 5.22 | 3.60 |
+
+Linux: sdk:10.0.101 image, runtime 10.0.1, Docker on WSL2. Windows: the host, runtime 10.0.11. Both on the same AMD Ryzen
+5 5600. Run 2 differs from run 1 only by three more variants in the probe. Yet the method without a null check, whose
+73 bytes are the same as Mapperly's, went from 5.5 to 19.6 ns, and Mapperly's with the check from 9.7 to 6.4 ns. The same
+code measured 3.6× apart in two processes, so at five nanoseconds this Linux setup measures where code and data land, not
+what the code does. On Windows every variant is within 0.3 ns. The row is recorded as a measurement artefact. The
+emitted check stays: it has been `ThrowIfNull` since `4103d26d`, chosen to keep the map inside the JIT's inlining budget,
+and changing it on this evidence would chase noise.
 
 ## Validation: what each library says about a mistake, and when
 
@@ -161,5 +190,3 @@ test runs them. Running it would catch an example that throws; it would not catc
 - **The validation and security probes as tests** in `tests/DwarfMapper.DifferentialTests`, so a library that changes
   behaviour turns a test red instead of leaving this document stale — the design's intent; this pass measured first,
   because what to assert had to be known before it could be asserted.
-- **The Linux by-value enum gap** (DwarfMapper 10.8 ns against Mapperly's 5.2 ns): measure on the same runtime patch as
-  Windows before calling it a platform difference.
