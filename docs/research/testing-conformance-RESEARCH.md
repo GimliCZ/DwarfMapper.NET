@@ -4,8 +4,7 @@
 **Status:** deep-research run launched and ~95% done; the final synthesis agent stalled on a
 StructuredOutput payload-size limit before emitting the polished report. All underlying research
 (searches, fetched sources, adversarially-verified claims) **is captured** in this folder. Next
-session: either resume the workflow for the auto-synthesized report, or synthesize directly from
-`_claims-digest.md` (104 verified claims) using the plan at the bottom.
+session: synthesize directly from `_claims-digest.md` (104 verified claims) using the plan at the bottom.
 
 ## Scope (locked with the user)
 - **Goal:** gap analysis vs. *our* suite → landscape survey + technique→do-we?→gap table + prioritised adopt-list.
@@ -18,18 +17,7 @@ session: either resume the workflow for the auto-synthesized report, or synthesi
 
 ## Saved artifacts (this folder)
 - `_claims-digest.md` — **104 deduped, verified claims** with sources, grouped by category (the substance).
-- `_raw-harvest.jsonl` — raw harvested finding/claim objects (164) + 42 unique source URLs (backup).
-- This file — scope, our-suite grounding, key sources, resume command, synthesis plan.
-
-## How to resume the workflow (gets the auto-synthesized report)
-```
-Workflow({
-  scriptPath: "/home/jouda/.claude/projects/-home-jouda-RiderProjects-DwarfMapper-NET/d17bc728-c97b-42d8-9b76-07d801a9ad71/workflows/scripts/deep-research-wf_af90321c-5c6.js",
-  resumeFromRunId: "wf_af90321c-5c6"
-})
-```
-Completed agents return cached results instantly; only the failed synthesis tail re-runs. If it stalls
-again on payload size, skip it and synthesize from `_claims-digest.md` directly.
+- This file — scope, our-suite grounding, key sources, synthesis plan.
 
 ## Our current suite — grounded inventory (for the gap table)
 Confirmed locally on 2026-06-21 (master @ 57d92fc):
@@ -58,7 +46,7 @@ Confirmed locally on 2026-06-21 (master @ 57d92fc):
 - safia.rocks 2025-09-29 "source generators testing".
 
 ## Next-session synthesis plan
-1. (Optional) resume the workflow for the polished report; else read `_claims-digest.md`.
+1. Read `_claims-digest.md`.
 2. Produce: **(a)** per-category landscape survey (cite the sources above), **(b)** the technique→who-uses-it→do-WE?→gap table (extend the inventory above with citations), **(c)** prioritised adopt-list.
 3. Likely top adopt items to detail with concrete steps:
    - **Incremental cacheability test** — add `[GeneratorTest]` that runs the driver twice with `WithTrackingName` on pipeline stages and asserts every step is `Cached`/`Unchanged` on the 2nd run; assert the model types are equatable (we already have `EquatableArray`). Mirror Mapperly's `IncrementalGeneratorTest.cs`.

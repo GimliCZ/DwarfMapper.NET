@@ -15,7 +15,7 @@ is still open under its own name.
     serial mode, the mode the legs run in, find what the test host holds at its peak (a gcdump), then try the fix
     the dump points at. Any heap-limit arm reports the suite's time as well as its peak.
 
-    **Done — `3144bab`; the evidence is in `benchmarks/results/2026-10-27-round34-a1-testhost-memory.md`.**
+    **Done — `3144bab`; the evidence is in `Issues/round34/measurements/2026-10-27-round34-a1-testhost-memory.md`.**
     - **Not the GC heap.** The host's working set reached 6.8 GB while the GC's committed heap never passed 0.41 GB,
       and the gcdump found 214 MB of live objects at 4.2 GB RSS.
     - **Native memory.** The rest was anonymous memory in glibc malloc arenas. It rose in steps while the
@@ -84,7 +84,7 @@ is still open under its own name.
       selects the category (RED on both, then GREEN).
 - **E. Test start-up and the long legs** (the owner, 2026-10-27: "starting tests commonly takes longer than running
   them"; then "target lowest times at maximum surface without current coverage reduction"). The evidence is in
-  `benchmarks/results/2026-10-28-round34-e-test-startup.md`.
+  `Issues/round34/measurements/2026-10-28-round34-e-test-startup.md`.
   - **Where the time is.** The six mutation legs are 215 of a full-ci run's 273 job-minutes; the generator and
     pipeline legs set its wall-clock. A test host costs ~1.5 s to start before any test of ours runs (a trivial
     xunit project: 1.46 s), and Stryker 4.16 starts fresh hosts for every session, serially inside each.
@@ -191,7 +191,7 @@ is still open under its own name.
     PR's fixes; a rules page naming each rule's enforcing test is drafted and waits for the owner's go-ahead.
   - **The mutation legs after E14** (the owner, 2026-10-31: "For active defensive testing the 30 minute tests are no
     go. Each iteration must have 1 minute at most"; 2026-11-01: "we are searching order of 10x issue ... We need like
-    90% improvement"). The evidence is in `benchmarks/results/2026-11-11-round34-mutation-legs.md`; four CPUs in the
+    90% improvement"). The evidence is in `Issues/round34/measurements/2026-11-11-round34-mutation-legs.md`; four CPUs in the
     container unless said.
     - **r1, r2, r4 done — `ff278c1`, `4fee98a`, `28ca173`. CompilerTests 36.7 → 29.9 s**, one change a round, five
       interleaved repetitions each: one analysis pass per emitted sample (−11.5 %), samples compiled on the thread that
@@ -495,7 +495,7 @@ is still open under its own name.
   `benchmarks/results` or `Issues/`; ReportAnalyzer was used before only on this repository's own analyzers
   (rounds 21-22).
 
-  **Done — `benchmarks/results/2026-10-27-round34-c-fusedchat-build-share.md`.** Six `--no-incremental` Release builds
+  **Done — `Issues/round34/measurements/2026-10-27-round34-c-fusedchat-build-share.md`.** Six `--no-incremental` Release builds
   of a fresh copy (SDK 10.0.400, `1.1.0-r34val.1`), cold and warm alternating. DwarfMapper's generators run in 20
   compiler calls per build, summing 2.75-2.94 s cold and 1.93-2.19 s warm: about 5 % of the compiler's 40-57 s.
   Cold start is worth ~0.8 s a build, which is everything ReadyToRun could recover, so the cold-JIT lead is closed.

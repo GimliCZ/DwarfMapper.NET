@@ -416,7 +416,7 @@ namespace DwarfMapper.Generator.Pipeline
             // before the pass above decides whether SkipNullSourceMembers / [MapNullSkip] guards the member. Inside
             // `if (src.X is not null) dst.X = Conv(src.X);` no null reaches the converter, so that report is a false
             // positive with no per-site answer: AllowNull is, correctly, stale on a guarded member (found migrating
-            // FusedChat - SkipGuardedConverterArgTests). Taken back here, matched by the label it was made with and
+            // a consumer application - SkipGuardedConverterArgTests). Taken back here, matched by the label it was made with and
             // only within this call's own window, so a constructor argument's report for the same source member,
             // made before this call, is never touched.
             RetractGuardedConverterArgReports(result, diagnostics, diagnosticsStart);

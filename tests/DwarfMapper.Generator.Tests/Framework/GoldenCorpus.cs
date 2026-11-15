@@ -588,7 +588,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                                """, "DwarfGenerator");
 
             // A [MapNullSkip]-guarded member through a declared converter (round 32): the guard keeps the null away from
-            // the converter's non-nullable parameter, so no DWARF070 - a false positive found migrating FusedChat.
+            // the converter's non-nullable parameter, so no DWARF070 - a false positive found migrating a consumer application.
             yield return ("SkipGuardedConverterArg", """
                                                      #nullable enable
                                                      using DwarfMapper;

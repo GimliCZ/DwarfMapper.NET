@@ -29,7 +29,7 @@ pairs (six IEnumerable<S>-keyed shapes each) are registered on top of the benchm
   hits an exact key and the lookup scans every interface-keyed entry, testing destination and assignability on each.
 - The single-object control is flat (18–24 ns across the sweep): the exact-key path is unaffected, as expected.
 - Allocation is identical in every row (440 B = the result list): the cost is pure scan time, not garbage.
-- Reach: FusedChat, the one non-self-authored consumer, has no `Map<TDestination>(object)` call site (its four ambient calls
+- Reach: the one non-self-authored consumer application has no `Map<TDestination>(object)` call site (its four ambient calls
   are the two-type form T12 serves). The defect is real for any consumer that does take this path.
 
 ## After: interface entries bucketed by destination (round 31 T14)

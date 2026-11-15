@@ -14,7 +14,7 @@ namespace DwarfMapper.Generator.Tests
     ///     skip guard only later.
     /// </summary>
     /// <remarks>
-    ///     Found 2026-10-11 migrating the owner's FusedChat off its project-wide NoWarns: three [MapNullSkip] maps
+    ///     Found 2026-10-11 migrating the owner's consumer application off its project-wide NoWarns: three [MapNullSkip] maps
     ///     (<c>TtsChatDocument? Tts</c> into <c>ChatTts Tts</c> through <c>ToChatTts</c>, and two more) kept DWARF070
     ///     with NO per-site answer - <c>[MapProperty(AllowNull = true)]</c> was, correctly, reported stale (DWARF116:
     ///     "SkipNullSourceMembers already keeps the destination's value") while the false positive stood beside it.

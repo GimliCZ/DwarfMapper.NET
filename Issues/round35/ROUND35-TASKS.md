@@ -666,6 +666,22 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
       quotes it per platform - rule which stands.
     - **D5** AutoMapper 14's default depth: MIGRATION.md:146 says no default limit, the `MaxDepth` XML doc
       (src/DwarfMapper/DwarfMapperAttribute.cs:268) says it matches AutoMapper's default.
+  - **Decisions taken (2026-11-15, the owner: "proceed", autonomous - each in its own commit, revertable):**
+    - D1 **1.1.0-rc.1** (the recommendation).
+    - D2 **publish DwarfMapper.Testing with 1.1.0-rc.1**, recorded as an explicit step in docs/RELEASING.md and the
+      CHANGELOG rather than left to `release.yml`'s "push every .nupkg" - so the tag publishes it on purpose. Not
+      `IsPackable=false`: the package-size gate, package validation and the consumer tests pack it. Revert = one
+      `IsPackable=false` plus the RELEASING step.
+    - D3 **no move**: 110+ tracked files reference `Issues/`/`docs/superpowers/` (ci.yml x9, six stryker configs,
+      housekeeping.ps1, gate-checks.ps1, codecov.yml, DocSet.cs, scan tests, shipped XML docs) and so do the owner's
+      local hooks. Instead: user docs and the shipped XML docs stop linking into them, and each gets a README that
+      says it is the maintainers' record.
+    - D4 the existing ruling stands (memory `benchmark-figures-platform-dependent`: never quote the dictionary ratio
+      unqualified). COMPARISON's T25 table may show the row with both platforms and the reason (it is Mapperly's
+      Windows dictionary path); no bold, no headline. PERFORMANCE.md §6 says exactly that.
+    - D5 settled from AutoMapper 14.0.0's own XML docs: `MaxDepth` is opt-in ("For self-referential types, limit
+      recurse depth"), no default. MIGRATION.md is right; the `MaxDepth` XML doc's "matching ... AutoMapper defaults"
+      is wrong (System.Text.Json's default of 64 is right).
   - **Found and fixed during the review** (not a task): 22 XML-doc crefs the IDE reported as unresolved while CI stayed
     green - 18 `cref="System.X"` (the owner's hint) and 4 found by building both generator projects with documentation
     on (`42a99c5`, `ccc046d`; memory `ide-only-cref-errors`).
