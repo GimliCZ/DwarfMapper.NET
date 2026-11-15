@@ -21,7 +21,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T3 | **The stale XML doc** on `ImplicitConversions` ("suggestion (Info)"). | **done** (`93d8b01`) |
 | T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | **done** - see Notes |
 | T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | **done** - see Notes |
-| T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | open |
+| T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | **done on its own branch** (`feat/round35-t6`): it pays - 1.56x to 6x at 1,024; see Notes |
 | T7 | **Move the SDK pin** to the current 10.0 servicing release; re-measure every gate tied to it; drop the AOT compiler override if the new pin makes it dead. | open |
 | T8 | **Ubuntu 26.04 for every Linux job**, the canary removed, on a `full-ci` run. | **done on its own branch** (`feat/round35-t8`), the owner's yes of 2026-11-13 - see Notes |
 | T9 | **Test and tooling packages** brought up to date, one at a time, gates re-measured. | open |
@@ -469,3 +469,21 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   The check named `aot-trim-gate (linux-x64, ubuntu-24.04)` becomes `(linux-x64, ubuntu-26.04)` and
   `ubuntu-26-canary` disappears: a ruleset that requires either by name has to be edited by the owner
   (`master` has no classic branch protection - the API answers 404 - so nothing was found to edit).
+
+- **T6: a widening span map takes the `Vector.Widen` loop.** Measured first (one-minute probe, then BenchmarkDotNet's
+  DefaultJob on an idle machine; `benchmarks/results/2026-11-14-round35-t6-span-widen.md`): at 1,024 elements `int ->
+  long` 1.56x, `float -> double` 4.51x, `byte -> ushort` 6.00x; at 16 elements 2.36x, 2.71x and 0.91x (+0.56 ns: a byte
+  pair shorter than one 32-wide vector never enters the loop). A guard that keeps short spans on the plain loop bought
+  nothing measurable, so the emitted loop is the List shape's, unguarded, as the array and List shapes have it.
+  - **The decision is the array arm's own**: `CollectionConverter.IsWidenPair` on the resolved element pair, with no
+    converter test, because the resolver assigns an implicit pair ahead of any user method (pinned by
+    `SimdWidenGeneratorTests` for the array arm). A widen pair is never also a blit. No reference is involved, so
+    Preserve does not change the answer. `MapMethodModel.SpanMapWidens`, the 20th flag, is classified in
+    `StructuralSurfaceCoverageTests` as an internal flag of the span-map mode, as `SpanMapBlits` is.
+  - **The loop** writes only inside both spans: it runs while `__i + __w` is at most the source's length, the length
+    guard has made the destination at least that long, and `__w` is twice `__half` for every widen pair.
+  - **Tests**: `SpanMapWidenTests` (generator, 12: the seven pairs, a mutable source span; two-step widening, kind
+    change, nullable and same-size pairs keep the loop or the block copy) - eight of them RED with the new branch
+    disabled; `SpanMapWidenRuntimeTests` (runtime, 10: every pair at lengths 0-70 and seven longer, random bits,
+    element-for-element against the scalar widening, nothing past the source written, a short destination refused
+    first, zero allocation), green natively and under no-intrinsics, 128-bit and no-AVX2 - the ISA matrix's rows.
