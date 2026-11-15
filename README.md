@@ -6,29 +6,28 @@
 [![NuGet prerelease](https://img.shields.io/nuget/vpre/DwarfMapper?logo=nuget&label=NuGet%20prerelease)](https://www.nuget.org/packages/DwarfMapper)
 [![downloads](https://img.shields.io/nuget/dt/DwarfMapper?label=downloads)](https://www.nuget.org/packages/DwarfMapper)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
-[![license](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
+[![license](https://img.shields.io/badge/license-GPL--2.0--only-blue)](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/LICENSE)
 [![last commit](https://img.shields.io/github/last-commit/GimliCZ/DwarfMapper.NET)](https://github.com/GimliCZ/DwarfMapper.NET/commits)
 
 > A compile-time object mapper for .NET where **an unmapped member is a build error**, maps are **round-trip-verifiable
-with one attribute**, and blittable data (unmanaged, fixed-layout structs) falls back to **SIMD/blittable bulk copy**
-> where the hardware allows it.
+> with one attribute**, and blittable data (unmanaged, fixed-layout structs) is copied in bulk, with SIMD where the
+> hardware allows it.
 
 > [!IMPORTANT]
 > **Is DwarfMapper for you?** Three things to decide *before* you invest time:
-> - **License — GPL-2.0-only (strong copyleft).** Because DwarfMapper is a source generator, if you build on it and *
-    *distribute** the binary, your project must also be GPLv2 with source available. Running it inside a hosted
-    service (SaaS) does **not** trigger that. **If you ship closed-source binaries, this is not the mapper for you.
-    ** ([why →](#license))
+> - **License — GPL-2.0-only (strong copyleft).** Because DwarfMapper is a source generator, if you build on it and
+>   **distribute** the binary, your project must also be GPLv2 with source available. Running it inside a hosted
+>   service (SaaS) does **not** trigger that. **If you ship closed-source binaries, this is not the mapper for you.**
+>   ([why →](#license))
 > - **.NET 10 or later.** The runtime package ships one `net10.0` assembly, which a `net10.0` or later project
-    references — .NET 11 is verified in CI (job `net11`); net8/net9 projects can't reference it yet.
-> - **Pre-release.** `1.0.2-rc.1` is a release candidate — APIs are stabilising; install it with the `--prerelease`
-    flag. ([status →](#status))
+>   references; .NET 11 is verified in CI. net8/net9 projects can't reference it.
+> - **Pre-release.** DwarfMapper is in release candidates: APIs are stabilising; install it with the `--prerelease`
+>   flag. ([status →](#status))
 >
 > If GPLv2, .NET 10 or later, and pre-release all work for you, read on: completeness becomes a *build error*, maps are
-*round-trip-**verifiable*** (opt in per pair with `[RoundTrip]`), and blittable data goes through *SIMD*.
+> *round-trip-verifiable* (opt in per pair with `[RoundTrip]`), and blittable data is bulk-copied.
 
-**Quick links:
-** [Quick start](#quick-start) · [Why another mapper?](#why-another-mapper) · [The landscape](#the-landscape-and-where-we-sit) · [Migration guides](docs/howto/) · [Diagnostics reference](docs/diagnostics.md) · [Options cheat-sheet](docs/options.md) · [Packages](#packages)
+**Quick links:** [Quick start](#quick-start) · [Why another mapper?](#why-another-mapper) · [The landscape](#the-landscape-and-where-we-sit) · [Migration guides](https://github.com/GimliCZ/DwarfMapper.NET/tree/master/docs/howto) · [Diagnostics reference](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/diagnostics.md) · [Options cheat-sheet](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/options.md) · [Packages](#packages)
 
 DwarfMapper mines the mapping at compile time and forges direct field copies — no reflection, no expression-tree engine,
 no surprises. Its first job is not to be fast (though it is). Its first job is to make sure you **never silently fail to
@@ -39,7 +38,8 @@ map a property again**.
 ## Why another mapper?
 
 Every C# mapper today optimizes for ergonomics or raw speed. None of them treat **the most common real-world failure —
-forgetting to wire up a property — as a compile error.** That single class of bug is the reason teams hand-write
+forgetting to wire up a property — as a compile error by default** (Mapperly warns, and can be configured to fail the
+build). That single class of bug is the reason teams hand-write
 fixtures and round-trip assertions, and pay the maintenance cost forever.
 
 DwarfMapper is built around that pain:
@@ -52,8 +52,8 @@ DwarfMapper is built around that pain:
 3. **Failures explain themselves.** When a check fails you get a *structural, member-path* diff: which member diverged,
    its expected vs. actual value, and the replay seed — not a blind object dump.
 
-Speed is the supporting act: we match the fastest compile-time mappers on ordinary DTOs and beat them on blittable
-collections.
+Speed is the supporting act: on ordinary DTOs DwarfMapper emits the same direct assignments as the fastest
+compile-time mappers, and it is ahead on some collection shapes ([COMPARISON](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/COMPARISON.md)).
 
 ---
 
@@ -63,15 +63,17 @@ collections.
 |-----------------|----------------------------------------------------|---------------------------------------------------|----------------|-------------------------|--------------------------------|------------------------------|
 | **AutoMapper**  | Runtime, compiled expression trees                 | Moderate                                          | Allocates      | Poor                    | No                             | No                           |
 | **Mapster**     | Runtime codegen **or** source gen                  | Fast                                              | Low (codegen)  | Codegen mode only       | No                             | No                           |
-| **Mapperly**    | Pure Roslyn source generator                       | Fastest tier                                      | Zero           | Excellent               | Opt-in warning                 | No                           |
-| **DwarfMapper** | Pure Roslyn source generator + blit/SIMD fast-path | Fastest tier; **faster on blittable collections** | Zero           | Excellent (CI-verified) | **Yes, error by default**      | **Yes**                      |
+| **Mapperly**    | Pure Roslyn source generator                       | Fastest tier                                      | Zero           | Excellent               | Warning by default             | No                           |
+| **DwarfMapper** | Pure Roslyn source generator + blit/SIMD fast-path | Fastest tier; ahead on some collection shapes     | Zero           | Excellent (CI-verified) | **Yes, error by default**      | **Yes**                      |
 
 **Honest performance claim:** Mapperly already emits `dest.A = src.A`, which is the JIT floor for name-based mapping. On
 typical DTOs (strings, references, transforms) DwarfMapper produces the *same* direct-assignment shape and measures
-within run-to-run noise of Mapperly / hand-written (see [COMPARISON](docs/COMPARISON.md)). DwarfMapper pulls ahead only
-where the data is **blittable and layout-compatible** — there it copies whole spans with `MemoryMarshal`/`Unsafe`/SIMD
-instead of per-element field writes. We never claim to be "faster than everything"; we claim to be *as fast as the floor
-on ordinary DTOs, faster only on blittable/layout-identical collections, and far harder to get wrong.*
+within run-to-run noise of Mapperly / hand-written. Where it differs is collections: blittable, layout-compatible arrays
+are copied as whole spans (`MemoryMarshal.Cast` plus SIMD widening) instead of per-element field writes, and value-element
+lists and mixed graph fills come out ahead too; on arrays of reference elements Mapperly is ahead on Windows. The current
+figures, per platform, are in [COMPARISON](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/COMPARISON.md).
+We never claim to be "faster than everything"; we claim to be *as fast as the floor on ordinary DTOs, ahead on some
+collection shapes, and far harder to get wrong.*
 
 ---
 
@@ -82,10 +84,12 @@ on ordinary DTOs, faster only on blittable/layout-identical collections, and far
   dictionary lookup (no member reflection). NativeAOT- and trimming-safe, and verified so in CI.
 - **0 hidden allocation.** The mapper itself allocates nothing. Mapping into a new reference type allocates only that
   target (unavoidable).
-- **0 silent data loss.** Completeness is enforced at compile time. Over-posting / mass-assignment-style bugs are
-  designed out: only members the generator explicitly resolved are ever written.
-- **Provably-safe unsafe.** The blittable fast-path is gated by analyzer proofs (unmanaged types, matching size, no
-  managed references, compatible layout). The **automatic** fast-path never emits a cast without that full layout+name
+- **0 silent data loss.** Completeness is enforced at compile time, and only members the generator resolved are ever
+  written. Resolution matches by name, so a same-named member is wired automatically; at a trust boundary (binding
+  request input onto an entity) turn that off with `AutoMatchMembers = false` and list every member explicitly — see
+  [over-posting guidance](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/SECURITY.md#over-posting--mass-assignment-guidance-consumer-responsibility).
+- **Proof-gated blit.** No `unsafe` code and no `Unsafe` class in the shipped assemblies. The blittable fast-path is
+  gated by analyzer proofs (unmanaged types, matching size, no managed references, compatible layout). The **automatic** fast-path never emits a cast without that full layout+name
   proof — it falls back to plain assignments instead. (The opt-in `[Reinterpret]` override emits a memory-safe blit
   — the same byte-level proof, minus the names — whose field correspondence *you* assert.)
 - **Declarative only.** Configuration lives in attributes and partial methods — never a runtime fluent builder. (Fluent
@@ -114,8 +118,9 @@ Pairing walks the two sorted member lists ordinally. The result is a determinist
 
 - **Completeness:** every destination member must be paired or carry `[MapIgnore]`. Otherwise → **build error** (
   always — even a `.globalconfig` that silences the diagnostic would not ship an incomplete map: the method body simply isn't
-  generated, so the build still fails, just with a rawer compiler error; see *Completeness diagnostics* below). Every
-  source member must be consumed or explicitly marked source-ignored. *"I forgot to map it" stops compiling.*
+  generated, so the build still fails, just with a rawer compiler error; see *Completeness diagnostics* below). The
+  source side is opt-in: with `RequiredMapping = Both`, a source member nothing reads reports `DWARF039` (Info, which
+  you can escalate). *"I forgot to map it" stops compiling.*
 - **Blit proof:** for a whole array member (`TSrc[] → TDst[]`) the generator asks: is the element type unmanaged,
   identically sized, and layout-compatible? If yes, the whole span is bulk-copied with a single
   `MemoryMarshal.Cast<TSrc,TDst>(...).CopyTo(...)` — the proof is the guard; there is no runtime size check in the
@@ -129,7 +134,7 @@ The generator writes direct assignments, inline converters, and null guards for 
 copies for the proven runs. The emitted code reads like something you'd have hand-written — judge for yourself,
 because both halves below are extracted, not written by hand.
 
-You write ([`01_FlatMap.cs`](samples/DwarfMapper.Gallery/01_FlatMap.cs)):
+You write ([`01_FlatMap.cs`](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/samples/DwarfMapper.Gallery/01_FlatMap.cs)):
 
 <!-- snippet: flat-map -->
 ```csharp
@@ -174,7 +179,7 @@ public partial class Mapper
 No reflection, no expression tree, no dictionary lookup — just the assignments you would have typed, plus an
 argument null guard and a mapping plan in the XML docs so the IDE can tell you what a call actually does. A
 dotted path is no different; `[MapProperty("Customer.Address.City", …)]`
-([`06_DeepPaths.cs`](samples/DwarfMapper.Gallery/06_DeepPaths.cs)) becomes exactly the member access you would
+([`06_DeepPaths.cs`](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/samples/DwarfMapper.Gallery/06_DeepPaths.cs)) becomes exactly the member access you would
 have written — unguarded here precisely because those members are non-nullable, which the generator checked.
 Make the root a nullable reference and it says so (`DWARF044`) instead of emitting a silent `NullReferenceException`:
 
@@ -219,7 +224,7 @@ install with `--prerelease`. See [Status](#status).)
 
 ```bash
 dotnet new console -o HelloDwarf && cd HelloDwarf
-dotnet add package DwarfMapper --prerelease   # once it's on nuget.org; until then, reference the project (see Packages)
+dotnet add package DwarfMapper --prerelease
 ```
 
 <!-- snippet: map-to-registry -->
@@ -238,6 +243,11 @@ public sealed class RuneDto
 
     public string Name { get; set; } = "";
 }
+
+public static class RuneUse
+{
+    public static RuneDto Convert(Rune rune) => rune.ToRuneDto(); // the generated extension
+}
 ```
 <!-- endsnippet -->
 
@@ -246,8 +256,8 @@ hand — `new RuneDto { Id = rune.Id, Name = rune.Name }`.
 
 **The payoff:** add a `Power` property to `RuneDto` and forget to map it, and **the build fails** — `DWARFR02` names
 the unmapped member (`Power`). (The squiggle sits on the `[MapTo]` source type. You'll also see
-`CS1061: 'Rune' does not contain 'MapTo'` — that's expected: the generator withholds the extension method until the
-map is complete, so the `DWARFR02` is the real cause, not a missing `using`.) You cannot silently ship an incomplete
+`CS1061: 'Rune' does not contain a definition for 'ToRuneDto'` — that's expected: the generator withholds the
+extension method until the map is complete, so the `DWARFR02` is the real cause, not a missing `using`.) You cannot silently ship an incomplete
 map. Don't want a member mapped? Put `[MapIgnore]` on it.
 
 `[MapTo]` carries the full conversion engine — number/string/enum/date conversions, nested objects, and `T[]`/`List<T>`
@@ -307,6 +317,42 @@ public partial class Mappers
 Overloads are distinguished by source type; declaring two pairs with the same source type but different targets is
 the build error `DWARF060` — declare those as named `partial` methods instead.
 
+### Configuring a pair without partial methods
+
+`[MapProperty<TSource, TTarget>(...)]`, `[MapIgnore<TTarget>(...)]` and `[MapValue<TTarget>(...)]` declared on the
+class configure a `[GenerateMap]` pair — or an auto-synthesized nested or collection-element pair — wherever that pair
+is mapped, so a fully configured mapper, nested renames included, needs no `partial` method at all. An attribute that
+matches no mapped pair is `DWARF056`.
+
+<!-- snippet: nested-list-config-ergonomic -->
+```csharp
+[DwarfMapper]
+[GenerateMap<Place, PlaceDto>]
+[MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
+public partial class Mapper
+{
+} // no methods — the pair-scoped attribute carries the nested rename
+```
+<!-- endsnippet -->
+
+The same attributes let a DTO declare its own mapping. A class that carries `[GenerateMap<S,T>]` but is **not** a
+`[DwarfMapper]` mapper gets its mapping emitted into a separate generated `<Host>Mapper` type, so the DTO stays a plain
+(even `sealed`, non-`partial`) data class, consumed through the generated extension or `AddDwarfMappers()`. Delete the
+type and its mapping goes with it; the trade-off is that the host takes a compile-time dependency on the other type.
+
+<!-- snippet: co-located -->
+```csharp
+[GenerateMap<Person, PersonDto>]
+[MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(FullName))]
+public sealed class PersonDto
+{
+    public string FullName { get; set; } = "";
+
+    public int Age { get; set; }
+}
+```
+<!-- endsnippet -->
+
 ### No mapper class — `[MapTo]`
 
 The default, lowest-ceremony form (introduced in the Quick start): put `[MapTo]` on the **source type** and call the
@@ -340,8 +386,8 @@ the destination-name (member) form.
 
 What stays on the `[DwarfMapper]` class model (`[MapTo]` emits a diagnostic pointing you there): `Use=` custom
 converters, hooks, projections, `[MapDerivedType]`/`[FlattenGraph]`, reference cycles, `Dictionary<,>`, and
-nullable-unwrap. Full design: [
-`docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md`](docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md).
+nullable-unwrap. The `[MapTo]` diagnostics are listed under
+[Registry diagnostics](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/diagnostics.md#registry-diagnostics-mapto).
 
 ### Four ways to call a mapper
 
@@ -375,7 +421,7 @@ var byDi = provider.GetRequiredService<CallStyles>().Map(order);
   separate pair: by default (`RegisterCollectionShapes = true`) each declared object map is also registered under the
   common collection shapes, so `mapper.Map<ICollection<Dst>>(listOfSources)` resolves; with
   `RegisterCollectionShapes = false`, project at the call site instead: `list.Select(mapper.Map<Dst>)`. Full
-  guide: [ambient cross-assembly maps](docs/howto/ambient-cross-assembly-maps.md).
+  guide: [ambient cross-assembly maps](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/howto/ambient-cross-assembly-maps.md).
 
 - **`Dwarf.Map<TSource, TDest>(src)`** is the same ambient call made static, so the generator can bind it: when the
   calling project registers the pair itself, the call compiles to a direct call on the generated mapper (a C#
@@ -399,8 +445,8 @@ var byDi = provider.GetRequiredService<CallStyles>().Map(order);
   **same** option, so they are assembly-internal by default too. A library that ships `[MapTo]` types for another
   project to consume **must** set `PublicExtensions = true`: unlike a `[DwarfMapper]` class there is no mapper
   instance and no DI registration to fall back on, so the extension is the only way in. Without the opt-in the
-  call site sees `CS1061`. *(Before the option was honoured here, these were `public` whenever the types allowed
-  it — which contradicted the documented default. See `CHANGELOG.md`, Changed/BREAKING.)*
+  call site sees `CS1061`. *(Before 1.1.0-rc.1 these were `public` whenever the types allowed it, contradicting the
+  documented default; see the CHANGELOG.)*
 - **`AddDwarfMappers()`** is generated only when your project references
   `Microsoft.Extensions.DependencyInjection.Abstractions`. It registers each mapper as a singleton (no reflection, no
   assembly scan) — AOT-safe like everything else.
@@ -430,9 +476,9 @@ public partial class CustomerMapper
   is the build error `DWARF048`; explicit `[MapProperty]` stays exact.
 - **`[MapProperty(source, target)]`** maps differently-named members and suppresses the completeness error for that
   destination; an unknown source/target is `DWARF009`/`DWARF008`.
-- **Convention — `nameof` vs string literals.** Use `nameof(Type.Member)` for plain member names (refactor-safe). *
-  *Dotted paths** — a deep source path (`"Customer.Name"`) or an unflatten target (`"Address.City"`) — and *
-  *constructor-parameter names** must be **string literals**, because `nameof` can't express a path or a parameter name.
+- **Convention — `nameof` vs string literals.** Use `nameof(Type.Member)` for plain member names (refactor-safe).
+  **Dotted paths** — a deep source path (`"Customer.Name"`) or an unflatten target (`"Address.City"`) — and
+  **constructor-parameter names** must be **string literals**, because `nameof` can't express a path or a parameter name.
   So a mapper commonly mixes the two styles, by design: `[MapProperty(nameof(Src.Total), "Order.Total")]`.
 - A **read-only destination** member that has a matching source is flagged (`DWARF007`) rather than silently dropped.
 - **Source-member coverage (opt-in).** By default the completeness gate is destination-side only (every target must be
@@ -483,8 +529,7 @@ public partial class OrderMapper
   `[MapProperty(nameof(Src.City), "Address.City")]` assigns `City` through an intermediate `Address`, which is
   instantiated once if null (`if (t.Address is null) t.Address = new …();`). Multiple leaves into the same intermediate
   share one instance. The intermediate must be a **class with a public parameterless constructor** (else `DWARF045`); a
-  direct mapping of the same root conflicts (`DWARF046`). Deeper-than-one-level paths are a `DWARF045` (documented
-  follow-up).
+  direct mapping of the same root conflicts (`DWARF046`). A target path deeper than one level is also `DWARF045`.
 - An ambiguous auto-conversion is `DWARF013`; an invalid `Use` method is `DWARF014`. If no conversion is possible at
   all, you still get the completeness error `DWARF005`.
 
@@ -565,8 +610,8 @@ above.
 per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is
 unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor).
 Read-only / interface shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `IReadOnlySet<T>`,
-`ICollection<T>`, …) are accepted as **both source and target**, and immutable collections are supported targets. A *
-*null source collection** never throws: by default (`[DwarfMapper(NullCollections = NullCollectionStrategy.AsEmpty)]`)
+`ICollection<T>`, …) are accepted as **both source and target**, and immutable collections are supported targets. A
+**null source collection** never throws: by default (`[DwarfMapper(NullCollections = NullCollectionStrategy.AsEmpty)]`)
 it produces an empty target collection; set `NullCollections = NullCollectionStrategy.AsNull` to propagate null
 instead (with a non-nullable target member you'll get a nullable-annotation warning). An unsupported
 collection/dictionary target type is `DWARF027`.
@@ -595,8 +640,8 @@ methods on the mapper run around the generated body — validate the source, or 
 members. Hooks apply to every mapping whose types are assignable to their parameters. An invalid signature is
 `DWARF018`.
 
-**Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to a dictionary *
-*target** — `Dictionary<K2,V2>`, the `IDictionary`/`IReadOnlyDictionary` interfaces (which resolve to `Dictionary`), or
+**Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to a dictionary
+**target** — `Dictionary<K2,V2>`, the `IDictionary`/`IReadOnlyDictionary` interfaces (which resolve to `Dictionary`), or
 `ImmutableDictionary<K2,V2>`/`IImmutableDictionary` — converting **both keys and values** through the same rules as any
 other member (converters, nested mappers, enums, nullable). Mutable/`Dictionary` targets fill via the indexer, so
 post-conversion key collisions overwrite (last wins); an `ImmutableDictionary` target instead throws on a duplicate
@@ -673,8 +718,8 @@ explicit `Size`, the same `[InlineArray]` length, every instance field in one de
 names/types (including nested structs and fixed-buffer lengths, recursively) — DwarfMapper skips the element loop and
 reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove. The proof **is** the guard: the copy
 carries no runtime size check, because the same-bytes verdict is settled at generation time, and every shape the
-proof cannot settle is refused there. This is the one place DwarfMapper beats a hand-written name-based copy, and it
-is emitted **only when proven safe** — otherwise it falls back to the element loop, and `DWARF100` names the one
+proof cannot settle is refused there. This is where DwarfMapper beats a hand-written name-based copy, and it is
+emitted **only when proven safe** — otherwise it falls back to the element loop, and `DWARF100` names the one
 thing that kept the pair off the fast path. For layout-compatible types the proof can't confirm (differing field
 names you know are positionally correct), opt in with `[Reinterpret("Member")]` — still memory-safe (the same
 unmanaged + same-bytes proof, with only the name check waived), with the field correspondence as your assertion. A
@@ -799,8 +844,8 @@ public partial class PetMapper
 <!-- endsnippet -->
 
 Union members, collections of unions, `Nullable<T>` unions and the empty union are covered in
-[Map C# 15 unions](docs/howto/map-unions.md); the runnable examples are in
-[`samples/DwarfMapper.Unions`](samples/DwarfMapper.Unions). An older compiler refuses every union pair with
+[Map C# 15 unions](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/howto/map-unions.md); the runnable
+examples are in [`samples/DwarfMapper.Unions`](https://github.com/GimliCZ/DwarfMapper.NET/tree/master/samples/DwarfMapper.Unions). An older compiler refuses every union pair with
 `DWARF113`, naming what is missing.
 
 ---
@@ -818,7 +863,8 @@ This is the compile-time replacement for the manual "did I wire everything up?" 
 
 > **Test-time only — not AOT-safe.** `[RoundTrip]` calls the **reflection-based** `DwarfMapper.Testing`
 > package, so it runs in your **test** run, never in a shipped / AOT-published assembly, and is *not* part of
-> the reflection-free / AOT-safe mapper. Reference `DwarfMapper.Testing` from test projects only.
+> the reflection-free / AOT-safe mapper. Reference `DwarfMapper.Testing` (on nuget.org from 1.1.0-rc.1) from test
+> projects only.
 
 Tag the forward method with `[RoundTrip]`; the generator finds the inverse mapping method and emits a
 `VerifyRoundTrip_<method>(seed, iterations)` that fuzzes inputs (seeded, reproducible), runs `Back(Forward(x))`, asserts
@@ -830,10 +876,16 @@ maintain by hand — call it from a single test:
 [DwarfMapper]
 public partial class Mapper
 {
-    [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, count)
+    [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, iterations)
     public partial LedgerDto ToDto(Ledger l);
 
     public partial Ledger FromDto(LedgerDto d); // the inverse it verifies against
+}
+
+public static class LedgerMapperTests
+{
+    // In a test project this is a [Fact]; the defaults are seed 12345 and 100 iterations.
+    public static void LedgerRoundTrips() => new Mapper().VerifyRoundTrip_ToDto(seed: 7, iterations: 50);
 }
 ```
 <!-- endsnippet -->
@@ -844,8 +896,8 @@ inverse → `DWARF020`; ambiguous inverse → `DWARF021`.
 ### Informed dumps
 
 When a round-trip check fails you get a **structural diff**, not "two objects differ somewhere": `RoundTrip.Verify`
-throws a `RoundTripException` that walks the two graphs and reports the **member path** that diverged with its *
-*expected vs. actual** value, plus the replay **seed** so you can reproduce the exact failing input (
+throws a `RoundTripException` that walks the two graphs and reports the **member path** that diverged with its
+**expected vs. actual** value, plus the replay **seed** so you can reproduce the exact failing input (
 `ObjectFactoryV2.Create<T>(seed)` rebuilds it). See *Verifying maps today* below.
 
 ### Verifying maps today
@@ -861,6 +913,16 @@ public partial class Mapper
 
     [MapIgnore(nameof(Coin.Mint))] // nothing to restore it from — stated, not forgotten
     public partial Coin FromDto(CoinDto d);
+}
+
+public static class CoinMapperTests
+{
+    // The ad-hoc form, for a pair without [RoundTrip]: throws RoundTripException naming Coin.Mint.
+    public static void CoinRoundTrips()
+    {
+        var mapper = new Mapper();
+        RoundTrip.Verify<Coin, CoinDto>(mapper.ToDto, mapper.FromDto, seed: 7, iterations: 20);
+    }
 }
 ```
 <!-- endsnippet -->
@@ -893,13 +955,14 @@ documented not to be — a member the first source wrote and the second skipped 
 That is a real violation and the right behaviour for that endpoint, so assert the law only where you mean it.
 `VerifyIdempotent` carries no such caveat and applies to conditional mappers too.
 
-**Conformance sample.** On top of the generator/integration test suite, [
-`samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every*
-feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies,
-`[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus
-adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no
-silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **78 runtime assertions**. It doubles
-as living documentation.
+**Conformance sample.** On top of the generator/integration test suite,
+[`samples/DwarfMapper.Conformance`](https://github.com/GimliCZ/DwarfMapper.NET/tree/master/samples/DwarfMapper.Conformance)
+is a single runnable app that asserts the core features at run time — flat/rename/conversions, enum strategies,
+nested/collections, projection, all three cycle strategies, `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`,
+hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus adversarial "dirty paths" (null source →
+`ArgumentNullException`, narrowing overflow → `OverflowException` with no silent truncation, bad parse →
+`FormatException`, unguarded cycle → throw), with **78 runtime assertions** (a test keeps that figure equal to the
+sample). CI runs it and fails if any assertion fails or the count drops.
 
 ---
 
@@ -910,25 +973,30 @@ DwarfMapper treats mapping as an attack surface and a correctness surface at onc
 - **Zero reflection / AOT- & trim-safe.** The shipped runtime library uses no reflection or runtime emit; the optional
   `DwarfMapper.Testing` package (test projects only) is reflection-based. CI runs a NativeAOT + trimming build and fails
   on any reflection fallback.
-- **Over-posting protection.** Only members the generator explicitly resolved are written. Ambiguous matches are a build
-  error, never a silent guess — so untrusted input can't drive an unintended field assignment.
-- **Provably-safe blit.** The unsafe fast-path is emitted only behind analyzer-verified proofs; otherwise it degrades to
-  safe assignments.
+- **Over-posting is a decision you can see.** Only members the generator resolved at build time are written, and an
+  ambiguous match is a build error, never a silent guess. Matching by name still wires a same-named member, so where a
+  DTO carries untrusted input onto an entity, set `AutoMatchMembers = false` (each written member must then be named;
+  `DWARF072`) — see [over-posting guidance](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/SECURITY.md#over-posting--mass-assignment-guidance-consumer-responsibility).
+- **Proof-gated blit.** The bulk copy is emitted only behind a layout proof made at generation time, with no `unsafe`
+  code; otherwise the generator emits ordinary assignments.
 - **Completeness diagnostics.** No silent data loss in either direction.
 
 ### Supply chain (CRA-aligned)
 
-Releases are built and published to be independently verifiable:
+Tagged releases are built and published to be independently verifiable. (The three 1.0.x release candidates on
+nuget.org were pushed by hand before this pipeline existed and carry no SBOM or provenance; everything below applies
+from the first tagged release, 1.1.0-rc.1.)
 
 - **Deterministic, reproducible builds** (`Deterministic` + `ContinuousIntegrationBuild`) with SourceLink and embedded
   untracked sources.
-- **Machine-readable SBOM** (CycloneDX) generated in CI and attached to every release.
+- **Machine-readable SBOM** (CycloneDX) generated in CI and attached to every tagged release.
 - **Keyless signing — no private key stored anywhere.** Releases are signed via GitHub's OIDC identity through
   Sigstore (`actions/attest-build-provenance`) and recorded in a public transparency log; authenticity = each artifact's
   **SHA-256 fingerprint** (`SHA256SUMS`) + the **git identity** that built it (verify with `gh attestation verify`).
 - **Hardened CI**: all GitHub Actions pinned to commit SHAs; CodeQL, NativeAOT/trim gate, and coverage gate.
 
-See [`docs/RELEASING.md`](docs/RELEASING.md) for step-by-step verification (fingerprint, provenance/identity, SBOM).
+See [Verifying a release](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/RELEASING.md) for step-by-step
+verification (fingerprint, provenance/identity, SBOM).
 
 ---
 
@@ -946,65 +1014,21 @@ collection of class elements allocates one heap object per element (allocation, 
 barrier, eventual Gen1/Gen2 promotion); the same collection of `readonly record struct` elements is **one** allocation.
 `DWARF103` finds the element types where that swap is safe, prints the size you would get, and the IDE lightbulb
 performs the rewrite — the element type and every transfer model it inlines, transitively. `DWARF101` names a field
-order that packs such a struct.
-
-**Read the methodology before the numbers, because it is short and it bounds them.** BenchmarkDotNet 0.14.0, AMD Ryzen
-5 5600, Windows 10, .NET 10.0.11, `Job=short` with **3 iterations** — one machine, one OS, x64. At that iteration count
-the *absolute* error bars are wide (on several rows the reported error approaches or exceeds the mean), while the
-*ratios* are stable (`RatioSD` 0.00–0.08 on the rows quoted here, 0.11 at worst across the study, at N = 100,000).
-**Treat the order of magnitude as the finding and the
-precise percentage as noise.** Raw output in [`Issues/round29/`](Issues/round29/); the full caveats, including what
-these probes are *not*, are in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
-
-**What the code fix delivers**, N = 100,000, ratios against the class-shaped baseline (lower is faster). The fix
-converts the *destination* type, which is the **gather** column; the **blit** column additionally needs the source to
-be structs, which is a change on the other side of the mapping that the fix does not make:
-
-| Shape | Baseline (classes) | Gather (target converted) | Blit (both sides) | Allocated | Source |
-|---|---:|---:|---:|---|---|
-| 4-class DTO tree → nested structs | 20.0 ms | **1.80 ms** (0.09x) | 0.92 ms (0.05x) | 18.4 → 6.4 MB (0.35x) | `plan-results.md`, `D_tree` |
-| DTO with an optional nested member | 14.6 ms | **1.59 ms** (0.11x) | 0.92 ms (0.06x) | 10.4 → 4.8 MB (0.46x) | `plan2-results.md`, `A_optional` |
-| 40-byte struct repacked to 24 (`DWARF101`) | 812 µs | — | **500 µs** (0.62x) | 4.0 → 2.4 MB (0.60x) | `plan2-results.md`, `D_layout` |
-
-At N = 1,000 the first two are 0.30x rather than 0.09x/0.11x: the win grows with N because what it removes is an
-allocation per element. Larger results still — a shared-arena result shape (0.17x) and `readonly ref struct` views over
-the source (0.04x, zero allocation) — were measured in the same study and **DwarfMapper does not emit either**; they
-are listed, with that caveat attached, in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md#2b-changes-to-your-own-types-that-dwarfmapper-does-not-make).
-
-**And what measured *slower*.** These are published here rather than in an appendix because they are the reason this
-round shipped two diagnostics and a code fix instead of a vectorized copy path — ratios above 1.00 are **slower** than
-the plain scalar loop they would have replaced:
-
-| Idea | N = 1,000 | N = 100,000 | Verdict |
-|---|---:|---:|---|
-| Column transpose, then SIMD, for mixed field widths | **2.93x slower** | **1.82x slower** | rejected |
-| 12-byte struct permuted by byte shuffle | **2.21x slower** | **1.35x slower** | rejected |
-| 16-byte struct permuted by one byte shuffle | 0.77x | 0.95x | inside the noise; not built |
-| `TensorPrimitives` widening | 0.60x | 0.97x | helps only while the buffer is cache-resident |
-| Span blit vs the element loop | 0.21x | 0.98x | real for small buffers, bandwidth-bound above L2 |
-| Span over a *class's* field block instead of converting it | 0.68x | 1.00x | ~1 ns/element, and silently wrong on an auto-layout class |
-| Dropping reference members to speed the GC scan | 1.04x | 1.13x | no gain measured — and the probe could not isolate the variable |
-
-Two results worth stating in prose, because both catch people out:
-
-- **A single `string` leaf in an otherwise blittable gather costs 33–55 %** — 1.55x at N = 1,000 and 1.33x at
-  N = 100,000, pairwise against the same struct holding an integer id (`plan2-results.md`, `C_gather`). A reference
-  field means a GC write barrier per element store and keeps the whole destination array GC-scannable.
-- **Removing reference members did not make the GC scan cheaper — and that experiment cannot prove it would not.**
-  The forced-collection probe reports 1.13x (the reference-free arm marginally *slower*), but both arrays were alive
-  in both arms, so it measured a full GC with the whole fixture live and isolated nothing. It is reported as a null
-  instrument rather than as a negative finding; see [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+order that packs such a struct. The gain grows with the collection size, because what it removes is an allocation per
+element; the measurements, their method and their limits are in
+[PERFORMANCE](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/PERFORMANCE.md).
 
 Every hazard of converting a class to a `readonly record struct` — aliasing, `default` for `null`, `Nullable<T>`
 boxing, `CS1612`, value equality, `[JsonConstructor]`, EF Core — is tabulated under
-[`DWARF103`](docs/diagnostics.md#dwarf103), with the four that the compiler does **not** catch marked as such.
+[`DWARF103`](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/diagnostics.md#dwarf103), with the four that
+the compiler does **not** catch marked as such.
 
 ---
 
 ## Packages
 
 DwarfMapper ships one **`net10.0`** assembly, which a `net10.0` **or later** project references — .NET 11 is verified
-in CI (job `net11`); net8/net9 projects cannot reference it. The one exception is the generator/code-fix assemblies
+in CI; net8/net9 projects cannot reference it. The one exception is the generator/code-fix assemblies
 (see note below).
 
 **Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+).** Roslyn refuses to load an analyzer compiled
@@ -1012,27 +1036,28 @@ against a *newer* compiler than the host (`CS9057`), so the package carries the 
 `Microsoft.CodeAnalysis` 5.0.0 in `analyzers/dotnet/roslyn5.0/cs`, which every .NET 10 SDK loads, and against 5.12
 in `analyzers/dotnet/roslyn5.12/cs`, which the .NET 11 SDK loads instead — the build that maps C# 15 unions. The SDK
 picks exactly one; CI proves which from the packed package on each SDK. The floor is the .NET 10 line itself, not a
-specific patch, and the CI job `toolchain-floor` builds and tests the solution on the newest 10.0.1xx SDK to hold
-it. (The repo's own `global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte;
+specific patch, and CI builds and tests the solution on the newest 10.0.1xx SDK to hold it. (The repo's own `global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte;
 it is not a requirement on consumers.)
 
 | Reference                                                   | Purpose                                                                                                                                                                                                                                                                                                                          | TFM       |
 |-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
 | **`DwarfMapper`**                                           | **Everything you need in one package** — the attributes + tiny abstractions (`lib/net10.0`) **and** the Roslyn source generator + IDE code fixes bundled in the analyzer slot. Zero runtime dependencies.                                                                                                                        | `net10.0` |
-| `DwarfMapper.Testing` *(optional — **test projects only**)* | Fixture builders, seeded property-based fuzzer, round-trip verifier, informed dumps. Add to **test** projects to enable `[RoundTrip]`. **It is reflection-based — do not reference it from a shipped/AOT-published assembly** (there is no build-time guard; doing so reintroduces reflection and voids the AOT-safe guarantee). | `net10.0` |
+| `DwarfMapper.Testing` *(optional — **test projects only**)* | Fixture builders, seeded property-based fuzzer, round-trip verifier, informed dumps. Add to **test** projects to enable `[RoundTrip]`. On nuget.org from 1.1.0-rc.1. **It is reflection-based — do not reference it from a shipped/AOT-published assembly** (there is no build-time guard; doing so reintroduces reflection and voids the AOT-safe guarantee). | `net10.0` |
 
 ```xml
 <!-- one reference enables compile-time mapping + the IDE quick-fixes; no analyzer wiring -->
-<PackageReference Include="DwarfMapper" Version="1.0.2-rc.1" />
+<PackageReference Include="DwarfMapper" Version="1.1.0-rc.1" />
 ```
 
 \* The bundled generator/code-fix assemblies target `netstandard2.0` because Roslyn loads analyzers/source generators
 *into the compiler host*, which only accepts `netstandard2.0` components. This is a hard requirement of the Roslyn
-toolchain, not a runtime-support choice — the code it **generates** targets .NET 10 like everything else. They are a
-`DevelopmentDependency` (analyzer-only) and never become a runtime dependency of your app.
+toolchain, not a runtime-support choice — the code it **generates** targets .NET 10 like everything else. They sit in
+the package's analyzer folders, which the compiler loads and the app never does, so they never become a runtime
+dependency of your app.
 
-Released packages ship with a CycloneDX SBOM, `SHA256SUMS`, and a keyless GitHub-identity provenance signature (no
-stored key) — see [`docs/RELEASING.md`](docs/RELEASING.md) to verify.
+Tagged releases attach a CycloneDX SBOM, `SHA256SUMS`, and a keyless GitHub-identity provenance attestation (no
+stored key) to the GitHub Release — see
+[Verifying a release](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/RELEASING.md).
 
 ---
 
@@ -1063,98 +1088,19 @@ scripts/                     # housekeeping, gate checks, conformance gate, git 
 conformance/                 # results/ — evidence files written by the conformance gate
 benchmarks/
   DwarfMapper.Benchmarks/    # BenchmarkDotNet suite (vs hand-written + Mapperly/Mapster/AutoMapper)
-samples/
+  DwarfMapper.UnionBenchmarks/ # C# 15 union mapping (needs the .NET 11 SDK; not in the solution)
+  comparison-probes/         # validation and hostile-shape probes against Mapperly and Mapster
+  results/                   # every measurement the docs quote, indexed current vs superseded
+samples/                     # see samples/README.md
+  DwarfMapper.Gallery/       # runnable simple→advanced mapping examples — start here
+  DwarfMapper.Unions/        # C# 15 union mapping, runnable (needs the .NET 11 SDK; not in the solution)
   DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
   DwarfMapper.AotBench/      # NativeAOT benchmarking & stability harness
-  DwarfMapper.Gallery/       # runnable simple→advanced mapping examples
-  DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (78 asserts)
-  DwarfMapper.Unions/        # C# 15 union mapping, runnable (needs the .NET 11 SDK; not in the solution)
-docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
+  DwarfMapper.Conformance/   # self-checking app over the core features + adversarial paths
+docs/                        # user documentation: diagnostics, options, how-tos, comparison, security
+Issues/, docs/superpowers/   # maintainers' records: task ledgers, design specs, plans (not user docs)
 README.md
 ```
-
----
-
-## Roadmap
-
-### v1 — shipped (feature-complete, pre-release)
-
-- **`[MapTo]` registry mapping** — the default low-ceremony form: no `partial` class, intent on the source type, called
-  as an extension (`x.MapTo<Dto>()`); full conversion engine (scalars / nested / `T[]`·`List<T>`), multi-target with
-  stacked `[MapProperty]`/`[MapIgnore]`
-- Flat, nested, and collection (`T[]` / `List<T>` / `HashSet<T>` / `Dictionary<K,V>`) mapping
-- Enums and null handling
-- Custom per-member conversion: `[MapProperty(src, tgt, Use = nameof(Method))]`
-- Canonical sort → ordinal pairing
-- Completeness diagnostics (build error by construction — configuring its severity can’t ship an incomplete map)
-- Blittable bulk-copy + SIMD fast-path, analyzer-gated; `[Reinterpret]` escape hatch
-- Flattening: `[Flatten("Root")]` pulls sub-members to top-level destination
-- Before/after mapping hooks: `[BeforeMap]` / `[AfterMap]`
-- `IQueryable` projection: `IQueryable<TDto> Project(IQueryable<T> src)` → SQL-translatable expression tree
-- `DwarfMapper.Testing`: fixtures, seeded fuzzer, `[RoundTrip]`, informed dumps
-- NativeAOT + trimming CI gate (verified; AOT sample in `samples/`)
-- **Constructor / record / immutable target mapping**: positional records, `record struct`, `readonly record struct`,
-  readonly structs, constructor-only classes; all conversions apply to ctor params; `[DwarfMapperConstructor]`
-  disambiguation; DWARF024/025/026; named-argument AOT-safe emit
-- **Object-graph composition**: auto-synthesized nested mappers; full collection/dictionary taxonomy + nested
-  compositions; deep auto-nesting
-- **Reference handling**: `ReferenceHandling = Preserve` (full topology reconstruction), `OnCycle = SetNull` (
-  System.Text.Json-style cycle breaking), and `None` depth-guarding — all three handle cycles through **direct,
-  collection, and dictionary edges** with no silent `StackOverflowException` (catchable `DwarfMappingDepthException` at
-  `MaxDepth`)
-- **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
-- **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity
-  preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
-- **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps into a caller buffer (no allocation),
-  with a defensive length guard (too-small destination throws, never silent truncation) — a single
-  `MemoryMarshal.Cast(src).CopyTo(dst)` block copy when the element pair is proven layout-identical, the
-  element-by-element loop otherwise (`DWARF100` on a near miss)
-- **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs.
-  Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [
-  `docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison, [
-  `docs/MIGRATION.md`](docs/MIGRATION.md) for the feature-by-feature conversion guide from AutoMapper 14 / Mapster /
-  Mapperly, and [`docs/CORRECTNESS.md`](docs/CORRECTNESS.md) for the proves-your-mappings-are-right guarantees); builds
-  in CI, run locally for numbers
-- **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence
-  element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
-- **Pair-scoped member configuration (no `partial` method)**: `[MapProperty<TSource, TTarget>(...)]`,
-  `[MapIgnore<TTarget>(...)]`, and `[MapValue<TTarget>(...)]` declared on the class configure a `[GenerateMap]` pair —
-  or an auto-synthesized nested / collection-element pair — so a fully-configured mapper (including nested renames) can
-  be declared with **zero partial methods**. The linkage applies wherever that pair is mapped; an attribute matching no
-  mapped pair is `DWARF056`. Consume via the generated extension methods or `AddDwarfMappers()` DI:
-  <!-- snippet: nested-list-config-ergonomic -->
-  ```csharp
-  [DwarfMapper]
-  [GenerateMap<Place, PlaceDto>]
-  [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
-  public partial class Mapper
-  {
-  } // no methods — the pair-scoped attribute carries the nested rename
-  ```
-  <!-- endsnippet -->
-- **Co-located mapping (no `partial`, no `[DwarfMapper]` on the type)**: a class that carries `[GenerateMap<S,T>]` (plus
-  pair-scoped `[MapProperty<,>]`/`[MapIgnore<,>]`) but is **not** a `[DwarfMapper]` mapper gets its mapping emitted into
-  a *separate* generated `<Host>Mapper` type. So a DTO can declare its own mapping inline, stay a plain (even `sealed`,
-  non-`partial`) data class, and be consumed via the generated extension / `AddDwarfMappers()` DI. Delete the type and
-  its mapping goes with it. (Trade-off: the host takes a compile-time dependency on the other type.)
-  <!-- snippet: co-located -->
-  ```csharp
-      [GenerateMap<Person, PersonDto>]
-      [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(FullName))]
-      public sealed class PersonDto
-      {
-          public string FullName { get; set; } = "";
-
-          public int Age { get; set; }
-      }
-  }
-  ```
-  <!-- endsnippet -->
-
-### Releasing
-
-- Tagging `v*` builds, tests, signs (keyless GitHub OIDC), SBOMs, and cuts a **GitHub Release** with the signed
-  packages; **nuget.org publishing is done manually by the maintainer** from those artifacts. `v1.0.2-rc.1` is the current pre-release.
 
 ---
 
@@ -1194,18 +1140,16 @@ file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`).
 
 ## Status
 
-**Feature-complete v1 — pre-release (`1.0.2-rc.1`).** The generator, all documented attributes, and the testing toolkit
-are built and covered by tests; APIs are stabilising. Packages build, keyless-sign (GitHub identity), and ship via a
-tag-triggered pipeline that cuts a signed GitHub Release ([`docs/RELEASING.md`](docs/RELEASING.md)); nuget.org
-publishing is manual. Being a release candidate, install it with the `--prerelease` flag. Feedback on rough edges
-welcome.
+**Release candidate.** The generator, all documented attributes, and the testing toolkit are built and covered by
+tests; APIs are stabilising, so install with the `--prerelease` flag. Changes per version are in the
+[CHANGELOG](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/CHANGELOG.md). Tagged releases are built, tested,
+attested (keyless, GitHub identity) and attached to a GitHub Release by CI; the nuget.org push is done by the
+maintainer from those artifacts ([RELEASING](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/docs/RELEASING.md)).
+Feedback on rough edges welcome.
 
-### Quality gates
-
-The mutation and coverage badges at the top of this page are published by CI and read live, not committed
-numbers.
-
-<sub>The mutation badge is the Stryker dashboard's AGGREGATE over all six legs of `master` — generator, doctooling, runtime, code fixes, pipeline and testing — each uploaded as its own module by the nightly `mutation` matrix, and only after that leg's report has passed the vacuity, tree-cleanliness and decontamination checks. Read it as one number over six differently-scoped populations: each leg names only a minority of `src/`, and [what sits outside every leg](Issues/round27/AUDIT-mutation-scope.md) is measured there. It is also the RAW score — the dashboard has no notion of a proven-equivalent mutant, so where a leg carries adjudicated rows its raw figure sits above the score the project holds itself to. The per-leg breaks, the measurement each came from and every equivalence proof are in [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md) and the [`stryker-config*.json`](stryker-config.json) files, which are what actually fail a build. Coverage is Codecov's live figure for `master`; the enforced per-assembly floors live in [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1).</sub>
+The mutation and coverage badges at the top of this page are published by CI and read live, not committed numbers;
+what they aggregate and which gates fail a build is described in
+[CONTRIBUTING](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/CONTRIBUTING.md#quality-gates).
 
 ## Name
 
