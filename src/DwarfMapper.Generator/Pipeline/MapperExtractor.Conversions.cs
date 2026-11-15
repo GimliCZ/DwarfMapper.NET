@@ -1145,18 +1145,6 @@ namespace DwarfMapper.Generator.Pipeline
             return conversion.IsImplicit && !conversion.IsUserDefined && !IsUnionConversion(conversion);
         }
 
-        /// <summary>
-        ///     <see cref="HasImplicitConversion" />, where a C# 15 union conversion also counts when this build maps unions
-        ///     in this compilation (the Roslyn 5.12 build, C# 15 or newer). For the places a value goes into a union slot:
-        ///     a member assigned into a union, an explicit converter's parameter, an arm's target.
-        /// </summary>
-        private static bool HasImplicitOrUnionConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
-        {
-            var conversion = ((CSharpCompilation)compilation).ClassifyConversion(source, target);
-            return conversion.IsImplicit && !conversion.IsUserDefined &&
-                   (!IsUnionConversion(conversion) || UnionMappingAvailable(compilation));
-        }
-
         private static bool IsNullableValue(ITypeSymbol type, out ITypeSymbol underlying)
         {
             if (type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)

@@ -230,5 +230,22 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Unions
 
             Assert.Contains(Messages(run, "DWARF113"), m => m.Contains("'Demo.Nothing' is a union type with no case types", StringComparison.Ordinal));
         }
+
+        [Fact]
+        public void A_union_with_no_case_types_as_the_destination_is_DWARF113_too()
+        {
+            var run = Run("""
+                #nullable enable
+                using DwarfMapper;
+                namespace Demo;
+                [System.Runtime.CompilerServices.Union]
+                public struct Nothing : System.Runtime.CompilerServices.IUnion { public object? Value => null; }
+                public class S { public Lib.Pet P { get; set; } }
+                public class D { public Nothing P { get; set; } }
+                [DwarfMapper] public partial class M { public partial D Map(S s); }
+                """, LanguageVersion.CSharp15);
+
+            Assert.Contains(Messages(run, "DWARF113"), m => m.Contains("'Demo.Nothing' is a union type with no case types", StringComparison.Ordinal));
+        }
     }
 }

@@ -425,5 +425,140 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Unions
 
             Assert.Contains(run.GeneratorDiagnostics, d => string.Equals(d.Id, DiagnosticDescriptors.InvalidMapMethod.Id, StringComparison.Ordinal));
         }
+
+        [Fact]
+        public void A_source_case_named_by_two_explicit_arms_is_DWARF035()
+        {
+            var run = Roslyn512Harness.Run(Pets + """
+                [DwarfMapper] public partial class M
+                {
+                    [MapDerivedType<Cat, CatDto>]
+                    [MapDerivedType<Cat, DogDto>]
+                    public partial PetDto Map(Pet p);
+                    public partial DogDto Map(Dog d);
+                }
+                """);
+
+            Assert.Contains(Messages(run, "DWARF035"), m => m.Contains("duplicate source type 'global::Demo.Cat'", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void An_explicit_arm_no_rule_can_map_is_DWARF035()
+        {
+            // The arm is valid on both sides - Dog is a case of Pet, IAnimalDto a case of AnimalDto - but no declared
+            // method maps Dog into IAnimalDto, Dog does not implement it, and an interface cannot be built member by member.
+            var run = Roslyn512Harness.Run(Pets + """
+                public interface IAnimalDto { }
+                public union AnimalDto(CatDto, IAnimalDto);
+                [DwarfMapper] public partial class M
+                {
+                    [MapDerivedType<Dog, IAnimalDto>]
+                    public partial AnimalDto Map(Pet p);
+                    public partial CatDto Map(Cat c);
+                }
+                """);
+
+            Assert.Contains(Messages(run, "DWARF035"), m => m.Contains("pair ('global::Demo.Dog', 'global::Demo.IAnimalDto') is not mappable", StringComparison.Ordinal));
+        }
+
+        private const string ProviderSource = """
+            [System.Runtime.CompilerServices.Union]
+            public sealed class ProvPet : ProvPet.IUnionMembers
+            {
+                private object? _value;
+                public interface IUnionMembers
+                {
+                    public static ProvPet Create(Cat value) => new ProvPet { _value = value };
+                    public static ProvPet Create(Dog value) => new ProvPet { _value = value };
+                    // Neither of the next two creates a case: the cases are the one-parameter STATIC factories.
+                    public static ProvPet Create(Cat first, Dog second) => new ProvPet { _value = first };
+                    public ProvPet Create(int ignored) => new ProvPet();
+                    public object? Value { get; }
+                }
+                object? IUnionMembers.Value => _value;
+            }
+
+            """;
+
+        [Fact]
+        public void A_member_provider_union_as_the_source_takes_its_cases_from_its_one_parameter_static_factories()
+        {
+            // Into a non-nullable class union the map asks whether the source can be empty, which for a member-provider
+            // source it reads from those factories' parameters: none is nullable here, so the switch has no null arm.
+            var run = Roslyn512Harness.CompilesClean(Pets + ShowPetDto + ProviderTarget + ProviderSource + """
+                [DwarfMapper] public partial class M
+                {
+                    public partial ProvPetDto Map(ProvPet p);
+                    public partial CatDto Map(Cat c);
+                    public partial DogDto Map(Dog d);
+                }
+                public static class Probe
+                {
+                    public static string Run()
+                    {
+                        var m = new M();
+                        var cat = ((ProvPetDto.IUnionMembers)m.Map(ProvPet.IUnionMembers.Create(new Cat("tom")))).Value;
+                        var dog = ((ProvPetDto.IUnionMembers)m.Map(ProvPet.IUnionMembers.Create(new Dog("rex")))).Value;
+                        return Show.Of(cat) + "|" + Show.Of(dog);
+                    }
+                }
+                """);
+
+            Assert.Equal("CatDto { Name = tom }|DogDto { Name = rex }", Run(run));
+        }
+
+        [Fact]
+        public void A_nullable_value_case_can_leave_the_union_empty_so_into_a_non_nullable_class_union_it_is_DWARF113()
+        {
+            var run = Roslyn512Harness.Run(Pets + """
+                public union MaybeNumber(int?, string);
+                [System.Runtime.CompilerServices.Union]
+                public sealed class NumberDto : NumberDto.IUnionMembers
+                {
+                    private object? _value;
+                    public interface IUnionMembers
+                    {
+                        public static NumberDto Create(long value) => new NumberDto { _value = value };
+                        public static NumberDto Create(string value) => new NumberDto { _value = value };
+                        public object? Value { get; }
+                    }
+                    object? IUnionMembers.Value => _value;
+                }
+                [DwarfMapper] public partial class M
+                {
+                    [MapDerivedType(typeof(int), typeof(long))]
+                    public partial NumberDto Map(MaybeNumber n);
+                }
+                """);
+
+            Assert.Contains(Messages(run, "DWARF113"), m => m.Contains("its case type 'int?' can be null", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void A_value_case_is_tested_before_an_interface_case_it_boxes_to()
+        {
+            // Declared interface-first; the switch must test int first, or the IFormattable arm would take every int and
+            // the int arm would be CS8510.
+            var run = Roslyn512Harness.CompilesClean(Pets + """
+                public union Measure(System.IFormattable, int);
+                public union MeasureView(System.IFormattable, int);
+                [DwarfMapper] public partial class M { public partial MeasureView Map(Measure m); }
+                public static class Probe
+                {
+                    public static string Run()
+                    {
+                        var m = new M();
+                        var number = m.Map(new Measure(42)).Value;
+                        var date = m.Map(new Measure((System.IFormattable)new System.DateTime(2026, 11, 15))).Value;
+                        return number!.GetType().Name + "|" + date!.GetType().Name;
+                    }
+                }
+                """);
+
+            Assert.Equal("Int32|DateTime", Run(run));
+            var intArm = run.Generated.IndexOf("int __s => ", StringComparison.Ordinal);
+            var formattableArm = run.Generated.IndexOf("global::System.IFormattable __s => ", StringComparison.Ordinal);
+            Assert.True(intArm >= 0 && formattableArm > intArm, "The int arm must come first:\n" + run.Generated);
+        }
     }
 }

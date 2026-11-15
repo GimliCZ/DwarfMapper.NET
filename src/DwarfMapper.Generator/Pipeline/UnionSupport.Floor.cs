@@ -14,10 +14,14 @@ namespace DwarfMapper.Generator.Pipeline
     {
         private const string UnionAttributeFqn = "System.Runtime.CompilerServices.UnionAttribute";
 
-        /// <summary>This build loads in compilers older than Roslyn 5.12, which cannot compile what a union map is made of.</summary>
-        private static partial bool UnionMappingAvailable(Compilation compilation)
+        /// <summary>
+        ///     This build maps no union, so a union conversion never counts: exactly <see cref="HasImplicitConversion" />.
+        ///     The compilers that load this build include Roslyn 5.9 (the .NET 10.0.4xx SDKs), which classifies a union
+        ///     conversion as implicit even in C# 14 - so this is not a formality.
+        /// </summary>
+        private static partial bool HasImplicitOrUnionConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
         {
-            return false;
+            return HasImplicitConversion(compilation, source, target);
         }
 
         /// <summary>

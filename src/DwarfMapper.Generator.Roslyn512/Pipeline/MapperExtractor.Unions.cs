@@ -455,14 +455,13 @@ namespace DwarfMapper.Generator.Pipeline
             return SymbolEqualityComparer.Default.Equals(a, b);
         }
 
-        /// <summary>True when every value of <paramref name="sub" /> is also a <paramref name="sup" /> and the two differ.</summary>
+        /// <summary>
+        ///     True when every value of <paramref name="sub" /> is also a <paramref name="sup" /> and the two differ: an implicit
+        ///     reference or boxing conversion. A type to itself is an identity conversion, neither of those, so it never
+        ///     counts (and no caller asks: the arms' patterns are distinct, and the arm check tests sameness first).
+        /// </summary>
         private static bool IsStrictSubtype(Compilation compilation, ITypeSymbol sub, ITypeSymbol sup)
         {
-            if (SameType(sub, sup))
-            {
-                return false;
-            }
-
             var conversion = ((CSharpCompilation)compilation).ClassifyConversion(sub, sup);
             return conversion.IsImplicit && (conversion.IsReference || conversion.IsBoxing);
         }

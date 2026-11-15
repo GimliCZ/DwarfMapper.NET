@@ -24,10 +24,17 @@ namespace DwarfMapper.Generator.Pipeline
     internal static partial class MapperExtractor
     {
         /// <summary>
-        ///     True when union mapping is on for <paramref name="compilation" />: this is the Roslyn 5.12 build, and the
-        ///     compilation is C# 15 or newer. The Roslyn 5.0 build answers false for every compilation.
+        ///     <see cref="HasImplicitConversion" />, where a C# 15 union conversion also counts when this build maps unions
+        ///     in this compilation (the Roslyn 5.12 build, C# 15 or newer). For the places a value goes into a union slot:
+        ///     a member assigned into a union, an explicit converter's parameter, an arm's target.
         /// </summary>
-        private static partial bool UnionMappingAvailable(Compilation compilation);
+        /// <remarks>
+        ///     One implementation per build, so that neither carries a branch only the other can reach: the Roslyn 5.0
+        ///     build maps no union, so there it IS <see cref="HasImplicitConversion" /> - which is what keeps a union
+        ///     conversion out of a C# 14 consumer's generated code when a Roslyn 5.9 compiler, one that classifies it as
+        ///     implicit, loads that build.
+        /// </remarks>
+        private static partial bool HasImplicitOrUnionConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target);
 
         /// <summary>True when <paramref name="type" /> is a C# 15 union type (see each build's implementation for how).</summary>
         internal static partial bool IsUnionType(ITypeSymbol type);

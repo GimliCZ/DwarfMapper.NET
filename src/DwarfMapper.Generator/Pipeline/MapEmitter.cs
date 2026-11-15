@@ -1481,22 +1481,23 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         internal static void AppendDispatchTail(StringBuilder sb, string armIndent, MapMethodModel method, string p)
         {
-            switch (method.UnionEmpty)
+            // Two tests rather than a switch over the three values: a switch carries a fourth, unreachable outcome for a
+            // value outside the enum, and every branch here is one a test takes.
+            if (method.UnionEmpty == UnionEmptyArm.NotUnion)
             {
-                case UnionEmptyArm.NotUnion:
-                    sb.Append(armIndent)
-                        .Append("_ => throw new global::System.ArgumentException(")
-                        .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
-                        .Append(p).Append(".GetType()")
-                        .Append(" + \"' mapping to '").Append(method.ReturnTypeFullName).Append("'.\", nameof(")
-                        .Append(p).AppendLine(")),");
-                    break;
-                case UnionEmptyArm.Default:
-                    sb.Append(armIndent).Append("null => default(").Append(method.ReturnTypeFullName).AppendLine("),");
-                    break;
-                case UnionEmptyArm.None:
-                    break;
+                sb.Append(armIndent)
+                    .Append("_ => throw new global::System.ArgumentException(")
+                    .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
+                    .Append(p).Append(".GetType()")
+                    .Append(" + \"' mapping to '").Append(method.ReturnTypeFullName).Append("'.\", nameof(")
+                    .Append(p).AppendLine(")),");
             }
+            else if (method.UnionEmpty == UnionEmptyArm.Default)
+            {
+                sb.Append(armIndent).Append("null => default(").Append(method.ReturnTypeFullName).AppendLine("),");
+            }
+
+            // UnionEmptyArm.None: no tail - the switch is exhaustive over the union's case types.
         }
 
         /// <summary>True when any member is deferred to post-construction (unflatten or When-guarded).</summary>

@@ -15,9 +15,17 @@ namespace DwarfMapper.Generator.Pipeline
         ///     compilation too (a C# 14 project can reference a C# 15 library's union), while C# 14 code that converts to a
         ///     union or matches on one fails with CS9327 - measured on Roslyn 5.12, 2026-11-14.
         /// </summary>
-        private static partial bool UnionMappingAvailable(Compilation compilation)
+        private static bool UnionMappingAvailable(Compilation compilation)
         {
             return ((CSharpCompilation)compilation).LanguageVersion >= LanguageVersion.CSharp15;
+        }
+
+        /// <summary>A union conversion counts where union mapping is on: C# 15 or newer.</summary>
+        private static partial bool HasImplicitOrUnionConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
+        {
+            var conversion = ((CSharpCompilation)compilation).ClassifyConversion(source, target);
+            return conversion.IsImplicit && !conversion.IsUserDefined &&
+                   (!IsUnionConversion(conversion) || UnionMappingAvailable(compilation));
         }
 
         /// <summary>

@@ -398,5 +398,112 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Unions
 
             Assert.Single(run.GeneratorDiagnostics, d => string.Equals(d.Id, "DWARF114", StringComparison.Ordinal));
         }
+
+        [Fact]
+        public void Under_Preserve_a_case_value_reached_through_two_union_members_is_mapped_once()
+        {
+            // A declared union map that members call goes through a ctx-taking dispatch wrapper under Preserve, like a
+            // [MapDerivedType] dispatch does. The union itself is a value with no identity to keep, so the wrapper only
+            // threads the context; the case helpers keep the case values' identity.
+            var run = Roslyn512Harness.CompilesClean(Pets + """
+                public class Owner { public Pet First { get; set; } public Pet Second { get; set; } }
+                public class OwnerDto { public PetDto First { get; set; } public PetDto Second { get; set; } }
+                [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                public partial class M
+                {
+                    [MapDerivedType<Cat, CatDto>]
+                    [MapDerivedType<Dog, DogDto>]
+                    public partial PetDto Map(Pet p);
+                    public partial OwnerDto ToOwner(Owner o);
+                }
+                public static class Probe
+                {
+                    public static string Run()
+                    {
+                        var cat = new Cat("tom");
+                        var dto = new M().ToOwner(new Owner { First = cat, Second = cat });
+                        return ReferenceEquals(dto.First.Value, dto.Second.Value) ? "one instance" : "two instances";
+                    }
+                }
+                """);
+
+            Assert.Equal("one instance", Run(run));
+            const string wrapper = "__DwarfMap_Disp_global__Demo_Pet_global__Demo_PetDto_";
+            Assert.Contains("private global::Demo.PetDto " + wrapper, run.Generated, StringComparison.Ordinal);
+            Assert.Contains("        return p switch", run.Generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("ctx.TryGetReference(p,", run.Generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Under_Preserve_a_class_hierarchy_dispatch_keeps_its_identity_wrapper_on_this_build_too()
+        {
+            // The class-hierarchy side of the wrapper above, on the Roslyn 5.12 build (Generator.Tests holds it on the
+            // 5.0 build): the base reference is cached, so the wrapper keeps its null guard, lookup and registration.
+            var run = Roslyn512Harness.CompilesClean("""
+                #nullable enable
+                using DwarfMapper;
+                namespace Demo;
+                public abstract class Animal { public string Name { get; set; } = ""; }
+                public class Dog : Animal { public string Breed { get; set; } = ""; }
+                public abstract class AnimalDto { public string Name { get; set; } = ""; }
+                public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                public class Zoo { public Animal First { get; set; } = new Dog(); public Animal Second { get; set; } = new Dog(); }
+                public class ZooDto { public AnimalDto First { get; set; } = new DogDto(); public AnimalDto Second { get; set; } = new DogDto(); }
+                [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                public partial class M
+                {
+                    [MapDerivedType<Dog, DogDto>]
+                    public partial AnimalDto Map(Animal a);
+                    public partial ZooDto ToZoo(Zoo z);
+                }
+                public static class Probe
+                {
+                    public static string Run()
+                    {
+                        var dog = new Dog { Name = "rex" };
+                        var dto = new M().ToZoo(new Zoo { First = dog, Second = dog });
+                        return ReferenceEquals(dto.First, dto.Second) ? "one instance" : "two instances";
+                    }
+                }
+                """);
+
+            Assert.Equal("one instance", Run(run));
+            Assert.Contains("if (ctx.TryGetReference(a, out var __dwarf_cached))", run.Generated, StringComparison.Ordinal);
+            Assert.Contains("ctx.SetReference(a, __dwarf_t);", run.Generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_nullable_struct_lifted_into_a_nullable_struct_without_a_union_keeps_a_plain_null_arm()
+        {
+            // The other side of the typed null arm a union lift gets (MemberMap.LiftTargetFqn), on this build.
+            var run = Roslyn512Harness.CompilesClean("""
+                #nullable enable
+                using DwarfMapper;
+                namespace Demo;
+                public record struct Point(int X);
+                public record struct PointDto(int X);
+                public class Shape { public Point? Origin { get; set; } }
+                public class ShapeDto { public PointDto? Origin { get; set; } }
+                [DwarfMapper] public partial class M
+                {
+                    public partial ShapeDto Map(Shape s);
+                    public partial PointDto Map(Point p);
+                }
+                public static class Probe
+                {
+                    public static string Run()
+                    {
+                        var m = new M();
+                        var some = m.Map(new Shape { Origin = new Point(3) }).Origin;
+                        var none = m.Map(new Shape()).Origin;
+                        return (some is { } p ? "X=" + p.X : "null") + "|" + (none is null ? "null" : "value");
+                    }
+                }
+                """);
+
+            Assert.Equal("X=3|null", Run(run));
+            Assert.Contains(".HasValue ? Map(", run.Generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("default(global::Demo.PointDto?)", run.Generated, StringComparison.Ordinal);
+        }
     }
 }
