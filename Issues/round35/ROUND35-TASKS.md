@@ -39,6 +39,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T21 | A class whose only constructor takes one parameter of its own type is refused (DWARF026). | **not a defect** - a deliberate, tested rule (`AnnotatedConstructorUnusableTests`: "COPY constructor"); see Notes |
 | T22 | **A record carrying `[DwarfMapper]` or `[GenerateMap]` is ignored without a diagnostic.** Met while testing T20. | **done** - DWARF120, see Notes |
 | T23 | **Multi-version generator, and C# 15 union mapping on the Roslyn 5.12 build** (the owner, 2026-11-14: "Prepare multiversion and if detected .net 11 enable Union mapping ... with tests"). Design: `docs/superpowers/specs/2026-11-14-multiversion-generator-union-mapping-design.md`. | **done on its own branch** (`feat/round35-t23`) - see Notes |
+| T25 | **DwarfMapper against today's Mapperly and Mapster** (the owner, 2026-11-14: "run entire performance and usage comparison against dwarf mapper? Afcource up to date versions (not automaller afcourse) ... Target will be performance, security, validations, docs and samples validations"). Design: `docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md`. | open (`feat/round35-t25`, stacked on T23) |
 | T24 | **A performance comparison of union mapping** ("After that prepare performance comparison testing"). Same design document. | **done on T23's branch** - `benchmarks/DwarfMapper.UnionBenchmarks`, results in `benchmarks/results/2026-11-14-round35-t24-union-mapping.md`; see Notes |
 
 ## Notes
