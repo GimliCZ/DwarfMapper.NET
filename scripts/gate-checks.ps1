@@ -1568,10 +1568,25 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (638 KB = 653,312 B) 823 B,
 # DwarfMapper.Testing (58 KB = 59,392 B) 230 B.
+#
+# RE-MEASURED 2026-11-15 (round 35, T26-T33, the documentation review): DwarfMapper 637 -> 634, DwarfMapper.Testing
+# 57 -> 55. Down, so the gate would have stayed green; moved anyway because the ceiling IS the measurement (R1).
+#
+#   sdk:10.0.404 container, the package-size job rehearsed at 8375af88 (version 1.1.0-rc.1):
+#     DwarfMapper.1.1.0-rc.1.nupkg           649,621 B -> floor(649621/1024) = 634 KB
+#     DwarfMapper.Testing.1.1.0-rc.1.nupkg    56,436 B -> floor( 56436/1024) =  55 KB
+#   The README packed into both packages went from 86,200 B to 80,710 B (the round-29 performance study and the
+#   Roadmap removed, links made absolute); the runtime XML doc changed by a few sentences (MaxDepth, GenerateMap,
+#   ProvidesMap). Those two account for the movement; no product code changed (one generator comment).
+#
+# Intended content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu (the container has read ~17 B under the runner): DwarfMapper
+# (635 KB = 650,240 B) ~600 B, DwarfMapper.Testing (56 KB = 57,344 B) ~890 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 637
-    'DwarfMapper.Testing' = 57
+    'DwarfMapper'         = 634
+    'DwarfMapper.Testing' = 55
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
