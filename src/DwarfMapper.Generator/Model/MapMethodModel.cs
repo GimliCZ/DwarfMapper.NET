@@ -100,7 +100,7 @@ namespace DwarfMapper.Generator.Model
     /// <param name="SpanTargetParameterName">The destination span parameter name for an <see cref="IsSpanMap"/> method.</param>
     /// <param name="SpanMapBlits">
     ///     When <c>true</c>, the <see cref="IsSpanMap"/> element pair is proven layout-identical
-    ///     (<see cref="BlittableProof.CanReinterpret"/> / <see cref="BlittableProof.CanReinterpretEnums"/>), so the
+    ///     (<see cref="Pipeline.BlittableProof.CanReinterpret"/> / <see cref="Pipeline.BlittableProof.CanReinterpretEnums"/>), so the
     ///     body is a single <c>MemoryMarshal.Cast&lt;S, D&gt;(src).CopyTo(dst)</c> block copy after the length guard,
     ///     rather than the per-element loop. The element converter resolved into <see cref="Members"/>[0] is left
     ///     unused on this path (still synthesized, for the completeness/diagnostics passes that ask what the pair
@@ -108,7 +108,7 @@ namespace DwarfMapper.Generator.Model
     /// </param>
     /// <param name="SpanMapWidens">
     ///     When <c>true</c>, the <see cref="IsSpanMap"/> element pair is one of the seven lossless primitive widenings
-    ///     <c>Vector.Widen</c> supports (<see cref="CollectionConverter.IsWidenPair"/>), so the element loop is the
+    ///     <c>Vector.Widen</c> supports (<see cref="Pipeline.CollectionConverter.IsWidenPair"/>), so the element loop is the
     ///     vectorised widen the array and List shapes already emit, with the implicit widening as its scalar tail
     ///     and as the whole path where vectors are not hardware-accelerated. The result is the scalar loop's,
     ///     element for element - round 35, T6.

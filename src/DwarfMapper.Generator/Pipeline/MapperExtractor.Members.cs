@@ -921,7 +921,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Descriptor and label are the whole match because the window holds nothing else to confuse: every entry in
         ///     it was made by this call (ResolveMembers never runs inside itself, and constructor arguments are resolved
         ///     before it starts), all at this call's location, and the DWARF070s that name a destination member are made
-        ///     after this pass. Matching on <see cref="DiagnosticInfo.MemberName" /> or the location as well added two
+        ///     after this pass. Matching on <see cref="Diagnostics.DiagnosticInfo.MemberName" /> or the location as well added two
         ///     conditions no input could make false - removed under the full-coverage ruling, the window's contents pinned
         ///     by SkipGuardedConverterArgTests instead.
         /// </remarks>
