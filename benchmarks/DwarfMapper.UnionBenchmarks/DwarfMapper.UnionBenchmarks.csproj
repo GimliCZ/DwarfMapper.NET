@@ -28,7 +28,11 @@
         <NoWarn>$(NoWarn);CA1515;CA1707;CA1002;CA1815;CA5394;CA1822</NoWarn>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="BenchmarkDotNet"/>
+        <!-- 0.14.0, not the repository's 0.15.8: 0.15.8 cannot run a .NET 11 process. Its SDK validator throws before a
+             benchmark starts - "NotImplementedException: GetRuntimeVersion not implemented for NotRecognized" from
+             DotNetSdkValidator.ValidateCoreSdks, measured on SDK 11.0.100 (2026-11-15). 0.14.0 runs it out of process,
+             which is how round 35 T24 measured it. Lift this when a stable BenchmarkDotNet knows .NET 11. -->
+        <PackageReference Include="BenchmarkDotNet" VersionOverride="0.14.0"/>
         <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all"/>
         <PackageReference Include="Mapster"/>
     </ItemGroup>
