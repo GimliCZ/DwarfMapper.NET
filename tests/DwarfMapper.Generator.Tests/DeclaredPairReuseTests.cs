@@ -233,6 +233,10 @@ namespace DwarfMapper.Generator.Tests
             // A pair resolved as a WHOLE — a collection, dictionary or value-like target — must not find itself
             // among the candidates. `[GenerateMap<int, long>]` finding its own Map emits `return Map(src);`:
             // compiles, reports nothing, recurses until the stack ends.
+            //
+            // Round 35 (T16): the pair this was first written with, int to long, needs no conversion and so has no
+            // body at all - it generated nothing and said nothing, and is DWARF117 now. The self-call is asked of
+            // both: the pair that is refused, and a pair that does convert (long to int, a checked narrowing).
             const string src = """
                                using DwarfMapper;
                                namespace Demo;
@@ -242,8 +246,15 @@ namespace DwarfMapper.Generator.Tests
                                public partial class M { }
                                """;
 
-            var generated = GeneratorAssert.CompilesClean(src);
+            var (refused, nothing) = GeneratorTestHarness.Run(src);
+            Assert.Equal("DWARF117", Assert.Single(refused, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).Id);
+            Assert.DoesNotContain("return Map(src)", nothing, StringComparison.Ordinal);
 
+            var converting = src.Replace("GenerateMap<int, long>", "GenerateMap<long, int>", StringComparison.Ordinal);
+            var (diagnostics, generated) = GeneratorTestHarness.Run(converting);
+            Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+            GeneratorAssert.EmitsCompilableCode(converting);
+            Assert.Contains("return __DwarfMap_Num_", generated, StringComparison.Ordinal);
             Assert.DoesNotContain("return Map(src)", generated, StringComparison.Ordinal);
         }
 

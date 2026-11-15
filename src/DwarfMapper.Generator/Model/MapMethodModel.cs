@@ -106,6 +106,13 @@ namespace DwarfMapper.Generator.Model
     ///     unused on this path (still synthesized, for the completeness/diagnostics passes that ask what the pair
     ///     resolves to) — round 29, T0.2.
     /// </param>
+    /// <param name="SpanMapWidens">
+    ///     When <c>true</c>, the <see cref="IsSpanMap"/> element pair is one of the seven lossless primitive widenings
+    ///     <c>Vector.Widen</c> supports (<see cref="CollectionConverter.IsWidenPair"/>), so the element loop is the
+    ///     vectorised widen the array and List shapes already emit, with the implicit widening as its scalar tail
+    ///     and as the whole path where vectors are not hardware-accelerated. The result is the scalar loop's,
+    ///     element for element - round 35, T6.
+    /// </param>
     /// <param name="SpanSourceElementFullName">
     ///     The source span's element type, fully qualified — the first type argument to
     ///     <c>MemoryMarshal.Cast&lt;S, D&gt;</c> on a <see cref="SpanMapBlits"/> body.
@@ -239,6 +246,13 @@ namespace DwarfMapper.Generator.Model
     ///     <see cref="IsProjection" /> method's tree (round 31 T16), or <see langword="null" /> when none is emitted —
     ///     any other method shape, or a projection whose name is taken (DWARF112).
     /// </param>
+    /// <param name="ChecksStack">
+    ///     Whether the method opens with <c>RuntimeHelpers.EnsureSufficientExecutionStack()</c>: true for every declared
+    ///     mapping method of a mapper that holds user-written code (round 35, T20; see
+    ///     <c>MapperExtractor.HoldsUserWrittenCode</c>). The depth guard counts the calls the generator emits; a
+    ///     converter, a hook or a factory the user wrote can call a mapping method again, and that loop the generator
+    ///     never sees.
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -284,7 +298,9 @@ namespace DwarfMapper.Generator.Model
         bool ReturnIsNullableRef = false,
         string AsyncStreamTargetElementFullName = "",
         string ProjectionSourceElementFullName = "",
-        string? ProjectionExpressionName = null) : IEquatable<MapMethodModel>
+        string? ProjectionExpressionName = null,
+        bool SpanMapWidens = false,
+        bool ChecksStack = false) : IEquatable<MapMethodModel>
     {
         /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
         /// <remarks>

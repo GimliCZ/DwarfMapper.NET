@@ -29,7 +29,7 @@ namespace DwarfMapper.Generator.Tests
             return Regex.Matches(generated, @"private static [^\s]+ (__DwarfMap_\w+)\(")
                 .Select(m => m.Groups[1].Value)
                 .Distinct()
-                .Select(name => (name, Regex.Matches(generated, Regex.Escape(name)).Count))
+                .Select(name => (name, Regex.Count(generated, Regex.Escape(name))))
                 .ToList();
         }
 

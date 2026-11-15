@@ -428,5 +428,33 @@ namespace DwarfMapper.Generator.Tests
             var stale = Assert.Single(diagnostics, x => x.Id == "DWARF116");
             Assert.Contains("the DWARFR15 beside this names it", Message(stale), StringComparison.Ordinal);
         }
+
+        // A member that goes through one of the FAST-PATH collection helpers - a widen or a block copy - is going
+        // through generated code like any other, and the message has to say so (round 35 T1). Those helpers are named
+        // outside the __DwarfMap root, so "is this any generated helper?" answered no, and the reader was told about
+        // a converter of theirs called '__DwarfWidenL_1f3a...'.
+        [Theory]
+        [InlineData("System.Collections.Generic.List<int>", "System.Collections.Generic.List<long>")]
+        [InlineData("int[]", "long[]")]
+        [InlineData("int[]", "System.Collections.Generic.List<long>")]
+        [InlineData("System.Collections.Generic.List<int>", "long[]")]
+        public void A_stale_AllowNull_on_a_widened_collection_names_no_generated_helper(string sourceType, string targetType)
+        {
+            var source = $$"""
+                           #nullable enable
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class A { public {{sourceType}} Data { get; set; } = default!; }
+                           public class B { public {{targetType}} Data { get; set; } = default!; }
+                           [DwarfMapper] public partial class M
+                           {
+                               [MapProperty("Data", "Data", AllowNull = true)] public partial B Map(A a);
+                           }
+                           """;
+
+            var d = Assert.Single(Run(source).Diagnostics, x => x.Id == "DWARF116");
+            Assert.DoesNotContain("__Dwarf", Message(d), StringComparison.Ordinal);
+            Assert.Contains("its value goes through a generated conversion", Message(d), StringComparison.Ordinal);
+        }
     }
 }

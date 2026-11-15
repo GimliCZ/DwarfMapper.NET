@@ -43,8 +43,10 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         public static TheoryData<string> SystemTypes()
         {
-            return
-            [
+            // An initializer, not a collection expression: under the .NET 11 SDK's compiler Meziantou's MA0005
+            // ("use Array.Empty") fires on the expression itself, which holds some eighty rows.
+            return new TheoryData<string>
+            {
                 // ── System.Collections.Generic ─────────────────────────────────────────
                 "global::System.Collections.Generic.List<int>",
                 "global::System.Collections.Generic.IList<int>",
@@ -124,7 +126,7 @@ namespace DwarfMapper.Generator.Tests
 
                 // ── Arrays ─────────────────────────────────────────────────────────────
                 "int[]"
-            ];
+            };
         }
 
         private static string MapperFor(string memberType)

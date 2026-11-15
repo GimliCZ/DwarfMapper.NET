@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace DwarfMapper.IntegrationTests
 {
@@ -53,6 +55,81 @@ namespace DwarfMapper.IntegrationTests
                 operation();
 
             return (GC.GetAllocatedBytesForCurrentThread() - before) / (double)iterations;
+        }
+
+        /// <summary>
+        ///     Bytes allocated by <paramref name="iterations" /> runs of <paramref name="operation" />, EXACTLY: the
+        ///     reading for a contract of zero. Measured on a thread started for this one window, after that thread's
+        ///     allocation buffer has been retired.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>What moves the counter.</b> <c>GC.GetAllocatedBytesForCurrentThread</c> is not exact on a thread
+        ///         that holds a part-used allocation buffer (up to about 8 KB): when a BACKGROUND collection started by
+        ///         another thread reaches it, the counter jumps by the unused rest although the thread allocated
+        ///         nothing. Round 35 measured it (PR #13's net11 job read 4,896 bytes in a zero-allocation window): one
+        ///         window of 1,000 span maps on a thread that had just allocated, beside a thread that keeps
+        ///         background collections going, read non-zero in 2,686 of 216,186 trials on runtime 10.0.11 and in
+        ///         852 of 99,953 on 11.0.0.
+        ///     </para>
+        ///     <para>
+        ///         <b>What makes it exact.</b> A BLOCKING collection retires every thread's buffer and accounts for
+        ///         the unused rest correctly - the counter never moved under one. So the measuring thread runs a
+        ///         blocking gen-0 collection and then allocates nothing more before the window: it owns no buffer, and
+        ///         a background collection has nothing of its to retire. The same trials with that one call: 0 of
+        ///         445,751 on 10.0.11 and 0 of 10,367 on 11.0.0; on a thread started for the window that had
+        ///         allocated first, 0 of 88,742 and 0 of 52,455; an allocation planted in the window was read in
+        ///         every trial (Issues/round35/FreshThreadAllocationProbe.cs, RetiredBufferAllocationProbe.cs).
+        ///     </para>
+        ///     <para>
+        ///         <b>Why a thread of its own as well.</b> Nothing else runs on it between the collection and the
+        ///         window - no test framework, no async continuation. A new thread alone is NOT enough: on Windows
+        ///         and Linux it starts having allocated nothing, on macOS it has allocated 152 bytes by the time its
+        ///         entry point runs (measured by this assembly's first run there), so it owns a buffer like any other.
+        ///     </para>
+        ///     <para>The caller warms the operation up first, on its own thread.</para>
+        /// </remarks>
+        internal static long ExactBytesOnFreshThread(Action operation, int iterations)
+        {
+            ArgumentNullException.ThrowIfNull(operation);
+
+            var window = new FreshThreadWindow(operation, iterations);
+            var thread = new Thread(window.Run);
+            thread.Start();
+            thread.Join();
+            window.Failure?.Throw();
+
+            return window.InWindow;
+        }
+
+        /// <summary>The state of one <see cref="ExactBytesOnFreshThread" /> window, allocated before its thread starts.</summary>
+        private sealed class FreshThreadWindow(Action operation, int iterations)
+        {
+            internal long InWindow { get; private set; }
+
+            internal ExceptionDispatchInfo? Failure { get; private set; }
+
+            [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+                Justification = "Whatever the operation throws is rethrown on the calling thread by ExactBytesOnFreshThread; left uncaught here it would end the test host.")]
+            internal void Run()
+            {
+                try
+                {
+                    // Retires this thread's allocation buffer; nothing below allocates until the window closes.
+                    GC.Collect(0, GCCollectionMode.Forced, true);
+
+                    var before = GC.GetAllocatedBytesForCurrentThread();
+                    for (var i = 0; i < iterations; i++)
+                        operation();
+
+                    InWindow = GC.GetAllocatedBytesForCurrentThread() - before;
+                }
+                catch (Exception e)
+                {
+                    // Carried to the caller's thread: an exception that leaves a thread's entry point ends the process.
+                    Failure = ExceptionDispatchInfo.Capture(e);
+                }
+            }
         }
 
         /// <summary>

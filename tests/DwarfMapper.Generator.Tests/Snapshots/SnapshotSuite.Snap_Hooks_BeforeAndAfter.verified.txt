@@ -12,6 +12,7 @@ public partial class M
     /// </list></remarks>
     public partial global::Demo.Dst Map(global::Demo.Src s)
     {
+        global::System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();
         global::System.ArgumentNullException.ThrowIfNull(s);
         OnBefore(s);
         var __dwarf_target = new global::Demo.Dst

@@ -614,14 +614,17 @@ namespace DwarfMapper.Generator.Tests
 
         /// <summary>
         ///     A node base that is neither abstract nor an interface still dispatches per concrete type when the
-        ///     directive declares arms. Every other heterogeneous fixture's node base was abstract.
+        ///     directive declares arms. Every other heterogeneous fixture's node base was abstract. Such a base can
+        ///     be instantiated, so it has an arm of its own (DWARF119).
         /// </summary>
         [Fact]
         public void HeteroFlattenGraph_concrete_node_base_with_arms_emits_per_type_helpers()
         {
-            var src = FlattenGraphSource("", "public FsNode? Root { get; set; }", "public List<FsNodeDto> Nodes { get; set; } = new();", BothArms);
+            var src = FlattenGraphSource("", "public FsNode? Root { get; set; }", "public List<FsNodeDto> Nodes { get; set; } = new();",
+                BothArms + " [MapDerivedType<FsNode, FsNodeDto>]");
             var generated = GeneratorAssert.CompilesClean(src);
             Assert.Contains("__DwarfMap_FlatNode_", generated, StringComparison.Ordinal);
+            Assert.Contains("global::Demo.FsNode __s => __DwarfMap_FlatNode_", generated, StringComparison.Ordinal);
         }
 
         // ── 22. Every arm refused skips the directive ─────────────────────────────────

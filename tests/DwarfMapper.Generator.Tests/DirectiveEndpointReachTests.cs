@@ -358,6 +358,7 @@ namespace DwarfMapper.Generator.Tests
                                                                 public partial class M
                                                                 {
                                                                     [MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]
+                                                                    [MapDerivedType(typeof(Src), typeof(Dst))]
                                                                     public partial Dst Map(Src s);
 
                                                                     public partial DstDerived MapDerived(SrcDerived s);
@@ -384,6 +385,7 @@ namespace DwarfMapper.Generator.Tests
                                                                 public partial class M
                                                                 {
                                                                     [MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]
+                                                                    [MapDerivedType(typeof(Src), typeof(Dst))]
                                                                     public partial Dst Map(Src s);
 
                                                                     public partial DstDerived MapDerived(SrcDerived s);

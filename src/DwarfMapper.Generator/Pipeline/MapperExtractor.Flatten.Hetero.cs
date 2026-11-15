@@ -39,8 +39,15 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
+            // DWARF119: a node base that can be instantiated needs an arm of its own, as on a plain dispatch.
+            ReportInstantiableBaseWithoutArm(nav.NodeType,
+                effectiveDerivedPairs.Select(p => p.Src),
+                "[FlattenGraph]",
+                req.Location,
+                acc.Diagnostics);
+
             // Validate arms and collect resolved arms
-            var heteroArms = new List<(INamedTypeSymbol NodeDerived, INamedTypeSymbol DtoDerived,
+            var heteroArms =new List<(INamedTypeSymbol NodeDerived, INamedTypeSymbol DtoDerived,
                 string FlatNodeHelperName,
                 List<(string Name, bool IsCollection, bool IsDictValue)> EdgeMembers,
                 List<(string Name, ITypeSymbol Type)> LeafMembers)>();

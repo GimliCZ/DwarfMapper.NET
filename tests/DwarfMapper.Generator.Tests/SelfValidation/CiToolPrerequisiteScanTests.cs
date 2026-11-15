@@ -202,7 +202,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                                 .Select(m => m.Groups[1].Value)
                                 .ToList();
 
-            var bare = Regex.Matches(Workflow(), @"dotnet tool install --global dotnet-ilverify(?! --version)").Count;
+            var bare = Regex.Count(Workflow(), @"dotnet tool install --global dotnet-ilverify(?! --version)");
 
             Assert.True(bare == 0, $"{bare} ilverify install(s) do not pin a version.");
             Assert.True(versions.Count >= 2, $"expected several pinned ilverify installs, found {versions.Count}.");

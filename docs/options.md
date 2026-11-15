@@ -79,6 +79,8 @@ Put these on the mapping method (or the class, where noted).
 | `[MapProperty(src, tgt, Use = nameof(M))]` | Custom conversion via a named method (`M(srcType) → tgtType`). |
 | `[MapProperty(src, tgt, NullSubstitute = v)]` | Emit `src ?? v` for a nullable source. |
 | `[MapProperty(src, tgt, When = nameof(P))]` | Guard the assignment with `bool P(S)`. |
+| `[MapProperty(src, tgt, AllowNull = true)]` | State that the destination member may receive a `null` from a nullable source although its type forbids one. The generated assignment does not change and `DWARF070` is not reported for the member. Stated on a member that no null can reach → `DWARF116`. |
+| `[MapProperty(src, tgt, When = nameof(P), KeepDefault = true)]` | State that the member keeping its default when `When` is false is intended, so `DWARF066` is not reported. The generated code does not change. Meaningful only beside `When` on a map that creates its destination; anywhere it accepts nothing → `DWARF116`. |
 | `[MapProperty(src, tgt, StringFormat = "F2")]` | Format an `IFormattable` source into a `string` member: `src.ToString("F2", InvariantCulture)`. Non-string target / non-formattable source / with `Use=` → `DWARF073`. |
 | `[MapValue(tgt, "const")]` / `[MapValue(tgt, Use = nameof(M))]` | Constant or computed (parameterless `M`) value for a source-less member. |
 | `[MapCollectionKey("Items", "Id")]` | **Update-into only.** Merge a `List<T>` member by key instead of replacing it: matched keys update the slot, new keys are added, unmatched existing elements are kept. v1: same element type both sides. Out of scope → `DWARF074`. |
@@ -90,6 +92,9 @@ Put these on the mapping method (or the class, where noted).
 | `[MapConstructor<TSource, TTarget>(nameof(Factory))]` | **Class-level, pair-scoped** `ConstructUsing`: names a factory `TTarget Factory(TSource)` on the mapper; settable members are then filled from source. Invalid factory → `DWARF059`; matches nothing → `DWARF056`. |
 | `[MapNullSkip<TSource, TTarget>]` / `[MapNullSkip<TSource, TTarget>(false)]` | **Class-level, pair-scoped** `SkipNullSourceMembers` for that one pair, overriding the mapper and assembly setting. |
 | `[MapNullSkip]` / `[MapNullSkip(false)]` | **Method-level** `SkipNullSourceMembers` for that one mapping method. |
+| `[RestatesBase<TSource, TTarget>]` / `[RestatesBase<TSource, TTarget>(Overrides = [...])]` | **Class-level.** Declares that the derived `(TSource → TTarget)` pair restates the configuration of the pair for their base types (inferred from the type hierarchy, on the same mapper). Changes no emitted code: the two pairs' resolved mappings are compared member by member, and a member the base configures explicitly but the derived pair treats differently → `DWARF085`. `Overrides` lists destination members configured differently on purpose. No base pair declared, or two equally close → `DWARF084`. |
+| `[GenerateWrapperMap(typeof(W<>))]` | **Class-level, opt-in.** For every `[GenerateMap<A, B>]` on the same class, also synthesize the closed wrapper map `W<A> → W<B>` (`Result<T>`, `Page<T>`, `Envelope<T>`, …). Closed instantiations only. `W` must have exactly one type parameter and a single payload member of that parameter's type; a wrapper that does not qualify → `DWARF067`. |
+| `[MapClone]` | **Method-level.** State that the method's source and destination are the same type on purpose (a clone), so `DWARF076` is not reported for it. The generated method does not change: a member-by-member copy in which a nested object is the same instance in both, while a collection or array member is copied into a new one. On a method that is not a same-type create map → `DWARF116`. |
 | `[Flatten("Root")]` | Pull a complex member's sub-members up to same-named destination members. |
 | `[FlattenGraph(...)]` | Collapse an object graph to a flat collection. |
 | `[MapDerivedType<TDerivedSrc, TDerivedDst>]` | Polymorphic dispatch arm on a base-type method. |
@@ -128,6 +133,10 @@ attribute. Two consequences follow from it, and both are enforced:
 > member on the same type, and a `[MapConstructor]` factory was adopted as a collection's element converter,
 > mapping the whole collection to blanks. Both behind green builds. The behaviour is now pinned by
 > `ConverterAdoptionPolicyTests`.
+
+A converter may call the mapper again (`Rest(n) => Map(n)`). The depth guard does not count that loop - it is
+your code, not generated code - so each mapping method of a mapper with a method body of its own checks the stack on
+entry, and an input too deep for it ends in `InsufficientExecutionStackException` rather than a stack overflow.
 
 Adding an unrelated helper to a mapper class can therefore change existing maps, if its signature happens to
 fit a conversion nothing else provides. That is the cost of the convenience; the reservation rules bound it

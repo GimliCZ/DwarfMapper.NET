@@ -560,9 +560,9 @@ namespace DwarfMapper.Generator.Tests
             var recOfInt = Generic("T.Rec`1", WalkCompilation.GetSpecialType(SpecialType.System_Int32));
             var walk = Task.Run(() => Reaches(recOfInt));
 
-            var finished = await Task.WhenAny(walk, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(true);
-            Assert.Same(walk, finished);
-            Assert.False(await walk.ConfigureAwait(true));
+            // WaitAsync, not WhenAny over a Task.Delay (CA2027): a walk that never ends fails here with a
+            // TimeoutException after 30 s, and one that ends leaves no timer running behind it.
+            Assert.False(await walk.WaitAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(true));
         }
     }
 }

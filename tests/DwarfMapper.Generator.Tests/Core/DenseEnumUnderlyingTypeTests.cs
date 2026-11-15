@@ -65,7 +65,7 @@ namespace DwarfMapper.Generator.Tests.Core
 
             // One case per declared member. Counting them is what catches an arm that read the constant
             // wrongly and collapsed two members onto one slot.
-            var cases = System.Text.RegularExpressions.Regex.Matches(g, @"case global::Demo\.Ore\.\w+:").Count;
+            var cases = System.Text.RegularExpressions.Regex.Count(g, @"case global::Demo\.Ore\.\w+:");
             Assert.True(cases == 4,
                 $"expected 4 switch cases for the four declared members on an enum : {underlying}, found {cases}.\n{g}");
         }

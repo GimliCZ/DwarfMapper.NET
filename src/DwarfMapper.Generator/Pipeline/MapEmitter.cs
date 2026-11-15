@@ -352,6 +352,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             sb.Append(indent).AppendLine("{");
+            AppendStackCheck(sb, method, indent);
 
             if (method.ParameterIsReferenceType)
             {
@@ -904,6 +905,19 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>async</c> iterator: <c>await foreach (var item in src) yield return conv(item);</c>. Lazily
         ///     transforms the source sequence element-by-element (no buffering; streaming/back-pressure preserved).
         /// </summary>
+        /// <summary>
+        ///     The first statement of a declared mapping method on a mapper that holds user-written code (round 35,
+        ///     T20): a stack overflow cannot be caught, <c>InsufficientExecutionStackException</c> can. The BCL call,
+        ///     written inline - no helper of ours to keep in step, and nothing added to the runtime library.
+        /// </summary>
+        private static void AppendStackCheck(StringBuilder sb, MapMethodModel method, string indent)
+        {
+            if (method.ChecksStack)
+            {
+                sb.Append(indent).AppendLine("    global::System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();");
+            }
+        }
+
         private static void EmitAsyncStreamMapMethod(StringBuilder sb, MapMethodModel method, string indent)
         {
             var src = method.EmitParameterName;
@@ -928,6 +942,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             sb.AppendLine(")");
             sb.Append(indent).AppendLine("{");
+            AppendStackCheck(sb, method, indent);
             // ConfigureAwait(false) unconditionally: this is library code and must not capture the caller's
             // synchronization context (a UI context turns every element into a post back to the UI thread, and is a
             // classic deadlock source). WithCancellation only when the user declared a token to thread.
@@ -1048,6 +1063,7 @@ namespace DwarfMapper.Generator.Pipeline
                 .Append(method.EmitParameterTypeSignature).Append(' ').Append(src).Append(", ")
                 .Append(method.EmitUpdateTargetTypeSignature).Append(' ').Append(dst).AppendLine(")");
             sb.Append(indent).AppendLine("{");
+            AppendStackCheck(sb, method, indent);
 
             // Null guards (loud — mapping into/from null is a programming error). BCL throw-helper keeps
             // the hot path small IL (see the public-mapper note above).

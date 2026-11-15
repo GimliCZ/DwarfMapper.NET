@@ -391,6 +391,49 @@ function Assert-BlitRatiosHold {
 }
 
 # -----------------------------------------------------------------------------------------------------
+# The net10 REFERENCE PACK the ILVerify stage verifies against - the contract surface the compiler resolved
+# against - wherever this machine's SDK keeps it (round 35).
+#   Looked for under every dotnet root that can be named: DOTNET_ROOT, the folder of the `dotnet` on PATH, the
+# folder that `dotnet` is a LINK to, Program Files on Windows; then in the NuGet package cache, NUGET_PACKAGES
+# first. Both layouts share '<version>/ref/net10.0'. Newest 10.x by [version], not by text (which ranks 10.0.9
+# above 10.0.11), with a prerelease suffix stripped before the cast.
+#   The link is the round-35 fix. Microsoft's SDK container and a distribution's packaged SDK put a symlink on
+# PATH (/usr/bin/dotnet -> /usr/share/dotnet/dotnet) and set no DOTNET_ROOT, so the stage looked in /usr/bin/packs
+# and failed before verifying anything. A hosted runner sets DOTNET_ROOT, which is why CI never showed it.
+# RefPackLookupTests drives this over real folders; -ResolveLink is its seam for the link.
+# -----------------------------------------------------------------------------------------------------
+function Get-Net10RefPack {
+    param(
+        [string[]]$DotnetRoots = @(),
+        [string]$DotnetCommand,
+        [string]$NuGetPackages,
+        [Parameter(Mandatory)][string]$UserProfile,
+        [scriptblock]$ResolveLink = {
+            param($path)
+            $target = [System.IO.File]::ResolveLinkTarget($path, $true)
+            if ($target) { $target.FullName } else { $path }
+        }
+    )
+    $roots = @($DotnetRoots | Where-Object { $_ })
+    if ($DotnetCommand) {
+        $roots += Split-Path -Parent $DotnetCommand
+        $resolved = $DotnetCommand
+        try { $resolved = [string](& $ResolveLink $DotnetCommand) } catch { $null = $_ }
+        if ($resolved -and $resolved -ne $DotnetCommand) { $roots += Split-Path -Parent $resolved }
+    }
+    $packRoots = @($roots | Select-Object -Unique | ForEach-Object { Join-Path $_ 'packs/Microsoft.NETCore.App.Ref' })
+    if ($NuGetPackages) { $packRoots += Join-Path $NuGetPackages 'microsoft.netcore.app.ref' }
+    $packRoots += Join-Path $UserProfile '.nuget/packages/microsoft.netcore.app.ref'
+    $refPack = $packRoots | Where-Object { Test-Path $_ } |
+               ForEach-Object { Get-ChildItem $_ -Directory } |
+               Where-Object { $_.Name -like '10.*' } |
+               Sort-Object { [version]($_.Name -replace '-.*$', '') } -Descending |
+               Select-Object -First 1
+    if (-not $refPack) { throw "ilverify: no net10 ref pack found (searched: $($packRoots -join '; '))" }
+    return $refPack
+}
+
+# -----------------------------------------------------------------------------------------------------
 # A leg compiles only what it mutates (round 34). Stryker 4.16 mutates and compiles EVERY source of the project
 # under test, whatever the config's `mutate` globs say, and drops what they exclude only afterwards: on the
 # generator leg it created 16,314 mutants, rolled back 3,808 compile errors over 28 compile passes and threw
@@ -1350,10 +1393,130 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte: DwarfMapper (363 KB = 371,712 B) 488 B on Windows, 689 B on ubuntu.
 # DwarfMapper.Testing (57 KB = 58,368 B) 434 B on Windows, 485 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35, at 93d8b01): DwarfMapper 362 -> 363, DwarfMapper.Testing 56 -> 57.
+# R1 was missed a fifth time, and again by a change nobody thinks of as code: the README, which is packed into both
+# packages, grew with nineteen documentation corrections. Nothing on the pull request said so, because this gate
+# ran only in the nightly tier; found by rehearsing the job before the merge. The job runs on every event since
+# this commit (it takes under a minute on a runner), so the sixth time is a red check on the change that causes it.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     018faeb (PR #11's head)   DwarfMapper 371,020 B   Testing 57,880 B   floor 362 / 56
+#     93d8b01 (round 35)        DwarfMapper 371,889 B   Testing 58,478 B   floor 363 / 57
+#   Windows, SDK 10.0.101, CI=true, 93d8b01: 372,075 B (+186) and 58,526 B (+48) - floor 363 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, 018faeb -> 93d8b01, compressed bytes, packed in the container:
+#
+#   README.md                                          +593   in BOTH packages - nearly all of the Testing
+#                                                             package's delta: the .NET 11 statement, the collection
+#                                                             shapes, DWARF060, the repository layout
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll      +227   DWARF075 for a copied collection leaf under Preserve;
+#                                                             every generated helper family known as generated (T1)
+#   lib/net10.0/DwarfMapper.xml                         +35   the ImplicitConversions doc (T3)
+#   the rest (nuspec, .rels, dll timestamps' entropy)   +14 / +5
+#
+# Every row is intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (364 KB = 372,736 B) 661 B on Windows, 847 B on ubuntu.
+# DwarfMapper.Testing (58 KB = 59,392 B) 866 B on Windows, 914 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T2, at bb67d0e): DwarfMapper 363 -> 364, DwarfMapper.Testing unchanged at 57.
+# The first re-measure made on a red PRE-push check instead of a red nightly: the job's rehearsal at the commit
+# that grew the generator, the same day the gate moved to every event.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     93d8b01 (before T2)   DwarfMapper 371,889 B   Testing 58,478 B   floor 363 / 57
+#     bb67d0e (T2)          DwarfMapper 372,763 B   Testing 58,473 B   floor 364 / 57
+#   Windows, SDK 10.0.101, CI=true, bb67d0e: 372,950 B (+187) and 58,531 B (+58) - floor 364 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, 93d8b01 -> bb67d0e, compressed bytes, packed in the container:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll      +879   T2: a nested helper for a declared pair reads the
+#                                                             method's own directives; the block-copy gate asks
+#                                                             about them
+#   the rest (nuspec, .rels, dll timestamps' entropy)    -5
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (365 KB = 373,760 B) 810 B on Windows, 997 B on ubuntu.
+# DwarfMapper.Testing (58 KB = 59,392 B) 861 B on Windows, 919 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T12-T15 and T4, at a352851): DwarfMapper 364 -> 366, DwarfMapper.Testing 57.
+# Again on a red PRE-push rehearsal of this job (366 KB over 364), not on a red run.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     bb67d0e (T2)              DwarfMapper 372,763 B   Testing 58,473 B   floor 364 / 57
+#     a352851 (T12-T15, T4)     DwarfMapper 375,384 B   Testing 58,481 B   floor 366 / 57
+#   Windows, SDK 10.0.101, CI=true, a352851: 375,570 B (+186) and 58,528 B (+47) - floor 366 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, bb67d0e -> a352851, compressed bytes, packed in the container:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll    +2,617   the context reaches every caller (a fixed point, T14);
+#                                                             a declared mapper method as a collection or dictionary
+#                                                             element goes through its context-taking form (T12); a
+#                                                             dispatch or flatten method keeps its nested route (T13,
+#                                                             T15); DWARF066 reads a positional record's parameter (T4)
+#   the rest (.rels, the two runtime dlls' entropy)       +4 and +8
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (367 KB = 375,808 B) 238 B on Windows, 424 B on ubuntu - under one
+# small generator change, by design: the next one re-measures. DwarfMapper.Testing (58 KB = 59,392 B) 864 B on
+# Windows, 911 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T16 and T17, at 2b8a480): DwarfMapper 366 -> 368, DwarfMapper.Testing 57.
+#
+#   mcr.microsoft.com/dotnet/sdk:10.0.101, clone of the tree, CI=true, the job's own pack commands:
+#     a352851 (T12-T15, T4)     DwarfMapper 375,384 B   Testing 58,481 B   floor 366 / 57
+#     2b8a480 (T16, T17)        DwarfMapper 376,858 B   Testing 58,474 B   floor 368 / 57
+#   Windows, SDK 10.0.101, CI=true, 2b8a480: 377,043 B (+185) and 58,521 B (+47) - floor 368 / 57 on both platforms.
+#
+# ENTRY BY ENTRY, a352851 -> 2b8a480, compressed bytes, packed in the container:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll    +1,482   two diagnostics with their messages (DWARF117,
+#                                                             DWARF118); a declared method with a scalar destination
+#                                                             takes the conversion route (T16); a flatten method's
+#                                                             leaf calls are recorded and asked about (T17)
+#   the rest (nuspec, .rels, three dlls' entropy)        -8
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte: DwarfMapper (369 KB = 377,856 B) 813 B on Windows, 998 B on ubuntu.
+# DwarfMapper.Testing (58 KB = 59,392 B) 871 B on Windows, 918 B on ubuntu.
+#
+# RE-MEASURED 2026-11-13 (round 35 T18, at 79c7a8f): DwarfMapper 368 and DwarfMapper.Testing 57, both UNCHANGED.
+#
+#   the same container and commands:
+#     29437cc                   DwarfMapper 376,873 B   Testing 58,474 B   floor 368 / 57
+#     79c7a8f (T18, DWARF119)   DwarfMapper 377,461 B   Testing 58,478 B   floor 368 / 57
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll  +590   one diagnostic with its message and its check
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper 395 B, DwarfMapper.Testing 914 B.
+# Windows was not packed again; by the +185 B measured above it would stand about 210 B under. The next generator
+# change of any size moves this ceiling.
+#
+# RE-MEASURED 2026-11-14 (round 35 T20 and T22, at bdb0f1b): DwarfMapper 368 -> 370, DwarfMapper.Testing 57.
+#
+#   the same container and commands:
+#     420e7f8                            DwarfMapper 377,455 B   Testing 58,482 B   floor 368 / 57
+#     bdb0f1b (T20, T22, the advisories)  DwarfMapper 379,018 B   Testing 58,598 B   floor 370 / 57
+#
+# ENTRY BY ENTRY, 420e7f8 -> bdb0f1b, compressed bytes:
+#
+#   analyzers/dotnet/cs/DwarfMapper.Generator.dll   +1,445   DWARF120 with its message and its pipeline (T22); the
+#                                                            stack check and the rule that decides who gets it (T20)
+#   README.md                                         +122   the paragraph on a loop through user-written code (both
+#                                                            packages carry the README)
+#   the rest (nuspec, .rels, dlls' entropy)             -4
+#
+# Intended round-35 content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (371 KB = 379,904 B) 886 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 794 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 362
-    'DwarfMapper.Testing' = 56
+    'DwarfMapper'         = 370
+    'DwarfMapper.Testing' = 57
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -213,7 +213,7 @@ namespace DwarfMapper.Generator.Pipeline
             // The offset is part of the KEY, not merely of the body: two methods in one mapper may map the same
             // pair at two offsets, and a helper reused across them would silently give one of them the other's
             // arithmetic.
-            var name = "__DwarfDense_" +
+            var name = GeneratedNames.DenseEnum +
                        StableHash.Fnv1a(srcFq + "=>" + tgtFq + "@" + offset.ToString(CultureInfo.InvariantCulture));
             if (synth.ContainsKey(name))
             {

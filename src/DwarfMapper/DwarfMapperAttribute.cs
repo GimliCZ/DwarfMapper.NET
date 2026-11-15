@@ -241,8 +241,8 @@ namespace DwarfMapper
         ///     <para>
         ///         When <c>true</c>: lossless same-category widening (<c>int→long</c>, <c>float→double</c>) is silent;
         ///         narrowing (<c>long→int</c>), cross-category (<c>int→double</c>, <c>int→string</c>) and parse
-        ///         (<c>string→int</c>) conversions are still applied but surface a <c>DWARF038</c> suggestion (Info)
-        ///         so they are never silent.
+        ///         (<c>string→int</c>) conversions are still applied but surface <c>DWARF038</c> - a Warning for these
+        ///         lossy kinds, Info only for a user-defined explicit operator - so they are never silent.
         ///     </para>
         ///     <para>
         ///         When <c>false</c> (strict, Mapperly-style): those same non-lossless conversions become a

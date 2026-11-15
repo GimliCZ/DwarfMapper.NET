@@ -346,7 +346,7 @@ namespace DwarfMapper.Generator.Pipeline
                         out var leafConv,
                         out var leafNull,
                         out _,
-                        out _,
+                        out var leafParamType,
                         req.NestedRegistry);
 
                     // SF-LEAFDIAG, both outcomes: an unmappable leaf's errors, and a RESOLVED leaf's diagnostics too - a
@@ -364,6 +364,8 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         continue;
                     }
+
+                    RecordFlatLeafCall(req, leaf.Name, leafConv, leafParamType);
 
                     // Safe: emit the leaf member.  Merge any non-complex throw-away entries
                     // (numeric, enum, parsable helpers that are never force-marked 3-param).

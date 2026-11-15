@@ -13,7 +13,7 @@
 #
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the
 # trailing `# vN` is the human-readable version. Bump BOTH when updating. Jobs name
-# `ubuntu-24.04` rather than `ubuntu-latest` for the reason the note atop ci.yml gives.
+# `ubuntu-26.04` rather than `ubuntu-latest` for the reason the note atop ci.yml gives.
 name: release
 on:
   push:
@@ -22,7 +22,7 @@ permissions:
   contents: read
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write      # create the GitHub Release
       id-token: write       # OIDC for keyless Sigstore signing (ties to this repo's identity)
@@ -38,7 +38,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
 
       - name: Derive version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
@@ -136,7 +136,7 @@ jobs:
   publish:
     needs: release
     if: vars.NUGET_TRUSTED_PUBLISHING == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment: release
     permissions:
       contents: read
@@ -154,7 +154,7 @@ jobs:
           path: artifacts
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         id: login
         with:

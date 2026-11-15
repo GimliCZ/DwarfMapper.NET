@@ -91,6 +91,72 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.EmitsCompilableCode(src);
         }
 
+        // Every collection leaf, not only the ones whose helper happens to be one of the tracked families (round 35).
+        // A widening or block-copied collection goes through a helper of its own (__DwarfWiden*, __DwarfBlit*) that
+        // the DWARF075 rule did not know, so it was flattened in silence, each node with its own copy: two nodes
+        // sharing ONE source list mapped to TWO, where the same mapper's plain map keeps them one. The owner,
+        // 2026-11-13: "We should not hide this failure ... maybe even block them."
+        [Theory]
+        [InlineData("System.Collections.Generic.List<int>", "System.Collections.Generic.List<long>")]
+        [InlineData("int[]", "long[]")]
+        [InlineData("int[]", "System.Collections.Generic.List<long>")]
+        [InlineData("System.Collections.Generic.List<int>", "long[]")]
+        [InlineData("int[]", "int[]")]
+        [InlineData("System.Collections.Generic.List<int>", "System.Collections.Generic.List<int>")]
+        public void FlattenGraph_collection_leaf_under_Preserve_is_DWARF075_whatever_copies_it(string sourceLeaf, string targetLeaf)
+        {
+            var src = $$"""
+                        using DwarfMapper;
+                        using System.Collections.Generic;
+                        namespace Demo;
+                        public class Node    { public string Name { get; set; } = ""; public {{sourceLeaf}} Data { get; set; } = default!; public Node? Next { get; set; } }
+                        public class NodeDto { public string Name { get; set; } = ""; public {{targetLeaf}} Data { get; set; } = default!; public NodeDto? Next { get; set; } }
+                        public class Root    { public Node? Entry { get; set; } }
+                        public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                        [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                        public partial class M
+                        {
+                            [FlattenGraph("Entry", "Nodes")]
+                            public partial RootDto Map(Root r);
+                        }
+                        """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+
+            var d075 = Assert.Single(diags, d => d.Id == "DWARF075");
+            Assert.Contains("'Data'", d075.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            // Refused means not assigned: the flat-node helper leaves the member at the destination's default.
+            Assert.DoesNotContain("Data = ", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
+        // Outside Preserve nothing is tracked, so there is no sharing to lose: the same leaves are flattened.
+        [Theory]
+        [InlineData("System.Collections.Generic.List<int>", "System.Collections.Generic.List<long>")]
+        [InlineData("int[]", "int[]")]
+        public void FlattenGraph_collection_leaf_without_Preserve_is_flattened(string sourceLeaf, string targetLeaf)
+        {
+            var src = $$"""
+                        using DwarfMapper;
+                        using System.Collections.Generic;
+                        namespace Demo;
+                        public class Node    { public string Name { get; set; } = ""; public {{sourceLeaf}} Data { get; set; } = default!; public Node? Next { get; set; } }
+                        public class NodeDto { public string Name { get; set; } = ""; public {{targetLeaf}} Data { get; set; } = default!; public NodeDto? Next { get; set; } }
+                        public class Root    { public Node? Entry { get; set; } }
+                        public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                        [DwarfMapper]
+                        public partial class M
+                        {
+                            [FlattenGraph("Entry", "Nodes")]
+                            public partial RootDto Map(Root r);
+                        }
+                        """;
+            var (diags, generated) = GeneratorTestHarness.Run(src);
+
+            Assert.DoesNotContain(diags, d => d.Id == "DWARF075");
+            Assert.Contains("Data = ", generated, StringComparison.Ordinal);
+            GeneratorAssert.EmitsCompilableCode(src);
+        }
+
         // ── 1. Basic: single-reference edge graph — compiles without error ──────
 
         [Fact]

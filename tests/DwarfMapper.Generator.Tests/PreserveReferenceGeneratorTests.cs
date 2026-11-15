@@ -466,7 +466,7 @@ namespace DwarfMapper.Generator.Tests
                                """;
             var generated = GeneratorAssert.EmitsCompilableCode(src);
             Assert.Contains("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
-            var helperCount = System.Text.RegularExpressions.Regex.Matches(generated, "private static global::Demo.DstV\\[\\] __DwarfBlit_").Count;
+            var helperCount = System.Text.RegularExpressions.Regex.Count(generated, "private static global::Demo.DstV\\[\\] __DwarfBlit_");
             Assert.Equal(1, helperCount);
         }
 
@@ -486,10 +486,10 @@ namespace DwarfMapper.Generator.Tests
                                [DwarfMapper] public partial class M { public partial D Map(C c); }
                                """;
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            var helperCount = System.Text.RegularExpressions.Regex.Matches(generated, "__DwarfBlitL_").Count;
+            var helperCount = System.Text.RegularExpressions.Regex.Count(generated, "__DwarfBlitL_");
             Assert.True(helperCount > 0, "expected a list-shape blit helper to be emitted:\n" + generated);
-            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
-                "private static global::System.Collections.Generic.List<global::Demo.DstV> __DwarfBlitL_").Count;
+            var declCount = System.Text.RegularExpressions.Regex.Count(generated,
+                "private static global::System.Collections.Generic.List<global::Demo.DstV> __DwarfBlitL_");
             Assert.Equal(1, declCount);
         }
 
@@ -506,8 +506,8 @@ namespace DwarfMapper.Generator.Tests
                                [DwarfMapper] public partial class M { public partial D Map(C c); }
                                """;
             var generated = GeneratorAssert.EmitsCompilableCode(src);
-            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
-                "private static long\\[\\] __DwarfWiden_").Count;
+            var declCount = System.Text.RegularExpressions.Regex.Count(generated,
+                "private static long\\[\\] __DwarfWiden_");
             Assert.Equal(1, declCount);
         }
 

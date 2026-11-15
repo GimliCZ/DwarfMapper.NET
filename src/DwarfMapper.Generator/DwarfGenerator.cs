@@ -58,12 +58,22 @@ namespace DwarfMapper.Generator
         /// <summary>Tracking name for the compile-time binding of those call sites (round 31 T26).</summary>
         internal const string InterceptorStepName = "DwarfMapperInterceptors";
 
+        /// <summary>Tracking name for the DWARF120 scan: a mapper attribute written on a record (round 35 T22).</summary>
+        internal const string RecordDeclarationStepName = "DwarfMapperRecordDeclarations";
+
         /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
         internal static readonly string[] AllStepNames =
         {
             ExtractStepName, CoLocatedExtractStepName, AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName, HandWrittenManifestStepName,
-            EfAotProjectionStepName, DwarfCallSiteStepName, InterceptorStepName
+            EfAotProjectionStepName, DwarfCallSiteStepName, InterceptorStepName, RecordDeclarationStepName
         };
+
+        /// <summary>Where a mapper attribute sits on a record: value-equatable, so the DWARF120 node caches.</summary>
+        private static (LocationInfo? Location, string Name, string Attribute) RecordSite(GeneratorAttributeSyntaxContext ctx, string attribute)
+        {
+            var declaration = (RecordDeclarationSyntax)ctx.TargetNode;
+            return (LocationInfo.From(declaration.Identifier.GetLocation()), ctx.TargetSymbol.Name, attribute);
+        }
 
         /// <inheritdoc />
         public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -90,6 +100,29 @@ namespace DwarfMapper.Generator
                 .Select(static (m, _) => m!);
 
             context.RegisterSourceOutput(coLocated, static (spc, model) => Execute(spc, model));
+
+            // DWARF120 (round 35 T22): both pipelines above, and every other one below, read CLASS declarations. A
+            // record carrying [DwarfMapper] or [GenerateMap] was therefore passed over without a diagnostic: a
+            // record mapper's partial methods then failed with CS8795 and no word from DwarfMapper, and a record
+            // host's maps simply did not exist. Collected like the DWARF115 check: no per-declaration work to track.
+            var recordMappers = context.SyntaxProvider.ForAttributeWithMetadataName(
+                MarkerAttributeFullName,
+                static (node, _) => node is RecordDeclarationSyntax,
+                static (ctx, _) => RecordSite(ctx, "[DwarfMapper]"));
+            var recordHosts = context.SyntaxProvider.ForAttributeWithMetadataName(
+                GenerateMapAttributeFullName,
+                static (node, _) => node is RecordDeclarationSyntax,
+                static (ctx, _) => RecordSite(ctx, "[GenerateMap]"));
+            context.RegisterSourceOutput(recordMappers.Collect().Combine(recordHosts.Collect()).WithTrackingName(RecordDeclarationStepName),
+                static (spc, pair) =>
+                {
+                    foreach (var site in pair.Left.Concat(pair.Right))
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.MapperOnRecord,
+                            LocationInfo.ToLocationOrNone(site.Location),
+                            site.Name,
+                            site.Attribute));
+                });
 
             // Assembly-wide convenience outputs aggregated across EVERY mapper (both pipelines): the extension-method
             // facade (always) and the DI registration (only when Microsoft.Extensions.DependencyInjection is

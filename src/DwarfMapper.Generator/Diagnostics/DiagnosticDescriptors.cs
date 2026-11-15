@@ -1883,7 +1883,7 @@ namespace DwarfMapper.Generator.Diagnostics
         ///     </para>
         ///     <para>
         ///         The size in the message is the WOULD-BE struct's, and it is worded as a bound whenever a
-        ///         reference member was costed at its x64 width. Over 32 bytes the message adds the <c>in</c>
+        ///         reference member was costed at its x64 width. Over 64 bytes the message adds the <c>in</c>
         ///         advice; for a public unsealed type it says that the derived-type sweep covered this assembly
         ///         only, because a consuming project can still subclass it and nothing here can see that.
         ///     </para>
@@ -2272,5 +2272,92 @@ namespace DwarfMapper.Generator.Diagnostics
             DiagnosticSeverity.Warning,
             true,
             helpLinkUri: HelpBase + "dwarf116");
+
+        /// <summary>
+        ///     <c>DWARF117</c> (Error) — a partial mapping method, or a <c>[GenerateMap]</c> pair, between two scalar
+        ///     types that this form cannot generate: one that needs no conversion (the same type, or an implicit
+        ///     one such as <c>int</c> to <c>long</c>), or one with a nullable on either side.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A map whose destination is an enum or a built-in scalar is a CONVERSION of the value, and is
+        ///         generated as one (by name between enums, a checked narrowing, a parse, a format): the body is
+        ///         <c>return helper(value);</c>. When the value is assigned as it is there is no helper and so no
+        ///         body: the declared method was left without its implementing part (a bare CS8795), and the
+        ///         attribute generated nothing and said nothing. When a null has to be handled first the body would
+        ///         hand a <c>T?</c> to a helper taking <c>T</c>; it was refused before too, under ids that describe
+        ///         something else (DWARF007 on <c>HasValue</c>).
+        ///     </para>
+        ///     <para>
+        ///         Round 35 (T16). Until then a DECLARED method with such a destination was not converted at all:
+        ///         it was built as an object with no members, <c>return new StatusDto { };</c> - the default for
+        ///         every input, in a clean build. <c>[GenerateMap]</c> had been given the conversion route for
+        ///         exactly this in an earlier round; the declared method, the same map at the other door, had not.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor ScalarMapNeedsNoConversion = new(
+            "DWARF117",
+            "A scalar map cannot be generated as declared",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf117");
+
+        /// <summary>
+        ///     <c>DWARF118</c> (Error) — a <c>[FlattenGraph]</c> method is on a recursion cycle that runs through one of
+        ///     its own node leaves: a member of a node is converted by something that leads back to the method.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The walk a flatten method emits tracks the NODES it has visited and nothing else. A node member
+        ///         that is not an edge of the graph is a leaf, converted by an ordinary call; when that call leads
+        ///         back to the flatten method, the walk is entered again from inside itself with a fresh visited set
+        ///         and no depth - on data that closes the loop, until the stack ends. Measured in round 35 (T17): a
+        ///         node holding a reference to the object that holds the graph killed the process without reference
+        ///         handling, under Preserve and under SetNull alike. The helpers that would have to carry a context
+        ///         through the walk are emitted as text with one parameter, so the shape is refused instead.
+        ///     </para>
+        ///     <para>
+        ///         An <b>Error</b> for the reason DWARF030 is one: the alternative is a StackOverflowException, which
+        ///         cannot be caught.
+        ///     </para>
+        /// </remarks>
+        public static readonly DiagnosticDescriptor FlattenGraphLeafLeadsBack = new(
+            "DWARF118",
+            "[FlattenGraph] node member leads back to the flatten method",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf118");
+
+        /// <summary>
+        ///     <c>DWARF119</c> (Error) — a <c>[MapDerivedType]</c> dispatch over a base type that can itself be
+        ///     instantiated has no arm for that type, so an instance of it would reach the run-time fallback and
+        ///     throw. See <c>MapperExtractor.ReportInstantiableBaseWithoutArm</c>. Args: {0} = the whole message.
+        /// </summary>
+        public static readonly DiagnosticDescriptor DispatchBaseHasNoArm = new(
+            "DWARF119",
+            "A [MapDerivedType] dispatch has no arm for its own instantiable base type",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf119");
+
+        /// <summary>
+        ///     <c>DWARF120</c> (Error) — <c>[DwarfMapper]</c> or <c>[GenerateMap]</c> is written on a <c>record</c>.
+        ///     Every pipeline of the generator reads class declarations, so a record carrying either attribute was
+        ///     passed over without a word (round 35, T22). Args: {0} = the record, {1} = the attribute as written.
+        /// </summary>
+        public static readonly DiagnosticDescriptor MapperOnRecord = new(
+            "DWARF120",
+            "[DwarfMapper] and [GenerateMap] are not read on a record",
+            "'{0}' is a record, and {1} is read on classes only: nothing is generated for it. Declare the mapper as a partial class; a record can still be the source or the destination of a map declared on one.",
+            Category,
+            DiagnosticSeverity.Error,
+            true,
+            helpLinkUri: HelpBase + "dwarf120");
     }
 }

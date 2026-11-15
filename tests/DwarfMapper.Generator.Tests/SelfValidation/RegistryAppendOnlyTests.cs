@@ -135,7 +135,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // insert; the create and update tables are now two instances of one generic RegistryTable, so the
             // single TryAdd pair inside it serves both. The count fell because the DUPLICATION fell -- the
             // invariant did not move, and the scan above still covers every table by name.
-            Assert.True(Regex.Matches(src, @"\.TryAdd\(").Count >= 2,
+            Assert.True(Regex.Count(src, @"\.TryAdd\(") >= 2,
                 "Fewer than two TryAdd calls remain in the registry — RegistryTable needs one for the map and "
                 + "one to mark a duplicate. Inserts have moved to some other mechanism, and the append-only "
                 + "scan above is now checking the wrong thing.");

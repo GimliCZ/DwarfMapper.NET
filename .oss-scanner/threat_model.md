@@ -90,7 +90,8 @@ SECURITY.md documents as deliberate.
 
 ## Anything to leave alone
 
-- The AutoMapper 14.0.0 advisory (NU1903, GHSA-rvv3-g6hj-g44x). AutoMapper is referenced only by
-  `tests/DwarfMapper.DifferentialTests` and `benchmarks/`, as a comparison target, and does not ship; upgrading it is
-  licence-blocked (15 and later are RPL-1.5). DwarfMapper's own answer to that advisory's failure class is
-  `DeepRecursionPocTests`.
+- The AutoMapper 14.0.0 advisories (NU1903: GHSA-rvv3-g6hj-g44x, and since 2026-11-13 GHSA-6vhm-j9h7-f9gh and
+  GHSA-gpwp-5797-mjff). AutoMapper is referenced only by `tests/DwarfMapper.DifferentialTests`,
+  `tests/DwarfMapper.ConsumerTests/CleanCorpus` and `benchmarks/`, as a comparison target, and does not ship;
+  upgrading it is licence-blocked (15 and later are RPL-1.5). DwarfMapper's own answer to that failure class is
+  `DeepRecursionPocTests` and `DeepRecursionGuardRuntimeTests`.

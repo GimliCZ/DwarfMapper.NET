@@ -66,16 +66,26 @@ namespace DwarfMapper.Generator.Tests.Framework
                                         [DwarfMapper] public partial class M { public partial IQueryable<B> Project(IQueryable<A> q); }
                                         """, "DwarfGenerator");
 
+            // The element loop. int -> double is an implicit conversion that is NOT one Vector.Widen step, so it keeps
+            // the loop; until round 35 this case was int -> long, which T6 moved onto the widen loop (SpanMapWiden below).
             yield return ("SpanMap", """
                                      using DwarfMapper;
                                      using System;
                                      namespace Demo;
-                                     [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+                                     [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<double> dst); }
                                      """, "DwarfGenerator");
 
-            // Round 29 T0.2 fix-round-1 (controller ruling, corpus-hole rule): the widening SpanMap case above
-            // never exercises the blit fast path (int -> long differs in size, so it keeps the element loop).
-            // A layout-identical struct-element pair is the shape that actually reaches MemoryMarshal.Cast.
+            // Round 35 T6: a lossless primitive widen pair takes the Vector.Widen loop the array and List shapes use.
+            yield return ("SpanMapWiden", """
+                                          using DwarfMapper;
+                                          using System;
+                                          namespace Demo;
+                                          [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+                                          """, "DwarfGenerator");
+
+            // Round 29 T0.2 fix-round-1 (controller ruling, corpus-hole rule): the element-loop SpanMap case above
+            // never exercises the blit fast path (its element types differ in size). A layout-identical
+            // struct-element pair is the shape that actually reaches MemoryMarshal.Cast.
             yield return ("SpanMapBlit", """
                                          using DwarfMapper;
                                          using System;
@@ -482,7 +492,7 @@ namespace DwarfMapper.Generator.Tests.Framework
                                           public class ADerived : A { public int Y { get; set; } }
                                           public class B { public int X { get; set; } }
                                           public class BDerived : B { public int Y { get; set; } }
-                                          [DwarfMapper] public partial class M { [MapDerivedType(typeof(ADerived), typeof(BDerived))] public partial B Map(A a); }
+                                          [DwarfMapper] public partial class M { [MapDerivedType(typeof(ADerived), typeof(BDerived))] [MapDerivedType(typeof(A), typeof(B))] public partial B Map(A a); }
                                           """, "DwarfGenerator");
 
             yield return ("Hooks", """

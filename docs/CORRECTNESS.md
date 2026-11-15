@@ -103,6 +103,7 @@ names something that no longer exists, so a guarantee cannot quietly outlive its
 | COR-04 | Codegen is deterministic and incrementally cached | `DeterminismFuzzTests` |
 | COR-05 | Pipeline models are value-equatable, so caching cannot silently regress | `ModelCacheSafetyTests` |
 | COR-06 | Recursion is depth-bounded; no configuration yields a silent `StackOverflowException` | `DepthSafetyRuntimeTests` |
+| COR-07 | Recursion that runs through user-written code on the mapper is stopped by a stack check at every declared mapping method | `ReentryStackCheckRuntimeTests` |
 
 ## 6. No silent `StackOverflowException`
 
@@ -111,6 +112,16 @@ collection, and dictionary edges. Exceeding it throws a **catchable** `DwarfMapp
 process-killing `StackOverflowException`. Cycles are handled deliberately: `Preserve` reconstructs the full
 topology; `OnCycle = SetNull` breaks back-edges into a finite acyclic projection. *Evidence:* the
 depth/graph runtime suites and the AOT gate's cycle checks.
+
+The depth bound counts the calls the generator emits. **Code you write on the mapper can call it again** - a
+`Use=` converter, a method adopted by its signature, a `[MapConstructor]` factory, a `[BeforeMap]`/`[AfterMap]`
+hook - and that loop is one the generator never sees, so `MaxDepth` does not apply to it. Every declared mapping
+method of a mapper that has a method body of its own therefore opens with the runtime's own stack check
+(`EnsureSufficientExecutionStack` on `RuntimeHelpers`): on a deep input such a loop ends in a catchable
+`InsufficientExecutionStackException` (before round 35 it was a stack overflow). A mapper with no method of its own
+gets no check and pays nothing for it. **Outside this:** code that is not on the mapper and reaches one by itself -
+a property getter or a conversion operator on a mapped type that holds a mapper - is not something the generator can
+see or guard.
 
 ---
 

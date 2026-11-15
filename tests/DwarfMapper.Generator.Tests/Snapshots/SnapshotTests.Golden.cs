@@ -42,8 +42,15 @@ namespace DwarfMapper.Generator.Tests
             return Verify(GoldenFeature("SpanMap"));
         }
 
+        // Round 35 T6: the Vector.Widen loop of a widening span map.
+        [Fact]
+        public Task Snap_Golden_SpanMapWiden()
+        {
+            return Verify(GoldenFeature("SpanMapWiden"));
+        }
+
         // Round 29 T0.2 fix-round-1: a layout-identical struct-element span map, the shape that reaches the
-        // blit fast path — Snap_Golden_SpanMap above is an int -> long widen and never exercises it.
+        // blit fast path — Snap_Golden_SpanMap above (the element loop) never exercises it.
         [Fact]
         public Task Snap_Golden_SpanMapBlit()
         {

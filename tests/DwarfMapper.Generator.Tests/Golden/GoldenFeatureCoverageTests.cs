@@ -30,6 +30,9 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "SpanMap", "for (int __i = 0; __i < src.Length; __i++)"
                 },
                 {
+                    "SpanMapWiden", "global::System.Numerics.Vector.Widen(__v, out var __lo, out var __hi);"
+                },
+                {
                     "SpanMapBlit", "MemoryMarshal.Cast"
                 },
                 {

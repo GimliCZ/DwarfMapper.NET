@@ -14,6 +14,7 @@ public partial class M
         return a switch
         {
             global::Demo.ADerived __s => __DwarfMap_Obj_global__Demo_ADerived_global__Demo_BDerived_E88F9FBE(__s),
+            global::Demo.A __s => __DwarfMap_Obj_global__Demo_A_global__Demo_B_D4EA922E(__s),
             _ => throw new global::System.ArgumentException("DwarfMapper: no [MapDerivedType] registered for runtime type '" + a.GetType() + "' mapping to 'global::Demo.B'.", nameof(a)),
         };
     }
@@ -24,6 +25,14 @@ public partial class M
         {
             X = s.X,
             Y = s.Y,
+        };
+    }
+    private global::Demo.B __DwarfMap_Obj_global__Demo_A_global__Demo_B_D4EA922E(global::Demo.A s)
+    {
+        if (s is null) return null!;
+        return new global::Demo.B
+        {
+            X = s.X,
         };
     }
 }

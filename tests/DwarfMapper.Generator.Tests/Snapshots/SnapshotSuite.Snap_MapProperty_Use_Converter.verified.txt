@@ -12,6 +12,7 @@ public partial class M
     /// </list></remarks>
     public partial global::Demo.Target Map(global::Demo.Source s)
     {
+        global::System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();
         global::System.ArgumentNullException.ThrowIfNull(s);
         return new global::Demo.Target
         {

@@ -71,6 +71,45 @@ namespace DwarfMapper.Generator.Pipeline
                 "ancestor that covers it"));
         }
 
+        /// <summary>
+        ///     <c>DWARF119</c> — a <c>[MapDerivedType]</c> dispatch whose base source type can itself be instantiated,
+        ///     with no arm for it.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A dispatch is a switch over its arms with a fallback that throws. An instance of the base type
+        ///         itself matches no derived arm, so it reaches the fallback: <c>ArgumentException</c> at run time,
+        ///         for a case the declaration shows. An abstract class or an interface has no such instance; a class
+        ///         that is neither does. Round 35: T13 made the nested routes dispatch as the direct call always had,
+        ///         which turned a base instance nested under Preserve or SetNull from "mapped as the base" into that
+        ///         exception, and the owner ruled that a build error is the better answer to it - on every route.
+        ///     </para>
+        ///     <para>
+        ///         <c>object</c> is left alone: it is instantiable, but nobody maps a bare <c>new object()</c>, and an
+        ///         arm for it would match every instance there is.
+        ///     </para>
+        /// </remarks>
+        private static void ReportInstantiableBaseWithoutArm(
+            ITypeSymbol baseType,
+            IEnumerable<INamedTypeSymbol> armSources,
+            string dispatch,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
+        {
+            if (baseType is not INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: false, SpecialType: not SpecialType.System_Object } instantiable ||
+                armSources.Any(s => SymbolEqualityComparer.Default.Equals(s, instantiable)))
+            {
+                return;
+            }
+
+            var name = instantiable.WithNullableAnnotation(NullableAnnotation.NotAnnotated).ToDisplayString();
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DispatchBaseHasNoArm,
+                location,
+                $"{dispatch} dispatches over '{name}', which is not abstract, and has no [MapDerivedType] arm for " +
+                $"'{name}' itself; an instance of exactly that type would reach the dispatch's run-time fallback and " +
+                $"throw. Make '{name}' abstract if it is never instantiated, or add an arm for it"));
+        }
+
         private static bool IsClosedType(INamedTypeSymbol type)
         {
             foreach (var a in type.GetAttributes())

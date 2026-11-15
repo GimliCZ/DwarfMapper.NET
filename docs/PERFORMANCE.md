@@ -83,16 +83,23 @@ against the same five fields at 24:
 (0.57× at N = 1,000, from the same category.) Reorder **both** sides of a pair or the block copy is lost —
 `DWARF101` reports both for that reason.
 
+The dense enum-keyed shape has shipped since this study as `[MapDenseEnumKeys]` (see
+[`options.md`](options.md)), so its row sits here and no longer in §2b. The figures are round 29's probe of the
+*shape*, taken to decide whether to build it — not a benchmark of the code the directive emits:
+
+| Shape | Baseline (classes) | Measured variant | Allocated | Source |
+|---|---:|---:|---|---|
+| `Dictionary<enum,int>` per element → enum-indexed inline array | 47.0 ms | 3.08 ms (0.07×) | 31.2 → 2.8 MB (0.09×) | `plan3-results.md`, `E_counts` |
+
 ### 2b. Changes to your own types that DwarfMapper does not make
 
-These were measured to decide what to build next. **DwarfMapper emits none of them today.** They are here
-because they were the largest results in the study and hiding them would misrepresent where the wins in §2a
-sit in the landscape.
+This was measured to decide what to build next. **DwarfMapper does not emit it today.** It is here
+because it was among the largest results in the study and hiding it would misrepresent where the wins in §2a
+sit in the landscape. (The dense enum-keyed row that stood beside it has shipped and moved to §2a.)
 
 | Shape | Baseline (classes) | Measured variant | Allocated | Source |
 |---|---:|---:|---|---|
 | Order lines → one shared line array + `(offset, count)` ranges | 51.6 ms | 8.72 ms (0.17×) | 29.6 → 9.6 MB (0.32×) | `plan3-results.md`, `B_arena` |
-| `Dictionary<enum,int>` per element → enum-indexed inline array | 47.0 ms | 3.08 ms (0.07×) | 31.2 → 2.8 MB (0.09×) | `plan3-results.md`, `E_counts` |
 
 The arena shape changes what a consumer reads (`result.Lines.AsSpan(o.LineOffset, o.LineCount)` instead of
 `o.Lines`), so it can only ever be an opt-in result shape, not a drop-in for `List<LineDto>`
@@ -112,11 +119,12 @@ in a field, captured in a lambda, or held across an `await`, so it fits "map and
 render" and nothing else. They are recorded as a candidate, not as a capability.
 
 > **§2b and §2c are conditional on those features staying unbuilt, and nothing enforces it.** Both sections
-> say "DwarfMapper does not emit this" — a true statement with a shelf life. If a later round ships DTO
-> views, the arena result shape, or dense enum-keyed collections, **the rows move up into §2a and these
+> say "DwarfMapper does not emit this" — a true statement with a shelf life. Dense enum-keyed collections
+> have already run out of it: they shipped as `[MapDenseEnumKeys]` and their row is in §2a. If a later round
+> ships DTO views or the arena result shape, **the rows move up into §2a and these
 > paragraphs come out**; leaving them would understate the mapper rather than overstate it, which is the
 > milder failure but still a false page. There is no test that catches it, so whoever ships one of those
-> three owns this page in the same commit.
+> two owns this page in the same commit.
 
 ### 2d. The losers — measured, and the reason no SIMD path was built
 

@@ -231,7 +231,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             // After the gate, or the gate would overwrite it; and no other assignment that could switch it off.
             Assert.True(on >= 0 && exception > on, "Directory.Build.props must set NuGetAudit true, then make the offline-image exception.");
-            Assert.Equal(2, Regex.Matches(props, @"<NuGetAudit[\s>]").Count);
+            Assert.Equal(2, Regex.Count(props, @"<NuGetAudit[\s>]"));
         }
 
         [Fact]

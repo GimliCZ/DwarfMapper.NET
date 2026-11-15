@@ -10,6 +10,15 @@
              committed packages.lock.json does not carry — declaring the RIDs here writes both graphs
              into the lock file at generation time. -->
         <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+        <!-- Round 35 (T7, SDK 10.0.404). From the 10.0.4xx SDK on, an executable with PublishAot and no
+             RuntimeIdentifier gets the HOST's portable RID as its default PublishRuntimeIdentifier, and that RID is
+             appended to RuntimeIdentifiers (Microsoft.NET.RuntimeIdentifierInference.targets; 10.0.101 had no such
+             rule). On a linux-x64 or win-x64 host that changes nothing; on macos-latest (osx-arm64) the list became
+             linux-x64;osx-arm64;win-x64 and the locked restore refused the committed lock file, NU1004, in
+             cross-platform (macos-latest). Every publish of this project names its RID (-r), so the default is
+             never used; opting out keeps the RID list - and the lock file - the same on every host. Reproduced on
+             Linux with -p:NETCoreSdkPortableRuntimeIdentifier=osx-arm64 before and after. -->
+        <UseDefaultPublishRuntimeIdentifier>false</UseDefaultPublishRuntimeIdentifier>
         <!-- CA1515: a single-file sample's types are public in an exe that exposes no API.
              CA1303: the lines it prints are fixed strings for the AOT gate's log, not localizable UI. -->
         <!-- CA2007 + MA0004 (ConfigureAwait): not needed in a self-contained sample app's await foreach.

@@ -13,7 +13,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <see cref="ReportUnappliedDenseEnumDirectives" /> to tell "the directive fired" from "the directive
         ///     named a member resolution never reached".
         /// </summary>
-        private const string DenseHelperPrefix = "__DwarfDense_";
+        private const string DenseHelperPrefix = GeneratedNames.DenseEnum;
 
         /// <summary>
         ///     Everything true of a <c>[MapDenseEnumKeys]</c> APPLICATION regardless of the member it names —

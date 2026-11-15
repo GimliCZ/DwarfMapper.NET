@@ -102,8 +102,8 @@ namespace DwarfMapper
     ///     <para>
     ///         It is outranked by <see cref="MapNullSkipAttribute" /> on a method, and outranks
     ///         <see cref="DwarfMapperAttribute.SkipNullSourceMembers" /> — see that type for the full precedence
-    ///         chain. Declaring the same pair twice with opposite values is legal (this attribute is
-    ///         <c>AllowMultiple</c>) and the first declaration wins; do not rely on it.
+    ///         chain. Declaring the same pair twice with opposite values is refused
+    ///         (<c>DWARF099</c>): two answers to one question are an error, not a precedence rule.
     ///     </para>
     ///     <example>
     ///         <code>

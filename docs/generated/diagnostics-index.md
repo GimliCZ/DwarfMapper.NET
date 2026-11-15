@@ -119,5 +119,9 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF114` | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm |
 | `DWARF115` | Warning | EF Core cannot precompile a query built by a projection method |
 | `DWARF116` | Warning | A statement of intent matches nothing |
+| `DWARF117` | Error | A scalar map cannot be generated as declared |
+| `DWARF118` | Error | [FlattenGraph] node member leads back to the flatten method |
+| `DWARF119` | Error | A [MapDerivedType] dispatch has no arm for its own instantiable base type |
+| `DWARF120` | Error | [DwarfMapper] and [GenerateMap] are not read on a record |
 
-111 diagnostics.
+115 diagnostics.

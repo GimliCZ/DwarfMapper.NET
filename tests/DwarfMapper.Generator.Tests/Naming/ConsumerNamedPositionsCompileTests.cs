@@ -486,6 +486,7 @@ namespace DwarfMapper.Generator.Tests.Naming
                              public partial class M
                              {
                                  [MapDerivedType(typeof(@class), typeof(@event))]
+                                 [MapDerivedType(typeof(Src), typeof(Dst))]
                                  public partial Dst Map(Src s);
                                  public partial @event @struct(@class c);
                              }

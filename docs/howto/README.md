@@ -40,7 +40,8 @@ Read [deploy-and-optimize.md](deploy-and-optimize.md) — the deployment-and-eff
 
 Every migration, from every library, is the same three moves (detailed in [common-changes.md](common-changes.md)):
 
-1. **Reference one package** (`DwarfMapper` — it bundles the generator) and bump the consuming project to `net10.0`.
+1. **Reference one package** (`DwarfMapper` — it bundles the generator) and bump the consuming project to
+   `net10.0` or later (.NET 11 is verified in CI, job `net11`).
 2. **Collapse your runtime config into one `partial class`** — `[DwarfMapper]` on the class, one
    `[GenerateMap<Src,Dst>]` line (or one `partial` method) per pair. POCOs stay attribute-free.
 3. **Fix the build errors.** DwarfMapper turns "I forgot to map a property" into a compile error
@@ -61,5 +62,5 @@ Every migration, from every library, is the same three moves (detailed in [commo
 
 ## Status note
 
-DwarfMapper is **pre-release — `1.0.1-rc.1`, a release candidate.** Install it with the `--prerelease`
+DwarfMapper is **pre-release — `1.0.2-rc.1`, a release candidate.** Install it with the `--prerelease`
 flag (`dotnet add package DwarfMapper --prerelease`). See the repository [README](../../README.md#status).

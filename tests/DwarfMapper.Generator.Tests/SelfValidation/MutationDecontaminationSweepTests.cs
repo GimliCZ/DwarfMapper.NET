@@ -209,10 +209,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             //
             // Since round 30 every leg runs THROUGH the wrapper, so housekeeping calls the sweep functions
             // directly zero times: a direct call is a leg that has stepped outside the finally again.
-            var wrapperCalls = Regex.Matches(housekeeping, @"Invoke-DecontaminatedMutationLeg -Leg ").Count;
+            var wrapperCalls = Regex.Count(housekeeping, @"Invoke-DecontaminatedMutationLeg -Leg ");
             Assert.True(wrapperCalls == 6,
                 $"scripts/housekeeping.ps1 calls Invoke-DecontaminatedMutationLeg {wrapperCalls} time(s), expected " + "exactly 6 (one per mutation leg) — a leg outside the wrapper is not swept when it throws, and " + "leaves a mutated product assembly in a test bin (I4).");
-            Assert.True(Regex.Matches(housekeeping, @"(?m)^\s*(Remove-PlantedMutants|Assert-NoMutatedProductBinaries) ").Count == 0,
+            Assert.True(Regex.Count(housekeeping, @"(?m)^\s*(Remove-PlantedMutants|Assert-NoMutatedProductBinaries) ") == 0,
                 "scripts/housekeeping.ps1 calls Remove-PlantedMutants / Assert-NoMutatedProductBinaries directly — " + "that leg sweeps only on success. Route it through Invoke-DecontaminatedMutationLeg.");
 
             // And each leg's Stryker run sits inside ITS OWN wrapper call, not beside it.

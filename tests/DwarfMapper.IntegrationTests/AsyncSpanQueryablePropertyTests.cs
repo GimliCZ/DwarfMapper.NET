@@ -165,12 +165,16 @@ namespace DwarfMapper.IntegrationTests
 
             for (var i = 0; i < 100; i++) mapper.MapSpan(src, dst); // warm up
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
-            for (var i = 0; i < 1000; i++) mapper.MapSpan(src, dst);
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            // One window of 1,000 maps, exactly zero. Until round 35 it was read on this thread, and PR #13's net11
+            // job read 4,896 bytes in it once (run 43439030599): this thread has just allocated its arrays, so it
+            // holds the unused rest of an allocation buffer, and a background collection started by another test's
+            // thread moved its counter by that rest. Measured, and the reason the window is now read on a thread
+            // whose buffer has been retired: CostContract.ExactBytesOnFreshThread. (This project keeps the runtime's
+            // defaults on purpose, concurrent collection among them; see Directory.Build.targets.)
+            var allocated = CostContract.ExactBytesOnFreshThread(() => mapper.MapSpan(src, dst), 1000);
 
             Assert.Equal(64, dst.Length);
-            Assert.Equal(0, allocated); // writes into caller-provided memory — no allocation
+            Assert.Equal(0, allocated);
         }
     }
 }

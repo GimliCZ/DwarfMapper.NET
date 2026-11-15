@@ -280,6 +280,7 @@ namespace DwarfMapper.IntegrationTests
     public partial class Par_DerivedMapper
     {
         [MapDerivedType<Par_Cat, Par_CatDto>]
+        [MapDerivedType<Par_Animal, Par_AnimalDto>]
         public partial Par_AnimalDto Map(Par_Animal a);
     }
 

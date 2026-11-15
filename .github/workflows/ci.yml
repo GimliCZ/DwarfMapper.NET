@@ -1,11 +1,15 @@
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the trailing `# vN` is the
 # human-readable version. When bumping a version, update BOTH the SHA and the comment.
 #
-# Linux jobs name `ubuntu-24.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` to
-# Ubuntu 26.04 over several weeks (2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside that window
-# two jobs of one run can land on different images. `ubuntu-26-canary` below runs 26.04, and since round 34 it is
-# blocking while the pins stay (the owner's choice, 2026-10-27). Moving them is a decision of its own, made in one
-# commit with CiRunnerImagePinScanTests, which holds this rule.
+# Linux jobs name `ubuntu-26.04`, never `ubuntu-latest`, for the same reason: GitHub moves `ubuntu-latest` between
+# images over several weeks (24.04 to 26.04 from 2026-10-19 to 2026-11-19, actions/runner-images#14748), and inside
+# such a window two jobs of one run can land on different images. Every Linux job moved from 24.04 to 26.04 in one
+# commit in round 35 (T8, the owner's decision of 2026-11-13: one Ubuntu, not two). Until then a blocking
+# `ubuntu-26-canary` job had run the push-time suite and the linux NativeAOT gate on 26.04 beside the 24.04 pins,
+# green from 2026-10-22; with every job on that image it had nothing left to say and was removed. What 26.04
+# changes that this repository touches (runner-images Ubuntu2604-Readme against Ubuntu2404-Readme, read
+# 2026-10-12): clang 16-18 -> 20-22 (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29,
+# Python 3.12 -> 3.14. The next move is again one commit with CiRunnerImagePinScanTests, which holds this rule.
 name: CI
 on:
   push:
@@ -37,7 +41,7 @@ permissions:
   contents: read
 jobs:
   build-test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -49,7 +53,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
 
       # ── SDK pin drift check (ISSUE-038) ─────────────────────────────────────
       # global.json pins an exact SDK with rollForward: disable, but that only constrains what the SDK
@@ -106,9 +110,14 @@ jobs:
       # would fight it.
       # --logger junit: `dotnet test` ships trx/html/console and NO junit, and Codecov test analytics
       # reads JUnit XML only. Without it the upload below finds nothing and reports success.
+      # The path is ROOTED at the workspace (round 35). A relative LogFilePath is resolved against each TEST
+      # PROJECT's directory, not the repository root, so the files had been landing in
+      # tests/<project>/TestResults/junit/ while the upload below looks in ./TestResults/junit/: its log read
+      # "Some files were not found", and the uploads went through only because the Codecov CLI then searched
+      # the whole tree on its own ("Found 9 test_results files"). A gate should not rest on a fallback.
       # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
       # show which tests fail and how often, which is precisely the run you must not skip.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=$GITHUB_WORKSPACE/TestResults/junit/{assembly}.junit.xml"
         continue-on-error: true
         id: tests
 
@@ -192,7 +201,7 @@ jobs:
   # load-induced timeouts being credited as detections, and that is fixed per-config by
   # `additional-timeout`, not by running fewer tests. See Issues/ledgers/E3-E1-report.md.
   mutation:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -266,7 +275,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # A mis-ordered config silently disables the leg (H4): Stryker 4.16 refuses to run when
       # thresholds.break > thresholds.low ("Threshold low must be more than or equal to threshold break")
       # AND EXITS 0 — exactly how the doctooling leg sat unrunnable-and-green from 2026-08-19 until H1
@@ -291,7 +300,7 @@ jobs:
       # DISCOVERY and its TIMEOUT arithmetic both feed the score directly, and both are version behaviour —
       # an unpinned upgrade could move the number with no repo change to point at.
       # The tool targets net8.0, but its runtimeconfig sets rollForwardOnNoCandidateFx=2 (Major), so it runs
-      # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
+      # on the pinned SDK's runtime with no .NET 8 installed. Verified locally on a machine carrying only
       # runtimes 7/9/10.
       - run: dotnet tool install --global dotnet-stryker --version 4.16.0
       # ilverify, because without it every leg's INITIAL test run fails: EmittedIlIsVerifiableTests' two facts
@@ -525,7 +534,7 @@ jobs:
   # guard is mirrored rather than reinvented. The floors inside were MEASURED on the fast tier; the full
   # populations cover a superset, so the gate can only be tighter than its measurement, never looser.
   deep-test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -557,7 +566,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # Pinned for the same reason as Stryker and CycloneDX: both tools' output feeds a gate (the floors
       # read ReportGenerator's Summary.json; ILVerify's verdict IS the stage), so the thing computing the
       # number must not move under the gate. Versions are the locally-verified ones.
@@ -592,7 +601,7 @@ jobs:
   # The vacuity guard is the second step: a filter that matches nothing makes `dotnet test` exit 0, and a Perf
   # lane that ran no test must read as broken, not as green.
   perf-tests:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -611,7 +620,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
       # One test project at a time (-m:1). Otherwise the solution starts every project's test host at once, ten of them
@@ -638,7 +647,7 @@ jobs:
   # The vacuity guard reads the line the test writes only after the whole set compiled: without the variable
   # the test returns at once, and that reads as a pass.
   fuzz-exhaustion:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -666,7 +675,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-restore
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~FeatureCombinationFuzzTests.Full_power_set_compiles_on_every_emit_path" --blame-hang --blame-hang-timeout 75m --logger "trx" --results-directory FuzzResults
@@ -685,7 +694,7 @@ jobs:
   # configuration really applied, so the matrix cannot pass as five runs of one configuration, and the script
   # fails when any configuration does.
   isa-matrix:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -704,7 +713,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - shell: pwsh
         run: ./scripts/isa-matrix.ps1
@@ -714,7 +723,7 @@ jobs:
       matrix:
         include:
           - rid: linux-x64
-            runs-on: ubuntu-24.04
+            runs-on: ubuntu-26.04
           - rid: win-x64
             runs-on: windows-latest
     runs-on: ${{ matrix.runs-on }}
@@ -729,7 +738,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # Fails the build on any IL2xxx (trim) or IL3xxx (AOT) warning.
       #
       # PublishAot is deliberately NOT passed on the command line. The sample's csproj already sets
@@ -778,7 +787,7 @@ jobs:
   # commit, or a shrunken assertion count — because a gate that only fails when the run fails still passes
   # when the run never happened, and "skipped" is indistinguishable from "passed" in a green check.
   conformance-gate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -790,7 +799,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: chmod +x scripts/conformance-gate.sh
       - run: ./scripts/conformance-gate.sh linux-x64
       - name: Publish the dated conformance artifact
@@ -800,17 +809,19 @@ jobs:
           path: conformance/results/
 
   # ── Forward-compatibility leg: does the generator still load in a NEWER compiler? ────────────────────
-  # The floor (Microsoft.CodeAnalysis 5.0.0) is what every other job builds, and it is what the pinned SDK
-  # 10.0.101 carries. This job answers the other half: a consumer on a newer 10.0.x SDK runs our generator
+  # The floor (Microsoft.CodeAnalysis 5.0.0) is what the generator is compiled against, and toolchain-floor below
+  # builds on an SDK that carries it. This job answers the other half: a consumer on a newer 10.0.x SDK runs our generator
   # inside THEIR compiler, and a generator built against a newer Roslyn than the host refuses to load with
   # CS9057. Measured locally: referencing 5.6.0 while building on SDK 10.0.101 fails with exactly that,
-  # which is why this leg needs its own, newer SDK and cannot live in build-test.
+  # which is why this leg needs its own, newer SDK and cannot live in build-test. While the pin IS the newest 10.0
+  # SDK (round 35 moved it to 10.0.404, the newest of the day), this leg and build-test run on the same one; it starts
+  # looking ahead again the day a newer 10.0 SDK ships, before the pin follows.
   #
   # BLOCKING since round 34. It was authored non-blocking, without a machine that had a newer 10.0.x SDK, to be
   # flipped "once it has been seen green". It was green on every master nightly read for the flip (2026-10-22 to
   # 10-27, run 40477294097 among them), so its continue-on-error came off: a gate that cannot fail is decoration.
   roslyn-forward-compat:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -884,8 +895,57 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
+  # ── Toolchain floor: the oldest SDK band the README promises (round 35, T7) ────────────────────────────────
+  # README: "Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+)". Until round 35 every job built on the
+  # pinned 10.0.101, whose compiler is Roslyn 5.0, so the promise was held by every build without being written
+  # down anywhere. T7 moved the pin to 10.0.404, which carries Roslyn 5.9. From then on the floor compiler ran only
+  # inside the suite (the tests reference Microsoft.CodeAnalysis 5.0.0 and compile the generated code with it) and
+  # no consumer project - the samples, the consumer tests, the integration tests - was built by it. This job builds
+  # and tests the whole solution on the newest SDK of the 10.0.1xx band.
+  #
+  # Installed into a directory of its own: the runner image carries newer 10.0 SDKs, and with the pin dropped
+  # `dotnet` picks the newest it can see. From that directory it sees only this one, and the step below proves it.
+  # Locked mode stays ON and warnings stay errors. A 10.0.1xx SDK resolves its implicit AOT and trim packages at
+  # its runtime's patch - 10.0.15 for 10.0.115, the same as the pinned 10.0.404 - so the lock files hold; and an
+  # older band's analyzers are a subset of the pinned one's. If either stops being true, that is this job's
+  # finding, not noise to exempt.
+  toolchain-floor:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
+      # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-floor
+        with:
+          dotnet-version: '10.0.1xx'   # deliberately NOT the pin: the newest SDK of the oldest supported band
+      - name: Drop the SDK pin for this job only, and PROVE a 10.0.1xx SDK is what we got
+        run: |
+          set -euo pipefail
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          actual=$(dotnet --version)
+          echo "SDK resolved: $actual"
+          dotnet --list-sdks
+          case "$actual" in
+            10.0.1[0-9][0-9]) ;;
+            *) echo "::error::toolchain-floor resolved SDK $actual, not a 10.0.1xx SDK - it would prove nothing about the floor" >&2
+               exit 1 ;;
+          esac
+      # ilverify, for the reason every job that runs the suite installs it (CiToolPrerequisiteScanTests).
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      - name: Build on the floor SDK, locked, warnings as errors
+        run: dotnet build DwarfMapper.NET.sln -c Release
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
+
   codeql:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       security-events: write
     steps:
@@ -899,7 +959,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: csharp
@@ -907,7 +967,7 @@ jobs:
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
 
   sbom:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       id-token: write
       attestations: write
@@ -923,7 +983,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet tool install --global CycloneDX --version 6.2.0
       - run: dotnet CycloneDX DwarfMapper.NET.sln -o ./sbom
       # SLSA build-provenance attestation for the generated SBOM artifact.
@@ -948,6 +1008,9 @@ jobs:
   # GUID each pack, and `_rels/.rels` names it back. DwarfMapper's own bytes reproduce; NuGet's envelope
   # does not. scripts/repro-pack-check.py's header carries the full measurement and normalises exactly
   # those two parts BY NAME, comparing their content — it is not a tolerance and it does not skip them.
+  # Since round 35 (T7, SDK 10.0.404 with NuGet 7.9) the part is named `nuget.psmdcp` and `_rels/.rels` is
+  # byte-identical across packs: every entry reproduces, and only the zip headers' pack time still moves the
+  # whole-file hash. The script accepts both exact names.
   #
   # Deterministic-build inputs are already set repo-wide and were NOT added for this leg: Directory.Build
   # .props sets Deterministic, ContinuousIntegrationBuild on '$(CI)' == 'true' (GitHub sets CI for every
@@ -967,7 +1030,7 @@ jobs:
   # flag now hides nothing. Running validation somewhere nightly — rather than only at a version tag in
   # release.yml — remains open; see I15's DONE row for why it was not folded into this job.
   reproducible-build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Nightly cron and manual dispatch only — never on push or pull_request.
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
@@ -999,7 +1062,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # ONE step for both rounds on purpose: if the two rounds' command lines could drift apart, the
       # comparison would be measuring two different builds and calling the difference non-determinism.
       # The output directories live under RUNNER_TEMP because `git clean -xdf` is what separates the
@@ -1055,24 +1118,12 @@ jobs:
   # verdicts. (It was ALSO broken when this job was written; I15 fixed that in round 23, so the flag no
   # longer masks anything.)
   package-size:
-    runs-on: ubuntu-24.04
-    # Nightly cron and manual dispatch only — never on push or pull_request.
-    # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
-    # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
-    # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
-    # checks the nightly runs, before the merge rather than the night after it.
-    #
-    # Kept as a LABEL rather than `pull_request` outright for that cost reason, and rather than
-    # workflow_dispatch alone because a dispatch runs against a branch, not against the merge result the
-    # reviewer is actually approving.
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'full-ci')
-    # ESTIMATE, not a measurement — never run on a hosted runner. Local Windows 12-core at 81c4ace: locked
-    # restore + pack of both packages = ~20 s with a warm NuGet cache. A ~4-core hosted runner with a cold
-    # cache is dominated by restore (~2 min) and the analyzer-heavy Release build (~2 min), ~5 min with SDK
-    # setup. Trebled -> 15. Replace this paragraph with the first real run's wall-clock.
+    runs-on: ubuntu-26.04
+    # On EVERY event since round 35. It was nightly-only as "the expensive tier", and it is not expensive: 0.7 min
+    # on a runner (PR #11's run 43389928831). What nightly-only cost instead: the ceiling was missed five times by
+    # changes that looked harmless on their pull request - the fifth a README edit, which is packed into both
+    # packages - and each showed up as a red nightly on master. On a pull request it is a red check on the change
+    # that causes it.
     timeout-minutes: 15
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
@@ -1085,7 +1136,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - name: Pack the shipped packages
         run: |
@@ -1168,7 +1219,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
+          dotnet-version: '10.0.404'
       # The ISSUE-038 drift assertion, per-runner. build-test proves the pin holds on ubuntu and says
       # nothing about the other two images, which is precisely the gap this job exists to close.
       # `shell: bash` is mandatory here: on windows-latest the default shell is pwsh and this is sh.
@@ -1220,7 +1271,7 @@ jobs:
   # NIGHTLY, not per-push: the preview channel moves under us continuously, so a per-push leg would turn
   # its own churn into log noise on every PR while never being able to fail anything.
   preview-sdk-canary:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # RELEASE-GATE OPT-IN. These are the expensive tier and stay OFF by default on a pull request -- the
     # mutation matrix alone budgets up to 350 minutes per leg across six legs, which no ordinary PR should
     # pay. Label a PR `full-ci` to run them, which is what a round-closing / release PR wants: the same
@@ -1305,23 +1356,28 @@ jobs:
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
 
-  # ── Ubuntu 26.04 canary: does this pipeline survive the `ubuntu-latest` move? ───────────────────────────
-  # Every other Linux job is pinned to ubuntu-24.04 (the note at the top of this file). This one runs the
-  # push-time suite and the linux-x64 NativeAOT gate on the image `ubuntu-latest` is becoming, on every event,
-  # so the move is measured here before it reaches a gate. What that image changes that this repository
-  # touches (runner-images Ubuntu2604-Readme against Ubuntu2404-Readme, read 2026-10-12): clang 16-18 -> 20-22
-  # (the NativeAOT link), gcc 13 -> 15, OpenSSL 3.0 -> 3.5, Docker 28 -> 29, Python 3.12 -> 3.14. PowerShell and
-  # the preinstalled .NET SDKs are the same, and the SDK used is the pinned 10.0.101 either way.
-  #
-  # BLOCKING since round 34, by the owner's choice (2026-10-27). It was authored non-blocking so the image's own
-  # breakage could not red a PR that changed nothing, and it was green on every nightly read for the flip
-  # (2026-10-22 to 10-27). The other Linux jobs stay pinned to ubuntu-24.04; this is the one job that runs
-  # 26.04, and now a break there fails the run instead of passing unread.
-  ubuntu-26-canary:
+  # ── .NET 11: the release that shipped (round 34) ─────────────────────────────────────────────────────────
+  # .NET 11 went GA on 2026-11-10. The library stays one net10.0 assembly, which a net11.0 application references
+  # as it is, and the generator stays netstandard2.0; what "supports .NET 11" means is held here, on every event:
+  #   1. the repository builds under the .NET 11 SDK with its own settings (warnings are errors: the rules that
+  #      SDK's analyzers add count), and the suite passes with DOTNET_ROLL_FORWARD=LatestMajor, the net10.0 test
+  #      assemblies on the newest runtime installed;
+  #   2. the consumer's shape: every sample and consumer test project retargeted to net11.0 in this working copy
+  #      (C# 15, the 11.0 reference assemblies), built with warnings as errors - generated code included, which a
+  #      consumer cannot suppress - and their tests run as net11.0 assemblies, which only the 11 runtime can load;
+  #   3. NativeAOT as net11.0, with the 11.0 compiler.
+  # Measured before the job was written, SDK 11.0.100 on this tree: 1 failed on three new analyzer rules in
+  # Generator.Tests alone (fixed), nothing under src/ or in generated code; 2 and 3 passed as they were.
+  # The SDK is PINNED here, like the 10.0 one and for the same reason: a newer 11.0.x band adds analyzer rules, and
+  # that must arrive as a change to this line, not as a red job on someone else's commit. preview-sdk-canary above
+  # stays the unpinned look ahead. Generator.Tests and the Gallery keep net10.0 in step 2: neither is a consumer
+  # (the Gallery is referenced by the net10.0 DocTooling), and as net11.0 the test project meets 92 CA1307 findings
+  # on string overloads that framework adds - its own style, not the product's.
+  net11:
     runs-on: ubuntu-26.04
-    # ESTIMATE from PR #7's last run on ubuntu-24.04 (2026-10-12): build-test 4.5 min, the linux AOT leg 1 min.
-    # 30 leaves room for a slower new image and a cold cache.
     timeout-minutes: 30
+    env:
+      DOTNET_ROLL_FORWARD: LatestMajor
     steps:
       # Round 31 T20: first step of every job. AUDIT mode records each job's network egress and changes no
       # behaviour; the recorded baseline is what a later round tightens to an allow-list (block mode).
@@ -1333,21 +1389,61 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: '10.0.101'
-      # build-test's steps, then the linux leg of aot-trim-gate's, so that a red here is the image.
-      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
-      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
-      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -warnaserror -o aot-out
-      - name: Assert the publish really was NativeAOT, then execute it (aot-trim-gate's two checks)
+          dotnet-version: '11.0.100'
+      - name: Drop the SDK pin for this job only, and PROVE the .NET 11 SDK is what we got
         run: |
           set -euo pipefail
-          if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
-            echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT publish." >&2
-            ls -la aot-out >&2
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          actual=$(dotnet --version)
+          echo "SDK resolved: $actual"
+          if [ "$actual" != "11.0.100" ]; then
+            echo "::error::the net11 job resolved SDK $actual, not 11.0.100 - it would prove nothing about .NET 11" >&2
             exit 1
           fi
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      # Locked mode off: another SDK resolves its implicit packages at its own patch (see roslyn-forward-compat).
+      - name: Build under the .NET 11 SDK, warnings as errors
+        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+      - name: The suite, rolled forward to the newest runtime
+        run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      - name: Retarget the consumers to net11.0
+        run: |
+          set -euo pipefail
+          n=0
+          for p in $(git ls-files 'tests/*.csproj' 'tests/**/*.csproj' 'samples/**/*.csproj' | sort -u); do
+            case "$p" in *DwarfMapper.Generator.Tests.csproj|*DwarfMapper.Gallery.csproj) continue ;; esac
+            sed -i 's|<TargetFramework>net10.0</TargetFramework>|<TargetFramework>net11.0</TargetFramework>|' "$p"
+            grep -q '<TargetFramework>net11.0</TargetFramework>' "$p" || { echo "::error::$p was not retargeted"; exit 1; }
+            echo "$p" >> net11-projects.txt
+            n=$((n + 1))
+          done
+          echo "retargeted $n projects"
+          # The vacuity guard: the samples and consumer test projects are fourteen today.
+          [ "$n" -ge 14 ] || { echo "::error::only $n projects retargeted - the consumer shape was not built"; exit 1; }
+      - name: Build the consumers as net11.0, warnings as errors
+        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+      - name: Run them as net11.0 assemblies
+        run: |
+          set -euo pipefail
+          # Project by project, and not Generator.Tests: its scans read this working copy, which the step above
+          # changed on purpose (the suite, those scans included, ran two steps up on the tree as committed).
+          for p in $(grep -l -E 'xunit' $(cat net11-projects.txt)); do
+            dotnet test "$p" -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m 2>&1 | tee -a net11-test.log
+          done
+          ran=$(grep -c -E '^Passed!.*\(net11\.0\)' net11-test.log || true)
+          echo "$ran test assemblies passed as net11.0"
+          # Eight today (every test project but Generator.Tests). Fewer means the retargeting no longer reaches them.
+          [ "$ran" -ge 8 ] || { echo "::error::only $ran test assemblies ran as net11.0"; exit 1; }
+      - name: NativeAOT as net11.0, published and executed
+        run: |
+          set -euo pipefail
+          dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -p:RestoreLockedMode=false -warnaserror -o aot-out
+          if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
+            echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT publish." >&2
+            exit 1
+          fi
+          # The compiler the restore resolved for this publish, read from its assets file.
+          grep -q '"runtime.linux-x64.Microsoft.DotNet.ILCompiler/11\.' samples/DwarfMapper.AotSample/obj/project.assets.json || { echo "::error::the publish did not resolve an 11.x ILCompiler"; exit 1; }
           ./aot-out/DwarfMapper.AotSample
 
   # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2)────────────────────────────
@@ -1404,7 +1500,7 @@ jobs:
   # this leg's input is untrustworthy; making the alert conditional on a successful producer keeps a red
   # here meaning "the artifact contract broke".
   bench-wall-time-alert:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: deep-test
     # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
     # reader: this is a nightly leg, exactly like the job it consumes.

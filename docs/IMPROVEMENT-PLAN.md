@@ -66,7 +66,7 @@ diagnostics below (items 7/12/13/14) must take fresh IDs ≥ DWARF064. Reserved/
 ## Benchmark regression scrutiny (capstone)
 
 - **AOT real-world infrastructure: GREEN.** `samples/DwarfMapper.AotSample` NativeAOT-publishes with
-  **zero** IL2xxx/IL3xxx trim/AOT warnings (this is the CI gate); native exe ~1.53 MB; the behavioural runtime gate (run **locally**, not in CI) passes every check
+  **zero** IL2xxx/IL3xxx trim/AOT warnings (this is the CI gate); native exe ~1.53 MB; the behavioural runtime gate (run **in CI**, by job `aot-trim-gate`, which executes the published binary) passes every check
   (checked-narrowing overflow, IParsable, IFormattable, record ctor, auto-nest, depth-guard, None/Preserve/
   SetNull cycles incl. through collections, FlattenGraph homo+hetero, MapDerivedType dispatch, update-into,
   zero-alloc span map, SIMD widen == scalar, async streaming). No AOT regression.

@@ -1353,7 +1353,12 @@ namespace DwarfMapper.Conformance
     [DwarfMapper]
     public partial class F44M
     {
+        // F44Command can be instantiated, so it has an arm of its own (DWARF119): without one a plain F44Command
+        // would reach the dispatch's fallback and throw. A plain command has no alias to give, and says so: the
+        // method's own [MapIgnore] is read for the arm of the method's own pair, and the alias arm still fills it.
         [MapDerivedType<F44AliasCommand, F44OverviewDto>]
+        [MapDerivedType<F44Command, F44OverviewDto>]
+        [MapIgnore(nameof(F44OverviewDto.Alias))]
         public partial F44OverviewDto ToDto(F44Command c);
     }
 

@@ -37,7 +37,9 @@ namespace DwarfMapper.Generator.Tests
         [Fact]
         public void An_arm_never_dispatches_back_into_the_method_it_dispatches_from()
         {
-            // Two sources, one target — the shape the migration actually wrote, and the one that recursed.
+            // Two sources, one target — the shape the migration actually wrote, and the one that recursed. The base
+            // can be instantiated, so it has an arm of its own (DWARF119); that arm's pair IS the method's pair, the
+            // closest a dispatch comes to calling itself, and a plain command has no alias to give.
             const string src = """
                                using DwarfMapper;
                                namespace Demo;
@@ -53,6 +55,8 @@ namespace DwarfMapper.Generator.Tests
                                public partial class M
                                {
                                    [MapDerivedType<AliasCommand, CommandOverviewDto>]
+                                   [MapDerivedType<Command, CommandOverviewDto>]
+                                   [MapIgnore(nameof(CommandOverviewDto.Alias))]
                                    public partial CommandOverviewDto ToDto(Command c);
                                }
                                """;
@@ -60,6 +64,7 @@ namespace DwarfMapper.Generator.Tests
             var generated = GeneratorAssert.CompilesClean(src);
 
             Assert.DoesNotContain("__s => ToDto(__s)", generated, StringComparison.Ordinal);
+            Assert.Contains("global::Demo.Command __s => __DwarfMap_Obj_", generated, StringComparison.Ordinal);
 
             // The arm gets a real AliasCommand -> CommandOverviewDto mapper, which is what asking to map a
             // derived type differently meant — and which carries the member the base does not have.
@@ -78,6 +83,7 @@ namespace DwarfMapper.Generator.Tests
                                                           public partial class M
                                                           {
                                                               [MapDerivedType<AliasCommand, AliasCommandDto>]
+                                                              [MapDerivedType<Command, CommandDto>]
                                                               public partial CommandDto ToDto(Command c);
 
                                                               public partial AliasCommandDto ToAliasDto(AliasCommand c);
@@ -99,6 +105,7 @@ namespace DwarfMapper.Generator.Tests
                                                           public partial class M
                                                           {
                                                               [MapDerivedType<AliasCommand, AliasCommandDto>]
+                                                              [MapDerivedType<Command, CommandDto>]
                                                               public partial CommandDto ToDto(Command c);
 
                                                               public partial AliasCommandDto ToDto(AliasCommand c);
@@ -117,11 +124,12 @@ namespace DwarfMapper.Generator.Tests
             // A dispatching method never maps its declared pair — every runtime type either matches an arm or
             // throws — so requiring the base source to fill every target member would be asking for a mapping
             // that is never emitted. Pinned because the obvious implementation gets this wrong and the workaround
-            // ([MapIgnore] on members the DERIVED type supplies) reads as nonsense.
+            // ([MapIgnore] on members the DERIVED type supplies) reads as nonsense. The base is abstract: one that can
+            // be instantiated must have an arm (DWARF119), and that arm IS a map of the base pair.
             const string src = """
                                using DwarfMapper;
                                namespace Demo;
-                               public class Command { public string Name { get; set; } = ""; }
+                               public abstract class Command { public string Name { get; set; } = ""; }
                                public class AliasCommand : Command { public string Alias { get; set; } = ""; }
                                public class CommandOverviewDto
                                {
@@ -137,7 +145,7 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
 
-            GeneratorAssert.DoesNotReport(src, "DWARF001");
+            GeneratorAssert.CompilesClean(src);
         }
 
         [Fact]
@@ -202,6 +210,7 @@ namespace DwarfMapper.Generator.Tests
                                                           public partial class M
                                                           {
                                                               [MapDerivedType<AliasCommand, AliasCommandDto>]
+                                                              [MapDerivedType<Command, CommandDto>]
                                                               public partial CommandDto ToDto(Command c);
 
                                                               public partial AliasCommandDto ToAliasDto(AliasCommand c);

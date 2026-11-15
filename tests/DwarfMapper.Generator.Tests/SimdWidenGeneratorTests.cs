@@ -239,8 +239,8 @@ namespace DwarfMapper.Generator.Tests
                                [DwarfMapper] public partial class M { public partial D Map(C c); }
                                """;
             var generated = GeneratorAssert.CompilesClean(src);
-            var declCount = System.Text.RegularExpressions.Regex.Matches(generated,
-                "private static global::System.Collections.Generic.List<long> __DwarfWidenL_").Count;
+            var declCount = System.Text.RegularExpressions.Regex.Count(generated,
+                "private static global::System.Collections.Generic.List<long> __DwarfWidenL_");
             Assert.Equal(1, declCount);
         }
 

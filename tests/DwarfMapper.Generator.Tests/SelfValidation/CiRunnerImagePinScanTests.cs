@@ -16,17 +16,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     ///     </para>
     ///     <para>
     ///         So no job floats on <c>ubuntu-latest</c>, and moving to a new image is one commit that changes
-    ///         <see cref="Pinned" /> here and the labels in the workflows together. The one job allowed elsewhere is
-    ///         <see cref="CanaryJob" />, which tries the next image before the pins move onto it.
+    ///         <see cref="Pinned" /> here and the labels in the workflows together. Round 35 (T8) made that move, from
+    ///         24.04 to 26.04, on the owner's decision that the pipeline runs one Ubuntu and not two; the canary job
+    ///         that had tried 26.04 beside the 24.04 pins went with it, and no job is allowed another image.
     ///     </para>
     /// </summary>
     public class CiRunnerImagePinScanTests
     {
-        private const string Pinned = "ubuntu-24.04";
-
-        private const string Canary = "ubuntu-26.04";
-
-        private const string CanaryJob = "ubuntu-26-canary";
+        private const string Pinned = "ubuntu-26.04";
 
         /// <summary>Every <c>runs-on: ubuntu-…</c> in the workflows, matrix entries included, with the job it is in.</summary>
         private static List<(string File, int Line, string Job, string Label)> UbuntuLabels()
@@ -51,7 +48,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         [Fact]
-        public void Every_Linux_job_runs_on_the_pinned_image_and_only_the_canary_tries_the_next()
+        public void Every_Linux_job_runs_on_the_one_pinned_image()
         {
             var labels = UbuntuLabels();
 
@@ -59,17 +56,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // the wrong thing and the checks below would pass over nothing.
             Assert.True(labels.Count >= 15, $"found only {labels.Count} `runs-on: ubuntu-…` line(s) across the workflows.");
 
-            var unpinned = labels.Where(l => l.Label != Pinned && !(l.Job == CanaryJob && l.Label == Canary))
+            var unpinned = labels.Where(l => l.Label != Pinned)
                                  .Select(l => $"{l.File}:{l.Line} ({l.Job}) runs on {l.Label}")
                                  .ToList();
             Assert.True(unpinned.Count == 0,
                 "Linux job(s) not on the pinned " + Pinned + ": [" + string.Join("; ", unpinned) + "]. `ubuntu-latest` " +
                 "moves between images over weeks, so a job on it can be measured on another image than its neighbours. " +
                 "Name " + Pinned + ", or move every pin and this constant in one commit.");
-
-            var canary = labels.Where(l => l.Job == CanaryJob).Select(l => l.Label).ToList();
-            Assert.True(canary.Count == 1 && canary[0] == Canary,
-                CanaryJob + " must run on " + Canary + " and nothing else; found [" + string.Join(", ", canary) + "].");
         }
     }
 }

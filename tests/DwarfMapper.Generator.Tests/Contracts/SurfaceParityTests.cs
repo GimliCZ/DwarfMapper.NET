@@ -341,8 +341,14 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         <see cref="SurfaceEffect.Silent" /> → <see cref="SurfaceEffect.Honoured" />, so
         ///         <see cref="DivergentCellCeiling" /> fell by exactly two and no other population moved.
         ///     </para>
+        ///     <para>
+        ///         1 → <b>0</b> in round 35, when the <c>MaxDepth</c> row closed: the list is empty. It was not a
+        ///         silent option but generated code that did not compile (a span or stream method calling a
+        ///         context-taking element helper with one argument), scored Silent because both settings produced
+        ///         the same uncompilable text. See <c>DeclaredDivergences</c> for the account.
+        ///     </para>
         /// </summary>
-        private const int DivergenceFindingCeiling = 1;
+        private const int DivergenceFindingCeiling = 0;
 
         /// <summary>
         ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -493,8 +499,12 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         <see cref="SurfaceEffect.Honoured" /> once the projection resolver read the option. A verdict
         ///         change, not a reclassification — nothing rose to compensate.
         ///     </para>
+        ///     <para>
+        ///         2 → <b>0</b> in round 35: <c>MaxDepth</c> @ <c>SpanMap</c> and @ <c>AsyncStream</c> measured
+        ///         <see cref="SurfaceEffect.Honoured" /> once the context reached both methods.
+        ///     </para>
         /// </summary>
-        private const int DivergentCellCeiling = 2;
+        private const int DivergentCellCeiling = 0;
 
         /// <summary>
         ///     The cells with no declaration site, pinned EXACTLY and PER CAUSE. Shrink-only, per cause.
