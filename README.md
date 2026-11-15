@@ -716,8 +716,9 @@ public partial class Mapper
 <!-- endsnippet -->
 
 When the element pair is proven layout-identical (the same fast path as the array/list blit above), the body is one
-`MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy; otherwise each element runs through the full conversion
-pipeline (`dst[i] = convert(src[i])`). A pair that narrowly misses the block copy — byte-identical but for the field
+`MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy; when it is one of the seven lossless primitive widenings
+(`int → long`, `float → double`, `byte → ushort`, ...) it is the `Vector.Widen` loop the array and list shapes use;
+otherwise each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). A pair that narrowly misses the block copy — byte-identical but for the field
 names, say — gets `DWARF100` explaining exactly what to change. The destination must be a writable `Span<D>` (source
 may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a
 silent truncation.
@@ -984,7 +985,8 @@ in CI (job `net11`); net8/net9 projects cannot reference it. The one exception i
 **Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+).** The generator is built against
 `Microsoft.CodeAnalysis` 5.0.0 and Roslyn refuses to load an analyzer compiled against a *newer* compiler than
 the host (`CS9057`), so an older SDK cannot run it. Any 10.0.x SDK works, and so does 11.0.100 (the SDK the
-`net11` CI job pins) — the floor is the .NET 10 line itself, not a specific patch. (The repo's own
+`net11` CI job pins) — the floor is the .NET 10 line itself, not a specific patch, and the CI job
+`toolchain-floor` builds and tests the solution on the newest 10.0.1xx SDK to hold it. (The repo's own
 `global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte; it is not a
 requirement on consumers.)
 

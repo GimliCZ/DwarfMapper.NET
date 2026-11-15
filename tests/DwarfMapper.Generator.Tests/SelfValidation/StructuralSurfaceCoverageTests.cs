@@ -46,7 +46,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // mapper again on a loop the depth guard never counts. Anchored by ReentryStackCheckTests.cs (generator:
         // emitted for each entry kind of such a mapper, and for no mapper without user-written code) and
         // ReentryStackCheckRuntimeTests.cs (runtime).
-        private const int MapMethodModelBoolFlagBaseline = 19;
+        // 19 -> 20: `SpanMapWidens` (round 35, T6). An INTERNAL CODEGEN FLAG on the EXISTING `IsSpanMap` mode, as
+        // `SpanMapBlits` is: nothing in a signature distinguishes a widening span map from any other; it is set from
+        // CollectionConverter.IsWidenPair on the resolved element pair. Anchored by SpanMapWidenTests.cs (generator)
+        // and SpanMapWidenRuntimeTests.cs (runtime, which scripts/isa-matrix.ps1 runs under every vector width).
+        private const int MapMethodModelBoolFlagBaseline = 20;
         private static readonly Assembly GeneratorAssembly = typeof(DwarfGenerator).Assembly;
 
         // The signature-triggered map modes, each mapped to the test files that must exercise it. There is no
