@@ -8,7 +8,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 {
     /// <summary>
     ///     Property-based tests over the snippet pipeline, with integrated shrinking (CsCheck), closing open
-    ///     item 4 of <c>docs/research/testing-conformance-REPORT.md</c>.
+    ///     item 4 of <c>Issues/research/testing-conformance-REPORT.md</c>.
     ///     <para>
     ///         A text transformer is a far better PBT target than the generator ever was: the input space is
     ///         adversarial (fences, markers, tabs, CRLF), the invariants are exact, and a failure shrinks to a

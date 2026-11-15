@@ -28,10 +28,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             var root = RepoPaths.Root;
             yield return Path.Combine(root, "README.md");
+            // Every page in docs/ is guidance now: the dated plan that needed an exemption here moved to Issues/history.
             foreach (var f in Directory.GetFiles(Path.Combine(root, "docs"), "*.md"))
-                // IMPROVEMENT-PLAN.md is a dated record of past plans, not guidance a reader acts on.
-                if (!f.EndsWith("IMPROVEMENT-PLAN.md", StringComparison.Ordinal))
-                    yield return f;
+                yield return f;
             foreach (var f in Directory.GetFiles(Path.Combine(root, "docs", "howto"), "*.md"))
                 yield return f;
             foreach (var f in Directory.GetFiles(Path.Combine(root, "docs", "generated"), "*.md"))

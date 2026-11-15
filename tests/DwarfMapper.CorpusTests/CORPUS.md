@@ -14,7 +14,7 @@ mappers, and asserts DwarfMapper produces the **exact output** those libraries' 
 
 ## Why these projects
 
-Grounded in real usage of the reference mappers (stars / NuGet downloads at time of survey):
+Grounded in real usage of the reference mappers (stars / NuGet downloads at the time of the survey, 2026-06):
 
 | Project / package              | Scale                                       | Mapper used                     | Scenarios drawn                                           |
 |--------------------------------|---------------------------------------------|---------------------------------|-----------------------------------------------------------|
@@ -47,7 +47,7 @@ choice — usually *louder*, often at **compile time**:
 - **Narrowing/overflow** → loud `OverflowException` via `CreateChecked`, never a silent truncation/wrap.
 - **Null interior on a deep source path** → DwarfMapper throws (and warns `DWARF044` at compile time), vs Mapster's
   silent null-propagation. Use `NullSubstitute`/`When` for the lenient shape explicitly.
-- **PATCH/merge `IgnoreNullValues`** (Mapster) → DwarfMapper's update-into *replaces*; selective null-skipping is
-  intentionally explicit rather than a global mode.
+- **PATCH/merge `IgnoreNullValues`** (Mapster) → DwarfMapper's update-into *replaces* by default; null-skipping is
+  opted into per mapper (`SkipNullSourceMembers`) or per map (`[MapNullSkip]`), so replace and patch can coexist.
 
 These are validated by the generator + integration suites; the corpus asserts the matching cases.

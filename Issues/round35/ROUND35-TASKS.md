@@ -41,14 +41,14 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T23 | **Multi-version generator, and C# 15 union mapping on the Roslyn 5.12 build** (the owner, 2026-11-14: "Prepare multiversion and if detected .net 11 enable Union mapping ... with tests"). Design: `docs/superpowers/specs/2026-11-14-multiversion-generator-union-mapping-design.md`. | **done on its own branch** (`feat/round35-t23`) - see Notes |
 | T25 | **DwarfMapper against today's Mapperly and Mapster** (the owner, 2026-11-14: "run entire performance and usage comparison against dwarf mapper? Afcource up to date versions (not automaller afcourse) ... Target will be performance, security, validations, docs and samples validations"). Design: `docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md`. | **measured** (`feat/round35-t25`, stacked on T23) - see Notes |
 | T24 | **A performance comparison of union mapping** ("After that prepare performance comparison testing"). Same design document. | **done on T23's branch** - `benchmarks/DwarfMapper.UnionBenchmarks`, results in `benchmarks/results/2026-11-14-round35-t24-union-mapping.md`; see Notes |
-| T26 | **Release readiness for the next NuGet upload** (the owner, 2026-11-15: "For the nuget, I am pretty sure we should do an update in close future"). The version, the CHANGELOG, the analyzer release files, the release procedure and every claim about releases made true before a tag. | open - needs owner decisions D1, D2; see Notes, "Documentation review" |
-| T27 | **README.md as the package page** (the owner: "I saw for example in readme some old mid statistics from old tests, that are probably not that apropriate to have"). Broken first-screen rendering, relative links NuGet cannot resolve, stale statistics, overclaims, internal noise. | open; see Notes |
-| T28 | **The two security documents**: one policy page, one claim register, no contradiction between them. | open; see Notes |
-| T29 | **`docs/diagnostics.md` in product terms**: present-tense entries under one rule for history, no round/task/finding labels, no ledger links, no benchmark figures, two rendering defects and one contradiction. | open; see Notes |
-| T30 | **The how-to guides**: versions, the testing package, the packaging story told once, a sample region that stops before its call, the index. | open; see Notes |
-| T31 | **The core docs**: wrong enum advice in the migration material, COMPARISON's performance section rebuilt around the current run, PERFORMANCE.md's views story, the dated plan and research files, the API reference renderer. | open - owner decisions D4, D5; see Notes |
-| T32 | **Samples, benchmarks and contributor notes**: stale comments and SDK images, the Gallery's hand-written headings, a samples index, subject names for round-named files. | open; see Notes |
-| T33 | **Repository layout as an outsider sees it**: `Issues/` and `docs/superpowers/` under one clearly internal folder, user docs stop linking into round ledgers, `benchmarks/results/` indexed. | open - owner decision D3; see Notes |
+| T26 | **Release readiness for the next NuGet upload** (the owner, 2026-11-15: "For the nuget, I am pretty sure we should do an update in close future"). The version, the CHANGELOG, the analyzer release files, the release procedure and every claim about releases made true before a tag. | done on this branch (1.1.0-rc.1, DwarfMapper.Testing in the release on purpose); see Notes, "T26-T33 outcome" |
+| T27 | **README.md as the package page** (the owner: "I saw for example in readme some old mid statistics from old tests, that are probably not that apropriate to have"). Broken first-screen rendering, relative links NuGet cannot resolve, stale statistics, overclaims, internal noise. | done on this branch; see Notes, "T26-T33 outcome" |
+| T28 | **The two security documents**: one policy page, one claim register, no contradiction between them. | done on this branch, Trust model stays in the root file (tests read it there); see Notes |
+| T29 | **`docs/diagnostics.md` in product terms**: present-tense entries under one rule for history, no round/task/finding labels, no ledger links, no benchmark figures, two rendering defects and one contradiction. | done on this branch; see Notes |
+| T30 | **The how-to guides**: versions, the testing package, the packaging story told once, a sample region that stops before its call, the index. | done on this branch; see Notes |
+| T31 | **The core docs**: wrong enum advice in the migration material, COMPARISON's performance section rebuilt around the current run, PERFORMANCE.md's views story, the dated plan and research files, the API reference renderer. | done on this branch; see Notes |
+| T32 | **Samples, benchmarks and contributor notes**: stale comments and SDK images, the Gallery's hand-written headings, a samples index, subject names for round-named files. | done on this branch except the renames (result documents quote the class names); see Notes |
+| T33 | **Repository layout as an outsider sees it**: `Issues/` and `docs/superpowers/` under one clearly internal folder, user docs stop linking into round ledgers, `benchmarks/results/` indexed. | done on this branch as D3 decided (de-linked, not moved); see Notes |
 
 ## Notes
 
@@ -842,3 +842,47 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   process measurements (test-host memory, test start-up, mutation legs, the fusedchat build share - **names the owner's
   private app**) moved to the internal folder. `.oss-scanner/` stays (the scanner reads that path,
   OssScannerImageTests). Also visible at the root: tracked `.claude/hooks`, `.mcp.json`, six `stryker-config*.json`.
+- **T26-T33 outcome (2026-11-15, `feat/round35-t25`).** Prose split by file across four read-only-build helpers
+  (diagnostics.md; how-tos + MIGRATION; COMPARISON/PERFORMANCE/CORRECTNESS/options; SECURITY x2 + CONTRIBUTING) and
+  one for the CHANGELOG; code, README, release files, samples and renderers done here. What landed:
+  - **T26:** `<Version>` 1.1.0-rc.1 (baseline stays 1.0.2-rc.1; lock files regenerated by restore). CHANGELOG
+    restructured: empty `[Unreleased]`, `[1.1.0-rc.1]` 35 KB (Highlights, 18 Breaking changes, Security, 50 New
+    diagnostics, Added, Changed, Fixed), `[1.0.2-rc.1]`/`[1.0.1-rc.1]`/`[1.0.0-rc.1]` with nuget.org dates; all 132
+    live ids named (the old "initial diagnostic surface" block listed DWARF078-085 as shipped and missed five ids
+    and every DWARFR); the old text verbatim in `Issues/history/CHANGELOG-detail-1.1.0-rc.1.md`. `release.yml`
+    writes the notes to a file (`--notes-file`) and fails over 125,000 characters. RELEASING.md: a before/tag/after
+    checklist (version, CHANGELOG, analyzer tracking, which packages ship, baseline move, lock regen) and which
+    versions can be verified. AnalyzerReleases: DWARF068/069 titles, DWARF102 marked reserved; **the stable-only
+    Shipped policy kept** (recorded in Shipped.md; moving the 82 ids buys nothing while every release is a prerelease).
+  - **T27:** README rendering (every split `**`), 30 relative links made absolute, the round-29 performance study
+    deleted (three sentences + link remain), the Roadmap (a changelog) deleted with its two snippets moved into a new
+    "Configuring a pair without partial methods" section, overclaims fixed (source side opt-in, over-posting with
+    `AutoMatchMembers = false`, no `Unsafe`, Mapperly warns by default, "ahead on some collection shapes" with the
+    reference-array trade, CS1061 names `ToRuneDto`), Testing "from 1.1.0-rc.1", quality-gates footnote to
+    CONTRIBUTING, layout updated. **Kept "78 runtime assertions"**: `ConformanceArtifactScanTests` derives it from the
+    sample, so it cannot drift (the finding assumed it was hand-maintained).
+  - **T28:** root SECURITY.md is the policy page; **the Trust model stays in it** (SecurityDocIsCurrentTests and
+    SecuritySurfaceObligationTests read it there, `.oss-scanner/threat_model.md` points at it); Auditing moved to
+    docs/SECURITY.md; the reflection/`unsafe`/SBOM contradictions removed; three advisories listed.
+  - **T29:** done as specified; headings, titles and severities byte-identical; DWARFR02's wrong `[MapIgnore]` remedy
+    removed (nothing on the destination side clears it).
+  - **T30, T31:** done; AOT block re-sourced from the only recorded AOT run (2026-07-24) - the 2026-06 figures had no
+    results file. IMPROVEMENT-PLAN.md -> `Issues/history/`, `docs/research/` -> `Issues/research/` (the
+    SuppressionAdviceTests exemption deleted with it). ApiReferenceRenderer: `typeparamref`/`paramref`, cref arity,
+    `<code>` and framework-inherited members (TypeId, Exception.*) fixed, four RED->GREEN tests. Diagnostics index
+    renders the 17 DWARFR ids and says "default severity" (regression assertion in The_generators_are_not_vacuous).
+    Option-matrix legend separates refusal from an option's intended diagnostic. MaxDepth XML doc (D5),
+    GenerateMapAttribute names DWARF060, MapCollectionKey/ProvidesMap docs lose round labels.
+  - **T32:** Gallery sources (round-trip, informed-dumps and map-to regions now show the call; stray `}` in the
+    co-located region; four comments); Gallery section heads pinned to the catalogue by
+    `Gallery_section_heads_follow_the_example_catalogue` (it caught #51's drifted title on its first run); DocSet's
+    duplicate entry; `samples/README.md`; probe READMEs on SDK 10.0.404; Benchmarks README categories, smoke gate,
+    advisories, Mapster 10.0.14; test notes. **Not renamed:** the `Round3x*` benchmark classes - result documents
+    quote them in their reproduce steps; the README now explains the names. Conformance dated results kept (the gate's
+    ratchet reads the previous file).
+  - **T33:** as D3 decided: `Issues/README.md` and `docs/superpowers/README.md` mark them internal; user docs and
+    shipped XML docs no longer link into them (ExcludeFromCodeCoverage justification strings still cite Issues/ -
+    attribute metadata, not docs); `benchmarks/results/README.md` indexes current vs superseded; the four process
+    measurements moved to `Issues/round34/measurements/`; the owner's app named only in Issues/ (it remains in git
+    history and in ~90 ledger lines - owner's call whether to scrub).
+  - Mutation-scope audit re-measured (DocTooling 56.2 % -> 54.0 %: the renderer growth is outside the leg's globs).

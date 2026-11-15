@@ -40,6 +40,8 @@ Contracts   domain types + DTOs. No mapper, no DwarfMapper reference beyond the 
 ProviderA   public [DwarfMapper] classes; self-register at module load.
 ProviderB   a second provider. Overlapping nested pairs under DIFFERENT policy options.
 Host        the DI container and the tests. Does NOT reference the provider mapper types.
+CleanCorpus a separate consumer: real-world domain shapes migrated off a reflective mapper (see its
+            PATTERN-PROVENANCE.md and CONVERSION-NOTES.md).
 ```
 
 `Host` not referencing the providers' mappers is the load-bearing constraint: that is the condition under
@@ -48,7 +50,7 @@ the 47-site gap existed at all.
 
 ## What is asserted
 
-22 assertions, each one a shape that a generator snapshot test cannot reach — because every test in that
+Each assertion is a shape that a generator snapshot test cannot reach — because every test in that
 suite is one assembly, one compilation, no DI and no runtime resolution.
 
 | Area | The failure it guards |
@@ -67,8 +69,8 @@ suite is one assembly, one compilation, no DI and no runtime resolution.
 | **Reserved keywords** | a member called `@class` emits unescaped and the provider assembly does not compile |
 | DI | a registration in the container does not resolve |
 
-The last four are new. Each corresponds to something this round changed in the generator, and none of them
-had consumer-level coverage before — which is the same gap, one round later.
+The four in bold were added with the generator changes they guard; none of them had consumer-level coverage
+before.
 
 Note the factory-and-collection case asserts BOTH halves: that the factory ran (only it produces the `PART-`
 prefix) and that the settable member was assigned. Either alone passes while the other is broken, and "a list

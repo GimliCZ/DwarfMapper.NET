@@ -107,6 +107,6 @@ one — that is the entire point. See task **R18-29** for harvesting shapes from
 
 ## Licensing
 
-`Directory.Packages.props` pins Mapperly 4.3.1 and Mapster 10.0.8 (MIT) and **AutoMapper 14.0.0 — the last MIT
+`Directory.Packages.props` pins Mapperly 4.3.1 and Mapster 10.0.14 (MIT) and **AutoMapper 14.0.0 — the last MIT
 release; v15+ is RPL-1.5 and GPL-incompatible**. This project is `IsPackable=false` and the shipped library
 references none of them.

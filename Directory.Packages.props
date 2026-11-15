@@ -25,7 +25,7 @@
     <!-- Test-only: exercises the generated IServiceCollection.AddDwarfMappers() DI registration. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
     <!-- Property-based testing with INTEGRATED shrinking, closing open item 4 of
-         docs/research/testing-conformance-REPORT.md. Chosen over FsCheck (BSD-3) because shrinking is the
+         Issues/research/testing-conformance-REPORT.md. Chosen over FsCheck (BSD-3) because shrinking is the
          entire reason to add a PBT dependency and FsCheck needs separate shrinkers. Apache-2.0 sets no new
          precedent for this GPL-2.0-only repo: xunit is Apache-2.0 already, and test-only dependencies are
          not distributed. -->

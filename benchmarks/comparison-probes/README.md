@@ -2,8 +2,8 @@
 
 # Comparison probes
 
-Round 35 T25: what DwarfMapper, Mapperly and Mapster do with mistakes and with hostile shapes, measured rather than read
-off documentation. The versions are the repository's pins (`Directory.Packages.props`); the results and what they mean
+What DwarfMapper, Mapperly and Mapster do with mistakes and with hostile shapes, measured rather than read off
+documentation. The versions are the repository's pins (`Directory.Packages.props`); the results and what they mean
 are in [`../results/2026-11-15-round35-t25-comparison.md`](../results/2026-11-15-round35-t25-comparison.md).
 
 | Probe | Question | How a cell is read |
@@ -12,10 +12,11 @@ are in [`../results/2026-11-15-round35-t25-comparison.md`](../results/2026-11-15
 | [`security/`](security) | A deep chain, a cycle, re-entry through user code, NativeAOT | one PROCESS per shape and library: a stack overflow ends a process and cannot be caught, so a cell is how the process ended |
 | [`enum-gap/`](enum-gap) | Why the by-value enum row read 2.1× in Mapperly's favour on Linux and level on Windows | BenchmarkDotNet over the row's two generated methods, verbatim and with each variant of the argument check |
 
-Run them from a checkout, on the pinned SDK, in the CI image (the AOT step needs clang and zlib1g-dev):
+Run them from a checkout, on the pinned SDK (`global.json`, 10.0.404, no roll-forward), in the matching image (the AOT
+step needs clang and zlib1g-dev):
 
 ```bash
-docker run --rm -v "$PWD:/w" -w /w mcr.microsoft.com/dotnet/sdk:10.0.101 bash -c \
+docker run --rm -v "$PWD:/w" -w /w mcr.microsoft.com/dotnet/sdk:10.0.404 bash -c \
   "apt-get update -qq && apt-get install -y -qq clang zlib1g-dev >/dev/null; \
    bash benchmarks/comparison-probes/validation/run.sh; bash benchmarks/comparison-probes/security/run.sh"
 ```

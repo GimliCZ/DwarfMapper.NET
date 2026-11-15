@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-only
-# Round 35 T25: every validation case x every library, one build each. One CELL line per pair:
+# Every validation case x every library, one build each. One CELL line per pair:
 #   CELL <case> <lib> | build=<exit> | <DWARF/RMG diagnostics> | <runtime result, or why there is no build>
-# From a checkout, on the pinned SDK (10.0.101): bash benchmarks/comparison-probes/validation/run.sh
+# From a checkout, on the pinned SDK (global.json): bash benchmarks/comparison-probes/validation/run.sh
 set -u
 cd "$(dirname "$0")" || exit 1
 root=../../..

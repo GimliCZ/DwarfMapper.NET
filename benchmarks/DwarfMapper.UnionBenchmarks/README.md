@@ -2,7 +2,7 @@
 
 # DwarfMapper.UnionBenchmarks
 
-The performance of C# 15 union mapping (round 35, T24). It needs the **.NET 11 SDK**: unions are C# 15, and the
+The performance of C# 15 union mapping. It needs the **.NET 11 SDK**: unions are C# 15, and the
 generator build that maps them is the Roslyn 5.12 one. So this project is not in `DwarfMapper.NET.sln` (which builds
 on the pinned .NET 10 SDK), and its numbers are not in `allocation-baseline.json` (pinned per SDK, on that one).
 

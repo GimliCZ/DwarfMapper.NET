@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-only
-# Round 35 T25: the security cells, one PROCESS each (a stack overflow ends the process and cannot be caught), then each
-# library's flat map published as NativeAOT. One CELL line per pair: CELL <lib> <case> | exit=<code> | <output>.
-# From a checkout, on the pinned SDK (10.0.101), on Linux with clang and zlib1g-dev for the AOT step:
+# The security cells, one PROCESS each (a stack overflow ends the process and cannot be caught), then each library's
+# flat map published as NativeAOT. One CELL line per pair: CELL <lib> <case> | exit=<code> | <output>.
+# From a checkout, on the pinned SDK (global.json), on Linux with clang and zlib1g-dev for the AOT step:
 #   bash benchmarks/comparison-probes/security/run.sh
 set -u
 cd "$(dirname "$0")" || exit 1
