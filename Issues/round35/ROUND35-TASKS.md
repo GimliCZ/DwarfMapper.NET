@@ -537,3 +537,10 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     project now references the analyzer projects only while packing (`_IsPacking`); `PackageProjectAnalyzerReferencesTests`
     (RED on the old file) holds it. The union benchmark had the same collision, and only worked because the 5.12 build
     happened to be written last.
+- **The sbom job, from the first dispatch (run 43673564878 on 3e357e5).** CycloneDX (6.2.0, and 6.3.1, the newest)
+  reads project files as XML, names a project by the `<AssemblyName>` written in it, and keys references by that name:
+  two project files writing `DwarfMapper.Generator` stopped it on `DwarfMapper.csproj` ("An item with the same key has
+  already been added"; reproduced in sdk:10.0.101, also with `--exclude-test-projects`). Both builds keep the name -
+  the coverage floors and Codecov merge them under it - so the 5.12 project sets it from `AssemblyIdentity.props`,
+  where CycloneDX does not read; 6.2.0 then completes on the solution (98 components). `ProjectFileAssemblyNameTests`
+  (RED on the old files) reads project files the way CycloneDX does.
