@@ -20,9 +20,9 @@ hand-written."
 | Concern | DwarfMapper | Runtime mappers (AutoMapper / Mapster runtime) |
 |---|---|---|
 | Runtime dependency | **`DwarfMapper` only** — attributes + tiny abstractions, **zero transitive deps** | the mapper engine + its dependency closure |
-| The generator | a **`DevelopmentDependency` analyzer** — runs at compile time, **does not ship** in your output | n/a |
+| The generator | an **analyzer** in the package's `analyzers/` folder — runs inside the compiler, **is not copied** to your output | n/a |
 | Reflection / `Reflection.Emit` | **none** | yes (the engine *is* runtime reflection/expression-trees) |
-| Allocation by the mapper | **zero** — only the destination object is allocated | mapper allocates |
+| Allocation by the mapper | **none by default** — only the destination objects are allocated; `ReferenceHandling = Preserve` adds one small identity dictionary per call | mapper allocates |
 | Startup cost | none — code is already emitted | first-call expression compilation / config build |
 
 So a deployed app references a single small assembly with no dependencies, and the actual mapping is direct
@@ -63,21 +63,24 @@ AVX2-detecting JIT). It stays **correct** — the scalar tail and narrower body 
 ```
 
 This affects only the throughput of the blit/widen fast-paths; correctness and the zero-warning AOT
-guarantee are unchanged either way. (`x86-64-v3` is rejected by ILC 10.0.1 — use `native` or an explicit
-ISA list.) Full detail and the stability-harness results: [`../COMPARISON.md`](../COMPARISON.md#nativeaot-benchmarking--stability).
+guarantee are unchanged either way. (With the 10.0.1 ILCompiler, 2026-08, `x86-64-v3` was rejected; `native` and an
+explicit ISA list worked.) The NativeAOT measurements are in
+[`../COMPARISON.md`](../COMPARISON.md#nativeaot-benchmarking--stability).
 
 ---
 
 ## .NET 10 only — and why the generator is netstandard2.0
 
 The consuming project must target **`net10.0` or later**; this is a hard requirement, not a preference: the
-package ships one `net10.0` assembly, so a net8/net9 project cannot reference it. .NET 11 is verified in CI
-(job `net11`: the repository builds under SDK 11.0.100 with warnings as errors, the consumer projects build and
-run as `net11.0`, and NativeAOT publishes with the 11.0 compiler). The single
+package ships one `net10.0` assembly, so a net8/net9 project cannot reference it. .NET 11 is verified in CI: the
+repository builds under SDK 11.0.100 with warnings as errors, the consumer projects build and run as `net11.0`, and
+NativeAOT publishes with the 11.0 compiler. The single
 exception is the **generator assembly**, which is `netstandard2.0` — because Roslyn loads source generators
-*into the compiler host*, which only accepts `netstandard2.0` components. This is a Roslyn toolchain
+*into the compiler host*, which only accepts `netstandard2.0` components. (The package carries it twice, built for
+Roslyn 5.0 and for Roslyn 5.12, and the SDK loads the one that matches its compiler.) This is a Roslyn toolchain
 constraint; the code the generator **emits** targets .NET 10 like the rest of your app. You never reference
-the generator at runtime (it's a `DevelopmentDependency` / analyzer), so its TFM never reaches your output.
+the generator at runtime: it sits in the package's `analyzers/` folder, which the compiler loads and the build does
+not copy to your output, so its TFM never reaches your output.
 
 If you're not yet on .NET 10 or later, that bump is a prerequisite of the migration — sequence it first.
 
@@ -118,12 +121,12 @@ When the layout allows it, the generator beats even a hand-written name-based co
 - **Blittable bulk copy.** A layout-identical element pair (both unmanaged, sequential, same packing and
   `Size`, same ordered fields, every instance field in one declaration) is reinterpreted as a single
   `MemoryMarshal.Cast` block copy, the same-bytes verdict settled at generation time rather than re-checked
-  per call — benchmarked **~2× faster** than every competitor on a 1000-struct array, which copy
-  field-by-field.
+  per call — on 1,000 structs about twice as fast as Mapperly 4.3.1 and Mapster 10.0.14, which copy
+  field-by-field (2.1–2.3× over Mapperly on Windows and Linux; see
+  [`../COMPARISON.md`](../COMPARISON.md#performance--memory)).
   The storage does not have to be an array on both sides: **`List<T>`** (and the interfaces that materialise
   to it — `IList<T>`, `IReadOnlyList<T>`, `ICollection<T>`, `IReadOnlyCollection<T>`) and
-  **`ImmutableArray<T>`** take it too, measured **2.3–3.3× faster** than the element loop for a
-  1000-element collection. **Enum arrays** qualify where the conversion is genuinely a reinterpret —
+  **`ImmutableArray<T>`** take it too. **Enum arrays** qualify where the conversion is genuinely a reinterpret —
   `EnumStrategy.ByValue` over the same underlying type, or an enum against its own underlying primitive. The
   default by-name enum mapping is deliberately excluded: it *throws* on a value matching no member, and a
   block copy would pass such a value through instead. `Dictionary<K,V>` and `HashSet<T>` never qualify —
@@ -188,10 +191,13 @@ DwarfMapper releases are built to be **independently verifiable** (CRA-aligned s
 if you're vetting a dependency for a regulated or security-sensitive deployment:
 
 - **Deterministic, reproducible builds** with SourceLink and embedded untracked sources.
-- **Machine-readable SBOM** (CycloneDX) attached to every release.
+- **Machine-readable SBOM** (CycloneDX) attached to every tagged release.
 - **Keyless signing** via GitHub OIDC through Sigstore — no private key stored anywhere; authenticity is the
   artifact's SHA-256 fingerprint plus the git identity that built it (`gh attestation verify`).
 - **Hardened CI** — Actions pinned to commit SHAs, CodeQL, AOT/trim gate, coverage gate.
+
+The SBOM and the signature come from the tagged release workflow. The release candidates published so far
+(1.0.0-rc.1 to 1.0.2-rc.1) were pushed to nuget.org by hand and carry neither.
 
 Step-by-step verification (fingerprint, provenance/identity, SBOM): [`../RELEASING.md`](../RELEASING.md)
 and [`../SECURITY.md`](../SECURITY.md).

@@ -116,7 +116,8 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 1. Build. Clear the `DWARF001` completeness errors — these are members Mapster was silently leaving at their
    default. Map / `[MapValue]` / `[MapIgnore]` each.
    ([common-changes.md §4](common-changes.md#change-4--clear-the-build-the-dwarf001-wall).)
-2. Verify with `[RoundTrip]` and/or assert old≡new over real inputs
+2. Verify: assert old≡new over real inputs while Mapster is still installed (no extra package needed), and/or
+   use `[RoundTrip]`, which needs `DwarfMapper.Testing`, published from 1.1.0-rc.1
    ([common-changes.md §5](common-changes.md#change-5--prove-the-swap-was-lossless)).
 3. Remove the Mapster `PackageReference`, any `TypeAdapterConfig` setup, and the `Mapster.Tool` build step
    if you used one.
@@ -127,11 +128,14 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 
 - **`.IgnoreNullValues(true)`** → **`[DwarfMapper(SkipNullSourceMembers = true)]`** — a null source member never overwrites the destination (emits `if (src.X is not null) dest.X = …`). Not `[MapIgnore]`, which would drop the member *unconditionally*. (Non-nullable value-type sources and `required`/`init` members are always assigned.)
 - **`.ConstructUsing`** → **`[MapConstructor<S, D>(nameof(Factory))]`** (a `D Factory(S)` on the mapper — the compile-time equivalent); the generator otherwise selects/emits the constructor itself.
-- **Runtime polymorphism** — Mapster maps each element by its *actual runtime subtype* (`Dog` → `DogDto`'s extra members). DwarfMapper maps the *statically-declared* type unless you declare each arm with `[MapDerivedType<Derived, DerivedDto>]` on the base-type method; **without it, only base-type members are mapped (derived-only data is silently dropped)**.
+- **Runtime polymorphism** — Mapster maps each element by its *actual runtime subtype* (`Dog` → `DogDto`'s extra members). DwarfMapper maps the *statically-declared* type unless you declare each arm with `[MapDerivedType<Derived, DerivedDto>]` on the base-type method; **without it, only base-type members are mapped and derived-only data is dropped**. DwarfMapper reports it:
+`DWARF071` (Info, in the IDE) for a source member declared as a class that something in your compilation derives
+from, `DWARF033` (Error) when an auto-nested source is abstract or an interface.
 - **Zero-config "map anything at runtime"** — by design you declare each pair. The payoff is the completeness
   gate, AOT-safety, and no first-call expression-compilation cost.
 - **Nested deep-merge into existing objects** — `Update` preserves top-level identity but replaces nested
-  members/collections.
+  members/collections. The exception is a `List<T>` member with the same element type on both sides:
+  `[MapCollectionKey]` merges it by key instead (`DWARF074` names what it refuses).
 
 Each non-goal surfaces a diagnostic or has a typed alternative — see
 [`../MIGRATION.md` §4](../MIGRATION.md#4-deliberate-non-goals-all-libraries--and-the-idiomatic-replacement).

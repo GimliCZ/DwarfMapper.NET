@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # What the struct-DTO numbers mean (and what they do not)
 
-This page exists because round 29 produced the first genuinely large speed result in this repository, and
-this project's position is **resilience first, speed second**. A large number reported carelessly costs more
+This page exists because a study of DTO shapes in September 2026 produced the first genuinely large speed result in
+this repository, and this project's position is **resilience first, speed second**. A large number reported carelessly costs more
 than it buys: it has happened here before, and the retraction is documented below so it is not repeated.
 
 Everything on this page is a *measurement of DTO shapes*, run to decide whether a feature was worth building.
@@ -17,12 +17,10 @@ because merging them is exactly how a benchmark table becomes an advertisement.
 BenchmarkDotNet 0.14.0 · AMD Ryzen 5 5600 (6 physical / 12 logical) · Windows 10 22H2 · .NET SDK 10.0.101 ·
 .NET 10.0.11 X64 RyuJIT AVX2 · `Job=short`, **`IterationCount=3`**, `WarmupCount=3`, `LaunchCount=1`.
 
-Raw output: [`Issues/round29/plan-results.md`](../Issues/round29/plan-results.md),
-[`plan2-results.md`](../Issues/round29/plan2-results.md),
-[`plan3-results.md`](../Issues/round29/plan3-results.md),
-[`plan4-results.md`](../Issues/round29/plan4-results.md), with the reasoning in
-[`RESEARCH-hardware-mode.md`](../Issues/round29/RESEARCH-hardware-mode.md). Every figure below cites one of
-those; a figure that could not be traced to one has been deleted rather than rounded into place.
+The raw output is four result files of the study (`plan-results.md`, `plan2-results.md`, `plan3-results.md`,
+`plan4-results.md`), kept with the maintainers' records rather than in this documentation. Every figure below names
+the file and benchmark category it comes from; a figure that could not be traced to one has been deleted rather than
+rounded into place.
 
 **Three iterations is not enough to publish an absolute number, and we are not publishing one.** The error
 bars are wide enough that on several rows the reported error approaches or exceeds the mean:
@@ -55,7 +53,7 @@ Linux, on arm64, or on server GC. This matters more than it sounds: see §6.
 Read the group headings before the numbers. All rows are N = 100,000 unless stated; ratios are against the
 class-shaped baseline of the same category, so **lower is faster**.
 
-### 2a. What DwarfMapper's shipped Phase 2 feature gives you
+### 2a. What DwarfMapper's struct-DTO diagnostics give you
 
 `DWARF103` names a collection element type that could be a `readonly record struct`, and the code fix
 converts it — the element type plus every transfer model it inlines. The fix converts the **destination**
@@ -84,7 +82,7 @@ against the same five fields at 24:
 `DWARF101` reports both for that reason.
 
 The dense enum-keyed shape has shipped since this study as `[MapDenseEnumKeys]` (see
-[`options.md`](options.md)), so its row sits here and no longer in §2b. The figures are round 29's probe of the
+[`options.md`](options.md)), so its row sits here and no longer in §2b. The figures are the study's probe of the
 *shape*, taken to decide whether to build it — not a benchmark of the code the directive emits:
 
 | Shape | Baseline (classes) | Measured variant | Allocated | Source |
@@ -102,10 +100,9 @@ sit in the landscape. (The dense enum-keyed row that stood beside it has shipped
 | Order lines → one shared line array + `(offset, count)` ranges | 51.6 ms | 8.72 ms (0.17×) | 29.6 → 9.6 MB (0.32×) | `plan3-results.md`, `B_arena` |
 
 The arena shape changes what a consumer reads (`result.Lines.AsSpan(o.LineOffset, o.LineCount)` instead of
-`o.Lines`), so it can only ever be an opt-in result shape, not a drop-in for `List<LineDto>`
-(`RESEARCH-hardware-mode.md` §10).
+`o.Lines`), so it can only ever be an opt-in result shape, not a drop-in for `List<LineDto>`.
 
-### 2c. Measured, and deliberately not built
+### 2c. Measured, built, and withdrawn
 
 | Shape | Baseline (classes) | Measured variant | Allocated | Source |
 |---|---:|---:|---|---|
@@ -113,18 +110,21 @@ The arena shape changes what a consumer reads (`result.Lines.AsSpan(o.LineOffset
 | Message DTO (5 strings, `DateTime`, `bool`, enum) → view | 10.4 ms | 0.48 ms (0.05×) | 8.0 MB → **0** | `plan3-results.md`, `C_msg` |
 
 A "view" is a `readonly ref struct` over the *source*, with a property per mapped member — the mapping never
-runs, so nothing is allocated and nothing is copied. **DwarfMapper does not emit views.** They are the
-strongest result in the whole study and they are also the most constrained: a `ref struct` cannot be stored
-in a field, captured in a lambda, or held across an `await`, so it fits "map and immediately serialize or
-render" and nothing else. They are recorded as a candidate, not as a capability.
+runs, so nothing is allocated and nothing is copied. It was the strongest result in the whole study, and it was
+built. It was then withdrawn on 2026-09-07, before any release shipped it, and **DwarfMapper does not emit views**.
 
-> **§2b and §2c are conditional on those features staying unbuilt, and nothing enforces it.** Both sections
-> say "DwarfMapper does not emit this" — a true statement with a shelf life. Dense enum-keyed collections
-> have already run out of it: they shipped as `[MapDenseEnumKeys]` and their row is in §2a. If a later round
-> ships DTO views or the arena result shape, **the rows move up into §2a and these
-> paragraphs come out**; leaving them would understate the mapper rather than overstate it, which is the
-> milder failure but still a false page. There is no test that catches it, so whoever ships one of those
-> two owns this page in the same commit.
+The reason is the failure mode, not the speed. A view reads each member from the source when the member is read, so
+a source changed between two reads yields a record that never existed at any instant — silent wrong data, which is
+exactly what this library exists to rule out. A `ref struct` stops the view outliving its source; it does not stop
+anyone writing to that source in the meantime, and a disposed source is still a live reference. None of that is
+something a generator can diagnose, so the answer was removal rather than a new diagnostic.
+
+> **§2b is conditional on the arena shape staying unbuilt, and nothing enforces it.** It says "DwarfMapper does
+> not emit this" — a true statement with a shelf life. Dense enum-keyed collections have already run out of it:
+> they shipped as `[MapDenseEnumKeys]` and their row is in §2a. If the arena result shape ships, **its row moves
+> up into §2a and that paragraph comes out**; leaving it would understate the mapper rather than overstate it,
+> which is the milder failure but still a false page. There is no test that catches it, so whoever ships it owns
+> this page in the same commit.
 
 ### 2d. The losers — measured, and the reason no SIMD path was built
 
@@ -141,7 +141,7 @@ replace.**
 | Span over a *class's* field block instead of converting it | 0.68× | 1.00× | `plan4-results.md` | ~1 ns/element, and silently wrong on an auto-layout class |
 | Dropping reference members to make the GC scan cheaper | 1.04× | 1.13× | `plan2-results.md`, `C_gcscan` | **no gain measured — and see §3** |
 
-These are the reason round 29 shipped two diagnostics and a code fix instead of a vectorized copy path. The
+These are the reason the study ended in two diagnostics and a code fix instead of a vectorized copy path. The
 pattern is consistent: **SIMD wins when it replaces per-element *work* (a widening conversion) or moves a
 whole block; it loses when it replaces a copy the JIT already emits as two or three register moves.** A
 12-byte permute is three loads, three shuffles and two ORs standing in for three float moves, and it measures
@@ -162,25 +162,24 @@ in `plan-results.md`'s `D_tree` the string-leaf variant is *faster* than the pla
 **We could not measure a GC-scan saving from removing reference members, and the experiment as written
 cannot prove there is none.** The intent was to compare a forced Gen2 collection with a reference-carrying
 struct array alive against one with a reference-free array alive. The result was `1.13×` — the reference-free
-arm slightly *slower*, which is not a physical story anyone should believe. The reason is in the probe:
-[`PlanProbe2.cs`](../Issues/round29/PlanProbe2.cs) holds **both** arrays in fields, so both were alive in both
-arms and the only difference was which one the JIT kept "used". So the honest statement is not "removing
-references does not help the GC" — it is **"this benchmark measured a full GC with the whole fixture alive,
-found no gain, and could not isolate the variable it was written to isolate."** `RESEARCH-hardware-mode.md`
-§10 marks that row inconclusive for the same reason. It is on this page because a null instrument published
-as a negative finding is the failure mode this page exists to prevent.
+arm slightly *slower*, which is not a physical story anyone should believe. The reason is in the probe: it
+holds **both** arrays in fields, so both were alive in both arms and the only difference was which one the JIT
+kept "used". So the honest statement is not "removing references does not help the GC" — it is **"this benchmark
+measured a full GC with the whole fixture alive, found no gain, and could not isolate the variable it was written
+to isolate."** The row is inconclusive. It is on this page because a null instrument published as a negative
+finding is the failure mode this page exists to prevent.
 
 ---
 
 ## 4. Where the win actually comes from
 
-**Destination storage, not clever copying.** Every attempt in round 29 to speed up the *copy* measured a loss
+**Destination storage, not clever copying.** Every attempt in the study to speed up the *copy* measured a loss
 or noise (§2d). The gains all come from the same place: a class-element destination allocates one heap object
 per element — allocation, zeroing, an object header, a reference write barrier, and eventually Gen1/Gen2
 promotion — while a struct-element destination is **one** allocation for the whole collection.
 
-The clearest version of that is `RESEARCH-hardware-mode.md` §2a, which holds the destination fixed and
-changes only the copy: replacing five field assignments with a 32-byte body memcpy per object measures
+The clearest version of that is the study's own write-up, which holds the destination fixed and changes only
+the copy: replacing five field assignments with a 32-byte body memcpy per object measures
 **0.98×–1.08×**, i.e. nothing. Change the destination to a struct array instead and the same five-field copy
 runs at 0.45× / 0.11× / 0.08× at 1k / 100k / 1M. `plan4-results.md` says it a second way: spanning a class's
 field block and blitting it is 0.68× at 1,000 and **1.00× at 100,000** — the technique that skips the
@@ -190,7 +189,7 @@ Two things follow, and both are load-bearing for how you should read the rest of
 
 1. **Adopting struct DTOs is what pays.** That is a change to *your* types. DwarfMapper's contribution is to
    find the types where it is safe, tell you the size you would get, and perform the rewrite.
-2. **DwarfMapper's copy loop is already at the JIT floor**, and this round found no way to move it. That is
+2. **DwarfMapper's copy loop is already at the JIT floor**, and the study found no way to move it. That is
    also what [`COMPARISON.md`](COMPARISON.md) says from the other direction: the source-generator peers tie
    us on throughput, and the differentiator is correctness rather than speed.
 
@@ -221,24 +220,22 @@ Two things follow, and both are load-bearing for how you should read the rest of
 This section is here so nobody — including a future maintainer reading only the wins above — re-publishes a
 claim this repository has already withdrawn.
 
-- **A headline ratio that was platform-specific and described a competitor rather than this mapper.** It was
-  measured on Windows and did not hold on Linux, and the effect it described belonged to the other library's
-  implementation rather than to ours. The row was removed rather than corrected, so there is nothing left in
-  the docs to link to — what remains is the practice it produced: every comparison row in
-  [`COMPARISON.md`](COMPARISON.md) now states its OS, runtime and job in a footnote (`‡`, `†`), and the two
-  re-measured rows say plainly that the rest are from an earlier run and should be reproduced locally. The
-  number itself is not repeated here and must not be reintroduced.
-- **"DwarfMapper is 3.98× slower than Mapperly on enums."** That was a benchmark artifact: the four libraries
+- **The dictionary ratio against Mapperly as a headline.** It was first published from a Windows run, and it does
+  not hold on Linux: the 2026-11-15 run measured DwarfMapper 2.3× ahead of Mapperly on Windows and 1.16× on
+  Linux. The difference is Mapperly's dictionary path, which is slow on Windows, not DwarfMapper's, which is close
+  to level on both. The ratio may be quoted only per platform, both platforms together, with that reason — as the
+  dictionary row in [`COMPARISON.md`](COMPARISON.md#performance--memory) does — and never as a headline or a
+  single number.
+- **"DwarfMapper is 3.98× slower than Mapperly on enums."** That was a benchmark artifact: the libraries
   default to *different* enum strategies (name-matching vs value-casting), so the row compared a name switch
   against a raw cast and published the difference as a deficiency. Measured like-for-like the gap is gone.
-  Full account in [`COMPARISON.md`](COMPARISON.md).
-- **Every single-object comparison row now maps a ring of 512 distinct fixture-drawn payloads**, because
-  mapping one cached object moved four rows and flipped one ranking. That rule is enforced by
-  `BenchmarkPayloadRuleTests`, which fails the build if a benchmark maps a static payload.
+  The current figures, one row per strategy, are in [`COMPARISON.md`](COMPARISON.md#performance--memory).
+- **Every single-object comparison row now maps a ring of distinct fixture-drawn payloads**, because
+  mapping one cached object moved four rows and flipped one ranking. A build-time check fails if a benchmark
+  maps a static payload.
 
-**The numbers on this page have not been through that mill.** They are research probes
-(`Issues/round29/PlanProbe*.cs`), not the repository's benchmark suite: they are not in
-`benchmarks/DwarfMapper.Benchmarks`, they are not gated in CI, they are not covered by
-`BenchmarkPayloadRuleTests`, and they have been run on exactly one machine at three iterations. They were
+**The numbers on this page have not been through that mill.** They are research probes, not the repository's
+benchmark suite: they are not in `benchmarks/DwarfMapper.Benchmarks`, they are not gated in CI, they are not
+covered by the payload check, and they have been run on exactly one machine at three iterations. They were
 good enough to decide what to build. They are not good enough to be quoted as a performance guarantee, and
 this page is the place that says so.

@@ -69,7 +69,7 @@ Most of a hand-written mapper is `Dst = src` assignments that DwarfMapper does f
 | `Total = Format(o.Total)` (transform) | `[MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(Format))]` |
 | `City = o.Address.City` (reach into a graph) | `[MapProperty("Address.City", nameof(OrderDto.City))]` or `[Flatten(nameof(Order.Address))]` |
 | `Source = "api-v2"` (constant) | `[MapValue(nameof(OrderDto.Source), "api-v2")]` |
-| `// deliberately not copying PasswordHash` | `[MapIgnore(nameof(Order.PasswordHash))]` (now enforced, not a comment) |
+| `// deliberately not copying PasswordHash` | `[MapIgnore(nameof(OrderDto.PasswordHash))]` (now enforced, not a comment) |
 | a `// TODO compute later` left-default member | `[MapIgnore(...)]` + fill it in `[AfterMap]` |
 
 Put together — a rename, a transform, a constant, and a member deliberately left for the hook to compute.
@@ -121,8 +121,9 @@ Map / `[MapValue]` / `[MapIgnore]` each.
 
 1. Because you still have the old hand-written method in source control, the highest-confidence check is an
    equivalence test: assert `oldToDto(x)` ≡ `newMapper.ToDto(x)` over a sample of real inputs, then delete
-   the old method.
-2. For forward/back pairs, add `[RoundTrip]` and call `VerifyRoundTrip_*` from a test
+   the old method. It needs no extra package.
+2. For forward/back pairs, add `[RoundTrip]` and call `VerifyRoundTrip_*` from a test. This needs the
+   `DwarfMapper.Testing` package, published from 1.1.0-rc.1
    ([common-changes.md §5](common-changes.md#change-5--prove-the-swap-was-lossless)).
 3. Delete the hand-written mapping classes/extensions.
 
@@ -137,8 +138,9 @@ fine — you can mix them):
   to services mid-map. If `[BeforeMap]`/`[AfterMap]` + `Use=` can't express it cleanly, a hand-written
   method may read better.
 - **Deep-merging into an existing object graph** — `Update(src, dest)` preserves top-level identity but
-  **replaces** nested members/collections; it does not deep-merge. If you need true merge semantics, do it
-  by hand.
+  **replaces** nested members/collections; it does not deep-merge. The exception is a `List<T>` member with the
+  same element type on both sides, which `[MapCollectionKey]` merges by key (`DWARF074` names what it refuses).
+  For any other merge, do it by hand.
 - **One-off throwaway mappings** where the completeness guarantee isn't worth a mapper class.
 
 Everything else — the vast majority of `Dst = src` drudgery — is exactly what DwarfMapper exists to remove,

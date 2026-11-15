@@ -1,8 +1,12 @@
 ﻿<!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper options cheat-sheet
 
-Every knob in one place. Class-level options go on `[DwarfMapper(...)]`; per-member attributes go on the
-mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe, strict one (completeness enforced, null/cycle throw by default).
+The options of `[DwarfMapper(...)]`, `[DwarfMapperDefaults(...)]` and `[DwarfMapperOptions(...)]`, and the
+attributes that configure a mapping on a mapper class. Class-level options go on `[DwarfMapper(...)]`; per-member
+attributes go on the mapping method. Public types outside that scope — such as the registry and cross-assembly
+attributes (`[MapTo]`, `[ProvidesMap]`, `[UsesMap]`, `[DwarfMapperValidationRoot]`) and `MapConfig<TSource, TTarget>`
+— are listed in the generated [API reference](generated/api-reference.md); what each class-level option does at each
+endpoint is in the [option support matrix](generated/option-support-matrix.md). Defaults are chosen so the out-of-the-box behaviour is the safe, strict one (completeness enforced, null/cycle throw by default).
 
 Set a house style once for the whole assembly with `[assembly: DwarfMapperDefaults(...)]` — every mapper
 inherits those values unless it sets its own. **Precedence: mapper > assembly defaults > built-in default.**
@@ -83,7 +87,7 @@ Put these on the mapping method (or the class, where noted).
 | `[MapProperty(src, tgt, When = nameof(P), KeepDefault = true)]` | State that the member keeping its default when `When` is false is intended, so `DWARF066` is not reported. The generated code does not change. Meaningful only beside `When` on a map that creates its destination; anywhere it accepts nothing → `DWARF116`. |
 | `[MapProperty(src, tgt, StringFormat = "F2")]` | Format an `IFormattable` source into a `string` member: `src.ToString("F2", InvariantCulture)`. Non-string target / non-formattable source / with `Use=` → `DWARF073`. |
 | `[MapValue(tgt, "const")]` / `[MapValue(tgt, Use = nameof(M))]` | Constant or computed (parameterless `M`) value for a source-less member. |
-| `[MapCollectionKey("Items", "Id")]` | **Update-into only.** Merge a `List<T>` member by key instead of replacing it: matched keys update the slot, new keys are added, unmatched existing elements are kept. v1: same element type both sides. Out of scope → `DWARF074`. |
+| `[MapCollectionKey("Items", "Id")]` | **Update-into only.** Merge a `List<T>` member by key instead of replacing it: matched keys update the slot, new keys are added, unmatched existing elements are kept. The element type must be the same on both sides. Out of scope → `DWARF074`. |
 | `[MapIgnore("Member")]` | Intentionally drop a destination member (suppresses `DWARF001`). Class- or method-level. |
 | `[MapIgnoreSource("Member")]` | Source-side mirror (under `RequiredMapping = Both`). |
 | `[MapProperty<TSource, TTarget>(src, tgt)]` | **Class-level, pair-scoped** rename/convert (`Use`/`NullSubstitute`/`When` too). Configures a `[GenerateMap]` pair — or an auto-synthesized nested/collection-element pair — with **no partial method**. Matches nothing → `DWARF056`. |
@@ -99,7 +103,7 @@ Put these on the mapping method (or the class, where noted).
 | `[FlattenGraph(...)]` | Collapse an object graph to a flat collection. |
 | `[MapDerivedType<TDerivedSrc, TDerivedDst>]` | Polymorphic dispatch arm on a base-type method. |
 | `[ReverseMap]` | Inherit inverted simple renames onto a declared inverse method. |
-| `[RoundTrip]` | Emit a fuzz-driven round-trip verifier (needs `DwarfMapper.Testing`). |
+| `[RoundTrip]` | Emit a fuzz-driven round-trip verifier (needs `DwarfMapper.Testing`, on nuget.org from 1.1.0-rc.1). |
 | `[BeforeMap]` / `[AfterMap]` | Lifecycle hooks (validate the source / fill computed or ignored members). |
 | `[Reinterpret("Member")]` | Force the blittable/SIMD bulk-copy fast-path on an array member. |
 | `[MapShare("Member")]` | **Share the source reference** for that member instead of copying it — for a shape the automatic immutability proof cannot see through (an interface such as `IReadOnlyList<T>`, an unsealed class, a type from an assembly the proof cannot follow). You usually do **not** need this: a provably immutable member is shared automatically, with no attribute. Provably MUTABLE (a settable member, a writable field, an array anywhere in the reachable graph) → `DWARF104`, in this mode too: no assertion makes a settable member unsettable. Read at the create-map and update-into endpoints; written elsewhere → `DWARF090`. |
@@ -176,7 +180,10 @@ public partial class SettingsMappers
 
 ## See also
 
-- [`../README.md`](../README.md) — prose reference with examples for most options (this table is the complete list).
+- [`../README.md`](../README.md) — prose reference with examples for most options.
+- [`generated/api-reference.md`](generated/api-reference.md) — every public type and member, from the XML docs.
+- [`generated/option-support-matrix.md`](generated/option-support-matrix.md) — what each class-level option does at
+  each endpoint, measured.
 - [`diagnostics.md`](diagnostics.md) — every `DWARF…` diagnostic, what triggers it, and how to fix it.
 - [`MIGRATION.md`](MIGRATION.md) — how each AutoMapper / Mapster / Mapperly option maps to the above.
 - [`howto/`](howto/) — task-oriented migration walkthroughs.

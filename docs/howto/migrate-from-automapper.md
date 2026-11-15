@@ -34,19 +34,19 @@ the configuration, resolved at compile time. So the migration is: take everythin
 
 ## Step 0 — Decide these nine things before you convert anything
 
-Every row below is a **behaviour change that compiles cleanly**. Each was found the expensive way during a
-real ~300-map migration; several would have shipped wrong data. Read the list, decide each one, and write the
-decision down — a migration ledger of "what we chose and why" pays for itself the first time someone asks.
+Every row below is a **behaviour change that compiles cleanly**, and several change the data you store. Read the
+list, decide each one, and write the decision down — a migration ledger of "what we chose and why" pays for itself
+the first time someone asks.
 
 | # | Difference | Default consequence if you do nothing |
 |---|---|---|
 | 1 | **`NullStrategy` defaults to `Throw`.** AutoMapper silently substituted `default`. | A nullable-value source into a non-nullable target **throws at runtime**. Builds clean, fails in production. Set `NullStrategy = SetDefault` for parity. |
-| 2 | **`EnumStrategy` defaults to `ByName`.** AutoMapper matched by **value**. | Enums with different member orders map differently. Set `EnumStrategy = ByValue` for parity. |
+| 2 | **enum→enum matches by name in both — but an undefined value differs.** AutoMapper 14 maps defined members by name and passes a value no member defines through as its number; DwarfMapper's by-name `switch` throws `ArgumentOutOfRangeException` on it. | Defined members map exactly as before. A cast integer or a value from a newer producer now throws instead of passing through. **Do not set `EnumStrategy = ByValue` for parity**: it maps by number, so two enums declared in a different order map to the wrong member. |
 | 3 | **enum→string prefers `[EnumMember]`, then `[Description]`, then the identifier.** AutoMapper used `.ToString()`, i.e. always the identifier. | **The sharpest one.** `[Description]` is usually a *display* annotation, but it becomes your *persistence* format. An enum member `NextDay` carrying `[Description("Next-Day")]` starts writing `"Next-Day"` into a store full of `"NextDay"` — breaking reads of every existing record. `DWARF083` reports it; **`EnumStringSource = Identifier` is the one-line parity switch**, on the mapper or on `[assembly: DwarfMapperDefaults]`, instead of a converter per enum. |
 | 4 | **`SkipNullSourceMembers` guards nullable-*typed* members.** AutoMapper's `Condition(src != null)` was a runtime **value** check. | A non-nullable-typed member holding a runtime null is now copied where AutoMapper skipped it. |
 | 5 | **enum↔string parsing is case-sensitive.** `Enum.Parse` ignored case. | Hand-edited or legacy data throws instead of parsing. Only reachable if something other than your own writer produced the string. |
 | 6 | **`SkipNullSourceMembers` is a class-wide policy**, but `ForAllMembers` was per-map. | Left on the class, it applies to every map on it. A profile mixing patch-merge maps with ordinary ones stays in **one mapper class**: narrow the option with `[MapNullSkip]` on a method or `[MapNullSkip<S,T>]` for a pair (`[MapNullSkip(false)]` carves one out). |
-| 7 | **`required` destination members cannot be `[MapIgnore]`d.** AutoMapper built targets reflectively and bypassed the rule. | `DWARF079` tells you so now, with the `[MapValue]` remedy. Before that diagnostic existed, this was the single most-repeated stumble of the migration. |
+| 7 | **`required` destination members cannot be `[MapIgnore]`d.** AutoMapper built targets reflectively and bypassed the rule. | `DWARF079` tells you so, with the `[MapValue]` remedy. |
 | 8 | **A `private` "ctor for automapper" stops working.** It only ever worked because AutoMapper constructs by reflection. | `DWARF026`, no escape — `private` is never usable by design. Widen it to `internal` plus `[InternalsVisibleTo]`: the same grant, but one the compiler checks. |
 | 9 | **`[MapConstructor]` factories cannot assign `init`-only members.** | The factory's value wins and the source value is dropped (`DWARF080`). Prefer binding the **constructor parameters** — direct construction fills an object initializer, where `init` members *are* assignable. |
 
@@ -68,10 +68,10 @@ you'll remove it at the end (Step 8) so the codebase keeps compiling mid-migrati
 
 ### Every project that declares mappers needs the reference — it does not flow
 
-DwarfMapper marks its analyzer `PrivateAssets="all"`, so it deliberately does **not** flow transitively. A
-project that references a project that references DwarfMapper does **not** get the generator. Its mappers
-simply produce no code, and you get the `CS8795` wall described above with no DwarfMapper diagnostics to
-explain it.
+Each project that declares mappers needs its own `DwarfMapper` `PackageReference`. NuGet does not pass a package's
+analyzers on to the projects that reference yours (its default `PrivateAssets` includes `analyzers`), so a project
+that references a project that references DwarfMapper does **not** get the generator. Its mappers simply produce no
+code, and you get the `CS8795` wall described above with no DwarfMapper diagnostics to explain it.
 
 **Prove the generator actually runs** in each project rather than assuming the reference resolved — the two
 failure modes look identical from the outside. Drop a throwaway mapper in, build, then delete it:
@@ -252,14 +252,14 @@ Two things to know:
 - **float/double/decimal → int is never silent** — it still requires an explicit `Use=` converter (no
   silent fractional truncation, ever).
 
-Full conversion table: the [repository README, "Built-in scalar conversions"](../../README.md).
+Full conversion table: the [repository README, "Built-in scalar conversions"](../../README.md#configuring-mapping-name-matching--conversions).
 
 ## Step 6 — ReverseMap, enums, collections, null
 
 | AutoMapper | DwarfMapper | Note |
 |---|---|---|
 | `.ReverseMap()` | `[ReverseMap]` on the forward method **+** an explicit inverse `partial A ToA(B)` | inverts simple renames automatically; non-invertible config (`Use=`, dotted, `When`) → `DWARF051`; missing inverse method → `DWARF052` |
-| enum **by value** (AM default) | `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]` | DwarfMapper defaults to **by name** — set this for AM parity |
+| enum→enum **by name** (AM default for defined members) | the default — nothing to set | do **not** set `EnumStrategy = ByValue` for parity: it maps by number, so enums declared in a different order map to the wrong member. An undefined value throws instead of passing through (Step 0, row 2) |
 | enum→string as `.ToString()` (AM default) | `[DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]` | DwarfMapper defaults to the `[EnumMember]`/`[Description]` text — set this for AM parity |
 | `AllowNullCollections = true` | `[DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]` | DwarfMapper defaults to `AsEmpty`; this matches AM's default |
 | `ForAllMembers(o => o.Condition((_,_,src) => src != null))` (skip null source members / patch-merge) | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member keeps the destination's default (`if (src.X is not null) dst.X = …`) — the "don't clobber with nulls" guard. For one map rather than the whole class: `[MapNullSkip]` on the method, or `[MapNullSkip<S,T>]` for a pair. Distinct from a **per-member** `.Condition`, which is `[MapProperty(src, tgt, When = …)]` (above) |
@@ -296,9 +296,11 @@ were never being mapped.
 
 ## Step 8 — Verify, then remove AutoMapper
 
-1. Add `[RoundTrip]` to your forward/back pairs and call `VerifyRoundTrip_*` from a test
+1. Add `[RoundTrip]` to your forward/back pairs and call `VerifyRoundTrip_*` from a test. This needs the
+   `DwarfMapper.Testing` package, published from 1.1.0-rc.1
    ([common-changes.md §5](common-changes.md#change-5--prove-the-swap-was-lossless)).
 2. For extra confidence, keep AutoMapper for one release and assert `oldMap(x)` ≡ `newMap(x)` over real inputs.
+   This needs no extra package.
 3. Remove the AutoMapper `PackageReference`, the `Profile` classes, and the `AddAutoMapper` registration.
 4. Delete the now-redundant `AssertConfigurationIsValid()` tests.
 
@@ -315,7 +317,7 @@ DwarfMapper deliberately does **not** do these (each has a static replacement; f
 - **`ResolutionContext.Items`/`State`** — use an extra typed method parameter.
 - **Per-call config** (`mapper.Map(src, o => o.AfterMap(...))`) — declared `[AfterMap]`, or act at the call site.
 - **`IncludeAllDerived()` / runtime `Map(obj, srcType, destType)`** — list each `[MapDerivedType<DS, DD>]` arm explicitly (no reflection discovery).
-- **Deep merge into existing nested objects** — `Update(src, dest)` preserves the *top-level* identity but **replaces** nested members/collections.
+- **Deep merge into existing nested objects** — `Update(src, dest)` preserves the *top-level* identity but **replaces** nested members/collections. The exception is a `List<T>` member with the same element type on both sides, which `[MapCollectionKey]` merges by key (`DWARF074` names what it refuses).
 - **`SetMappingOrder` / `RecognizePrefixes` / `ShouldMapProperty` predicates** — order is deterministic; use `[MapProperty]`/`[MapIgnore]` explicitly.
 - **`IncludeBase<S,T>()`** — there is no inheritance primitive. Restate the shared `[MapProperty]`/`[MapIgnore]`
   on each derived pair. Restatement is explicit and keeps every pair readable at its own declaration; the cost
@@ -344,7 +346,7 @@ List<DbStore> rows = ...;
 var items = _mapper.Map<ICollection<StoreItem>>(rows);   // DwarfMapMissingException
 ```
 
-Two things make it easy to get wrong, and both cost a false start during the reference migration:
+Two things make it easy to get wrong:
 
 1. **Two keys, often two different types.** The build-time check (`DWARF061`) validates the call site's
    **static** argument type; the runtime registry looks the delegate up by `source.GetType()` and walks base

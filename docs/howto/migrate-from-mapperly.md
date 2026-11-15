@@ -14,9 +14,9 @@ you gain several features Mapperly doesn't offer.
 ## The one mental-model shift
 
 There barely is one — the shapes are the same. The only philosophical change: **Mapperly's completeness
-check is an opt-in warning; DwarfMapper's is a non-optional build error.** Where Mapperly let an unmapped
-member slide (or warn), DwarfMapper stops the build until you map or ignore it. Budget for clearing those
-on the first build.
+check is a warning (RMG012, on by default); DwarfMapper's is a non-optional build error.** Where Mapperly warned
+about an unmapped member and still built, DwarfMapper stops the build until you map or ignore it. Budget for
+clearing those on the first build.
 
 ---
 
@@ -80,16 +80,17 @@ Or, if you'd rather drop the method signatures entirely:
 | `RequiredMappingStrategy.Target` / `Both` | `[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Target/Both)]` |
 | `EnumMappingStrategy.ByName` / `ByValue` | `[DwarfMapper(EnumStrategy = EnumStrategy.ByName/ByValue)]` — **Mapperly defaults to ByValue, DwarfMapper to ByName**; set it explicitly for parity |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions = false)]` (flips `DWARF038` — a Warning for lossy conversions, Info otherwise — into build errors) |
-| `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` — DwarfMapper reconstructs the **full** topology (Mapperly's is partial) |
+| `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` — reconstructs the **full** topology (shared references, diamonds, cycles) |
 | `[UseMapper]` / `[UseStaticMapper]` (compose mappers) | call another mapper from a `Use=` method, or nest types — no first-class mapper-injection attribute |
 
 One default differs: **enum strategy** (Mapperly maps enums *by value* by default, DwarfMapper *by name*) — set `EnumStrategy` explicitly to match. Case-sensitivity defaults otherwise line up.
 
 ## Step 5 — Build, clear DWARF001, verify, remove Mapperly
 
-1. Build. The likely new failures are `DWARF001` for members Mapperly only **warned** about (or didn't, if
-   you hadn't opted into strict required-mapping). Map / `[MapValue]` / `[MapIgnore]` each.
-2. Verify with `[RoundTrip]` — a capability Mapperly doesn't have, so this is net-new safety
+1. Build. The likely new failures are `DWARF001` for members Mapperly only **warned** about (RMG012), or whose
+   warning you had turned off. Map / `[MapValue]` / `[MapIgnore]` each.
+2. Verify with `[RoundTrip]` — a capability Mapperly doesn't have, so this is net-new safety. It needs the
+   `DwarfMapper.Testing` package, published from 1.1.0-rc.1
    ([common-changes.md §5](common-changes.md#change-5--prove-the-swap-was-lossless)).
 3. Remove the `Riok.Mapperly` `PackageReference`.
 
@@ -99,10 +100,12 @@ One default differs: **enum strategy** (Mapperly maps enums *by value* by defaul
 
 These have no Mapperly equivalent (see [`../COMPARISON.md`](../COMPARISON.md#capability-matrix)):
 
-- **`[RoundTrip]` verification** — fuzz-driven `Back(Forward(x)) ≡ x` with structural member-path failure dumps.
+- **`[RoundTrip]` verification** — fuzz-driven `Back(Forward(x)) ≡ x` with structural member-path failure dumps
+  (with `DwarfMapper.Testing`, from 1.1.0-rc.1).
 - **A non-optional completeness build-error gate** — not a warning you can forget to escalate.
 - **Blittable/SIMD bulk-copy** (`MemoryMarshal.Cast`) and **SIMD widening** (`Vector.Widen`) fast-paths —
-  ~2× faster on blittable struct arrays and primitive-widen arrays; Mapperly copies element-by-element.
+  against Mapperly 4.3.1, 2.1–2.3× faster on 1,000 blittable structs and 1.2–1.3× on an `int[]` → `long[]` widen,
+  on Windows and Linux ([measurements](../COMPARISON.md#performance--memory)); Mapperly copies element by element.
 - **Zero-alloc `Span<T>` mapping** and **`IAsyncEnumerable` streaming**.
 - **`[FlattenGraph]`** graph degradation (homogeneous + heterogeneous).
 - **`OnCycle = SetNull`** (System.Text.Json-style cycle breaking) and **full-topology `Preserve`** — uniform

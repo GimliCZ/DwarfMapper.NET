@@ -85,10 +85,10 @@ mappers structurally cannot go.
 - *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run
   **locally** as a native binary (not a CI job) — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
   deterministic over 100 000 runs, and the depth/SetNull guards hold over tens of thousands of runs. Timing
-  is *steadier* than the JIT (no tiering jitter). The one AOT usage caveat — default baseline SIMD width
-  (`Vector<int>.Count == 4` vs the JIT's 8), restored with `<IlcInstructionSet>native</IlcInstructionSet>`
-  — is documented in [`COMPARISON.md`](COMPARISON.md#nativeaot-benchmarking--stability); it is a perf knob,
-  not a correctness issue (output is bit-identical either way).
+  has no tiered-compilation warm-up. The one AOT usage caveat — the recorded AOT run used narrower vectors than the
+  JIT on the same machine (`Vector<int>.Count == 4`), which `<IlcInstructionSet>` changes — is documented in
+  [`COMPARISON.md`](COMPARISON.md#nativeaot-benchmarking--stability); it is a perf knob, not a correctness issue
+  (the scalar tail makes the result the same at any width).
 
 ## Claim register (mechanised)
 
@@ -118,7 +118,7 @@ The depth bound counts the calls the generator emits. **Code you write on the ma
 hook - and that loop is one the generator never sees, so `MaxDepth` does not apply to it. Every declared mapping
 method of a mapper that has a method body of its own therefore opens with the runtime's own stack check
 (`EnsureSufficientExecutionStack` on `RuntimeHelpers`): on a deep input such a loop ends in a catchable
-`InsufficientExecutionStackException` (before round 35 it was a stack overflow). A mapper with no method of its own
+`InsufficientExecutionStackException` (before 1.1.0-rc.1 it was a stack overflow). A mapper with no method of its own
 gets no check and pays nothing for it. **Outside this:** code that is not on the mapper and reaches one by itself -
 a property getter or a conversion operator on a mapped type that holds a mapper - is not something the generator can
 see or guard.
@@ -133,5 +133,4 @@ see or guard.
 
 Each clause above names the test or diagnostic that enforces it. That enforceability — not raw throughput —
 is the differentiator the runtime mappers can't structurally match. See
-[`COMPARISON.md`](COMPARISON.md) for the capability/perf matrix and
-[`IMPROVEMENT-PLAN.md`](IMPROVEMENT-PLAN.md) for what's next.
+[`COMPARISON.md`](COMPARISON.md) for the capability/perf matrix.

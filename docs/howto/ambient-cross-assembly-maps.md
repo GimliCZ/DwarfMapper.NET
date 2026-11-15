@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 # Ambient cross-assembly maps (the global `IDwarfMapper`)
 
 DwarfMapper normally generates a concrete mapper class per `[DwarfMapper]` host, and you reference it
@@ -72,7 +73,8 @@ runs through the registry at run time, as it always did.
 
 - Nothing to configure: the package enables interceptors for its own `DwarfMapper.Generated` namespace, and only
   that one, through `build/DwarfMapper.props`. A project that references `src/DwarfMapper` by *project* reference
-  (as this repository's tests do) states `InterceptorsNamespaces` itself; see `Directory.Build.props`.
+  imports that file or states `InterceptorsNamespaces` itself; see
+  [building from source](common-changes.md#change-1--reference-the-packages-target-net10).
 - `IDwarfMapper` calls are never bound. An injected `IDwarfMapper` may be your own decorator or a test double, and
   binding the call statically would silently skip it.
 - One case can differ from the registry: an update-into pair registered by two assemblies. Update maps carry no

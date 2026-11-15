@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
-# Migration methodics — converting to DwarfMapper
+# Migration guide — converting to DwarfMapper
 
 A **feature-by-feature** conversion guide from **AutoMapper 14.0.0**, **Mapster 10.x**, and
 **Riok.Mapperly 4.x** to DwarfMapper. Every feature/mechanic of each library has a row: the source API,
@@ -45,13 +45,19 @@ AutoMapper went commercial with v15 (2025-07-02); 14.0.0 is the last MIT release
 **CVE-2026-32933** ([GHSA-rvv3-g6hj-g44x](https://github.com/advisories/GHSA-rvv3-g6hj-g44x)) with no patch on that
 line: uncontrolled recursion, where a deeply nested or self-referential graph exhausts the stack and kills the
 process. A `StackOverflowException` cannot be caught in .NET, so no `try`/`catch` in your code is a mitigation.
+AutoMapper's opt-in `MaxDepth` mitigates that one. Two more were published on 2026-11-13 and are **not** stopped by
+`MaxDepth`: **CVE-2026-128082** (recursion through constructor parameters and positional records) and
+**CVE-2026-128081** (recursion through derived maps, interface-typed members, dictionary sources and recursive
+converters). Both are fixed only in AutoMapper 15.1.4 and 16.3.0, which are RPL-licensed.
 
-DwarfMapper bounds it by default. `MaxDepth` is 64 unless you set it, the limit is enforced by the generator and
+DwarfMapper bounds graph recursion by default. `MaxDepth` is 64 unless you set it, the limit is enforced by the generator and
 the runtime from one shared constant, and exceeding it throws `DwarfMappingDepthException` — an ordinary,
 catchable exception. This is pinned at the advisory's own proof-of-concept depth (30,000 levels) for
 self-referential, list-routed and dictionary-routed recursion in both reference-handling modes, each on a 1 MB
-stack; see `DeepRecursionPocTests`. If depth safety is why you are reading this page, that is the whole answer,
-and you do not have to configure anything to get it.
+stack; see `DeepRecursionPocTests`. A converter, hook or factory that calls the mapper again is a loop `MaxDepth`
+cannot see; the stack check at the start of each mapping method of such a mapper turns it into a catchable
+`InsufficientExecutionStackException` (see [Runtime exceptions](diagnostics.md#runtime-exceptions)). If graph depth
+is why you are reading this page, that is the whole answer, and you do not have to configure anything to get it.
 
 ### 1.1 Configuration & registration
 
@@ -136,7 +142,7 @@ and you do not have to configure anything to get it.
 | list/array/collection mapping | `T[]`, `List<T>`, `HashSet<T>` dests; read-only source shapes accepted | bulk-copy when element type unchanged |
 | `AllowNullCollections=true` (default null→empty) | `[DwarfMapper(NullCollections=AsNull)]` (default `AsEmpty`) | mapper-wide; matches AM default |
 | dictionary mapping | `Dictionary<K,V>`→`Dictionary<K2,V2>` | **keys and values** both converted; post-conversion key collision overwrites (no throw) |
-| enum by value (default); by-name via EnumMapping pkg | **DIVERGENT**: **by-name is the default**; `[DwarfMapper(EnumStrategy=ByValue)]` for AM's default | missing by-name member → build error `DWARF015`; no extra package |
+| enum→enum: defined members by name; an undefined value passes through as its number | by name, the default — nothing to set | an undefined value throws `ArgumentOutOfRangeException` instead of passing through; missing by-name member → build error `DWARF015`. Do **not** set `EnumStrategy=ByValue` for parity: it maps by number, so enums declared in a different order map to the wrong member |
 | open generics `CreateMap(typeof(S<>),typeof(D<>))` | **non-goal** | one `[GenerateMap<S<Foo>,D<Foo>>]` per closed type used |
 
 ### 1.9 Reference handling / depth / projection / validation / naming
@@ -260,7 +266,7 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 | `RequiredMappingStrategy.Target/Both` | `[DwarfMapper(RequiredMapping=Target/Both)]` | `DWARF039` (Info) for unconsumed source; a `.globalconfig` to escalate |
 | `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **Mapperly defaults ByValue, DwarfMapper ByName** — set explicitly; by-name mismatch → `DWARF015` |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` (a Warning for lossy conversions, Info otherwise) into build errors (Mapperly-style strict) |
-| `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | **DwarfMapper reconstructs full topology** (Mapperly's is partial) |
+| `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | reconstructs the **full topology** (shared references, diamonds, cycles) |
 | `[MapDerivedType<DS,DD>]` | `[MapDerivedType<DS,DD>]` | same attribute name |
 | `IQueryable` projection | `partial IQueryable<Dst> Project(…)` | translatable subset — nested/collection/enum-cast/dotted supported; non-translatable → `DWARF028` |
 | `[MapEnum]`/`[MapEnumValue]` per-value remap | **partial** | differing enum member sets are a build error to resolve explicitly |

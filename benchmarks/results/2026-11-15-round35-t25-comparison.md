@@ -2,13 +2,12 @@
 
 # Round 35 T25 — DwarfMapper against today's Mapperly and Mapster
 
-The owner, 2026-11-14: "run entire performance and usage comparison against dwarf mapper? ... up to date versions (not
-automapper of course) ... Target will be performance, security, validations, docs and samples validations." Design:
-[`docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md`](../../docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md).
+Scope: performance, security, validation, and the docs' and samples' claims, against the current releases of the other
+compile-time and runtime mappers.
 
-**Versions** (latest stable on nuget.org, 2026-11-14): Riok.Mapperly **4.3.1**, Mapster **10.0.14** (the repository
-pinned 10.0.8; this branch takes T9's bump), BenchmarkDotNet **0.15.8** (T9's bump). AutoMapper is not measured — the
-owner's exclusion; 14.0.0 is its last MIT release and carries three advisories. Prereleases (Mapperly 5.0.0-next.13,
+**Versions** (latest stable on nuget.org, 2026-11-14): Riok.Mapperly **4.3.1**, Mapster **10.0.14** (up from 10.0.8),
+BenchmarkDotNet **0.15.8**. AutoMapper is not re-measured: 14.0.0 is its last MIT release, unchanged, and carries three
+advisories. Prereleases (Mapperly 5.0.0-next.13,
 Mapster 10.1.0-pre04) appear only where a cell is a capability question.
 
 ## Performance
@@ -46,7 +45,7 @@ Read with the two runs side by side:
 
 - **Where DwarfMapper is ahead on both platforms**, it is a path the others do not have: the blit (2.1–2.3×), the
   value-element list (2.4–2.8×), the SIMD widen (1.2–1.3× over Mapperly, 1.8–2× over Mapster) and the nested graph's
-  fills (1.6–2× over Mapperly). The same leads as the August–September table in `docs/COMPARISON.md`.
+  fills (1.6–2× over Mapperly). The same leads as the August–September sweeps.
 - **Level, within a few per cent, on both**: flat, flatten, nested, by-name enum, the reference list.
 - **Mapperly ahead**: the reference-element array on Windows (17 %), the null guard DwarfMapper puts on each element and
   Mapperly does not — the trade `docs/COMPARISON.md` already states, measured again. On Linux the three are level.

@@ -15,7 +15,7 @@ These guides are deliberately *practical*. For the exhaustive references they le
 
 ## Which guide do I need?
 
-Answer three questions:
+Answer the questions that apply:
 
 **1. What are you mapping with today?**
 
@@ -37,14 +37,18 @@ Read [deploy-and-optimize.md](deploy-and-optimize.md) — the deployment-and-eff
 **4. Mapping C# 15 unions (.NET 11)?** Read [map-unions.md](map-unions.md) — one union into another case by case,
 unions inside other types, the empty union, and what is refused.
 
+**5. Calling a map declared in an assembly you don't reference (AutoMapper's global `IMapper`)?** Read
+[ambient-cross-assembly-maps.md](ambient-cross-assembly-maps.md) — the generated `IDwarfMapper` and `Dwarf.Map`, and
+the build-time check that every pair a call needs has a provider.
+
 ---
 
 ## The five-minute version
 
 Every migration, from every library, is the same three moves (detailed in [common-changes.md](common-changes.md)):
 
-1. **Reference one package** (`DwarfMapper` — it bundles the generator) and bump the consuming project to
-   `net10.0` or later (.NET 11 is verified in CI, job `net11`).
+1. **Reference one package** (`DwarfMapper` — it bundles the generator) in each project that declares mappers, and
+   bump those projects to `net10.0` or later (.NET 11 is built and tested too).
 2. **Collapse your runtime config into one `partial class`** — `[DwarfMapper]` on the class, one
    `[GenerateMap<Src,Dst>]` line (or one `partial` method) per pair. POCOs stay attribute-free.
 3. **Fix the build errors.** DwarfMapper turns "I forgot to map a property" into a compile error
@@ -65,5 +69,5 @@ Every migration, from every library, is the same three moves (detailed in [commo
 
 ## Status note
 
-DwarfMapper is **pre-release — `1.0.2-rc.1`, a release candidate.** Install it with the `--prerelease`
+DwarfMapper is **pre-release: every published version is a release candidate.** Install it with the `--prerelease`
 flag (`dotnet add package DwarfMapper --prerelease`). See the repository [README](../../README.md#status).

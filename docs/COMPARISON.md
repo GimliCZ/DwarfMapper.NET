@@ -14,19 +14,20 @@ A capability, testing, performance, and **migration-ease** comparison against th
 > RPL-1.5 + commercial (GPL-incompatible); we deliberately use nothing from it. Mapperly (4.3.1) and
 > Mapster (10.0.14) are MIT. Both are benchmark-only and never referenced by the shipped library.
 >
-> **Current releases, measured 2026-11-15** — Mapperly 4.3.1 and Mapster 10.0.14, the latest stable; AutoMapper left
-> out at the owner's direction: [what each says about a mistake](#validation-what-each-library-says-about-a-mistake),
+> **Current releases, measured 2026-11-15** — Mapperly 4.3.1 and Mapster 10.0.14, the latest stable:
+> [what each says about a mistake](#validation-what-each-library-says-about-a-mistake),
 > [what each does with a hostile shape](#security-what-each-library-does-with-a-hostile-shape), and
 > [performance on Windows and Linux](#current-releases-measured-2026-11-15). Full write-up:
-> [`2026-11-15-round35-t25-comparison.md`](../benchmarks/results/2026-11-15-round35-t25-comparison.md). Tables further
-> down that name Mapster 10.0.8 or AutoMapper are the August–September record.
+> [the 2026-11-15 comparison](../benchmarks/results/2026-11-15-round35-t25-comparison.md). AutoMapper 14.0.0 is not
+> re-measured: it is the last MIT release, unchanged, with three open advisories. The AutoMapper figures this page
+> links to are from August–September 2026.
 >
 > **Other libraries evaluated.** TinyMapper, ExpressMapper, and Nelibur were dropped (net10-incompatible
 > TFMs and/or abandoned since ~2017–2019). **AgileMapper 1.8.1** (MIT) restores on net10 but its NuGet
 > package ships a **Debug-built (unoptimized) assembly**, which BenchmarkDotNet's optimization validator
 > correctly rejects — benchmarking it would publish numbers that misrepresent its real performance, so it
 > is excluded (that it ships unoptimized and is unmaintained is itself a characteristic of the legacy
-> tier). The result is a clean four-way comparison (DwarfMapper / Mapperly / Mapster / AutoMapper 14).
+> tier). That leaves DwarfMapper, Mapperly and Mapster, plus AutoMapper 14 in the capability tables.
 
 ## Approach & licensing at a glance
 
@@ -51,7 +52,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | Polymorphic / derived dispatch | ✅ `[MapDerivedType]` | ✅ | config | ✅ |
 | **Reference-cycle / object-graph reconstruction** | ✅ `Preserve` (full topology) | ✅ `UseReferenceHandling` (opt-in) | ✅ `PreserveReference` | ✅ `PreserveReferences` |
 | **Cycle → null (IgnoreCycles)** | ✅ `OnCycle=SetNull` | ❌ | ~ | ~ |
-| **No-silent-StackOverflow guarantee** | ✅ depth-cap everywhere | ❌ | ~ | depth cap |
+| **No-silent-StackOverflow guarantee** | ✅ depth-cap everywhere | ❌ | ~ | opt-in `MaxDepth`; no default limit |
 | Graph degradation `[FlattenGraph]` | ✅ (homo + hetero) | ❌ | ❌ | ❌ |
 | IQueryable projection | ✅ provably-translatable | ✅ | ✅ (EFCore) | ✅ `ProjectTo` |
 | Update-into-existing | ✅ `void/T Map(s, dest)` | ✅ | ✅ `Adapt(s,dest)` | ✅ `Map(s,dest)` |
@@ -70,7 +71,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Conditional member (`When=`)** | ✅ predicate `When=` (`DWARF050`) | ❌ | ✅ | ✅ |
 | **Reverse mapping (`[ReverseMap]`)** | ✅ inverts simple renames (`DWARF051/052`) | ~ | ✅ | ✅ |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` (Warning for lossy conversions, Info otherwise), or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
-| **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | ~ (untested here) | maps the raw value through |
+| **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | default (a cast): passes the undefined value through; by name (`[MapEnum(ByName)]`): throws, `FallbackValue=` opts out | ~ (untested here) | maps the raw value through |
 | **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type; an instantiable base with no arm of its own is a **build error** (`DWARF119`) | throws | ~ (untested here) | maps the base as itself |
 | **C# 15 unions** (.NET 11 SDK) ¶ | ✅ case by case, strict pairing; `DWARF113`/`DWARF114` where a pair cannot be mapped | ❌ builds with warning `RMG066`, then maps **every** union to an **empty** one | ❌ throws `CompileException` at the first map | ❌ `AssertConfigurationIsValid()` passes; maps the **first** case, throws on every other |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
@@ -101,19 +102,22 @@ gate: a mapping nobody wrote is not a mapping anyone should rely on. One such ca
 an instance of a dispatch's own base type, when that type can be instantiated and has no arm, is visible in the
 declaration and is a build error (`DWARF119`).
 
-Mapperly reaches the same conclusion by default on both rows, which is worth saying plainly — two
-independently designed generators agreeing is a better argument for the stance than either makes alone. What
-Mapperly has and DwarfMapper does not is the **opt-out**: `FallbackValue=` names what an unmatched enum value
-should become. If you want a display path that degrades to `Unknown` rather than throwing, DwarfMapper's
+Mapperly reaches the same conclusion on the dispatch row by default, and on the enum row once it maps by name
+(`[MapEnum(EnumMappingStrategy.ByName)]`); its default enum mapping is a cast, which passes an undefined value
+through. Two independently designed generators agreeing is a better argument for the stance than either makes
+alone. What Mapperly has and DwarfMapper does not is the **opt-out**: `FallbackValue=` names what an unmatched
+enum value should become. If you want a display path that degrades to `Unknown` rather than throwing, DwarfMapper's
 answer today is a `Use=` converter that handles the case explicitly, which is more typing and says what it
 does at the call site.
 
 Both rows are executable rather than prose, for the three columns this repository has an oracle for:
 `tests/DwarfMapper.DifferentialTests/LoudRatherThanSilentTests.cs` runs DwarfMapper, Mapperly and AutoMapper
-over the undeclared case and fails the day any of their cells stops being true — in either direction. The
-**Mapster cells are `~` because they were not measured**: the differential harness references Mapperly and
-AutoMapper only, and a cell filled in from a plausible reading of somebody's defaults is exactly the kind of
-claim the rest of this table exists to avoid.
+over the undeclared case and fails the day any of their cells stops being true — in either direction. Its Mapperly
+enum arm is the by-name one; that Mapperly's default cast yields a value the target enum does not define is shown by
+the validation probe below. The
+**Mapster cells are `~` because they were not measured**: Mapster is in the differential harness, but only for
+enum-order semantics (`EnumOrderSensitivityTests`), not for these two rows, and a cell filled in from a plausible
+reading of somebody's defaults is exactly the kind of claim the rest of this table exists to avoid.
 
 `¶` **The union row was measured, not read off documentation** — 2026-11-14, SDK 11.0.100, the versions in this
 table, `union Pet(Cat, Dog)` into `union PetDto(CatDto, DogDto)`, with each case's map declared (Mapperly), created
@@ -121,7 +125,7 @@ table, `union Pet(Cat, Dog)` into `union PetDto(CatDto, DogDto)`, with each case
 10.0.14, and from the prereleases Mapperly 5.0.0-next.13 and Mapster 10.1.0-pre04. It
 is not in the differential harness, which builds on the pinned .NET 10 SDK and cannot declare a union; the probe's
 source and its output are in
-[`benchmarks/results/2026-11-14-round35-t24-union-mapping.md`](../benchmarks/results/2026-11-14-round35-t24-union-mapping.md).
+[the 2026-11-14 union results](../benchmarks/results/2026-11-14-round35-t24-union-mapping.md).
 None of the three knows what a union is. **Mapperly** sees a struct with no settable members, warns `RMG066`
 ("No members are mapped"), and returns `default` — an empty union, for a cat and a dog alike: the warning is
 the only trace of the loss. **Mapster** refuses at the first map ("Cannot convert immutable type, please consider
@@ -182,11 +186,13 @@ those defaults one cyclic payload takes a server down.
 | Coverage gate | ✅ CI threshold | ~ | ~ | ~ |
 | User-side config validation | build-time `DWARF001` | build-time | none | `AssertConfigurationIsValid()` (runtime/test) |
 
-DwarfMapper's test methodology is the most defensive of the four: beyond snapshots + integration it adds
-seeded fuzzing, adversarial/exhaustion matrices, determinism checks, and **self-validating meta-tests**
-(the test suite scans the assembly to prove every diagnostic/attribute/enum is covered). The completeness
-gate is a *compile error* — you cannot ship an incomplete mapping — whereas AutoMapper validates at
-test/runtime via `AssertConfigurationIsValid()` and Mapster/Mapperly offer no equivalent.
+Beyond snapshots and integration tests, DwarfMapper's suite adds seeded fuzzing, adversarial/exhaustion
+matrices, determinism checks, and **self-validating meta-tests** (the test suite scans the assembly to prove
+every diagnostic/attribute/enum is covered). The competitor cells describe each project's own test suite as
+published, not something this repository's harness verifies. The completeness gate is a *compile error* — you
+cannot ship an incomplete mapping. AutoMapper validates at test or run time via `AssertConfigurationIsValid()`,
+Mapperly reports a missing source as a warning (`RMG012`) that the build lets through unless warnings are
+errors, and Mapster has no build-time check.
 
 ## Migration ease (the critical concern)
 
@@ -277,162 +283,74 @@ because every one needed a multi-assembly, runtime-registry, real-consumer shape
 fabricated source and the mapped output, commit both, then replay against the new mapper. Committing the
 **source** rather than a seed is the load-bearing detail: it makes the comparison independent of the fixture
 generator, which will otherwise change under you mid-migration and silently reshuffle every input while still
-appearing to pass. `DwarfMapper.Testing`'s `ObjectFactoryV2` and `GraphOracleComparer` are built for this.
+appearing to pass. `DwarfMapper.Testing`'s `ObjectFactoryV2` and `GraphOracleComparer` are built for this (the
+package is on nuget.org from 1.1.0-rc.1).
 
 ## Performance & memory
 
 ### Current releases, measured 2026-11-15
 
-`MapperBenchmarks` without AutoMapper's arms, BenchmarkDotNet 0.15.8 DefaultJob, one run per platform: Windows (this
-machine, .NET 10.0.11) / Linux (the `sdk:10.0.101` image, .NET 10.0.1, four CPUs). Mean:
+`MapperBenchmarks` in [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/), BenchmarkDotNet
+0.15.8 DefaultJob, one run per platform on the same AMD Ryzen 5 5600: Windows 10 with .NET 10.0.11, and Linux in the
+`mcr.microsoft.com/dotnet/sdk:10.0.101` container (.NET 10.0.1, four logical CPUs). Single-object rows map a ring of
+distinct fixture-drawn payloads; collection rows have 1,000 elements. Mean, **Windows / Linux**:
 
-| Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.14 | hand-written |
+| Scenario | hand-written | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.14 |
 |---|---:|---:|---:|---:|
-| Flat (1 object) | 4.7 / 6.8 ns | 4.9 / 6.9 ns | 13.5 / 16.4 ns | 4.6 / 6.6 ns |
-| Nested object | 10.8 / 17.2 ns | 10.7 / 17.1 ns | 19.6 / 26.6 ns | — |
-| Enum, by value | 3.4 / 10.8 ns | 3.1 / 5.2 ns | 11.9 / 14.5 ns | — |
-| Array (1,000 reference elements) | 5.88 / 7.81 µs | 4.86 / 7.77 µs | 6.03 / 7.65 µs | — |
-| Dictionary (1,000 entries) | **8.18 / 9.40 µs** | 18.92 / 10.91 µs | 25.57 / 20.82 µs | — |
-| Blit (1,000 blittable structs) | **0.41 / 0.51 µs** | 0.95 / 1.08 µs | 0.98 / 1.13 µs | — |
-| Value-element list (`int[]` → `List<long>`) | **0.32 / 0.43 µs** | 0.88 / 1.06 µs | 0.91 / 1.08 µs | — |
-| Nested graph, mixed fills | **0.83 / 1.23 µs** | 1.70 / 2.03 µs | 1.02 / 1.46 µs | — |
+| Flat (1 object) | 4.6 / 6.6 ns | 4.7 / 6.8 ns | 4.9 / 6.9 ns | 13.5 / 16.4 ns |
+| Flatten (`Order.Customer.Name`) | — | 5.0 / 7.1 ns | 5.0 / 7.1 ns | 13.4 / 16.6 ns |
+| Nested object | — | 10.8 / 17.2 ns | 10.7 / 17.1 ns | 19.6 / 26.6 ns |
+| Enum, by name | — | 12.7 / 13.2 ns | 12.4 / 13.0 ns | — |
+| Enum, by value ¹ | — | 3.4 / 10.8 ns | 3.1 / 5.2 ns | 11.9 / 14.5 ns |
+| Array (1,000 reference elements) | — | 5.88 / 7.81 µs | 4.86 / 7.77 µs | 6.03 / 7.65 µs |
+| List (1,000 reference elements) | — | 5.46 / 7.83 µs | 5.57 / 8.16 µs | 5.32 / 8.57 µs |
+| Dictionary (1,000 entries) ² | — | 8.18 / 9.40 µs | 18.92 / 10.91 µs | 25.57 / 20.82 µs |
+| Blit (1,000 blittable structs) | — | 0.41 / 0.51 µs | 0.95 / 1.08 µs | 0.98 / 1.13 µs |
+| Value-element list (`int[]` → `List<long>`) | — | 0.32 / 0.43 µs | 0.88 / 1.06 µs | 0.91 / 1.08 µs |
+| Widen (`int[]` → `long[]`) | — | 0.32 / 0.45 µs | 0.42 / 0.53 µs | 0.65 / 0.80 µs |
+| Nested graph, mixed fills | — | 0.83 / 1.23 µs | 1.70 / 2.03 µs | 1.02 / 1.46 µs |
 
-The full table, with the rest of the rows and how to read them, is in
-[`2026-11-15-round35-t25-comparison.md`](../benchmarks/results/2026-11-15-round35-t25-comparison.md). The dictionary row
-depends on the platform and must not be quoted across it (2.3× over Mapperly on Windows, 1.16× on Linux). The by-value
-enum row reads 2.1× in Mapperly's favour on Linux and level on Windows, and the Linux figure is a measurement artefact,
-not a cost of the generated code. The two methods compile to the same instructions but for one null check, and the same
-method measured 5.5 and 19.6 ns in two Linux processes; the results document has the probe. Allocations are identical
-in every row except the dictionary (Mapster 3.3×) and the nested graph (Mapperly +17 %).
+¹ The Linux by-value enum figure is a measurement artefact, not a cost of the generated code. On Windows the two
+generators are level. The two methods compile to the same instructions apart from DwarfMapper's argument null check,
+and the same method measured 5.5 and 19.6 ns in two Linux processes. The probe is in
+[the 2026-11-15 results](../benchmarks/results/2026-11-15-round35-t25-comparison.md#the-linux-by-value-enum-gap).
 
-### The August–September record (with AutoMapper 14.0.0)
+² The dictionary row depends on the platform. DwarfMapper is 2.3× ahead of Mapperly on Windows and 1.16× on Linux.
+The difference is Mapperly's dictionary path, which is slow on Windows; DwarfMapper's is close to level on both. Quote
+both figures with that reason, or neither.
 
-See [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/) — DwarfMapper vs.
-hand-written vs. the three competitors across **flat / nested / collection / blittable-struct** scenarios
-with `[MemoryDiagnoser]`.
+Allocations are identical in every row except two: the dictionary (DwarfMapper 31,120 B, Mapperly 31,176 B, Mapster
+102,376 B) and the nested graph (DwarfMapper and Mapster 8,112 B, Mapperly 9,456 B). Each benchmark's allocated bytes
+are pinned exactly in [`allocation-baseline.json`](../benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json) and
+checked every night (`scripts/housekeeping.ps1 -BenchSmoke`); timings are not gated, so reproduce them on your own
+hardware.
 
-A single local run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (AMD Ryzen 5 5600,
-non-dedicated machine; the Flat/Blit numbers are committed under [`benchmarks/results/`](../benchmarks/results/), the full 9-category sweep is not, and none run in CI). Absolute ns
-vary by hardware; **relative ordering is the point — reproduce locally with the command below**:
+Where DwarfMapper is ahead on both platforms, it takes a path the others do not have: the blit (2.1–2.3×), the
+value-element list (2.4–2.8×), the SIMD widen (1.2–1.3× over Mapperly) and the nested graph's fills (1.6–2× over
+Mapperly). Flat, flatten, nested, the by-name enum and the reference list are level within a few per cent. Mapster
+takes 1.5–3.5× as long as the generators on every single-object row. Three rows need more than their numbers:
 
-| Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.8 | AutoMapper 14.0.0 | hand-written |
-|---|---:|---:|---:|---:|---:|
-| Flat (1 object) † | 6.7 ns | 6.9 ns | 15.8 ns | 56.4 ns | 6.7 ns |
-| Nested | 11.5 ns | 10.3 ns | 20.5 ns | 58.4 ns | — |
-| Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
-| **Blit (1000 structs)** † | **0.59 µs** | 1.08 µs | 1.11 µs | 1.18 µs | — |
-| **Value-element list (`int[]`→`List<long>`, 1000)** ‡ | **0.66 µs** | 1.00 µs | 0.92 µs | 2.83 µs | — |
-| **Nested graph, mixed fills (50 lines + value collections)** ‡ | **0.88 µs** | 1.73 µs | 1.02 µs | 2.00 µs | — |
-| **SIMD widen (`int[]`→`long[]`, 1000)** ‡ | **0.36 µs** | 0.44 µs | 0.70 µs | 0.74 µs | — |
-| **Flatten (`Order.Customer.Name`)** ‡ | **4.9 ns** | 5.5 ns | 14.4 ns | 53.6 ns | — |
-| **Nested object** ‡ | **10.8 ns** | 12.3 ns | 21.1 ns | 59.4 ns | — |
-| **List (1000 REFERENCE elements)** ‡ | 6.11 µs | 6.13 µs | **5.42 µs** | 8.73 µs | — |
-| **Array (1000 REFERENCE elements)** ‡ | 4.69 µs | **4.65 µs** | 6.09 µs | 5.23 µs | — |
-| **Enum, BY NAME** ‡ § | 12.5 ns | **12.3 ns** | — | 73.6 ns | — |
-| **Enum, BY VALUE** ‡ § | **2.9 ns** | 3.0 ns | 12.3 ns | — | — |
-| **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
-| Allocations (all scenarios) | = hand-written | = | = | = | baseline |
+- **The blit lead depends on the collection size.** The table's 2.1–2.3× is a thousand-element copy, near the top of
+  the curve. A sweep from 1 to 10⁶ elements on Windows
+  ([2026-09-09](../benchmarks/results/2026-09-09-collection-decade-sweep.md)) measured 2.05–2.20× over Mapperly at
+  100–1,000 elements, 1.06× at 10,000, where the destination array crosses the 85 KB Large Object Heap threshold and
+  garbage collection dominates every library, and 1.45× at 10⁶. With one element the block copy is slightly slower
+  than the element loop it replaces (0.84×), because its setup is not amortised. Quote the ratio with its size.
+- **Reference-element arrays carry a null guard.** On the array row Mapperly is 17 % ahead on Windows and level on
+  Linux. DwarfMapper tests each element and maps a null element to null; Mapperly's element method has no guard and
+  dereferences it. The same sweep found Mapperly ahead by 8–29 % at every size on Windows, and removing the
+  per-element test recovered about 9 %, which accounts for the gap. It is the price of a defined behaviour, and no way
+  of closing it keeps that behaviour. The `List` row, with the same elements, is level.
+- **Enums have two strategies, and each row measures one.** DwarfMapper maps enum members by name by default;
+  Mapperly and Mapster cast the underlying value. The benchmark's enums declare their members in different orders, so
+  a cast maps `Pending` to `Closed`: the two strategies give different answers. By name, DwarfMapper and Mapperly
+  (configured with `[MapEnum(EnumMappingStrategy.ByName)]`) are level. By value, DwarfMapper with
+  `EnumStrategy.ByValue` is level with Mapperly's default on Windows, and the Linux row is note ¹. By name is the
+  safe default; `EnumStrategy.ByValue` is a one-line opt-out, and it is also what lets an enum array take the blit.
 
-`‡` **Value-element list, measured 2026-08-23** (Windows, AMD Ryzen 5 5600, .NET 10.0.1, DefaultJob, one run,
-standard error +/- 11 ns). DwarfMapper fills the destination through `CollectionsMarshal.SetCount` + a span;
-the others `Add` element-by-element, paying `_version++`, a capacity check that cannot fail and `_size++` per
-element. **Allocations are identical to Mapperly and Mapster (8,112 B)** — the gap is fill efficiency, not
-memory. Note the contrast with the reference-element `List` row above, where DwarfMapper is *behind* Mapster:
-there the cost of allocating a thousand destination objects dominates and the fill strategy cannot show
-through, which is why the optimisation is deliberately restricted to value elements.
-
-`§` **The enum row used to say DwarfMapper was 3.98x slower than Mapperly. That was an artifact of the
-benchmark, and correcting it removed the finding entirely.** Enum mapping has two legitimate strategies and
-the four libraries do not agree on a default: **DwarfMapper and AutoMapper match member NAMES; Mapperly and
-Mapster cast the underlying VALUE.** The benchmark left every library at its default, so this row was not
-comparing four implementations of one operation — it was comparing a name switch against a raw cast, and
-publishing the difference as a deficiency in our emission.
-
-They do not even produce the same answer. The benchmark's enums are deliberately reordered
-(`{Pending, Active, Closed}` against `{Closed, Pending, Active}`), so a value cast maps `Pending` to
-`Closed`. Roughly a 4x "win" was the price of answering a different question.
-
-Measured like-for-like (2026-08-26, same machine and job as the rows above), **the gap is gone in one
-direction and reversed in the other**:
-
-* **By name** — DwarfMapper **12.5 ns**, Mapperly told to match at `EnumMappingStrategy.ByName` **12.3 ns**.
-  A 1.6 % difference, near enough the run-to-run spread to carry no meaning. AutoMapper, whose default is
-  also by name, takes **73.6 ns**. So our switch was never the problem; the strategy was the whole gap.
-* **By value** — DwarfMapper opted in with `EnumStrategy.ByValue` is **2.9 ns**, ahead of Mapperly's default
-  **3.0 ns** and Mapster's default **12.3 ns**. Mapster performs a cast and still measures like a switch,
-  because its per-call dispatch dominates whatever the cast costs.
-
-Two things follow. **By-name safety is a default, not a tax** — `EnumStrategy.ByValue` is a documented
-one-line opt-out (the same switch that lets an enum array take the blit fast path), and taking it puts
-DwarfMapper first in its class. And **nothing here is filed as a defect any more**; the earlier "improving
-this is filed, not fixed" note is withdrawn, because the thing it proposed to improve did not exist.
-
-The semantics behind both rows are executable rather than asserted: `EnumOrderSensitivityTests` maps
-divergently ordered enums through all four libraries and pins what each returns. Writing it corrected two
-confident guesses of mine — that AutoMapper mapped by value (its ledger entry is about *undefined* values
-passing through, not defined members) and that Mapster mapped by name (12.3 ns merely *looks* switch-shaped).
-Both were wrong, which is why the table now rests on the tests instead of on inference.
-
-**Every single-object row on this page now maps a RING of 512 distinct fixture-drawn payloads**, cycled per
-iteration, rather than one cached object. That change moved four rows and *flipped one ranking* (Nested went
-from marginally behind Mapperly to 1.14x ahead), which is why it is enforced by an architectural rule —
-`BenchmarkPayloadRuleTests` fails the build if any benchmark maps a static payload.
-
-**The four rows where a rival is ahead are there on purpose.** A comparison that lists only its wins is an
-advertisement. The pattern across the whole sweep is consistent and worth stating plainly: **DwarfMapper
-leads wherever a fast path is eligible and trails slightly where none is.** `List` and `Array` carry
-reference elements, so neither the blit nor the value-element span fill applies, and what remains is
-allocating a thousand destination objects — where there is nothing to win and Mapster's loop is marginally
-tighter. The `Array` gap (1.01x) is smaller than the combined standard error and should be read as parity.
-Full per-row numbers with standard errors:
-[`benchmarks/results/2026-08-24-premerge-full-sweep.md`](../benchmarks/results/2026-08-24-premerge-full-sweep.md).
-
-**Read the nested row carefully — it is not a fill-strategy number.** That graph mixes both strategies in one
-map (reference-element `Lines` on the `Add` path, value-element `Totals` and per-line `Quantities` on the
-span fill) and measures the whole mapping, including allocating fifty nested destination objects. Its gap
-against Mapperly (900 ns) is far larger than the isolated value-element gap (257 ns) despite containing
-FEWER value elements, so most of that lead comes from elsewhere in the graph mapping, not from the fill —
-Mapperly also allocates more there (9,456 B against 8,112 B). The `int[]→List<long>` row is the isolation;
-the nested row is what a realistic order-shaped map looks like.
-
-`†` **Flat and Blit re-measured this session** (Linux, AMD Ryzen 5 5600, .NET 10.0.1 DefaultJob, tight
-error bars): on Flat, hand-written (6.7 ns), DwarfMapper (6.7 ns) and Mapperly (6.9 ns) are statistically
-tied — DwarfMapper marginally ahead of Mapperly here. Nested / Array / Widen rows are from an earlier run —
-reproduce locally. Codegen mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier
-(Mapster ~2.4×, AutoMapper ~8×) trails.
-
-**Takeaways:**
-- DwarfMapper **sits with hand-written and Mapperly at the codegen floor** — on the flat map its median
-  is statistically tied (~6.7 ns each; DwarfMapper marginally ahead of Mapperly this run), since the generated
-  code is the same direct-assignment shape — with **zero allocation overhead** (the destination object is the
-  only allocation). On the 1000-object array it and
-  Mapperly co-lead (4.55 µs vs 4.47 µs — within run-to-run noise), both ahead of the runtime mappers.
-- On the **blittable struct array at N = 1000 it is ~1.8–2.0× faster than every competitor** — the
-  `MemoryMarshal.Cast` block-copy (reinterpret) path that none of Mapperly / Mapster / AutoMapper have (they
-  copy field-by-field). (This session's measurement: **0.59 µs vs 1.08–1.18 µs** for the others — decisive,
-  with allocations identical across all four libraries.)
-  **The size qualifier is not decoration.** A seven-decade sweep of the same shape
-  ([`2026-09-09-collection-decade-sweep.md`](../benchmarks/results/2026-09-09-collection-decade-sweep.md))
-  shows the lead is a CURVE with its peak near this size: ~2.05–2.20× at N = 100–1,000, **1.06×** at
-  N = 10,000 where the destination array crosses the Large Object Heap threshold and GC dominates every
-  library equally, recovering to **1.45×** at N = 10⁶. At **N = 1 the fast path is a small loss** (0.84×
-  against its own scalar twin — the `Cast` + `CopyTo` setup is not amortised by one element). So this
-  figure describes a thousand-element copy and must not be quoted as a property of the path.
-- On the **reference-element array (`Child[]→ChildDto[]`) Mapperly leads by 8-29 % at every element count
-  from 1 to 10⁶** ([`2026-09-09-collection-decade-sweep.md`](../benchmarks/results/2026-09-09-collection-decade-sweep.md)),
-  and the cause is a deliberate difference in what the two libraries DO, not in how fast they do it.
-  DwarfMapper tests each element and maps a null element to null; Mapperly's element method carries no guard
-  and dereferences it. Measured cost of that guarantee: **~9 %** (`NullCheckProbeBenchmarks`; removing the
-  callee's own `ThrowIfNull` recovers nothing, so the whole difference is the element test). **It is a trade,
-  not a deficiency** — and the behaviour is ruled, not incidental, so that a failed `Result<T>` maps to null
-  instead of throwing (`ElementNullArmTests` pins all four cells).
-- On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
-  runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
-  the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/
-  expression tier; the gap widens for smaller element types or cache-resident data.
-- It is **~8× faster than AutoMapper** and **~2.4× faster than Mapster** on flat maps (measured: 56.4/6.7 ≈ 8.4×, 15.8/6.7 ≈ 2.4×), which pay
-  runtime expression-tree / reflection overhead (and are not NativeAOT-safe). Mapster's first-call
-  expression compilation is amortized here (steady state), yet still trails the codegen mappers.
+AutoMapper 14.0.0 is not in the 2026-11-15 run. Its figures from August 2026, on Windows with Mapster 10.0.8, are in
+[the 2026-08-24 sweep](../benchmarks/results/2026-08-24-premerge-full-sweep.md) and, for the enum strategies,
+[the 2026-08-26 enum run](../benchmarks/results/2026-08-26-enum-strategy-like-for-like.md).
 
 Run locally for numbers on your hardware:
 
@@ -445,15 +363,14 @@ dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
 Nobody else maps a union (the capability matrix above, `¶`), so DwarfMapper's union map is measured against code
 written by hand, and against the class hierarchy that held the same data before unions
 ([`benchmarks/DwarfMapper.UnionBenchmarks`](../benchmarks/DwarfMapper.UnionBenchmarks); full write-up with both
-platforms in
-[`2026-11-14-round35-t24-union-mapping.md`](../benchmarks/results/2026-11-14-round35-t24-union-mapping.md)). Windows,
-this machine, .NET 11.0.0, BenchmarkDotNet DefaultJob:
+platforms in [the 2026-11-14 union results](../benchmarks/results/2026-11-14-round35-t24-union-mapping.md)).
+Measured 2026-11-14 on Windows 10 (AMD Ryzen 5 5600), .NET 11.0.0, BenchmarkDotNet 0.14.0 DefaultJob:
 
 | Payments (a three-case union) | One value | Batch of 1,000 |
 |---|---:|---:|
 | Union, hand-written switch | 5.86 ns | 8.83 µs |
 | Union, hand-written in DwarfMapper's own structure | 6.27 ns | 9.17 µs |
-| **Union, DwarfMapper** | **6.29 ns** | **9.85 µs** |
+| Union, DwarfMapper | 6.29 ns | 9.85 µs |
 | Class hierarchy, hand-written | 7.25 ns | 9.77 µs |
 | Class hierarchy, DwarfMapper | 8.24 ns | 8.78 µs |
 | Class hierarchy, Mapperly 4.3.1 | 8.34 ns | 10.75 µs |
@@ -462,7 +379,9 @@ this machine, .NET 11.0.0, BenchmarkDotNet DefaultJob:
 The generated union map costs what its own shape costs by hand — a switch calling the declared map for each case —
 and trails a switch that builds every DTO inline by that call, under a nanosecond. Allocations are identical in every
 row. One loss is recorded rather than smoothed over: for a list of unions, DwarfMapper's span fill measured 4–7 %
-slower than plain `Add` (the row the hand-written structure beats).
+slower than plain `Add` (the row the hand-written structure beats). A re-run against Mapster 10.0.14 for the 2026-11-15
+comparison gave the same picture: the generated union map level with its hand-written structure, and Mapster about 3× on the
+hierarchy.
 
 ### Higher instructions / SIMD
 
@@ -486,7 +405,7 @@ DwarfMapper has **two** SIMD fast-paths that no competitor offers:
    `Vector.IsHardwareAccelerated` guard and a scalar tail. The result is **bit-for-bit identical to the
    scalar implicit widen** (verified by adversary/fuzz tests over every length around the vector boundary
    and the full value range, plus an AOT gate) — it is purely a throughput win and stays reflection-free /
-   NativeAOT-safe. Like the bulk copy it is not limited to arrays: since round 33, **`List<T>` on either side**
+   NativeAOT-safe. Like the bulk copy it is not limited to arrays: **`List<T>` on either side**
    (with the list-family interfaces that materialise to it) and **`ImmutableArray<T>` in both directions** take
    the same vector loop. Competitors copy these element-by-element.
 
@@ -499,42 +418,36 @@ narrowing). See the `Blit` and `Widen` benchmark categories.
 
 The BenchmarkDotNet suite above measures the JIT. `samples/DwarfMapper.AotBench` is a separate harness
 that is **published with NativeAOT and run as a native binary** — it both times the hot paths under real
-AOT codegen and stress-tests for instabilities the JIT can't reveal. (It is run **locally on demand**; CI
-runs the separate `AotSample` safety/trim gate, not this stress harness — the numbers below are a single
-local machine's.)  The checks: SIMD widen/blit bit-exactness at
-every size around the vector boundary, Preserve-topology determinism over 100 000 runs, catchable
-depth-guard over 20 000 runs, and `OnCycle=SetNull` acyclicity over 50 000 runs.
+AOT codegen and stress-tests for instabilities the JIT can't reveal. It is run locally on demand, not in CI;
+CI runs the separate `AotSample` gate, which publishes with trim and AOT warnings as errors and runs its checks.
+The harness checks SIMD widen/blit bit-exactness at every size around the vector boundary, Preserve-topology
+determinism over 100,000 runs, the catchable depth guard over 20,000 runs, and `OnCycle=SetNull` acyclicity over
+50,000 runs.
 
-Results (ILC 10.0.1, win-x64, AMD Ryzen 5 5600; **1.16 MB** self-contained native exe):
+Last recorded run: 2026-07-24, win-x64, .NET 10.0.1
+([full output](../benchmarks/results/2026-07-24-full-sweep-windows.md#nativeaot-sample)):
 
-- **No instabilities.** Every correctness/determinism check passes (exit 0) across 170 000 stress
-  iterations (100 000 Preserve-cycle + 20 000 depth-guard + 50 000 SetNull); the default `dotnet publish`
-  emits **zero** IL2xxx/IL3xxx trim/AOT warnings. SIMD output is **bit-for-bit identical** to the scalar
-  reference at all boundary sizes, including negatives (sign extension).
-- **AOT timing is *steadier* than the JIT** — no tiered-compilation jitter, so per-op min/max spreads are
-  tighter (a stability *positive*). Indicative ns/op at baseline SSE2 width: Flat ≈ 8 ns, Array (1000)
-  ≈ 8.8 µs, **Blit (1000) ≈ 0.39 µs** (from the earlier AOT run — the JIT was later re-measured at ~0.59 µs, so treat these AOT figures as indicative of that run; the reinterpret is width-independent),
-  Widen (1000) ≈ 0.47 µs (half-width; see the caveat below).
-- **One AOT usage caveat worth knowing (not an instability).** NativeAOT defaults to a **baseline
-  instruction set** (x86-64-v1 / SSE2) for portability, so `Vector<int>.Count == 4` under default AOT vs
-  `8` under the AVX2-detecting JIT — the `Vector.Widen` path runs half-width. It stays **correct** (the
-  scalar tail + narrower body produce identical results), just not maximally fast. To get full-width SIMD
-  under AOT, opt into a higher ISA, e.g.:
+- **No instabilities.** Every correctness and determinism check passed across the 170,000 stress iterations, and
+  the SIMD output was bit-for-bit identical to the scalar reference at every boundary size, including negative
+  values (sign extension).
+- **Timing under NativeAOT**, median ns/op: Flat 8.6 ns, Array (1,000) 9.31 µs, Blit (1,000) 0.47 µs, Widen
+  (1,000) 0.52 µs. These are one local run on an older build; read them as an order of magnitude, not against the
+  JIT table above.
+- **Vector width.** That AOT binary reported `Vector<int>.Count = 4` (128-bit vectors) where the JIT on the same
+  machine used 256-bit vectors, so the `Vector.Widen` path ran at half the JIT's width. The result is the same at
+  any width — the scalar tail covers what the vector body does not — so this is a speed setting, not a
+  correctness one. NativeAOT's `IlcInstructionSet` property selects the instruction set the native code targets:
 
   ```xml
   <PropertyGroup>
-    <IlcInstructionSet>native</IlcInstructionSet>  <!-- build-machine ISA; or a specific list, e.g. avx2 -->
+    <IlcInstructionSet>native</IlcInstructionSet>  <!-- the build machine's instruction set -->
   </PropertyGroup>
   ```
-
-  Re-verified this run: with `IlcInstructionSet=native` the AOT binary reports `Vector<int>.Count == 8`
-  (vs `4` at baseline) and all correctness/determinism checks still pass (exit 0). (`x86-64-v3` is rejected
-  by ILC 10.0.1 — use `native` or an explicit ISA list.)
 
 Run it yourself:
 
 ```bash
-dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64        # default baseline SIMD
-dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64 -p:IlcInstructionSet=native   # full-width
+dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64        # default instruction set
+dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64 -p:IlcInstructionSet=native   # the build machine's
 ./samples/DwarfMapper.AotBench/bin/Release/net10.0/win-x64/publish/DwarfMapper.AotBench.exe
 ```
