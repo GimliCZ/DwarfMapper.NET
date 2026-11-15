@@ -22,7 +22,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T4 | **DWARF066 false positive** on a When-guarded member inherited from a positional record. | **done** - see Notes |
 | T5 | **Audit `docs/diagnostics.md`** (2,700 lines) against the tree. | **done** - see Notes |
 | T6 | **Widen span maps** (`void Map(ReadOnlySpan<int>, Span<long>)`): measure the scalar loop against a vectorised one; vectorise if it pays. | **done on its own branch** (`feat/round35-t6`): it pays - 1.56x to 6x at 1,024; see Notes |
-| T7 | **Move the SDK pin** to the current 10.0 servicing release; re-measure every gate tied to it; drop the AOT compiler override if the new pin makes it dead. | open |
+| T7 | **Move the SDK pin** to the current 10.0 servicing release; re-measure every gate tied to it; drop the AOT compiler override if the new pin makes it dead. | **done on its own branch** (`feat/round35-t7`, stacked on T8): 10.0.404, override removed, and a `toolchain-floor` job - see Notes |
 | T8 | **Ubuntu 26.04 for every Linux job**, the canary removed, on a `full-ci` run. | **done on its own branch** (`feat/round35-t8`), the owner's yes of 2026-11-13 - see Notes |
 | T9 | **Test and tooling packages** brought up to date, one at a time, gates re-measured. | open |
 | T10 | **The in-process mutation runner** into the repository: tool project, tests, catalogue step, a CI job comparing its report with Stryker's. | open |
@@ -487,3 +487,48 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
     disabled; `SpanMapWidenRuntimeTests` (runtime, 10: every pair at lengths 0-70 and seven longer, random bits,
     element-for-element against the scalar widening, nothing past the source written, a short destination refused
     first, zero allocation), green natively and under no-intrinsics, 128-bit and no-AVX2 - the ISA matrix's rows.
+- **T7: the pin 10.0.101 -> 10.0.404, and what it took with it.**
+  - **Which SDK.** The 2026-11-10 release (runtime 10.0.15) ships two SDKs, 10.0.115 (the 1xx band, Roslyn 5.0
+    serviced) and 10.0.404 (4xx, Roslyn 5.9). Microsoft publishes container images only for the newest band - the
+    registry's 10.0 tags stop at 10.0.103 for 1xx - and package-size and every CI rehearsal here are measured in
+    the SDK's container, so 10.0.404. 10.0.400, the one installed on this machine, ships runtime 10.0.11, still
+    inside GHSA-p3jp-9v83-76w9.
+  - **The override is dead.** `Directory.Build.targets` named runtime 10.0.15 for PublishAot projects because
+    10.0.101 implied ILCompiler 10.0.1. 10.0.404 implies 10.0.15 itself; the override and
+    `AotCompilerPatchScanTests` (written to fail on exactly this day) are removed. `dotnet restore
+    --force-evaluate` in sdk:10.0.404 moved one lock file: src/DwarfMapper's Microsoft.NET.ILLink.Tasks
+    10.0.1 -> 10.0.15. (That test's own rule "an SDK's last two digits are its runtime's patch" was true for the
+    1xx band only: 10.0.404 ships 10.0.15, not 10.0.4.)
+  - **Gates, in the sdk:10.0.404 container.** Build with warnings as errors: 0 warnings (the 4xx analyzers found
+    nothing new). The whole suite: green. package-size: green at 370 / 57 KB. deep-test: **refused the allocation
+    baseline for its SDK**, by design ("allocated bytes are deterministic per SDK"); re-measured with the job's own
+    `housekeeping -Nightly` - all 63 benchmarks executed, all 28 pins byte-identical - and
+    `allocation-baseline.json` now records SDK 10.0.404, runtime 10.0.15 and the container. No pin changed.
+  - **The floor the pin used to hold.** README: "Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+)".
+    10.0.101's compiler is Roslyn 5.0.0-2.25569.105, so until now every job built on the floor and the promise was
+    held without being written down; 10.0.404 carries 5.9.0-1.26529.119. Measured what still runs on 5.0 after the
+    move: the suite's in-process compilations (the tests reference Microsoft.CodeAnalysis 5.0.0, so the generated
+    code of the whole corpus is still compiled by the floor compiler) - but no real project: not the samples, the
+    consumer tests or the integration tests. **`toolchain-floor`** (new, blocking) installs the newest 10.0.1xx SDK
+    into a directory of its own - with the pin dropped `dotnet` takes the newest SDK it can see, and a runner image
+    carries newer 10.0 ones - proves the band, then builds (locked, warnings as errors) and tests the solution.
+    Locked mode can stay on: 10.0.115 implies the same 10.0.15 packages the lock files hold.
+  - **roslyn-forward-compat** runs on `10.0.x`, which is the pin itself until a newer 10.0 SDK ships; its comment
+    says so. It starts looking ahead again then, before the pin follows.
+  - **reproducible-build, found by rehearsing it:** NuGet 7.9 (in 10.0.404; 10.0.101 carried 7.0) names the
+    core-properties part `nuget.psmdcp` instead of a fresh GUID, and the check required the GUID form - "0 .psmdcp
+    part(s), expected exactly 1" on all four packages. Two packs compared entry by entry: every entry identical,
+    the .psmdcp and `_rels/.rels` included; the whole-file hash differs only by the pack time in the zip headers of
+    the four OPC entries. The check accepts the fixed name by its exact spelling beside the GUID form. Also
+    rehearsed at this head: build-test, aot-trim-gate (linux; native binary published and run), conformance-gate.
+  - **cross-platform (macos-latest), found by the full run (43596272659):** from the 10.0.4xx SDK on, an executable
+    with PublishAot and no RuntimeIdentifier gets the host's portable RID as its default publish RID, appended to
+    RuntimeIdentifiers (`Microsoft.NET.RuntimeIdentifierInference.targets`; 10.0.101 had no such rule). Linux and
+    Windows hosts are already in the two AOT projects' list; macOS arm64 is not, so the locked restore refused the
+    lock file there (NU1004). Reproduced on Linux with `-p:NETCoreSdkPortableRuntimeIdentifier=osx-arm64`; both
+    projects now set `UseDefaultPublishRuntimeIdentifier=false` (every publish names its RID), and the same
+    restore passes, the native solution restore passes, the explicit-RID AOT publish still runs green, and no lock
+    file changed.
+  - **For the owner:** the branch needs SDK 10.0.404 installed to build on this machine (`global.json` refuses any
+    other, by design). I could not install it here (no administrator rights), so every check of this branch ran
+    in containers.

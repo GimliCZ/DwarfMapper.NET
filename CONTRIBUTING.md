@@ -8,17 +8,17 @@ Sign your commits with `git commit -s`.
 
 ## Building & testing
 
-You need **.NET SDK 10.0.101 exactly** — the whole solution targets `net10.0` (an older SDK fails with
+You need **.NET SDK 10.0.404 exactly** — the whole solution targets `net10.0` (an older SDK fails with
 `NETSDK1045`), and `global.json` pins the patch with `rollForward: disable`.
 
 The pin is deliberate and it is strict: a source generator's output is compiler-version-sensitive, and the
 suite compares generated code byte-for-byte, so "any 10.0.x" would mean contributor and CI can disagree
 about what the build produces. CI installs the same exact version and asserts it matches `global.json`.
-If you have a different patch, install `10.0.101` alongside it (side-by-side SDKs are supported); do not
+If you have a different patch, install `10.0.404` alongside it (side-by-side SDKs are supported); do not
 loosen `global.json` locally. Bumping the pin means changing `global.json` **and** the `dotnet-version` in
-every `setup-dotnet` step that names the pinned version, in the same commit. Three CI jobs deliberately name
-another one and are not part of the bump: `roslyn-forward-compat` (`10.0.x`), `preview-sdk-canary` (`11.0.x`)
-and `net11` (`11.0.100`).
+every `setup-dotnet` step that names the pinned version, in the same commit. Four CI jobs deliberately name
+another one and are not part of the bump: `roslyn-forward-compat` (`10.0.x`), `toolchain-floor` (`10.0.1xx`, the
+oldest band the README promises), `preview-sdk-canary` (`11.0.x`) and `net11` (`11.0.100`).
 
 ```bash
 dotnet build DwarfMapper.NET.sln -c Release
