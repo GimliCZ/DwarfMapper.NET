@@ -41,6 +41,11 @@ that is switched on, a manual push. (When published to nuget.org, packages addit
 
 ## Consumer-side verification
 
+**Which versions can be verified.** Everything below applies to a release cut from a tag by the workflow, from
+1.1.0-rc.1 on. The three earlier release candidates on nuget.org (1.0.0-rc.1, 1.0.1-rc.1, 1.0.2-rc.1) were pushed by
+hand before this pipeline existed: they have no tag, no GitHub Release, no SBOM and no provenance attestation, so
+they cannot be verified this way. Prefer a tagged version.
+
 ### 1. Fingerprint (content hash)
 ```bash
 sha256sum -c SHA256SUMS
@@ -64,29 +69,51 @@ vulnerability/compliance tooling (e.g. `cyclonedx`, Dependency-Track, `grype`).
 
 ## Maintainer: cutting a release
 
-> **Every live diagnostic id is announced in `CHANGELOG.md`.** The file mandates an entry for every new
-> diagnostic id, and the release workflow publishes its section verbatim as the GitHub Release body. The
-> seventy-six ids that predated the file were written up on 2026-08-21 as the "initial diagnostic surface"
-> block under `### Added` (task `D-e` in [`Issues/round20/TASKS.md`](../Issues/round20/TASKS.md)), and the
-> frozen `PredatesTheChangelog` exemption baseline was deleted with them — so the `Scan9` gate in
-> `tests/DwarfMapper.Generator.Tests/SelfValidation/AssemblyScanTests.cs` now fails the build for **any**
-> live id with no entry, new or old. A new diagnostic therefore cannot reach a tag unannounced.
-
 No secrets or keys to configure — the keyless signature uses the workflow's OIDC token, which
 GitHub mints automatically (the workflow already requests `id-token: write` + `attestations: write`).
 
+**Before the tag**, on `master`, with a green full CI run:
+
+1. **Version.** `<Version>` in [`Directory.Build.props`](../Directory.Build.props) already names the release being
+   cut (it is bumped right after each publish, step 7). The tag overrides it anyway, but a local pack must not carry
+   the number of a package already on nuget.org.
+2. **CHANGELOG.** Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and open a fresh, empty `## [Unreleased]`
+   above it. The release job publishes that section as the GitHub Release body and **fails the release** if the
+   section is missing, empty, or over 125,000 characters. Every live diagnostic id must appear somewhere in the
+   file (a test enforces it), so a new diagnostic cannot reach a tag unannounced.
+3. **Analyzer release tracking.** New and changed diagnostic ids are listed in
+   `src/DwarfMapper.Generator/AnalyzerReleases.Unshipped.md`. While every release is a prerelease they stay there;
+   at the first stable release, move the table into `AnalyzerReleases.Shipped.md` under `## Release X.Y.Z`.
+4. **Packages in the release.** The release job packs the solution and the GitHub Release carries **every**
+   packable project: `DwarfMapper` and `DwarfMapper.Testing`. Confirm both are meant to go out; a package that
+   should not, gets `IsPackable=false` before the tag. (`DwarfMapper.Testing` is published for the first time with
+   1.1.0-rc.1.)
+
+**Tag and publish:**
+
 ```bash
-# 1. Pick the version (keep README 'Status' in sync).
-# 2. Tag and push — the pipeline does the rest.
-git tag v1.0.2-rc.1
-git push origin v1.0.2-rc.1
-# 3. (Manual, when ready) publish to nuget.org — push the SAME signed packages the Release carries
-#    (don't re-pack locally; a local build can differ byte-for-byte and fail attestation):
-#    gh release download v1.0.2-rc.1 -p '*.nupkg' -p '*.snupkg'
+# 5. Tag and push — the pipeline builds, tests, packs, attests and creates the GitHub Release.
+git tag vX.Y.Z
+git push origin vX.Y.Z
+# 6. Publish to nuget.org: approve the `publish` job (Trusted Publishing, below) or, until that is switched on,
+#    push the SAME signed packages the Release carries (don't re-pack locally; a local build can differ
+#    byte-for-byte and fail attestation):
+#    gh release download vX.Y.Z -p '*.nupkg' -p '*.snupkg'
 #    dotnet nuget push '*.nupkg' -s https://api.nuget.org/v3/index.json -k <API_KEY>
 ```
 
-### Publishing to nuget.org: Trusted Publishing (round 31 T21)
+**After publishing:**
+
+7. Bump `<Version>` in `Directory.Build.props` to the next planned version, and move
+   `PackageValidationBaselineVersion` in `src/DwarfMapper/DwarfMapper.csproj` to the version just published (package
+   validation compares every pack against it). Add a baseline to `DwarfMapper.Testing` once it has a published
+   version to compare against. Regenerate the lock files (`dotnet restore DwarfMapper.NET.sln --force-evaluate`):
+   they record the project version.
+
+The three hand-pushed 1.0.x release candidates cannot be verified (see *Consumer-side verification*); consider
+deprecating them on nuget.org in favour of the first tagged release.
+
+### Publishing to nuget.org: Trusted Publishing
 
 The `publish` job pushes the **same** packages the GitHub Release carries (handed over as a workflow artifact,
 never rebuilt) with **no API key stored anywhere**: `NuGet/login` exchanges the job's GitHub OIDC token for a
@@ -108,8 +135,9 @@ setup, in this order:
 From then on every tag stops at the `publish` job until a reviewer approves it. Until step 4, the job is skipped
 and the manual push above remains the path.
 
-The version flows from the tag (`vX.Y.Z` → `X.Y.Z`) into `-p:Version=` for both build and pack.
-Local default (no tag) is `1.0.2-rc.1`, set in [`Directory.Build.props`](../Directory.Build.props).
+The version flows from the tag (`vX.Y.Z` → `X.Y.Z`) into `-p:Version=` for both build and pack. Without a tag
+the version is the one in [`Directory.Build.props`](../Directory.Build.props): the next release, never a published
+one.
 
 > **Want a NuGet-native author signature too?** That requires an X.509 code-signing certificate and
 > a stored private key, which this project intentionally avoids. If a downstream consumer ever mandates

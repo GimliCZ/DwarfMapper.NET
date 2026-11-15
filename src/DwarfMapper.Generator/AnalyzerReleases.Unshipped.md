@@ -73,8 +73,8 @@ DWARF064 | DwarfMapper | Info | [MapValue] shadows an auto-matchable source memb
 DWARF065 | DwarfMapper | Info | Update-into replaces a nested member instead of merging it
 DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable member at its default
 DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-payload generic
-DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
-DWARF069 | DwarfMapper | Error | MapConfigConflict
+DWARF068 | DwarfMapper | Error | Unsupported MapConfig expression
+DWARF069 | DwarfMapper | Error | Conflicting member configuration
 DWARF070 | DwarfMapper | Warning | A nullable source is assigned to a non-nullable target member
 DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped
 DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)
@@ -107,6 +107,7 @@ DWARF098 | DwarfMapper | Warning | [DwarfMapperConstructor] names a constructor 
 DWARF099 | DwarfMapper | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations
 DWARF100 | DwarfMapper | Info | Array or span pair narrowly missed the blittable fast path
 DWARF101 | DwarfMapper | Info | Struct layout pads more than a quarter of its size
+; DWARF102 — reserved; never shipped; do not reuse
 DWARF103 | DwarfMapper | Info | Collection element could be a struct
 DWARF104 | DwarfMapper | Error | Invalid [MapShare] target
 DWARF105 | DwarfMapper | Error | Invalid [MapDenseEnumKeys] target

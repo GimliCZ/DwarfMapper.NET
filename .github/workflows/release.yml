@@ -93,15 +93,23 @@ jobs:
                  "Add one before tagging — see the comment at the end of CHANGELOG.md."
             exit 1
           fi
+          # A FILE, not $GITHUB_ENV and `--notes "$NOTES"`: a release section can be long, and an environment
+          # variable passed as one argument hits Linux's 128 KiB per-argument limit before GitHub's 125,000-
+          # character body limit is even reached. The length check fails here, with the reason, instead of in
+          # `gh release create` after the packages are already attested.
           {
-            echo "NOTES<<CHANGELOG_EOF"
             printf '%s\n\n' "$notes"
             echo "---"
             echo "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with"
             echo "\`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and"
             echo "SHA256SUMS attached. Published to nuget.org manually by the maintainer."
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_ENV"
+          } > "$RUNNER_TEMP/release-notes.md"
+          chars=$(wc -m < "$RUNNER_TEMP/release-notes.md")
+          if [ "$chars" -gt 125000 ]; then
+            echo "::error::The '## [$VERSION]' section is $chars characters; a GitHub Release body takes 125,000." \
+                 "Condense it in CHANGELOG.md."
+            exit 1
+          fi
 
       # Handed to the publish job: the SAME signed packages the Release carries, not a rebuild.
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -120,7 +128,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             artifacts/*.nupkg artifacts/*.snupkg artifacts/SHA256SUMS artifacts/sbom/* \
             --title "$GITHUB_REF_NAME" \
-            --notes "$NOTES"
+            --notes-file "$RUNNER_TEMP/release-notes.md"
 
   # ── nuget.org publishing via Trusted Publishing (round 31 T21, research A4) ──────────────────────────────
   # No API key is stored anywhere: NuGet/login exchanges this job's GitHub OIDC token for a ~1-hour,

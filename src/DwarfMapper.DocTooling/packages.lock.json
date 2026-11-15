@@ -19,8 +19,8 @@
       "dwarfmapper.gallery": {
         "type": "Project",
         "dependencies": {
-          "DwarfMapper": "[1.0.2-rc.1, )",
-          "DwarfMapper.Testing": "[1.0.2-rc.1, )",
+          "DwarfMapper": "[1.1.0-rc.1, )",
+          "DwarfMapper.Testing": "[1.1.0-rc.1, )",
           "Microsoft.Extensions.DependencyInjection": "[9.0.0, )"
         }
       },

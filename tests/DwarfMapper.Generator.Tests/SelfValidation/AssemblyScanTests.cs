@@ -81,18 +81,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal);
     }
 
-// A frozen `PredatesTheChangelog` baseline used to sit here: the 76 DWARF0xx ids that existed before
-// CHANGELOG.md did, exempted from Scan9 because the file's per-id mandate could not retroactively demand
-// prose for a diagnostic that shipped before the file existed to hold it. Its own comment said it may only
-// SHRINK, and on 2026-08-21 it shrank to empty: task D-e (Issues/round20/TASKS.md) wrote all 76 entries as
-// the "initial diagnostic surface" block under CHANGELOG.md's `### Added`, and the emptied set was deleted
-// rather than kept as dead code. Scan9 now guards every live DWARF0xx id uniformly, with no exemptions.
+// A frozen `PredatesTheChangelog` baseline used to sit here: the DWARF0xx ids that existed before
+// CHANGELOG.md did, exempted from Scan9. It shrank to empty on 2026-08-21 and was deleted, so Scan9 guards
+// every live DWARF0xx id uniformly, with no exemptions. Since the 1.1.0-rc.1 restructure (2026-11-15) the
+// ids that shipped in 1.0.2-rc.1 are listed under that version's section and every later id under
+// `### New diagnostics` of the release that introduced it.
 //
-// Scope note that survives the deletion: Scan9 is DWARF0xx only, deliberately. The DWARFR (registry)
-// family is announced in CHANGELOG.md as the range "DWARFR01–DWARFR10" (see the `### Added` entry for
-// ISSUE-047) — a per-id substring scan would fail on DWARFR02..08 despite the family being fully
-// announced. Do not "fix" that by adding DWARFR ids to Scan9; the range notation is the intended
-// announcement.
+// Scope note: Scan9 reads DiagnosticDescriptors only, so it checks DWARF0xx ids. The changelog names every
+// DWARFR (registry) id individually as well, but nothing enforces that yet.
 
     public sealed class AssemblyScanTests
     {
@@ -814,7 +810,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 changelogText);
 
             Assert.True(missing.Count == 0,
-                "Diagnostic id(s) with no CHANGELOG.md entry (add one under the current Unreleased heading — a " + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own " + "preamble):\n" + string.Join("\n", missing));
+                "Diagnostic id(s) with no CHANGELOG.md entry (add one under `### New diagnostics` in the Unreleased section — a " + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own " + "preamble):\n" + string.Join("\n", missing));
         }
 
         /// <summary>

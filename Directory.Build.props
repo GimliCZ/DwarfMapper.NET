@@ -66,8 +66,10 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageTags>mapper;mapping;source-generator;roslyn;aot;dto;blittable;simd</PackageTags>
 
-        <!-- Version: overridable by CI from the release tag (-p:Version=x.y.z).
-             Keep in sync with the README 'Status' section. -->
-        <Version Condition="'$(Version)' == ''">1.0.2-rc.1</Version>
+        <!-- Version: overridable by CI from the release tag (-p:Version=x.y.z). The default is the NEXT release,
+             so a local pack never carries the number of a package already on nuget.org; bump it right after a
+             release is published (docs/RELEASING.md). The package-validation baseline in DwarfMapper.csproj is the
+             last PUBLISHED version instead. -->
+        <Version Condition="'$(Version)' == ''">1.1.0-rc.1</Version>
     </PropertyGroup>
 </Project>
