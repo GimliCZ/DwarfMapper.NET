@@ -12,7 +12,14 @@ A capability, testing, performance, and **migration-ease** comparison against th
 
 > **Licensing note.** AutoMapper is referenced as **14.0.0 only** — the last **MIT** release. v15+ is
 > RPL-1.5 + commercial (GPL-incompatible); we deliberately use nothing from it. Mapperly (4.3.1) and
-> Mapster (10.0.8) are MIT. Both are benchmark-only and never referenced by the shipped library.
+> Mapster (10.0.14) are MIT. Both are benchmark-only and never referenced by the shipped library.
+>
+> **Current releases, measured 2026-11-15** — Mapperly 4.3.1 and Mapster 10.0.14, the latest stable; AutoMapper left
+> out at the owner's direction: [what each says about a mistake](#validation-what-each-library-says-about-a-mistake),
+> [what each does with a hostile shape](#security-what-each-library-does-with-a-hostile-shape), and
+> [performance on Windows and Linux](#current-releases-measured-2026-11-15). Full write-up:
+> [`2026-11-15-round35-t25-comparison.md`](../benchmarks/results/2026-11-15-round35-t25-comparison.md). Tables further
+> down that name Mapster 10.0.8 or AutoMapper are the August–September record.
 >
 > **Other libraries evaluated.** TinyMapper, ExpressMapper, and Nelibur were dropped (net10-incompatible
 > TFMs and/or abandoned since ~2017–2019). **AgileMapper 1.8.1** (MIT) restores on net10 but its NuGet
@@ -23,10 +30,10 @@ A capability, testing, performance, and **migration-ease** comparison against th
 
 ## Approach & licensing at a glance
 
-| | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.8 | AutoMapper 14.0.0 |
+| | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.14 | AutoMapper 14.0.0 |
 |---|---|---|---|---|
 | Mechanism | Roslyn source gen | Roslyn source gen | runtime expr-trees (or CLI codegen) | runtime expr-trees + reflection |
-| **NativeAOT / trim-safe** | **✅ yes** | ✅ yes | ❌ runtime mode no | ❌ no |
+| **NativeAOT / trim-safe** | **✅ yes** | ✅ yes | ❌ runtime mode no — measured: publishes with IL3053/IL2104, then the first map throws | ❌ no |
 | Reflection-free | ✅ | ✅ | ❌ (runtime) | ❌ |
 | License | GPL-2.0-only | MIT | MIT | MIT (v14); RPL-1.5 (v15+) |
 
@@ -123,6 +130,43 @@ a cat maps, a dog throws `AutoMapperMappingException` ("Dog -> CatDto"), and the
 exists to catch this passes. The last is the most dangerous of the three, because a test that maps one value of
 the first case passes. DwarfMapper reads the case types the compiler reports and refuses what it cannot pair;
 on an older compiler it refuses every union with `DWARF113`.
+
+## Validation: what each library says about a mistake
+
+Measured 2026-11-15, every option at its default, one build per cell
+([`benchmarks/comparison-probes/validation`](../benchmarks/comparison-probes/validation)). Mapster has no build-time
+step; its opt-in `RequireDestinationMemberSource` acts when its configuration compiles, at run time.
+
+| Mistake | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.14 |
+|---|---|---|---|
+| A destination member with no source | **build error** `DWARF001` | warning `RMG012`; the member keeps its default | silent (strict: throws on configuration compile) |
+| A source member nothing reads | silent; `DWARF039` with `RequiredMapping = Both` | warning `RMG020` | silent |
+| `string` into `int` | warning `DWARF038`; a bad value throws `FormatException` | silent; throws `FormatException` | silent; throws `FormatException` |
+| A nullable into a non-nullable member | warning `DWARF070`; null is stored | silent; the assignment is skipped | silent; null is stored |
+| An enum member with no counterpart (by name) | **build error** `DWARF015` | warning `RMG038`; an **undefined** enum value at run time | silent; an undefined enum value |
+| A read-only destination member | **build error** `DWARF007` | warning `RMG066`; the value is lost | silent; lost |
+| A constructor parameter nothing supplies | **build error** `DWARF024` | **build error** `RMG013` | silent; `null` passed in (strict: throws) |
+| A flattening nobody declared (`CustomerName` ← `Customer.Name`) | **build error** `DWARF001` — declared, never guessed | flattened by convention | flattened by convention |
+
+Five of the eight are build errors in DwarfMapper and two are warnings. Mapperly's warnings name the same mistakes, but a
+build that keeps them as warnings still ships a mapper whose output is wrong in the ways the table says. Mapster says
+nothing before run time.
+
+## Security: what each library does with a hostile shape
+
+Measured 2026-11-15, one process per cell — a stack overflow cannot be caught, it ends the process — every option at its
+default, Linux, an 8 MB main-thread stack ([`benchmarks/comparison-probes/security`](../benchmarks/comparison-probes/security)).
+
+| Shape | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.14 |
+|---|---|---|---|
+| A linked chain 100,000 deep | refused: catchable `DwarfMappingDepthException` (default depth 64, at most 1,000) | maps it | maps it |
+| A node that references itself | catchable `DwarfMappingDepthException` | **stack overflow — the process dies** | **stack overflow — the process dies** |
+| Re-entry through a user converter, 100,000 deep | catchable `InsufficientExecutionStackException` | **stack overflow — the process dies** | did not finish in 300 s |
+| NativeAOT, a flat map | publishes clean, runs | publishes clean, runs | trim/AOT warnings, then **throws** on the first map |
+
+No input ends a DwarfMapper process; the price is the bound itself — a legitimately deep chain beyond `MaxDepth` is
+refused. Mapperly and Mapster have reference handling and depth limits as opt-ins; the table is their defaults, and with
+those defaults one cyclic payload takes a server down.
 
 ## Testing approach comparison
 
@@ -236,6 +280,31 @@ generator, which will otherwise change under you mid-migration and silently resh
 appearing to pass. `DwarfMapper.Testing`'s `ObjectFactoryV2` and `GraphOracleComparer` are built for this.
 
 ## Performance & memory
+
+### Current releases, measured 2026-11-15
+
+`MapperBenchmarks` without AutoMapper's arms, BenchmarkDotNet 0.15.8 DefaultJob, one run per platform: Windows (this
+machine, .NET 10.0.11) / Linux (the `sdk:10.0.101` image, .NET 10.0.1, four CPUs). Mean:
+
+| Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.14 | hand-written |
+|---|---:|---:|---:|---:|
+| Flat (1 object) | 4.7 / 6.8 ns | 4.9 / 6.9 ns | 13.5 / 16.4 ns | 4.6 / 6.6 ns |
+| Nested object | 10.8 / 17.2 ns | 10.7 / 17.1 ns | 19.6 / 26.6 ns | — |
+| Enum, by value | 3.4 / 10.8 ns | 3.1 / 5.2 ns | 11.9 / 14.5 ns | — |
+| Array (1,000 reference elements) | 5.88 / 7.81 µs | 4.86 / 7.77 µs | 6.03 / 7.65 µs | — |
+| Dictionary (1,000 entries) | **8.18 / 9.40 µs** | 18.92 / 10.91 µs | 25.57 / 20.82 µs | — |
+| Blit (1,000 blittable structs) | **0.41 / 0.51 µs** | 0.95 / 1.08 µs | 0.98 / 1.13 µs | — |
+| Value-element list (`int[]` → `List<long>`) | **0.32 / 0.43 µs** | 0.88 / 1.06 µs | 0.91 / 1.08 µs | — |
+| Nested graph, mixed fills | **0.83 / 1.23 µs** | 1.70 / 2.03 µs | 1.02 / 1.46 µs | — |
+
+The full table, with the rest of the rows and how to read them, is in
+[`2026-11-15-round35-t25-comparison.md`](../benchmarks/results/2026-11-15-round35-t25-comparison.md). Two rows depend on
+the platform and must not be quoted across it: the dictionary (2.3× over Mapperly on Windows, 1.16× on Linux) and the
+by-value enum (level on Windows, 2.1× in Mapperly's favour on Linux — not yet separated from the runtime patch, 10.0.1
+against 10.0.11). Allocations are identical in every row except the dictionary (Mapster 3.3×) and the nested graph
+(Mapperly +17 %).
+
+### The August–September record (with AutoMapper 14.0.0)
 
 See [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/) — DwarfMapper vs.
 hand-written vs. the three competitors across **flat / nested / collection / blittable-struct** scenarios

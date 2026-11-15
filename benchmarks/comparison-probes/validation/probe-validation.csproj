@@ -1,0 +1,23 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Round 35 T25 validation probe: one mistake case and one library per build (run.sh). Not in the solution. Takes the
+       repository's own package pins and projects. Warnings stay warnings, so a cell can tell them from errors, and the
+       repository's code-style gate is off: this is a probe, not product code. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Mapster" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\DwarfMapper\DwarfMapper.csproj" />
+    <ProjectReference Include="..\..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

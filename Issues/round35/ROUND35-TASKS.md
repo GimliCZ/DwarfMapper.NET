@@ -39,7 +39,7 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T21 | A class whose only constructor takes one parameter of its own type is refused (DWARF026). | **not a defect** - a deliberate, tested rule (`AnnotatedConstructorUnusableTests`: "COPY constructor"); see Notes |
 | T22 | **A record carrying `[DwarfMapper]` or `[GenerateMap]` is ignored without a diagnostic.** Met while testing T20. | **done** - DWARF120, see Notes |
 | T23 | **Multi-version generator, and C# 15 union mapping on the Roslyn 5.12 build** (the owner, 2026-11-14: "Prepare multiversion and if detected .net 11 enable Union mapping ... with tests"). Design: `docs/superpowers/specs/2026-11-14-multiversion-generator-union-mapping-design.md`. | **done on its own branch** (`feat/round35-t23`) - see Notes |
-| T25 | **DwarfMapper against today's Mapperly and Mapster** (the owner, 2026-11-14: "run entire performance and usage comparison against dwarf mapper? Afcource up to date versions (not automaller afcourse) ... Target will be performance, security, validations, docs and samples validations"). Design: `docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md`. | open (`feat/round35-t25`, stacked on T23) |
+| T25 | **DwarfMapper against today's Mapperly and Mapster** (the owner, 2026-11-14: "run entire performance and usage comparison against dwarf mapper? Afcource up to date versions (not automaller afcourse) ... Target will be performance, security, validations, docs and samples validations"). Design: `docs/superpowers/specs/2026-11-15-current-competitor-comparison-design.md`. | **measured** (`feat/round35-t25`, stacked on T23) - see Notes |
 | T24 | **A performance comparison of union mapping** ("After that prepare performance comparison testing"). Same design document. | **done on T23's branch** - `benchmarks/DwarfMapper.UnionBenchmarks`, results in `benchmarks/results/2026-11-14-round35-t24-union-mapping.md`; see Notes |
 
 ## Notes
@@ -608,3 +608,24 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   the coverage floors and Codecov merge them under it - so the 5.12 project sets it from `AssemblyIdentity.props`,
   where CycloneDX does not read; 6.2.0 then completes on the solution (98 components). `ProjectFileAssemblyNameTests`
   (RED on the old files) reads project files the way CycloneDX does.
+- **T25 (2026-11-15, `feat/round35-t25`, stacked on T23).** Against the latest stable releases - Mapperly 4.3.1, Mapster
+  10.0.14 (T9's bump, cherry-picked with BenchmarkDotNet 0.15.8) - without AutoMapper, at the owner's direction.
+  Write-up: `benchmarks/results/2026-11-15-round35-t25-comparison.md`; `docs/COMPARISON.md` gains the current
+  performance table and the validation and security matrices.
+  - **Performance**, Windows and Linux, one run each: DwarfMapper ahead where it has a path the others lack (blit
+    2.1-2.3x, value-element list 2.4-2.8x, SIMD widen, nested fills), level on flat/flatten/nested/by-name enum,
+    Mapperly 17 % ahead on the reference array on Windows (the documented null-guard trade); platform-dependent: the
+    dictionary (2.3x Windows, 1.16x Linux) and the by-value enum (level on Windows, 2.1x Mapperly on Linux - not yet
+    separated from the runtime patch, 10.0.1 against 10.0.11). Mapster 1.5-3.5x on single objects.
+  - **Validation** (`benchmarks/comparison-probes/validation`, 8 mistakes x 3 libraries + Mapster strict): DwarfMapper
+    5 build errors and 2 warnings; Mapperly 1 error and 5 warnings, each warned case compiling to a mapper whose output
+    is quietly wrong; Mapster nothing before run time.
+  - **Security** (`benchmarks/comparison-probes/security`, one process per cell): no input ends a DwarfMapper process
+    (depth guard, stack check), but a 100,000-deep chain is refused; Mapperly and Mapster overflow the stack on a cycle
+    and on re-entry; Mapster fails under NativeAOT on its first map.
+  - **Docs and samples**: 0 dead relative file links in 230 Markdown files; 28 dead anchors, all in one round-20
+    document; the Gallery (the examples README quotes) is built in CI but never run.
+  - **Found and fixed here**: BenchmarkDotNet 0.15.8 cannot run .NET 11 (the union suite stays on 0.14.0); the cherry-
+    picked BenchmarkDotNet lock file failed locked-mode restore (NU1004, it named T9's DependencyInjection 10.0.15).
+  - **Left, proposed in the write-up**: the probes as DifferentialTests tests; the Gallery run and its output pinned in
+    CI; the link check as a test; the Linux enum gap on a matching runtime patch.
