@@ -1414,23 +1414,12 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var arm in arms)
             {
-                sb.Append(indent).Append("        ")
-                    .Append(arm.SrcFqn).Append(" __s => ").Append(arm.EmitConverterMethod).Append("(__s");
-                if (arm.ConverterNeedsDepthCtx)
-                {
-                    sb.Append(", ").Append(ctxVarName).Append(", ").Append(depthPassFwd);
-                }
-
-                sb.AppendLine("),");
+                sb.Append(indent).Append("        ").Append(arm.SrcFqn).Append(" __s => ");
+                AppendArmValue(sb, arm, ctxVarName, depthPassFwd);
+                sb.AppendLine(",");
             }
 
-            // Wildcard arm: throw ArgumentException for unregistered runtime type
-            sb.Append(indent).Append("        ")
-                .Append("_ => throw new global::System.ArgumentException(")
-                .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
-                .Append(p).Append(".GetType()")
-                .Append(" + \"' mapping to '").Append(method.ReturnTypeFullName).Append("'.\", nameof(")
-                .Append(p).AppendLine(")),");
+            AppendDispatchTail(sb, indent + "        ", method, p);
 
             sb.Append(indent).AppendLine("    };");
 
@@ -1455,6 +1444,60 @@ namespace DwarfMapper.Generator.Pipeline
 
                 sb.Append(indent).AppendLine("    return __dwarf_target;");
             }
+        }
+
+        /// <summary>
+        ///     One dispatch arm's value: the converter call (with the shared context where it takes one), or - a union's
+        ///     pass-through arm - the matched value itself, converted to the target case type first when it is not that
+        ///     type already. Shared with the Preserve dispatch wrapper (<c>MapperExtractor.BuildDispatchWrapperCode</c>).
+        /// </summary>
+        internal static void AppendArmValue(StringBuilder sb, DerivedTypeArm arm, string ctxVarName, string depthPassFwd)
+        {
+            if (arm.IsPassThrough)
+            {
+                if (arm.PassThroughCastFqn is { } cast)
+                {
+                    sb.Append('(').Append(cast).Append(')');
+                }
+
+                sb.Append("__s");
+                return;
+            }
+
+            sb.Append(arm.EmitConverterMethod).Append("(__s");
+            if (arm.ConverterNeedsDepthCtx)
+            {
+                sb.Append(", ").Append(ctxVarName).Append(", ").Append(depthPassFwd);
+            }
+
+            sb.Append(')');
+        }
+
+        /// <summary>
+        ///     What follows a dispatch's arms (round 35 T23 split it by <see cref="MapMethodModel.UnionEmpty" />): over a
+        ///     class hierarchy, a wildcard that throws for a runtime type no arm names; over a C# 15 union, a TYPED
+        ///     <c>null =&gt; default(T)</c> for an empty source, or nothing - a union switch is exhaustive over its case
+        ///     types, and a wildcard after a null arm is CS8510.
+        /// </summary>
+        internal static void AppendDispatchTail(StringBuilder sb, string armIndent, MapMethodModel method, string p)
+        {
+            // Two tests rather than a switch over the three values: a switch carries a fourth, unreachable outcome for a
+            // value outside the enum, and every branch here is one a test takes.
+            if (method.UnionEmpty == UnionEmptyArm.NotUnion)
+            {
+                sb.Append(armIndent)
+                    .Append("_ => throw new global::System.ArgumentException(")
+                    .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
+                    .Append(p).Append(".GetType()")
+                    .Append(" + \"' mapping to '").Append(method.ReturnTypeFullName).Append("'.\", nameof(")
+                    .Append(p).AppendLine(")),");
+            }
+            else if (method.UnionEmpty == UnionEmptyArm.Default)
+            {
+                sb.Append(armIndent).Append("null => default(").Append(method.ReturnTypeFullName).AppendLine("),");
+            }
+
+            // UnionEmptyArm.None: no tail - the switch is exhaustive over the union's case types.
         }
 
         /// <summary>True when any member is deferred to post-construction (unflatten or When-guarded).</summary>
@@ -1642,9 +1685,11 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else
                 {
+                    // A union destination types the null arm (MemberMap.LiftTargetFqn, round 35 T23).
                     sb.Append(srcAccess).Append(".HasValue ? ")
                         .Append(member.EmitConverterMethod).Append('(').Append(srcAccess).Append(".Value")
-                        .Append(extraArgs).Append(')').Append(resultBang).Append(" : null");
+                        .Append(extraArgs).Append(')').Append(resultBang)
+                        .Append(member.LiftTargetFqn is { } liftTarget ? " : default(" + liftTarget + "?)" : " : null");
                 }
 
                 return;

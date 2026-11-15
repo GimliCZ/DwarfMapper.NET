@@ -13,8 +13,38 @@ so a version with no section here ships with no notes.
 
 ## [Unreleased]
 
+### Added
+
+- **C# 15 union mapping, with the .NET 11 SDK.** One union maps into another case by case - a `switch` over the source
+  union's case types whose arms produce the target union's case types - at a declared map, as a member, as a list,
+  array or dictionary element, as a `Nullable<T>` value, in an update-into map, a span map and an async stream, under
+  every reference-handling mode. A case is paired with a target case by an explicit `[MapDerivedType]` arm, by the
+  same type, or by the one declared method that maps it - never by its members or its name; anything else is DWARF114.
+  An empty union maps to an empty union, and a nullable union keeps null apart from an empty one. A case type converts
+  into its union member by the language's own union conversion. See `docs/howto/map-unions.md` and the runnable
+  `samples/DwarfMapper.Unions`. (Round 35, T23.)
+- **The package carries the generator twice.** Built against Roslyn 5.0 in `analyzers/dotnet/roslyn5.0/cs` (every
+  .NET 10 SDK loads it, as before) and against Roslyn 5.12 in `analyzers/dotnet/roslyn5.12/cs` (the .NET 11 SDK loads
+  it instead); the SDK loads exactly one. On code without unions the two emit byte-identical output. The package grows
+  by the second build's ~260 KB. (Round 35, T23.)
+
 ### Changed
 
+- **DWARF113 is re-titled "A union type cannot be mapped here"** and says which condition is missing: an older
+  compiler (the .NET 10 SDKs load the build that maps no union), a C# 14 project, a projection, a pair that is not union
+  to union or case type to union, a union with no case types, a union map declared between nullable unions, or an empty
+  source into a non-nullable class union. **DWARF114 is re-titled "A closed set of types has a member with no
+  [MapDerivedType] arm"** and now also reports a union case nothing pairs. **DWARF035** reports a union arm whose source
+  is no case type or whose target does not convert to the target union. (Round 35, T23.)
+- **Fixed: `[MapTo]` mapped a union member as an ordinary struct.** A union into `object` assigned the union wrapper
+  (the silent boxing DWARF113 was introduced for), and a union into another union went through a struct map with no
+  diagnostic. `[MapTo]` now refuses union pairs with DWARF113 - the same union is copied, and a case type converts into
+  its union under C# 15. (Round 35, T23.)
+- **Fixed: on a Roslyn 5.9+ compiler, a C# 14 project could get CS9327 inside its generated file.** Those compilers
+  classify a union conversion (case type to union) as implicit in C# 14 as well, so a `Use=` converter taking the union
+  beside a case-typed member, a hook taking the union, or a case member assigned into a union member was generated and
+  then rejected. Union conversions now count only where union mapping is on, and only where a value goes into a union.
+  (Round 35, T23.)
 - **Performance: a span map between two primitive types that widen losslessly takes the `Vector.Widen` loop.**
   `void Map(ReadOnlySpan<int> s, Span<long> d)` and the six sibling pairs (`byte → ushort`, `ushort → uint`,
   `uint → ulong`, `sbyte → short`, `short → int`, `float → double`) used the plain element loop; the array shape has
@@ -22,6 +52,7 @@ so a version with no section here ships with no notes.
   (Windows, AVX2): `int → long` 1.56x, `float → double` 4.5x, `byte → ushort` 6.0x; at 16 elements a byte pair is
   about half a nanosecond slower, the trade the array and list shapes already make. Results are unchanged element for
   element, and nothing is allocated. (Round 35, T6; `benchmarks/results/2026-11-14-round35-t6-span-widen.md`.)
+
 - **New: DWARF120 (Error), "[DwarfMapper] and [GenerateMap] are not read on a record".** A record carrying either
   attribute was ignored without a diagnostic - a record mapper's partial methods then failed with `CS8795` alone,
   and a record with a co-located `[GenerateMap]` had no maps at all. It is now reported where it is written.

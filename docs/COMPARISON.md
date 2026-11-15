@@ -65,6 +65,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` (Warning for lossy conversions, Info otherwise), or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | ~ (untested here) | maps the raw value through |
 | **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type; an instantiable base with no arm of its own is a **build error** (`DWARF119`) | throws | ~ (untested here) | maps the base as itself |
+| **C# 15 unions** (.NET 11 SDK) ¶ | ✅ case by case, strict pairing; `DWARF113`/`DWARF114` where a pair cannot be mapped | ❌ builds with warning `RMG066`, then maps **every** union to an **empty** one | ❌ throws `CompileException` at the first map | ❌ `AssertConfigurationIsValid()` passes; maps the **first** case, throws on every other |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 
 **Differentiators only DwarfMapper has:** the blittable SIMD fast-path, zero-alloc `Span<T>` mapping,
@@ -106,6 +107,22 @@ over the undeclared case and fails the day any of their cells stops being true �
 **Mapster cells are `~` because they were not measured**: the differential harness references Mapperly and
 AutoMapper only, and a cell filled in from a plausible reading of somebody's defaults is exactly the kind of
 claim the rest of this table exists to avoid.
+
+`¶` **The union row was measured, not read off documentation** — 2026-11-14, SDK 11.0.100, the versions in this
+table, `union Pet(Cat, Dog)` into `union PetDto(CatDto, DogDto)`, with each case's map declared (Mapperly), created
+(`CreateMap`, AutoMapper) or left to convention (Mapster); the same answers came from the latest stable Mapster,
+10.0.14, and from the prereleases Mapperly 5.0.0-next.13 and Mapster 10.1.0-pre04. It
+is not in the differential harness, which builds on the pinned .NET 10 SDK and cannot declare a union; the probe's
+source and its output are in
+[`benchmarks/results/2026-11-14-round35-t24-union-mapping.md`](../benchmarks/results/2026-11-14-round35-t24-union-mapping.md).
+None of the three knows what a union is. **Mapperly** sees a struct with no settable members, warns `RMG066`
+("No members are mapped"), and returns `default` — an empty union, for a cat and a dog alike: the warning is
+the only trace of the loss. **Mapster** refuses at the first map ("Cannot convert immutable type, please consider
+using 'MapWith'"). **AutoMapper** binds the target's `PetDto(CatDto)` constructor to the source's `Value`:
+a cat maps, a dog throws `AutoMapperMappingException` ("Dog -> CatDto"), and the configuration validation that
+exists to catch this passes. The last is the most dangerous of the three, because a test that maps one value of
+the first case passes. DwarfMapper reads the case types the compiler reports and refuses what it cannot pair;
+on an older compiler it refuses every union with `DWARF113`.
 
 ## Testing approach comparison
 
@@ -352,6 +369,30 @@ Run locally for numbers on your hardware:
 ```bash
 dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
 ```
+
+### C# 15 unions (.NET 11)
+
+Nobody else maps a union (the capability matrix above, `¶`), so DwarfMapper's union map is measured against code
+written by hand, and against the class hierarchy that held the same data before unions
+([`benchmarks/DwarfMapper.UnionBenchmarks`](../benchmarks/DwarfMapper.UnionBenchmarks); full write-up with both
+platforms in
+[`2026-11-14-round35-t24-union-mapping.md`](../benchmarks/results/2026-11-14-round35-t24-union-mapping.md)). Windows,
+this machine, .NET 11.0.0, BenchmarkDotNet DefaultJob:
+
+| Payments (a three-case union) | One value | Batch of 1,000 |
+|---|---:|---:|
+| Union, hand-written switch | 5.86 ns | 8.83 µs |
+| Union, hand-written in DwarfMapper's own structure | 6.27 ns | 9.17 µs |
+| **Union, DwarfMapper** | **6.29 ns** | **9.85 µs** |
+| Class hierarchy, hand-written | 7.25 ns | 9.77 µs |
+| Class hierarchy, DwarfMapper | 8.24 ns | 8.78 µs |
+| Class hierarchy, Mapperly 4.3.1 | 8.34 ns | 10.75 µs |
+| Class hierarchy, Mapster 10.0.8 | 20.16 ns | 27.98 µs |
+
+The generated union map costs what its own shape costs by hand — a switch calling the declared map for each case —
+and trails a switch that builds every DTO inline by that call, under a nanosecond. Allocations are identical in every
+row. One loss is recorded rather than smoothed over: for a list of unions, DwarfMapper's span fill measured 4–7 %
+slower than plain `Add` (the row the hand-written structure beats).
 
 ### Higher instructions / SIMD
 

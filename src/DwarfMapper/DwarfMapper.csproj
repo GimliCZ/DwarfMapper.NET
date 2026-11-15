@@ -49,10 +49,24 @@
       ProjectReferences exist only to build those analyzer assemblies first (ReferenceOutputAssembly="false" so
       their output is not a compile reference, and SkipGetTargetFrameworkProperties so the netstandard2.0 -> net10
       reference raises no framework-compat warning; they are deliberately NOT loaded as analyzers on this
-      attribute-only project). The <None Pack> items then place their DLLs under analyzers/dotnet/cs in the
-      produced .nupkg. PrivateAssets="all" stops the reference flowing transitively through ProjectReference
-      inside this repo, so the test/sample projects keep their own explicit analyzer references and nothing is
-      applied twice.
+      attribute-only project). The <None Pack> items then place their DLLs in the produced .nupkg.
+      PrivateAssets="all" stops the reference flowing transitively through ProjectReference inside this repo, so the
+      test/sample projects keep their own explicit analyzer references and nothing is applied twice.
+
+      Round 35 T23: the GENERATOR ships twice, built against Roslyn 5.0 (analyzers/dotnet/roslyn5.0/cs) and against
+      Roslyn 5.12 (analyzers/dotnet/roslyn5.12/cs), and the SDK loads one of the two: the highest Roslyn-versioned
+      folder not above the compiler's CompilerApiVersion. No generator copy may sit in the unversioned
+      analyzers/dotnet/cs - the SDK loads every file there regardless, so a copy there would run beside the versioned
+      one and generate every mapper twice. The code fixes reference no generator type and stay unversioned.
+      scripts/analyzer-selection-check.sh proves the selection from the packed package.
+
+      ONLY WHILE PACKING (the SDK sets _IsPacking for `dotnet pack`). Both generator builds write
+      DwarfMapper.Generator.dll, and a build that passes one global OutDir to its whole graph - BenchmarkDotNet's child
+      build does - puts both in one folder, where the last one written wins: the nightly benchmark smoke loaded the
+      Roslyn 5.12 build through the benchmarks' analyzer reference to the 5.0 build and failed with CS9057 (2026-11-15).
+      This project compiles without them and never loads them, so it references them only to pack them. A solution
+      build builds them as solution members, and a pack that skips the build (release.yml's) packs what that build made.
+      PackageProjectAnalyzerReferencesTests holds it.
     -->
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
@@ -65,8 +79,10 @@
         <AdditionalFiles Include="BannedSymbols.txt"/>
     </ItemGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition="'$(_IsPacking)' == 'true'">
         <ProjectReference Include="..\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>
+        <ProjectReference Include="..\DwarfMapper.Generator.Roslyn512\DwarfMapper.Generator.Roslyn512.csproj"
                           ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>
         <ProjectReference Include="..\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj"
                           ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>
@@ -74,7 +90,9 @@
 
     <ItemGroup>
         <None Include="..\DwarfMapper.Generator\bin\$(Configuration)\netstandard2.0\DwarfMapper.Generator.dll"
-              Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+              Pack="true" PackagePath="analyzers/dotnet/roslyn5.0/cs" Visible="false"/>
+        <None Include="..\DwarfMapper.Generator.Roslyn512\bin\$(Configuration)\netstandard2.0\DwarfMapper.Generator.dll"
+              Pack="true" PackagePath="analyzers/dotnet/roslyn5.12/cs" Visible="false"/>
         <None Include="..\DwarfMapper.CodeFixes\bin\$(Configuration)\netstandard2.0\DwarfMapper.CodeFixes.dll"
               Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
         <!-- Round 31 T17: exposes PublishAot to the generator (DWARF115). buildTransitive too, so a consumer that gets

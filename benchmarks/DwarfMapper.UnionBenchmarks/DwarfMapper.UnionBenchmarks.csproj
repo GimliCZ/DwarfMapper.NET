@@ -1,0 +1,42 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+      Round 35 T24: the performance of C# 15 union mapping. Needs the .NET 11 SDK (C# 15, and the Roslyn 5.12 build of
+      the generator), so it is NOT in DwarfMapper.NET.sln and NOT in allocation-baseline.json, which is measured per
+      SDK on the pinned one. From this folder (global.json selects SDK 11), `dotnet run -c Release` runs the whole
+      comparison; the program argument `dry` (after dotnet run's argument separator) runs every arm once and compares
+      the results, with no measurement. README.md has the commands.
+
+      The arms and why they are the ones compared: see UnionMappingBenchmarks.cs. Results:
+      benchmarks/results/2026-11-14-round35-t24-union-mapping.md.
+
+      AutoMapper is not an arm here: its two NU1903 advisories are suppressed in the projects the owner approved, and
+      this project is not one of them. The class-hierarchy arms of Mapperly and Mapster stand for "the libraries".
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net11.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- Built only by SDK 11, outside the solution: no lock file to keep beside the pinned ones. -->
+        <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+        <!-- A benchmark program, relaxed as DwarfMapper.Benchmarks is: CA1515 for the public types BenchmarkDotNet
+             reflects over, CA1707 for the underscored benchmark names it prints as row labels, CA1002 for the List<T>
+             payloads a consumer's DTOs have; plus CA1815 because a C# 15 union declaration is a struct, CA5394 for the
+             SEEDED Random the case mix is drawn from (no security in it), and CA1822 for HandWrittenCaseMethods, whose
+             case methods are instance methods because the generated mapper's are - the control has to match the
+             structure it measures. -->
+        <NoWarn>$(NoWarn);CA1515;CA1707;CA1002;CA1815;CA5394;CA1822</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet"/>
+        <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all"/>
+        <PackageReference Include="Mapster"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <!-- ObjectFactoryV2: the payload content, as in the main suite. -->
+        <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator.Roslyn512\DwarfMapper.Generator.Roslyn512.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
+    </ItemGroup>
+</Project>

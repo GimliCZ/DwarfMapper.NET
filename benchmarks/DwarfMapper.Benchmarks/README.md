@@ -21,6 +21,9 @@ Mapster, and AutoMapper. Each scenario below is a `[BenchmarkCategory]` with fou
 
 Filter a single category with its name, e.g. `--filter "*Blit*"` or `--filter "*Flat_*"`.
 
+C# 15 union mapping has a suite of its own, [`../DwarfMapper.UnionBenchmarks`](../DwarfMapper.UnionBenchmarks): it
+needs the .NET 11 SDK, so it is not in the solution, which builds on the pinned SDK 10.
+
 ## Running
 
 Benchmarks require a **Release** build and are run from this directory:

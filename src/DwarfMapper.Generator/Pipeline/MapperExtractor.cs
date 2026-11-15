@@ -483,6 +483,8 @@ namespace DwarfMapper.Generator.Pipeline
             MarkPreserveModeMethods(methods, isPreserveMode);
             // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
             ApplySetNullPostPass(methods, isSetNullMode, diagnostics, genLoc, classSymbol);
+            // ── Round 35 T23: a Nullable<T> lift into a union types its null arm ─────
+            TypeTheUnionLifts(methods);
 
             // Report DWARF031 if the registry cap was exceeded.
             if (nestedRegistry.CapExceeded)

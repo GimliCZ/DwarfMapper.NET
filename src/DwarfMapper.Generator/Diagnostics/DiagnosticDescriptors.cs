@@ -2189,27 +2189,34 @@ namespace DwarfMapper.Generator.Diagnostics
 
         /// <summary>
         ///     <c>DWARF113</c> (Error) — a mapping between two DIFFERENT types where at least one is a C# 15 union type
-        ///     (a class or struct carrying <c>System.Runtime.CompilerServices.UnionAttribute</c>).
+        ///     (a class or struct carrying <c>System.Runtime.CompilerServices.UnionAttribute</c>), which this build of the
+        ///     generator cannot map at this site.
         /// </summary>
         /// <remarks>
         ///     <para>
-        ///         Round 31 T24, research C3: .NET 11 / C# 15 ships unions on 2026-11-10, and DwarfMapper has no mapping
-        ///         policy for them yet. Measured before this id existed: a union member fell into ordinary struct
-        ///         handling — <c>Pet</c> into <c>object</c> boxed the union WRAPPER rather than its case value, silently,
-        ///         and <c>Pet</c> into <c>PetDto</c> was refused as DWARF025 "ambiguous constructor", which names the
-        ///         wrong problem (one constructor per case type is the union's shape, not an ambiguity). Refusing by name
-        ///         before any of that runs is the loud answer until a policy exists.
+        ///         Round 31 T24, research C3: .NET 11 / C# 15 ships unions on 2026-11-10, and DwarfMapper had no mapping
+        ///         policy for them. Measured before this id existed: a union member fell into ordinary struct handling —
+        ///         <c>Pet</c> into <c>object</c> boxed the union WRAPPER rather than its case value, silently, and
+        ///         <c>Pet</c> into <c>PetDto</c> was refused as DWARF025 "ambiguous constructor", which names the wrong
+        ///         problem (one constructor per case type is the union's shape, not an ambiguity). Refusing by name before
+        ///         any of that runs was the loud answer until a policy existed.
         ///     </para>
         ///     <para>
-        ///         Not refused: the SAME union type on both sides (a struct copy, which is exactly right), and an explicit
-        ///         <c>[MapProperty(Use = ...)]</c> converter, which is the remedy this message offers. Detected by the
-        ///         attribute's full name, which needs nothing newer than the Roslyn floor and also recognises a union
-        ///         declared by hand. Args: {0} = the whole message, built by <c>MapperExtractor.UnionRefusal</c>.
+        ///         Round 35 T23: the package carries the generator twice, and the message says which build refused and why.
+        ///         The Roslyn 5.0 build (compilers older than Roslyn 5.12) refuses every such pair, detecting the union by
+        ///         the attribute's full name, which also recognises a union declared by hand. The Roslyn 5.12 build asks
+        ///         the compiler (<c>ITypeSymbol.IsUnion</c>) and refuses only what it cannot map: a compilation older than
+        ///         C# 15, a union in a projection, a union with no case types, and a union into or out of a type that is
+        ///         neither a union nor one of its cases; a case type into its union is the language's own union
+        ///         conversion. Not refused anywhere: the SAME union type on both sides (a struct copy), and an explicit
+        ///         <c>[MapProperty(Use = ...)]</c> converter. Args: {0} = the whole message, built by
+        ///         <c>MapperExtractor.UnionRefusal</c> (one implementation per build: <c>UnionSupport.Floor.cs</c>,
+        ///         <c>UnionSupport.Roslyn512.cs</c>).
         ///     </para>
         /// </remarks>
         public static readonly DiagnosticDescriptor UnionTypeNotMapped = new(
             "DWARF113",
-            "Union types are not mapped yet",
+            "A union type cannot be mapped here",
             "{0}",
             Category,
             DiagnosticSeverity.Error,
@@ -2217,13 +2224,17 @@ namespace DwarfMapper.Generator.Diagnostics
             helpLinkUri: HelpBase + "dwarf113");
 
         /// <summary>
-        ///     <c>DWARF114</c> (Error) — a <c>[MapDerivedType]</c> dispatch over a C# 15 <c>closed</c> source type leaves a
-        ///     direct descendant without an arm. See <c>MapperExtractor.ReportMissingClosedHierarchyArms</c> for the
-        ///     coverage rule and the one case detection does not reach yet. Args: {0} = the whole message.
+        ///     <c>DWARF114</c> (Error) — a dispatch over a closed set of types leaves a member without an arm: a
+        ///     <c>[MapDerivedType]</c> dispatch over a C# 15 <c>closed</c> source type and one of its direct descendants
+        ///     (see <c>MapperExtractor.ReportMissingClosedHierarchyArms</c> for the coverage rule and the one case detection
+        ///     does not reach yet), or - round 35 T23, the Roslyn 5.12 build - a C# 15 union map and one of the source
+        ///     union's case types that nothing pairs with a target case, or that two declared methods could each pair
+        ///     (see <c>MapperExtractor.Unions.cs</c>: pairing is strict, never by members or names). Args: {0} = the whole
+        ///     message.
         /// </summary>
         public static readonly DiagnosticDescriptor ClosedHierarchyArmMissing = new(
             "DWARF114",
-            "A closed hierarchy has a direct descendant with no [MapDerivedType] arm",
+            "A closed set of types has a member with no [MapDerivedType] arm",
             "{0}",
             Category,
             DiagnosticSeverity.Error,

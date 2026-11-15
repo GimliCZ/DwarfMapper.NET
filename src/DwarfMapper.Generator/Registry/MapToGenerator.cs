@@ -776,6 +776,15 @@ namespace DwarfMapper.Generator.Registry
                     NullAccepted = false;
                 }
 
+                // Round 35 T23: before any conversion is classified, because the registry classifies them itself and a
+                // union conversion reads as implicit even in C# 14, while a union into object reads as plain boxing.
+                if (MapperExtractor.RegistryUnionRefusal(srcType, tgtType, targetName, _comp) is { } unionMessage)
+                {
+                    _diags.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, _loc, unionMessage));
+                    RefusalReported = true;
+                    return null;
+                }
+
                 var conv = _comp.ClassifyCommonConversion(srcType, tgtType);
                 if (conv.IsIdentity)
                 {

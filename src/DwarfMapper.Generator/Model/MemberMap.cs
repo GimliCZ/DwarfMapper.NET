@@ -172,6 +172,12 @@ namespace DwarfMapper.Generator.Model
     ///     registering the instance, so it needs to know which ones cannot wait — and DWARF030 needs to know which
     ///     members share a constructor argument's limitation: filled before the object exists.
     /// </param>
+    /// <param name="LiftTargetFqn">
+    ///     A <see cref="NullHandling.NullableProject" /> lift whose converter is a C# 15 union dispatch: that union's type,
+    ///     so the lift's null arm is written <c>default(T?)</c>. A bare <c>null</c> beside a union-typed value converts to
+    ///     the union itself when every case is a reference type, and the conditional then fails (CS0037, measured). Set
+    ///     by <c>MapperExtractor.TypeTheUnionLifts</c>, round 35 T23; null for every other member.
+    /// </param>
     public sealed record MemberMap(
         string TargetName,
         string SourceName,
@@ -194,7 +200,8 @@ namespace DwarfMapper.Generator.Model
         bool ShareGuardsDefault = false,
         string? ConverterParamTypeFqn = null,
         bool SourceReachesSourceType = false,
-        bool MustInitialize = false) : IEquatable<MemberMap>
+        bool MustInitialize = false,
+        string? LiftTargetFqn = null) : IEquatable<MemberMap>
     {
         /// <summary>
         ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.

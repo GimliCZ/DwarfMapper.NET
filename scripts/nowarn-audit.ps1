@@ -32,13 +32,22 @@
     Exit non-zero when any declared code never fires. Off by default so the script can be read as a report;
     housekeeping turns it on once the lists have been trimmed, which is what stops them growing back.
 
+.PARAMETER Framework
+    Audit ONLY the projects that declare this target framework (round 35 T23). Without it, a project that targets
+    a framework the running SDK cannot build (net11.0 under the pinned SDK 10) is skipped and named, because its
+    build would fail before any analyzer ran and every code it declares would read as stale. The net11 job runs
+    `-Framework net11.0` with the SDK that builds those projects, before it retargets anything, and fails if no
+    project matched.
+
 .EXAMPLE
     pwsh scripts/nowarn-audit.ps1
     pwsh scripts/nowarn-audit.ps1 -FailOnStale
+    pwsh scripts/nowarn-audit.ps1 -FailOnStale -Framework net11.0
 #>
 [CmdletBinding()]
 param(
-    [switch]$FailOnStale
+    [switch]$FailOnStale,
+    [string]$Framework
 )
 
 Set-StrictMode -Version Latest
@@ -55,9 +64,14 @@ try {
     $totalDeclared = 0
     $totalStale = 0
     $rows = @()
+    $skipped = @()
+    $matched = 0
+    # The SDK this run builds with: the one global.json selects at the root, where every build below runs.
+    $sdkMajor = [int](((& dotnet --version) -split '\.')[0])
 
     foreach ($project in $projects) {
-        $xml = [xml](Get-Content -Raw -LiteralPath $project.FullName)
+        $text = Get-Content -Raw -LiteralPath $project.FullName
+        $xml = [xml]$text
 
         # Every <NoWarn> in the file, split on ';' and with the $(NoWarn) inheritance token dropped.
         $declared = @()
@@ -74,6 +88,20 @@ try {
         if ($declared.Count -eq 0) { continue }
 
         $relative = $project.FullName.Substring($root.Length + 1).Replace('\', '/')
+        $frameworks = @(Get-DeclaredFrameworks -ProjectText $text)
+        if ($Framework) {
+            if ($frameworks -notcontains $Framework) { continue }
+            $matched++
+        } else {
+            $newer = @(Get-FrameworksNewerThanSdk -Frameworks $frameworks -SdkMajor $sdkMajor)
+            if ($newer.Count -gt 0) {
+                Write-Host "== $relative" -ForegroundColor Cyan
+                Write-Host "   skipped: targets $($newer -join ' '), which SDK $sdkMajor cannot build - the net11 job audits it" -ForegroundColor DarkYellow
+                $skipped += $relative
+                continue
+            }
+        }
+
         Write-Host "== $relative" -ForegroundColor Cyan
         Write-Host "   declared: $($declared -join ' ')" -ForegroundColor DarkGray
 
@@ -116,6 +144,14 @@ try {
 
     $pct = if ($totalDeclared) { [math]::Round(100.0 * $totalStale / $totalDeclared, 1) } else { 0 }
     Write-Host "$totalStale of $totalDeclared declared suppressions ($pct%) suppress nothing." -ForegroundColor Yellow
+    if ($skipped.Count -gt 0) {
+        Write-Host "$($skipped.Count) project(s) skipped, their frameworks newer than SDK ${sdkMajor}: $($skipped -join ', ')" -ForegroundColor DarkYellow
+    }
+
+    # A framework filter that matched nothing audited nothing, and must not read as a clean audit.
+    if ($Framework -and $matched -eq 0) {
+        throw "nowarn-audit: no project that declares a <NoWarn> targets $Framework - the audit for that framework audited nothing."
+    }
 
     if ($FailOnStale -and $totalStale -gt 0) {
         throw ("nowarn-audit: $totalStale declared warning suppression(s) suppress nothing. Delete them, or " +

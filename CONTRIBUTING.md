@@ -31,6 +31,18 @@ ratio tests time code, so they run alone, one project at a time: `dotnet test Dw
 --no-build -m:1 --filter "Category=Perf"`. The complete power set of feature combinations (262,144
 compilations) is housekeeping's stage 2 and CI's `fuzz-exhaustion` job.
 
+**The generator is built twice** (round 35 T23). `src/DwarfMapper.Generator` is compiled against Roslyn 5.0 and
+`src/DwarfMapper.Generator.Roslyn512` compiles the same files against Roslyn 5.12, plus its own folder; the package
+ships both in Roslyn-versioned analyzer folders and the SDK loads one. A file named `*.Floor.cs` belongs to the 5.0
+build only, a file in the Roslyn512 folder to the 5.12 build only — the seam is files, never `#if`. Everything the
+5.12 build alone does (C# 15 union mapping) is tested in `tests/DwarfMapper.Generator.Roslyn512.Tests`, which runs
+Roslyn 5.12 in process; the same project proves the golden corpus is byte-identical on that build, so a change to a
+shared file that alters either build's output fails there. Every other project tests the 5.0 build.
+
+The union examples, `samples/DwarfMapper.Unions`, need the .NET 11 SDK and are not in the solution:
+`cd samples/DwarfMapper.Unions && dotnet run` (their own `global.json` selects SDK 11). The `net11` job runs them from
+the packed package and runs the consumers through the 5.12 build.
+
 Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hooks` (heavier pre-release checks live in `scripts/housekeeping.ps1`).
 
 **Two more tools on your PATH**, beyond the SDK:
