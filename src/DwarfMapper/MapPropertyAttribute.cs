@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
+
 namespace DwarfMapper
 {
     /// <summary>
@@ -85,11 +87,11 @@ namespace DwarfMapper
         ///     emitted as <c>source.ToString(format, CultureInfo.InvariantCulture)</c>. E.g. <c>"yyyy-MM-dd"</c> for
         ///     a <c>DateTime</c>, <c>"F2"</c> for a <c>decimal</c>, <c>"N0"</c> for an <c>int</c>.
         ///     <para>
-        ///         The provider is always <see cref="System.Globalization.CultureInfo.InvariantCulture" /> — by
+        ///         The provider is always <see cref="CultureInfo.InvariantCulture" /> — by
         ///         design, so the formatted output is stable across deployments and threads rather than shifting with
         ///         the ambient culture (the same reason every generated <c>Parse</c>/<c>ToString</c> is invariant).
         ///         Only valid when the destination member is <c>string</c> and the source is
-        ///         <see cref="System.IFormattable" />, and not combinable with <see cref="Use" />; otherwise
+        ///         <see cref="IFormattable" />, and not combinable with <see cref="Use" />; otherwise
         ///         <c>DWARF073</c>.
         ///     </para>
         /// </summary>

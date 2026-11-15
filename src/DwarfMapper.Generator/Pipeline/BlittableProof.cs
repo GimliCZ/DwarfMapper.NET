@@ -659,7 +659,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>
         ///     The element count of an <c>[InlineArray(n)]</c> struct, or 0 when it is not one. An inline array
         ///     repeats its single field <c>n</c> times in the runtime layout, so — like an explicit
-        ///     <see cref="System.Runtime.InteropServices.StructLayoutAttribute.Size" /> — it changes the bytes
+        ///     <c>StructLayoutAttribute.Size</c> — it changes the bytes
         ///     without changing the field list, and two such structs share a layout only when their counts agree.
         /// </summary>
         public static int InlineArrayLength(INamedTypeSymbol t)

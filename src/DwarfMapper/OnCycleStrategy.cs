@@ -19,7 +19,7 @@ namespace DwarfMapper
         /// <summary>
         ///     Default. Recursion-capable pairs carry a depth counter; a cycle (or an over-deep
         ///     acyclic chain) throws a loud, catchable <see cref="DwarfMappingDepthException" /> at
-        ///     <c>MaxDepth</c> rather than a silent <see cref="System.StackOverflowException" />.
+        ///     <c>MaxDepth</c> rather than a silent <see cref="StackOverflowException" />.
         /// </summary>
         Throw = 0,
 

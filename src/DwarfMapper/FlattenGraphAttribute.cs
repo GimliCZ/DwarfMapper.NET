@@ -15,8 +15,8 @@ namespace DwarfMapper
     ///     </para>
     ///     <para>
     ///         The traversal is deterministic BFS, cycle-safe via a reference-identity visited set
-    ///         (<see cref="System.Collections.Generic.ReferenceEqualityComparer" />), and AOT-safe (no reflection).
-    ///         Null entry → empty collection (no <see cref="System.NullReferenceException" />).
+    ///         (<see cref="ReferenceEqualityComparer" />), and AOT-safe (no reflection).
+    ///         Null entry → empty collection (no <see cref="NullReferenceException" />).
     ///     </para>
     ///     <para>
     ///         <b>sourceNavigation</b>: Name of a member on the mapping parameter (root) type that enters the graph.

@@ -29,7 +29,7 @@ namespace DwarfMapper.IntegrationTests
     ///         the same rising sawtooth in a profiler and is why the report was credible.
     ///     </para>
     ///     <para>
-    ///         The cause is that <c>InterfaceMaps</c> was a <see cref="System.Collections.Concurrent.ConcurrentBag{T}" />
+    ///         The cause is that <c>InterfaceMaps</c> was a <c>ConcurrentBag&lt;T&gt;</c>
     ///         and <c>Map</c> walks it with <c>foreach</c>. A bag's enumerator does not iterate in place: it
     ///         COPIES every element into a fresh list on each enumeration. So the per-call allocation of an
     ///         ambient interface map grew with the size of the consumer's whole map graph — measured at

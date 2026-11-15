@@ -10,7 +10,7 @@ namespace DwarfMapper
     ///     Apply multiple times on a <c>partial</c> mapping method whose source parameter is a
     ///     base class or interface. Arms are emitted most-derived-first so that a more-derived type
     ///     is never shadowed by a base-type arm. Unregistered runtime types throw
-    ///     <see cref="global::System.ArgumentException" /> (loud, never silent).
+    ///     <see cref="ArgumentException" /> (loud, never silent).
     /// </summary>
     // A dispatch arm needs a base/derived HIERARCHY to dispatch over; the flat DTO pair has none, so both forms
 // were measured against a compilation where nothing could be more derived than anything else.

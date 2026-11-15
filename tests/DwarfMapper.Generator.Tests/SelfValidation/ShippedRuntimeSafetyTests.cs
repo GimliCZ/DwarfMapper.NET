@@ -70,7 +70,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         /// <summary>
         ///     ALLOWED, and enumerated rather than merely unforbidden. The registry resolves a runtime type
-        ///     against registered pairs by walking BASE TYPES — <see cref="System.Type" /> navigation, not
+        ///     against registered pairs by walking BASE TYPES — <see cref="Type" /> navigation, not
         ///     dynamic reflection: nothing is discovered by name, nothing is invoked, and every type involved
         ///     was statically referenced by the emitted code that registered it, so trimming keeps it and AOT
         ///     resolves it.

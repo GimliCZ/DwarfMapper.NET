@@ -9,7 +9,7 @@ namespace DwarfMapper
     {
         /// <summary>
         ///     A null source collection produces an empty target collection (the default).
-        ///     The mapper never throws a <see cref="System.NullReferenceException" /> for
+        ///     The mapper never throws a <see cref="NullReferenceException" /> for
         ///     a null collection source.
         /// </summary>
         AsEmpty = 0,

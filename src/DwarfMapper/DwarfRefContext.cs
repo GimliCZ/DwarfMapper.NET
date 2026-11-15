@@ -17,7 +17,7 @@ namespace DwarfMapper
     ///     </para>
     ///     <para>
     ///         <b>Reference-identity map (Preserve mode):</b> when <c>preserve: true</c> is passed
-    ///         to the constructor, a <see cref="System.Collections.Generic.Dictionary{TKey,TValue}" /> keyed
+    ///         to the constructor, a <see cref="Dictionary{TKey,TValue}" /> keyed
     ///         by <c>System.Collections.Generic.ReferenceEqualityComparer.Instance</c> (NOT the default
     ///         comparer — CRITICAL to prevent value-equal records from collapsing into one target instance)
     ///         is allocated. Only reference-type source objects are tracked.
@@ -33,7 +33,7 @@ namespace DwarfMapper
     ///     in the generator's own emitter, which writes <c>new global::DwarfMapper.DwarfRefContext(…)</c> into
     ///     your assembly.
     ///     <para>
-    ///         Marked <see cref="System.ComponentModel.EditorBrowsableState.Never" /> so it stays out of completion lists, and marked
+    ///         Marked <c>EditorBrowsableState.Never</c> so it stays out of completion lists, and marked
     ///         BEFORE the public surface was promoted to <c>PublicAPI.Shipped.txt</c> — after promotion its
     ///         members become a frozen contract, and freezing one unlabelled would have committed us to an API
     ///         nobody designed as one, on a type whose whole job is cycle bookkeeping for the emitter.

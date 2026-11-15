@@ -11,7 +11,7 @@ namespace DwarfMapper
         /// <summary>
         ///     Default: no identity tracking. Recursion-capable pairs still get a depth counter
         ///     (<see cref="DwarfMappingDepthException" /> at <c>MaxDepth</c>) — cyclic data throws
-        ///     a loud, catchable exception rather than a silent <see cref="System.StackOverflowException" />.
+        ///     a loud, catchable exception rather than a silent <see cref="StackOverflowException" />.
         ///     Acyclic graphs within the depth limit map correctly. Zero allocation overhead.
         /// </summary>
         None = 0,

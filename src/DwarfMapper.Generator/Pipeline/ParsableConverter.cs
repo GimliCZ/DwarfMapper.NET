@@ -190,7 +190,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     True when a value of <paramref name="src" /> can be formatted with an explicit .NET format string —
-        ///     i.e. it implements <see cref="System.IFormattable" />. <c>bool</c>/<c>char</c> are excluded: they are
+        ///     i.e. it implements <see cref="IFormattable" />. <c>bool</c>/<c>char</c> are excluded: they are
         ///     string-convertible but their public <c>ToString()</c> takes no format, so a format string is
         ///     meaningless (and would not compile). Drives <c>[MapProperty(StringFormat=)]</c> validity (DWARF073).
         /// </summary>

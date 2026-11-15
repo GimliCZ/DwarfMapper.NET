@@ -119,7 +119,7 @@ namespace DwarfMapper.CompilerTests
         ///     Instantiates the rendered mapper class <c>T.M</c> from an emitted graph assembly and invokes its
         ///     one-parameter <c>Map</c> with <paramref name="source" />. Reflection is test-side only (the
         ///     audit's stated boundary: the house no-reflection stance governs the shipped product, not test
-        ///     oracles). A <see cref="System.Reflection.TargetInvocationException" /> is unwrapped so the map's
+        ///     oracles). A <see cref="TargetInvocationException" /> is unwrapped so the map's
         ///     own exception (a runtime-behaviour fact about the product) reaches the assertion undisguised.
         /// </summary>
         public static object? InvokeMap(Assembly assembly, object source)
@@ -153,7 +153,7 @@ namespace DwarfMapper.CompilerTests
         ///     </para>
         ///     <para>
         ///         Reflection is test-side only, the same declared boundary as <see cref="InvokeMap" />, and a
-        ///         <see cref="System.Reflection.TargetInvocationException" /> is unwrapped for the same reason:
+        ///         <see cref="TargetInvocationException" /> is unwrapped for the same reason:
         ///         the projection's own exception is a runtime-behaviour fact about the product and must reach
         ///         the assertion undisguised.
         ///     </para>

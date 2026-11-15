@@ -189,7 +189,7 @@ namespace DwarfMapper
         ///     Controls how a null source collection or dictionary is mapped.
         ///     <para>
         ///         <see cref="NullCollectionStrategy.AsEmpty" /> (default): a null source
-        ///         produces an empty target; the mapper never throws <see cref="System.NullReferenceException" />
+        ///         produces an empty target; the mapper never throws <see cref="NullReferenceException" />
         ///         for a null collection.
         ///     </para>
         ///     <para>
@@ -255,7 +255,7 @@ namespace DwarfMapper
         /// <summary>
         ///     Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
         ///     When a mapping reaches this depth, a <see cref="DwarfMappingDepthException" /> is thrown
-        ///     instead of a silent (uncatchable) <see cref="System.StackOverflowException" />.
+        ///     instead of a silent (uncatchable) <see cref="StackOverflowException" />.
         ///     <para>
         ///         The depth counter applies only to pairs that can form a cycle in the type graph
         ///         (self-referential or mutually-recursive types). Acyclic type graphs have zero overhead.
