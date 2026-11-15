@@ -15,6 +15,13 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Performance: a span map between two primitive types that widen losslessly takes the `Vector.Widen` loop.**
+  `void Map(ReadOnlySpan<int> s, Span<long> d)` and the six sibling pairs (`byte → ushort`, `ushort → uint`,
+  `uint → ulong`, `sbyte → short`, `short → int`, `float → double`) used the plain element loop; the array shape has
+  widened with `Vector.Widen` since round 22 and the list shapes since round 33. Measured at 1,024 elements
+  (Windows, AVX2): `int → long` 1.56x, `float → double` 4.5x, `byte → ushort` 6.0x; at 16 elements a byte pair is
+  about half a nanosecond slower, the trade the array and list shapes already make. Results are unchanged element for
+  element, and nothing is allocated. (Round 35, T6; `benchmarks/results/2026-11-14-round35-t6-span-widen.md`.)
 - **New: DWARF120 (Error), "[DwarfMapper] and [GenerateMap] are not read on a record".** A record carrying either
   attribute was ignored without a diagnostic - a record mapper's partial methods then failed with `CS8795` alone,
   and a record with a co-located `[GenerateMap]` had no maps at all. It is now reported where it is written.

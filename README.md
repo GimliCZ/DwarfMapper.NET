@@ -716,8 +716,9 @@ public partial class Mapper
 <!-- endsnippet -->
 
 When the element pair is proven layout-identical (the same fast path as the array/list blit above), the body is one
-`MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy; otherwise each element runs through the full conversion
-pipeline (`dst[i] = convert(src[i])`). A pair that narrowly misses the block copy — byte-identical but for the field
+`MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy; when it is one of the seven lossless primitive widenings
+(`int → long`, `float → double`, `byte → ushort`, ...) it is the `Vector.Widen` loop the array and list shapes use;
+otherwise each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). A pair that narrowly misses the block copy — byte-identical but for the field
 names, say — gets `DWARF100` explaining exactly what to change. The destination must be a writable `Span<D>` (source
 may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a
 silent truncation.
