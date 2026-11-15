@@ -503,14 +503,14 @@ so a version with no section here ships with no notes.
   `DWARF101` names the field order that packs such a struct; and `DWARF106` reports the one place
   `[Reinterpret]` overrides something you wrote. Each is detailed below. Two documents were added for the
   feature as a whole:
-  - **[`docs/diagnostics.md`](docs/diagnostics.md#dwarf103) now carries a hazards table** for converting a
+  - **[`docs/diagnostics.md`](../../docs/diagnostics.md#dwarf103) now carries a hazards table** for converting a
     class to a `readonly record struct` — aliasing, `default` instead of `null`, `Nullable<T>` boxing through
     `object`, `CS1612` on `list[i].X = v`, value equality, `[JsonConstructor]` for System.Text.Json, and EF
     Core's complex-type-yes / entity-and-struct-collection-no rule — with the four the compiler **cannot**
     catch marked as such. The earlier claim that every difference surfaces as a compile error was too strong
     and has been scoped: aliasing in particular changes behaviour in silence, which is why the fix leaves
     your call sites alone rather than why it is safe.
-  - **[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) is new: what the struct-DTO numbers mean, and what they do
+  - **[`docs/PERFORMANCE.md`](../../docs/PERFORMANCE.md) is new: what the struct-DTO numbers mean, and what they do
     not.** The measured wins, the measured **losers** in the same section (column transpose 1.82–2.93×
     *slower*, byte-shuffle permutes slower or inside the noise, `TensorPrimitives` only below the cache, span
     blit neutral above L2) — they are the reason no SIMD path was built — the `Job=short`/3-iteration error

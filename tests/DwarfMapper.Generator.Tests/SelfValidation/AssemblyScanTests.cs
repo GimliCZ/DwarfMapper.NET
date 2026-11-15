@@ -810,7 +810,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 changelogText);
 
             Assert.True(missing.Count == 0,
-                "Diagnostic id(s) with no CHANGELOG.md entry (add one under `### New diagnostics` in the Unreleased section — a " + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own " + "preamble):\n" + string.Join("\n", missing));
+                "Diagnostic id(s) with no CHANGELOG.md entry (add one under `### New diagnostics` of the release being prepared — a " + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own " + "preamble):\n" + string.Join("\n", missing));
         }
 
         /// <summary>

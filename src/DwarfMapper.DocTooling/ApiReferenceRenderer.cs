@@ -117,7 +117,8 @@ namespace DwarfMapper.DocTooling
             // Declared in this assembly only: an attribute inherited System.Attribute.TypeId and an exception
             // Message, StackTrace, Data and the rest, and the page listed them as if they were this API.
             var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.GetIndexParameters().Length == 0 && p.Module == type.Module)
+                .Where(p => p.GetIndexParameters().Length == 0)
+                .Where(p => p.Module == type.Module)
                 .OrderBy(p => p.Name, StringComparer.Ordinal)
                 .ToList();
 

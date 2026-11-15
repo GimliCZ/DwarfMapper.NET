@@ -666,7 +666,10 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
       quotes it per platform - rule which stands.
     - **D5** AutoMapper 14's default depth: MIGRATION.md:146 says no default limit, the `MaxDepth` XML doc
       (src/DwarfMapper/DwarfMapperAttribute.cs:268) says it matches AutoMapper's default.
-  - **Decisions taken (2026-11-15, the owner: "proceed", autonomous - each in its own commit, revertable):**
+  - **Decisions taken (2026-11-15, the owner: "proceed", autonomous). D1 and D5 had a recorded recommendation; D2,
+    D3 and D4 were decided here by the data below and need the owner's confirmation. Not one commit per decision:
+    D2's wording runs through the README, CHANGELOG, RELEASING and the how-tos, so reverting D2 means
+    `IsPackable=false` on DwarfMapper.Testing plus a sweep for "from 1.1.0-rc.1"; D3 is the two folder READMEs.**
     - D1 **1.1.0-rc.1** (the recommendation).
     - D2 **publish DwarfMapper.Testing with 1.1.0-rc.1**, recorded as an explicit step in docs/RELEASING.md and the
       CHANGELOG rather than left to `release.yml`'s "push every .nupkg" - so the tag publishes it on purpose. Not

@@ -14,6 +14,8 @@ section must stay under 125,000 characters.
 
 ## [Unreleased]
 
+<!-- Until 1.1.0-rc.1 is tagged, entries go into its section below, not here. -->
+
 ## [1.1.0-rc.1] - Unreleased
 
 The first release since 1.0.2-rc.1, and the first with this changelog: every entry below describes a change made

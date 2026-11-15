@@ -77,9 +77,11 @@ GitHub mints automatically (the workflow already requests `id-token: write` + `a
 1. **Version.** `<Version>` in [`Directory.Build.props`](../Directory.Build.props) already names the release being
    cut (it is bumped right after each publish, step 7). The tag overrides it anyway, but a local pack must not carry
    the number of a package already on nuget.org.
-2. **CHANGELOG.** Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and open a fresh, empty `## [Unreleased]`
-   above it. The release job publishes that section as the GitHub Release body and **fails the release** if the
-   section is missing, empty, or over 125,000 characters. Every live diagnostic id must appear somewhere in the
+2. **CHANGELOG.** Exactly one heading may start with `## [X.Y.Z]`. If the version already has a section (written as
+   `## [X.Y.Z] - Unreleased`, as 1.1.0-rc.1's is), replace "Unreleased" with the date and move anything that
+   collected under `## [Unreleased]` into it; otherwise rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and
+   open a fresh, empty `## [Unreleased]` above it. The release job publishes that section as the GitHub Release body
+   and **fails the release** if the section is missing, empty, or over 125,000 characters. Every live diagnostic id must appear somewhere in the
    file (a test enforces it), so a new diagnostic cannot reach a tag unannounced.
 3. **Analyzer release tracking.** New and changed diagnostic ids are listed in
    `src/DwarfMapper.Generator/AnalyzerReleases.Unshipped.md`. While every release is a prerelease they stay there;
