@@ -5,12 +5,13 @@
 What each class-level `[DwarfMapper(...)]` option actually does at each endpoint. Every cell
 is **measured**, not declared: the same source is compiled with and without the option and
 the difference is recorded. A hand-maintained table would describe what the options were
-*meant* to do, which is how seven silent divergences went unnoticed in this codebase.
+*meant* to do, which is how silent divergences go unnoticed.
 
 | Symbol | Meaning |
 |---|---|
 | honoured | the option changes the generated output |
-| `DWARFnnn` | the option is refused with that diagnostic — visible, not silent |
+| `DWARFnnn` | the option reports that diagnostic: either a refusal at this endpoint, or the |
+| | diagnostic the option exists to raise (a strict mode turning a silent case into a report) |
 | n/a (loud) | not applied, but the build fails anyway, so nothing wrong can ship |
 | **SILENT** | accepted, no effect, compiles — a divergence, and a bug |
 | n/a (no such surface) | the endpoint has nothing this option could configure |

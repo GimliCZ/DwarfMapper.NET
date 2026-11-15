@@ -67,6 +67,66 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 });
         }
 
+        /// <summary>
+        ///     Three shapes the published page garbled: an empty <c>typeparamref</c>/<c>paramref</c> whose word is
+        ///     its name attribute (dropped - "Declares a mapping from to"), a generic type's cref with its arity
+        ///     suffix ("GenerateMapAttribute`2"), and a <c>code</c> example flattened into the table cell. A
+        ///     reference with no name attribute contributes nothing rather than throwing.
+        /// </summary>
+        private const string ReferenceTagFixture = """
+                                                   <?xml version="1.0"?>
+                                                   <doc>
+                                                       <assembly><name>Fixture</name></assembly>
+                                                       <members>
+                                                           <member name="T:Fixture.Refs">
+                                                               <summary>From <typeparamref name="TSource" /> via <paramref name="src" /><paramref />.</summary>
+                                                           </member>
+                                                           <member name="T:Fixture.Arity">
+                                                               <summary>See <see cref="T:DwarfMapper.GenerateMapAttribute`2" />.</summary>
+                                                           </member>
+                                                           <member name="T:Fixture.Code">
+                                                               <summary>Example: <code>var dto = new Mappers().Map(order);</code> done.</summary>
+                                                           </member>
+                                                       </members>
+                                                   </doc>
+                                                   """;
+
+        [Fact]
+        public void A_type_or_parameter_reference_renders_as_its_name()
+        {
+            InTempFile(ReferenceTagFixture,
+                path => Assert.Equal("From TSource via src.", ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Refs"]));
+        }
+
+        [Fact]
+        public void A_generic_cref_renders_without_its_arity()
+        {
+            InTempFile(ReferenceTagFixture,
+                path => Assert.Equal("See GenerateMapAttribute.", ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Arity"]));
+        }
+
+        [Fact]
+        public void A_code_example_is_left_out_of_the_cell()
+        {
+            InTempFile(ReferenceTagFixture,
+                path => Assert.Equal("Example: done.", ApiReferenceRenderer.ParseSummaries(path)["T:Fixture.Code"]));
+        }
+
+        /// <summary>
+        ///     Members a type inherits from the framework are not this API: every attribute row listed
+        ///     <c>TypeId</c> from <c>System.Attribute</c>, and every exception <c>Message</c>, <c>StackTrace</c>
+        ///     and the rest of <c>System.Exception</c>.
+        /// </summary>
+        [Fact]
+        public void Members_inherited_from_the_framework_are_not_listed()
+        {
+            var page = ApiReferenceRenderer.Render("<!-- banner -->");
+
+            Assert.DoesNotContain("| `TypeId` |", page, StringComparison.Ordinal);
+            Assert.DoesNotContain("| `StackTrace` |", page, StringComparison.Ordinal);
+            Assert.Contains("| `MaxDepth` |", page, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void A_member_without_a_summary_contributes_no_entry()
         {

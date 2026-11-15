@@ -8,11 +8,8 @@ file as runnable C#; `dotnet run --project samples/DwarfMapper.Gallery` executes
 **This page is GENERATED.** Every code block below is quoted from the example that runs, so a
 block cannot drift from the code it documents — the snippet injector fails the build if an id
 here names no region, and the orphan rule fails it if a region is quoted by nothing. Editing the
-fences by hand is pointless: they are overwritten. Edit the example.
-
-It exists because the orphan rule went STRICT in round 27. Before that, a region inside a
-declared example was exempt from needing a quoting document, and 32 of them were quoted nowhere.
-The alternative to this page was deleting those markers — removing evidence to satisfy a guard.
+fences by hand is pointless: they are overwritten. Edit the example. The section headings follow
+the examples' own titles, tiers and order, and a test fails when they drift.
 
 **C# 15 unions** have examples of their own in [`../DwarfMapper.Unions`](../DwarfMapper.Unions): they need the .NET 11
 SDK, and this Gallery builds with the solution on the pinned .NET 10 one. The walkthrough is
@@ -186,7 +183,7 @@ public partial class Mapper
 
 ### 8. Custom conversion
 
-*08_CustomConversion.cs* — `Use = nameof(Method)` — the method body is the \
+*08_CustomConversion.cs* — `Use = nameof(Method)` — the method body is the "lambda"
 
 <!-- snippet: custom-conversion -->
 ```csharp
@@ -398,6 +395,22 @@ public partial class Mapper
 <!-- endsnippet -->
 
 
+### 51. A deliberate same-type copy
+
+*51_MapClone.cs* — accepting DWARF076 for one method with [MapClone]
+
+<!-- snippet: map-clone -->
+```csharp
+[DwarfMapper]
+public partial class Mapper
+{
+    [MapClone]
+    public partial Tunnel Snapshot(Tunnel tunnel);
+}
+```
+<!-- endsnippet -->
+
+
 ## Front doors
 
 ### 15. Co-located on the DTO
@@ -436,6 +449,11 @@ public sealed class RuneDto
     public int Id { get; set; }
 
     public string Name { get; set; } = "";
+}
+
+public static class RuneUse
+{
+    public static RuneDto Convert(Rune rune) => rune.ToRuneDto(); // the generated extension
 }
 ```
 <!-- endsnippet -->
@@ -589,16 +607,16 @@ public partial class Mapper
 ```csharp
 // NullStrategy.SetDefault decides what a null BECOMES when it is written (int? -> int would otherwise
 // throw); [MapNullSkip] decides whether it is written at all. The two are orthogonal and compose.
-    [DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
-    public partial class Mapper
-    {
-        /// <summary>Full replace — an absent field CLEARS the stored value.</summary>
-        public partial void Replace(AnvilPatchDto src, Anvil dest);
+[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
+public partial class Mapper
+{
+    /// <summary>Full replace — an absent field CLEARS the stored value.</summary>
+    public partial void Replace(AnvilPatchDto src, Anvil dest);
 
-        /// <summary>Patch-merge — an absent field LEAVES the stored value alone.</summary>
-        [MapNullSkip]
-        public partial void Patch(AnvilPatchDto src, Anvil dest);
-    }
+    /// <summary>Patch-merge — an absent field LEAVES the stored value alone.</summary>
+    [MapNullSkip]
+    public partial void Patch(AnvilPatchDto src, Anvil dest);
+}
 ```
 <!-- endsnippet -->
 
@@ -731,21 +749,6 @@ public partial class Mapper
 ```
 <!-- endsnippet -->
 
-### 51. `[MapClone]` — a deliberate same-type copy
-
-*51_MapClone.cs* — accepting DWARF076 for one method with [MapClone]
-
-<!-- snippet: map-clone -->
-```csharp
-[DwarfMapper]
-public partial class Mapper
-{
-    [MapClone]
-    public partial Tunnel Snapshot(Tunnel tunnel);
-}
-```
-<!-- endsnippet -->
-
 
 ## Testing
 
@@ -758,10 +761,16 @@ public partial class Mapper
 [DwarfMapper]
 public partial class Mapper
 {
-    [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, count)
+    [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, iterations)
     public partial LedgerDto ToDto(Ledger l);
 
     public partial Ledger FromDto(LedgerDto d); // the inverse it verifies against
+}
+
+public static class LedgerMapperTests
+{
+    // In a test project this is a [Fact]; the defaults are seed 12345 and 100 iterations.
+    public static void LedgerRoundTrips() => new Mapper().VerifyRoundTrip_ToDto(seed: 7, iterations: 50);
 }
 ```
 <!-- endsnippet -->
@@ -779,6 +788,16 @@ public partial class Mapper
 
     [MapIgnore(nameof(Coin.Mint))] // nothing to restore it from — stated, not forgotten
     public partial Coin FromDto(CoinDto d);
+}
+
+public static class CoinMapperTests
+{
+    // The ad-hoc form, for a pair without [RoundTrip]: throws RoundTripException naming Coin.Mint.
+    public static void CoinRoundTrips()
+    {
+        var mapper = new Mapper();
+        RoundTrip.Verify<Coin, CoinDto>(mapper.ToDto, mapper.FromDto, seed: 7, iterations: 20);
+    }
 }
 ```
 <!-- endsnippet -->

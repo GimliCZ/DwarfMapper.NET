@@ -17,7 +17,7 @@ namespace DwarfMapper
     ///         Key-based upsert is the merge semantics an update usually wants.
     ///     </para>
     ///     <para>
-    ///         v1 scope: the collection member must be a <c>List&lt;T&gt;</c> whose element type is the same on
+    ///         Scope: the collection member must be a <c>List&lt;T&gt;</c> whose element type is the same on
     ///         source and target (the common Entity↔Entity update), and the key must be a readable member of that
     ///         element type. Anything else reports <c>DWARF074</c>. The key value is compared with the type's
     ///         default equality (<c>EqualityComparer&lt;TKey&gt;.Default</c>).

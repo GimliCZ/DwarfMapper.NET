@@ -40,8 +40,8 @@ namespace DwarfMapper.Gallery.Ex27
     }
 
 // <snippet: patch-merge>
-// NullStrategy.SetDefault decides what a null BECOMES when it is written (int? -> int would otherwise
-// throw); [MapNullSkip] decides whether it is written at all. The two are orthogonal and compose.
+    // NullStrategy.SetDefault decides what a null BECOMES when it is written (int? -> int would otherwise
+    // throw); [MapNullSkip] decides whether it is written at all. The two are orthogonal and compose.
     [DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
     public partial class Mapper
     {

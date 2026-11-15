@@ -15,12 +15,7 @@ namespace DwarfMapper
     ///         for them throws and the parity harness reports them as "not registered".
     ///     </para>
     ///     <para>
-    ///         Round 18 hit this on five pairs and recorded the conclusion plainly:
-    ///         <i>
-    ///             "The code is fine; the
-    ///             harness cannot see it."
-    ///         </i>
-    ///         This attribute is how a consumer says so.
+    ///         The code is fine; the registry cannot see it. This attribute is how a consumer says so.
     ///     </para>
     ///     <para>
     ///         The method must be <c>public</c>, take exactly one parameter, and return a value — the same shape

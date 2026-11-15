@@ -6,7 +6,7 @@
 // an attribute, so the path is a literal. The leaf goes through the same conversion rules as any member.
 //   AutoMapper:  .ForMember(d => d.City, o => o.MapFrom(s => s.Customer.Address.City))
 //   DwarfMapper: [MapProperty("Customer.Address.City", nameof(OrderSummary.City))]
-// A nullable hop on the path surfaces DWARF044 (a visible suggestion), so it's never a silent NRE.
+// A nullable hop on the path reports the warning DWARF044, so it's never a silent NRE.
 
 namespace DwarfMapper.Gallery.Ex06
 {

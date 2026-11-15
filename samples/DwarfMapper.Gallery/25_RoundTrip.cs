@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 // 25 — The headline correctness feature. Tag a forward method [RoundTrip] and the generator emits
-// VerifyRoundTrip_<Name>(seed, count), which fuzzes seeded inputs through forward-then-back and asserts
+// VerifyRoundTrip_<Name>(seed, iterations), which fuzzes seeded inputs through forward-then-back and asserts
 // Back(Forward(x)) is structurally equal to x. One attribute replaces the fixtures you used to hand-write.
 //
 // This is a TEST-TIME check: it needs the reflection-based DwarfMapper.Testing package. Without that
@@ -31,10 +31,16 @@ namespace DwarfMapper.Gallery.Ex25
     [DwarfMapper]
     public partial class Mapper
     {
-        [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, count)
+        [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, iterations)
         public partial LedgerDto ToDto(Ledger l);
 
         public partial Ledger FromDto(LedgerDto d); // the inverse it verifies against
+    }
+
+    public static class LedgerMapperTests
+    {
+        // In a test project this is a [Fact]; the defaults are seed 12345 and 100 iterations.
+        public static void LedgerRoundTrips() => new Mapper().VerifyRoundTrip_ToDto(seed: 7, iterations: 50);
     }
 // </snippet>
 
@@ -46,8 +52,7 @@ namespace DwarfMapper.Gallery.Ex25
     {
         public static void Run()
         {
-            // Normally: [Fact] public void Ledger_roundtrips() => new Mapper().VerifyRoundTrip_ToDto();
-            new Mapper().VerifyRoundTrip_ToDto(7, 50);
+            LedgerMapperTests.LedgerRoundTrips();
 
             Console.WriteLine("25 [RoundTrip]        -> 50 fuzzed inputs survived forward-then-back (seed 7)");
         }

@@ -22,6 +22,11 @@ namespace DwarfMapper.Gallery.Ex16
 
         public string Name { get; set; } = "";
     }
+
+    public static class RuneUse
+    {
+        public static RuneDto Convert(Rune rune) => rune.ToRuneDto(); // the generated extension
+    }
 // </snippet>
 
 // <snippet: map-to-multi-target>
@@ -64,11 +69,11 @@ namespace DwarfMapper.Gallery.Ex16
     {
         public static void Run()
         {
-            var dto = new Rune
+            var dto = RuneUse.Convert(new Rune
             {
                 Id = 2,
                 Name = "Angerthas"
-            }.ToRuneDto();
+            });
 
             // One source, two targets: the stacked directives are read in source order, each aligned to the
             // matching [MapTo] type — so Label lands in two differently-named members and Keeper in only one.

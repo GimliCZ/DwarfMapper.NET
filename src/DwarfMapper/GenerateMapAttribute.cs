@@ -24,6 +24,10 @@ namespace DwarfMapper
     /// OrderDto dto = new Mappers().Map(order);
     /// </code>
     ///     <para>
+    ///         Overloads are told apart by source type, so two pairs with the same source and different targets on
+    ///         one class are the build error <c>DWARF060</c>; declare those as named <c>partial</c> methods instead.
+    ///     </para>
+    ///     <para>
     ///         <b>Mode 2 — co-located on a plain class (no <c>[DwarfMapper]</c>, no <c>partial</c>).</b> Placed on a
     ///         host that is not a <c>[DwarfMapper]</c> mapper, the mapping is emitted into a SEPARATE generated
     ///         <c>&lt;Host&gt;Mapper</c> type (the host stays a plain class) and is consumed via the generated
@@ -39,11 +43,6 @@ namespace DwarfMapper
     /// // usage via the generated extension:
     /// PersonDto dto = person.ToPersonDto();
     /// </code>
-    ///     <para>
-    ///         Generated <c>Map</c> overloads are distinguished by source type; declaring two pairs with the same
-    ///         source type but different targets is a compile error (ambiguous overload) — declare those as named
-    ///         <c>partial</c> methods instead.
-    ///     </para>
     /// </summary>
     /// <typeparam name="TSource">The source type to map from.</typeparam>
     /// <typeparam name="TTarget">The destination type to map to.</typeparam>

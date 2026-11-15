@@ -142,6 +142,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(index.Split('\n').Count(l => l.StartsWith("| `DWARF", StringComparison.Ordinal)) >= 40,
                 "The diagnostics index rendered too few rows to be believable.");
 
+            // The registry's ids come from a second descriptor class, and the index left all 17 out until the
+            // renderer read both.
+            var registryRows = index.Split('\n').Count(l => l.StartsWith("| `DWARFR", StringComparison.Ordinal));
+            Assert.True(registryRows == typeof(Registry.RegistryDiagnostics)
+                    .GetFields(BindingFlags.Public | BindingFlags.Static)
+                    .Count(f => f.FieldType == typeof(DiagnosticDescriptor)),
+                $"The diagnostics index carries {registryRows} DWARFR rows; every registry descriptor needs one.");
+
             var matrix = RenderOptionMatrix();
             Assert.True(matrix.Split('\n').Count(l => l.StartsWith("| `", StringComparison.Ordinal)) >= 10,
                 "The option matrix rendered too few rows to be believable.");
@@ -187,8 +195,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
         private static string RenderDiagnosticsIndex()
         {
-            var descriptors = typeof(DiagnosticDescriptors)
-                .GetFields(BindingFlags.Public | BindingFlags.Static)
+            // Both descriptor classes: the [MapTo] registry's DWARFRnn ids are reported by the same package and
+            // were missing from this index while diagnostics.md listed them.
+            var descriptors = new[] { typeof(DiagnosticDescriptors), typeof(Registry.RegistryDiagnostics) }
+                .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static))
                 .Where(f => f.FieldType == typeof(DiagnosticDescriptor))
                 .Select(f => (DiagnosticDescriptor)f.GetValue(null)!)
                 .OrderBy(d => d.Id, StringComparer.Ordinal)
@@ -198,10 +208,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             sb.Append("<!-- SPDX-License-Identifier: GPL-2.0-only -->\n");
             sb.Append(DoNotEdit).Append('\n');
             sb.Append("# Diagnostics index\n\n");
-            sb.Append("Every diagnostic the generator can report, with its severity, rendered from the descriptor\n");
-            sb.Append("definitions themselves. Prose for each id lives in [`diagnostics.md`](../diagnostics.md);\n");
-            sb.Append("this table exists so the *list* cannot drift from the code.\n\n");
-            sb.Append("| Id | Severity | Title |\n|---|---|---|\n");
+            sb.Append("Every diagnostic the generator can report, with its default severity, rendered from the\n");
+            sb.Append("descriptor definitions themselves. Prose for each id lives in [`diagnostics.md`](../diagnostics.md);\n");
+            sb.Append("this table exists so the *list* cannot drift from the code. A `.globalconfig` can change the\n");
+            sb.Append("severity a project sees.\n\n");
+            sb.Append("| Id | Default severity | Title |\n|---|---|---|\n");
 
             foreach (var d in descriptors)
                 sb.Append(CultureInfo.InvariantCulture,
@@ -222,10 +233,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             sb.Append("What each class-level `[DwarfMapper(...)]` option actually does at each endpoint. Every cell\n");
             sb.Append("is **measured**, not declared: the same source is compiled with and without the option and\n");
             sb.Append("the difference is recorded. A hand-maintained table would describe what the options were\n");
-            sb.Append("*meant* to do, which is how seven silent divergences went unnoticed in this codebase.\n\n");
+            sb.Append("*meant* to do, which is how silent divergences go unnoticed.\n\n");
             sb.Append("| Symbol | Meaning |\n|---|---|\n");
             sb.Append("| honoured | the option changes the generated output |\n");
-            sb.Append("| `DWARFnnn` | the option is refused with that diagnostic — visible, not silent |\n");
+            sb.Append("| `DWARFnnn` | the option reports that diagnostic: either a refusal at this endpoint, or the |\n");
+            sb.Append("| | diagnostic the option exists to raise (a strict mode turning a silent case into a report) |\n");
             sb.Append("| n/a (loud) | not applied, but the build fails anyway, so nothing wrong can ship |\n");
             sb.Append("| **SILENT** | accepted, no effect, compiles — a divergence, and a bug |\n");
             sb.Append("| n/a (no such surface) | the endpoint has nothing this option could configure |\n");

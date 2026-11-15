@@ -28,17 +28,48 @@ namespace DwarfMapper.DocTooling
                     rows.Add($"| | **{TierName.Of(Enum.Parse<Tier>(e.Tier))}** | |");
                 }
 
-                // Paths are rendered relative to the Gallery directory, since that is where this README sits.
-                var file = Path.GetRelativePath(
-                        Path.Combine(RepoLayout.Root, "samples", "DwarfMapper.Gallery"),
-                        Path.Combine(RepoLayout.Root, e.RelativeFile))
-                    .Replace('\\', '/');
+                var file = RelativeToGallery(e.RelativeFile);
 
                 rows.Add(string.Create(CultureInfo.InvariantCulture,
                     $"| {e.Ordinal:D2} | [`{file}`]({file}) — {e.Title} | {e.Shows} |"));
             }
 
             return rows;
+        }
+
+        /// <summary>
+        ///     The lines that head each example's section of the Gallery README, in reading order: <c>## Tier</c> where
+        ///     the tier changes, then <c>### N. Title</c> and <c>*file* — shows</c>. The sections are written by hand
+        ///     around their snippet markers; comparing their heads with this list is what stops a section from
+        ///     sitting under the wrong tier or keeping a title the example no longer has.
+        /// </summary>
+        public static IReadOnlyList<string> RenderSectionHeads()
+        {
+            var heads = new List<string>();
+            string? tier = null;
+
+            foreach (var e in ExampleCatalogue.Scan())
+            {
+                if (!string.Equals(tier, e.Tier, StringComparison.Ordinal))
+                {
+                    tier = e.Tier;
+                    heads.Add($"## {TierName.Of(Enum.Parse<Tier>(e.Tier))}");
+                }
+
+                heads.Add(string.Create(CultureInfo.InvariantCulture, $"### {e.Ordinal}. {e.Title}"));
+                heads.Add($"*{RelativeToGallery(e.RelativeFile)}* — {e.Shows}");
+            }
+
+            return heads;
+        }
+
+        // Paths are rendered relative to the Gallery directory, since that is where its README sits.
+        private static string RelativeToGallery(string relativeFile)
+        {
+            return Path.GetRelativePath(
+                    Path.Combine(RepoLayout.Root, "samples", "DwarfMapper.Gallery"),
+                    Path.Combine(RepoLayout.Root, relativeFile))
+                .Replace('\\', '/');
         }
     }
 }

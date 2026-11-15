@@ -114,8 +114,10 @@ namespace DwarfMapper.DocTooling
 
         private static void RenderMembers(StringBuilder sb, Type type, Dictionary<string, string> summaries)
         {
+            // Declared in this assembly only: an attribute inherited System.Attribute.TypeId and an exception
+            // Message, StackTrace, Data and the rest, and the page listed them as if they were this API.
             var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.GetIndexParameters().Length == 0)
+                .Where(p => p.GetIndexParameters().Length == 0 && p.Module == type.Module)
                 .OrderBy(p => p.Name, StringComparer.Ordinal)
                 .ToList();
 
@@ -304,8 +306,19 @@ namespace DwarfMapper.DocTooling
             foreach (var node in summary.DescendantNodes())
                 switch (node)
                 {
+                    // A <code> example is a block; flattened into one table cell it read as a run-on of code
+                    // and prose. The cell keeps the sentence around it, and the example stays in the IDE tooltip.
+                    case XText text when text.Ancestors("code").Any():
+                        break;
+
                     case XText text:
                         sb.Append(text.Value);
+                        break;
+
+                    // An empty element whose meaning is its name attribute: the page dropped the word, leaving
+                    // "Declares a mapping from to".
+                    case XElement { Name.LocalName: "typeparamref" or "paramref" } e:
+                        sb.Append(e.Attribute("name")?.Value);
                         break;
 
                     case XElement { Name.LocalName: "see" or "seealso" } e:
@@ -325,8 +338,13 @@ namespace DwarfMapper.DocTooling
                         // wants the last segment, and for an ID with no namespace the part after the prefix.
                         var cref = e.Attribute("cref")?.Value ?? "";
                         var idx = cref.LastIndexOf('.');
-                        sb.Append(idx >= 0 ? cref[(idx + 1)..] :
-                            cref.Length > 2 && cref[1] == ':' ? cref[2..] : cref);
+                        var tail = idx >= 0 ? cref[(idx + 1)..] :
+                            cref.Length > 2 && cref[1] == ':' ? cref[2..] : cref;
+
+                        // A generic type's ID carries its arity ("GenerateMapAttribute`2"), which is not a name
+                        // anyone writes; the page shows the name.
+                        var tick = tail.IndexOf('`', StringComparison.Ordinal);
+                        sb.Append(tick >= 0 ? tail[..tick] : tail);
                         break;
                 }
 

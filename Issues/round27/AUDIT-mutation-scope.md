@@ -32,11 +32,16 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 | `DwarfMapper.Generator` | 83 | 7 | 39,287 | 2,643 | **6.7 %** | 95.7 % |
 | `DwarfMapper.Generator.Roslyn512` | 2 | **0** | 575 | 0 | **0 %** | — |
 | `DwarfMapper` (runtime) | 47 | 8 | 4,047 | 1,307 | **32.3 %** | 73.9 %† |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,219 | 685 | **56.2 %** | 97.4 % |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,269 | 685 | **54.0 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
 | `DwarfMapper.Testing` | 9 | 5 | 2,279 | 387 | **17.0 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **158** | **29** | **48,817** | **5,738** | **11.8 %** | |
+| **all** | **158** | **29** | **48,867** | **5,738** | **11.7 %** | |
+
+Re-measured 2026-11-15 (round 35 T31/T32): `DwarfMapper.DocTooling` 1,219 -> 1,269 lines, share 56.2 % -> 54.0 %. The
+growth is `GalleryIndexRenderer.RenderSectionHeads` (the Gallery README's section heads checked against the catalogue)
+and `ApiReferenceRenderer`'s reference-tag, arity, code-block and inherited-member fixes; neither file is in the
+doctooling leg's `mutate` list, as before. Their tests are `DocsAreSnippetCurrentTests` and `ApiReferenceRendererTests`.
 
 Re-measured 2026-11-14 (round 35 T23, the multi-version generator): the generator gains `Pipeline/UnionSupport.cs`,
 `Pipeline/UnionSupport.Floor.cs` and `Model/UnionEmptyArm.cs` (files 80 -> 83), outside every `mutate` glob like the

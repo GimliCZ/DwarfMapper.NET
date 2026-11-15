@@ -19,5 +19,5 @@ namespace DwarfMapper.Gallery.Ex15.Dtos
 
         public int Age { get; set; }
     }
-}
 // </snippet>
+}

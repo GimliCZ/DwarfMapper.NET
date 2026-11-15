@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-// 21 — The one place DwarfMapper is faster than the other compile-time mappers rather than merely equal.
+// 21 — One of the places DwarfMapper is faster than the other compile-time mappers rather than merely equal.
 // When a whole array member's element type is unmanaged, identically sized and layout-compatible, the
 // generator proves it and bulk-copies the entire span with MemoryMarshal.Cast + CopyTo behind a runtime size
 // guard, instead of writing fields element by element.

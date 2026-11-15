@@ -98,6 +98,40 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     : "\n\nEach file has been regenerated in your working tree — review the diff and commit it." + "\nThis fails rather than healing quietly on purpose: a healing doc test goes green in " + "CI while the file people read stays stale."));
         }
 
+        /// <summary>
+        ///     The Gallery README's section heads are hand-written around their snippet markers, so nothing rendered
+        ///     them: example 51 sat under "Advanced" while the index put it in "Configuration", and example 8's
+        ///     description was cut off at an escaped quote. They now have to equal the catalogue's tiers, titles,
+        ///     files and descriptions, in reading order.
+        /// </summary>
+        [Fact]
+        public void Gallery_section_heads_follow_the_example_catalogue()
+        {
+            var committed = DocSet.Read(GalleryReadme).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            var sections = committed.SkipWhile(l => !l.StartsWith("## Index", StringComparison.Ordinal))
+                .SkipWhile(l => !l.StartsWith("<!-- endtable -->", StringComparison.Ordinal));
+
+            var heads = new List<string>();
+            var inFence = false;
+            foreach (var line in sections)
+            {
+                if (line.StartsWith("```", StringComparison.Ordinal))
+                {
+                    inFence = !inFence;
+                    continue;
+                }
+
+                if (!inFence && (line.StartsWith("## ", StringComparison.Ordinal) ||
+                                 line.StartsWith("### ", StringComparison.Ordinal) ||
+                                 (line.StartsWith('*') && line.Contains("* — ", StringComparison.Ordinal))))
+                {
+                    heads.Add(line.TrimEnd());
+                }
+            }
+
+            Assert.Equal(GalleryIndexRenderer.RenderSectionHeads(), heads);
+        }
+
         private static string Normalise(string text)
         {
             return text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd();

@@ -15,9 +15,7 @@ when you do not set it, which is the question a reference page is usually opened
 
 Marks a method to run after mapping. Signature: void Hook(TTarget target) or void Hook(TSource source, TTarget target). Applies to every mapping method whose source/target types are assignable to the parameters.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.AfterMapAttribute` |  |
+_No public settable surface._
 
 ### attribute `AutoNestAttribute`
 
@@ -26,15 +24,12 @@ Per-method override for the AutoNest class-level setting. Applying [AutoNest(fal
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Enabled` | `Boolean` | — | Gets whether auto-nesting is enabled for this method. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `BeforeMapAttribute`
 
 Marks a method to run before mapping. Signature: void Hook(TSource source). Applies to every mapping method whose source type is assignable to the parameter.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.BeforeMapAttribute` |  |
+_No public settable surface._
 
 ### class `Dwarf`
 
@@ -55,31 +50,14 @@ Thrown by the ambient IDwarfMapper / DwarfMapperRegistry when no map is register
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `AmbiguousInterfaces` | `IReadOnlyList<Type>` | `System.Type[]` | When lookup failed because several of the source's interfaces had a registration, the interfaces in question. Empty in the ordinary "nothing registered" case. |
-| `Data` | `IDictionary` | `System.Collections.ListDictionaryInternal` |  |
 | `DestinationType` | `Type` | `null` | The requested destination type. |
-| `HResult` | `Int32` | `-2146233079` |  |
-| `HelpLink` | `String` | `null` |  |
-| `InnerException` | `Exception` | `null` |  |
-| `Message` | `String` | `"Operation is not valid due to the current state of the object."` |  |
-| `Source` | `String` | `null` |  |
 | `SourceType` | `Type` | `null` | The (runtime) source type that had no registered map. |
-| `StackTrace` | `String` | `null` |  |
-| `TargetSite` | `MethodBase` | `null` |  |
 
 ### class `DwarfMapValidationException`
 
 Thrown by DwarfMap.Validate() when required ambient maps are missing or ambiguous — the fail-fast, one-time startup check that recovers DwarfMapper's loud-failure guarantee for the cross-assembly linkage. The Message lists every offending pair.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `Data` | `IDictionary` | `System.Collections.ListDictionaryInternal` |  |
-| `HResult` | `Int32` | `-2146233079` |  |
-| `HelpLink` | `String` | `null` |  |
-| `InnerException` | `Exception` | `null` |  |
-| `Message` | `String` | `"Operation is not valid due to the current state of the object."` |  |
-| `Source` | `String` | `null` |  |
-| `StackTrace` | `String` | `null` |  |
-| `TargetSite` | `MethodBase` | `null` |  |
+_No public settable surface._
 
 ### attribute `DwarfMapperAttribute`
 
@@ -96,7 +74,7 @@ Marks a partial class as a DwarfMapper. The generator implements the partial map
 | `GenerateExtensions` | `Boolean` | `true` | When true (the default), the generator also emits convenience extension methods for this mapper's simple TTarget Map(TSource) methods — e.g. order.ToOrderDto() instead of new OrderMapper().ToDto(order). They live in the DwarfMapper.Extensions namespace (add using DwarfMapper.Extensions; to use them), are backed by a cached, stateless mapper instance, and are assembly-internal. Set to false to suppress them for this mapper. Only plain single-argument maps get an extension. Update-into, span, async-streaming, projection, derived-type dispatch, and methods with extra parameters are skipped, as are pairs whose generated name would collide. |
 | `IgnoreObsoleteMembers` | `Boolean` | `false` | When true, members marked [Obsolete] are excluded from mapping: an obsolete destination member is neither required to be mapped nor auto-populated, and an obsolete source member does not need to be consumed under RequiredMapping = Both. Defaults to false. The point of deprecating a member is to stop feeding it. Without this flag the completeness gate works against that — DWARF001 forces you to map (or explicitly [MapIgnore]) every obsolete destination member, and mapping one revives the very data flow you are retiring. With it, obsolete members drop out silently-but-safely: they keep their default and no diagnostic fires. An explicit [MapProperty]/[MapValue] targeting an obsolete member still wins, so you can opt a specific one back in. |
 | `ImplicitConversions` | `Boolean` | `true` | Controls whether non-lossless implicit type conversions between differently-typed members are allowed automatically. Defaults to true (permissive — today's behavior). When true: lossless same-category widening (int→long, float→double) is silent; narrowing (long→int), cross-category (int→double, int→string) and parse (string→int) conversions are still applied but surface DWARF038 - a Warning for these lossy kinds, Info only for a user-defined explicit operator - so they are never silent. When false (strict, Mapperly-style): those same non-lossless conversions become a DWARF038 build error — you must opt in per member with [MapProperty(..., Use = nameof(Method))]. Lossless widening and identity still map freely. |
-| `MaxDepth` | `Int32` | `64` | Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64). When a mapping reaches this depth, a DwarfMappingDepthException is thrown instead of a silent (uncatchable) StackOverflowException. The depth counter applies only to pairs that can form a cycle in the type graph (self-referential or mutually-recursive types). Acyclic type graphs have zero overhead. Hard cap: 1000. Values above 1000 are silently clamped to 1000. Default: 64 (matching System.Text.Json / AutoMapper defaults). |
+| `MaxDepth` | `Int32` | `64` | Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64). When a mapping reaches this depth, a DwarfMappingDepthException is thrown instead of a silent (uncatchable) StackOverflowException. The depth counter applies only to pairs that can form a cycle in the type graph (self-referential or mutually-recursive types). Acyclic type graphs have zero overhead. Hard cap: 1000. Values above 1000 are silently clamped to 1000. Default: 64, System.Text.Json's default depth. AutoMapper has no default limit: its MaxDepth is opt-in. |
 | `NameConvention` | `NameConvention` | `Exact` | Member-name matching strategy. Defaults to Exact (today's behaviour). Flexible matches across casing styles (PascalCase ↔ camelCase ↔ snake_case ↔ UPPER_CASE) by normalizing names; a post-normalization collision is the build error DWARF048. |
 | `NullCollections` | `NullCollectionStrategy` | `AsEmpty` | Controls how a null source collection or dictionary is mapped. AsEmpty (default): a null source produces an empty target; the mapper never throws NullReferenceException for a null collection. AsNull: a null source propagates as null on the target — only when the target member is nullable (a nullable reference, or a nullable value-type collection like ImmutableArray<T>?); a non-nullable target silently degrades to AsEmpty. |
 | `NullStrategy` | `NullStrategy` | `Throw` | How a nullable value-type source mapped to a non-nullable destination is handled when null. Defaults to Throw. |
@@ -105,15 +83,12 @@ Marks a partial class as a DwarfMapper. The generator implements the partial map
 | `RegisterCollectionShapes` | `Boolean` | `true` | When true (the default), each declared object map is ALSO registered into the ambient registry under the common collection shapes, so IDwarfMapper.Map<ICollection<TTarget>>(listOfSources) resolves without declaring a separate collection pair. |
 | `RequiredMapping` | `RequiredMappingStrategy` | `Target` | Which side(s) of the mapping must be fully covered. Defaults to Target (today's behaviour — every destination member must be mapped). Set to Both to additionally require every source member to be read by some destination; an unconsumed source member then surfaces the DWARF039 suggestion (Info). Suppress a specific member with [MapIgnoreSource("Member")]; escalate to a build error via dotnet_diagnostic.DWARF039.severity = error in a .globalconfig (is_global = true). |
 | `SkipNullSourceMembers` | `Boolean` | `false` | When true, a null source member never overwrites the destination's default: for every nullable-source, post-construction-settable member the generator emits if (src.Member is not null) dest.Member = …;, so a default set in the destination's field initializer or constructor survives a null source. Defaults to false. This is the equivalent of AutoMapper's ForAllMembers(o => o.Condition((_, _, srcMember) => srcMember != null)) — the common "don't clobber data with nulls" guard when sanitizing/merging. Non-nullable value-type members (which can never be null) are unaffected; required and init-only members are always assigned (they cannot be deferred) and so are unaffected too. |
-| `TypeId` | `Object` | `DwarfMapper.DwarfMapperAttribute` |  |
 
 ### attribute `DwarfMapperConstructorAttribute`
 
 Marks a constructor as the preferred target for DwarfMapper constructor-based mapping. When present on exactly one constructor of the destination type, that constructor is selected unconditionally (overriding the default selection policy). Placing the attribute on more than one constructor is a build error (DWARF025).
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.DwarfMapperConstructorAttribute` |  |
+_No public settable surface._
 
 ### attribute `DwarfMapperDefaultsAttribute`
 
@@ -135,7 +110,6 @@ Assembly-wide default options for every [DwarfMapper] class in the assembly. A v
 | `RegisterCollectionShapes` | `Boolean` | `true` |  |
 | `RequiredMapping` | `RequiredMappingStrategy` | `Target` |  |
 | `SkipNullSourceMembers` | `Boolean` | `false` |  |
-| `TypeId` | `Object` | `DwarfMapper.DwarfMapperDefaultsAttribute` |  |
 
 ### class `DwarfMapperFacade`
 
@@ -150,7 +124,6 @@ Assembly-wide DwarfMapper options. Apply once with [assembly: DwarfMapperOptions
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `PublicExtensions` | `Boolean` | `false` | When true, the generated convenience extension methods (in the DwarfMapper.Extensions namespace) are emitted public — usable from other assemblies — for every pair whose source and destination types are both effectively public. A pair involving a non-public type stays assembly-internal to remain accessibility-safe (a public extension over an internal type would not compile). Defaults to false (all generated extensions are assembly-internal). Governs BOTH extension emitters: the aggregate facade in DwarfMapper.Extensions and the [MapTo] registry's per-source __DwarfRegistry_<Source> class. A library that ships [MapTo] types for another assembly to consume must therefore set this, since source.MapTo<TTarget>() is the only way to invoke a registry map — there is no mapper instance to fall back on. This is the opt-in for the common layered layout where mappers/DTOs live in a library and are consumed from another project. Without it, call the mapper instance method or use AddDwarfMappers() DI across assemblies. |
-| `TypeId` | `Object` | `DwarfMapper.DwarfMapperOptionsAttribute` |  |
 
 ### class `DwarfMapperRegistry`
 
@@ -164,8 +137,7 @@ Marks the composition-root assembly (the one that references every map-providing
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
-| `AutoValidate` | `Boolean` | `false` | When true, the root emits a module initializer that calls DwarfMap.Validate() as the root module loads, turning a missing ambient map into a fail-fast startup exception. Default false. Validation automatically follows the link flow: it checks exactly the ambient maps the graph actually consumes (auto-detected from call sites and UsesMapAttribute`2), so a pair used in both directions is validated both ways (round-trip) and a one-way use is validated one-way — no configuration. Caveat: Validate() force-registers the root's OWN maps first, so those always validate. A referenced provider assembly registers in its own module initializer, which the CLR runs lazily on first access — a compile-time reference does NOT force it to load. So AutoValidate can false-positive at startup for a correctly-wired cross-assembly map whose provider hasn't been touched yet. For cross-assembly maps prefer services.AddDwarfMappers().ValidateDwarfMaps() or call DwarfMap.Validate() after the provider assemblies are loaded. |
-| `TypeId` | `Object` | `DwarfMapper.DwarfMapperValidationRootAttribute` |  |
+| `AutoValidate` | `Boolean` | `false` | When true, the root emits a module initializer that calls DwarfMap.Validate() as the root module loads, turning a missing ambient map into a fail-fast startup exception. Default false. Validation automatically follows the link flow: it checks exactly the ambient maps the graph actually consumes (auto-detected from call sites and UsesMapAttribute), so a pair used in both directions is validated both ways (round-trip) and a one-way use is validated one-way — no configuration. Caveat: Validate() force-registers the root's OWN maps first, so those always validate. A referenced provider assembly registers in its own module initializer, which the CLR runs lazily on first access — a compile-time reference does NOT force it to load. So AutoValidate can false-positive at startup for a correctly-wired cross-assembly map whose provider hasn't been touched yet. For cross-assembly maps prefer services.AddDwarfMappers().ValidateDwarfMaps() or call DwarfMap.Validate() after the provider assemblies are loaded. |
 
 ### class `DwarfMappingDepthException`
 
@@ -174,15 +146,7 @@ Thrown by a recursion-capable auto-synthesized mapper when the mapping depth exc
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `ActualDepth` | `Int32` | `0` | The actual depth at which the limit was detected. |
-| `Data` | `IDictionary` | `System.Collections.ListDictionaryInternal` |  |
-| `HResult` | `Int32` | `-2146233088` |  |
-| `HelpLink` | `String` | `null` |  |
-| `InnerException` | `Exception` | `null` |  |
 | `MaxDepth` | `Int32` | `0` | The depth limit that was exceeded. |
-| `Message` | `String` | `"Exception of type 'DwarfMapper.DwarfMappingDepthException' was thrown."` |  |
-| `Source` | `String` | `null` |  |
-| `StackTrace` | `String` | `null` |  |
-| `TargetSite` | `MethodBase` | `null` |  |
 
 ### attribute `DwarfProvidesMapAttribute`
 
@@ -192,7 +156,6 @@ Emitted by the generator (one per ambient-registered map) onto the declaring ass
 |---|---|---|---|
 | `Destination` | `Type` | — | The map destination type. |
 | `Source` | `Type` | — | The map source type. |
-| `TypeId` | `Object` | — |  |
 
 ### class `DwarfRefContext`
 
@@ -210,7 +173,6 @@ Emitted by the generator onto the declaring assembly: a manifest of the cross-as
 |---|---|---|---|
 | `Destination` | `Type` | — | The required map destination type. |
 | `Source` | `Type` | — | The required map source type. |
-| `TypeId` | `Object` | — |  |
 
 ### enum `EnumStrategy`
 
@@ -237,7 +199,6 @@ Flattens a complex source member: its readable sub-members are mapped to destina
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `SourceMember` | `String` | — | Name of the complex source member whose sub-members are pulled up. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `FlattenGraphAttribute`
 
@@ -247,23 +208,19 @@ Collapses a transitively-reachable object graph starting from SourceNavigation i
 |---|---|---|---|
 | `SourceNavigation` | `String` | — | Name of the member on the root source type that enters the graph. |
 | `TargetCollection` | `String` | — | Name of the flat-collection member on the root return type to populate. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `GenerateMapAttribute<TSource, TTarget>`
 
-Declares a mapping from to WITHOUT writing a partial method per pair. Both placements get the same completeness gate, conversions, nested/collection handling, and hooks as a declared partial mapper — they differ only in where the generated method lands. Mode 1 — on a [DwarfMapper] partial class. The generator emits public TTarget Map(TSource src) overloads (one per declared pair) into that class. This keeps migration low-ceremony: the source/target types stay plain POCOs (no attributes on them), and each mapping is a single attribute line — a near-mechanical replacement for, e.g., AutoMapper's CreateMap<A, B>(): [DwarfMapper] [GenerateMap<Order, OrderDto>] [GenerateMap<Customer, CustomerDto>] public partial class Mappers { } // usage (overload resolved by the source type): OrderDto dto = new Mappers().Map(order); Mode 2 — co-located on a plain class (no [DwarfMapper], no partial). Placed on a host that is not a [DwarfMapper] mapper, the mapping is emitted into a SEPARATE generated <Host>Mapper type (the host stays a plain class) and is consumed via the generated convenience extension (src.ToTarget()) or AddDwarfMappers() DI. This lets a mapping live next to the type it targets and disappear when that type is deleted. A name clash with an existing <Host>Mapper type is reported as DWARF057. // PersonDto.cs — the mapping lives ON the DTO, no [DwarfMapper], no partial: [GenerateMap<Person, PersonDto>] public sealed class PersonDto { /* ... */ } // usage via the generated extension: PersonDto dto = person.ToPersonDto(); Generated Map overloads are distinguished by source type; declaring two pairs with the same source type but different targets is a compile error (ambiguous overload) — declare those as named partial methods instead.
+Declares a mapping from TSource to TTarget WITHOUT writing a partial method per pair. Both placements get the same completeness gate, conversions, nested/collection handling, and hooks as a declared partial mapper — they differ only in where the generated method lands. Mode 1 — on a [DwarfMapper] partial class. The generator emits public TTarget Map(TSource src) overloads (one per declared pair) into that class. This keeps migration low-ceremony: the source/target types stay plain POCOs (no attributes on them), and each mapping is a single attribute line — a near-mechanical replacement for, e.g., AutoMapper's CreateMap<A, B>(): Overloads are told apart by source type, so two pairs with the same source and different targets on one class are the build error DWARF060; declare those as named partial methods instead. Mode 2 — co-located on a plain class (no [DwarfMapper], no partial). Placed on a host that is not a [DwarfMapper] mapper, the mapping is emitted into a SEPARATE generated <Host>Mapper type (the host stays a plain class) and is consumed via the generated convenience extension (src.ToTarget()) or AddDwarfMappers() DI. This lets a mapping live next to the type it targets and disappear when that type is deleted. A name clash with an existing <Host>Mapper type is reported as DWARF057.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | — |  |
+_No public settable surface._
 
 ### attribute `GenerateWrapperMapAttribute`
 
-Opt-in: for every [GenerateMap<A, B>] declared on the same [DwarfMapper] class, also synthesize a map for the closed wrapper instantiation W<A> -> W<B> (where W is the supplied open generic wrapper). This removes the boilerplate of declaring a wrapper map per payload pair for single-payload generic envelope families (Result<T>, Page<T>, Envelope<T>, …). Closed instantiations only. One concrete mapper is emitted per used (A, B) pair — open generics are never emitted, so the result stays NativeAOT- and trim-safe. The wrapper must be a generic type with exactly one type parameter and a single payload member of that parameter's type (other members are copied/converted as usual). A wrapper that does not qualify is reported as DWARF067. public sealed class Envelope<T> { public T Payload { get; set; } = default!; public int Status { get; set; } } [DwarfMapper] [GenerateMap<User, UserDto>] [GenerateWrapperMap(typeof(Envelope<>))] // also synthesizes Envelope<User> -> Envelope<UserDto> public partial class Mappers { } Envelope<UserDto> dto = new Mappers().Map(envelopeOfUser);
+Opt-in: for every [GenerateMap<A, B>] declared on the same [DwarfMapper] class, also synthesize a map for the closed wrapper instantiation W<A> -> W<B> (where W is the supplied open generic wrapper). This removes the boilerplate of declaring a wrapper map per payload pair for single-payload generic envelope families (Result<T>, Page<T>, Envelope<T>, …). Closed instantiations only. One concrete mapper is emitted per used (A, B) pair — open generics are never emitted, so the result stays NativeAOT- and trim-safe. The wrapper must be a generic type with exactly one type parameter and a single payload member of that parameter's type (other members are copied/converted as usual). A wrapper that does not qualify is reported as DWARF067.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
-| `TypeId` | `Object` | — |  |
 | `Wrapper` | `Type` | — | The open generic wrapper type the family is generated for. |
 
 ### interface `IDwarfMapper`
@@ -274,36 +231,32 @@ _No public settable surface._
 
 ### attribute `MapCloneAttribute`
 
-States that this mapping method's source and destination are the SAME type on purpose: the method is a clone, and DWARF076 ("source and target are the same type") is not reported for it. The generated method is exactly the one it would be without the attribute - a member-by-member copy, in which a nested object is the SAME instance in both (it is not cloned) while a collection or array member is copied into a new one holding the same elements. [DwarfMapper] public partial class OrderMapper { [MapClone] public partial Order Copy(Order source); } It accepts the one method it is written on; [SuppressMessage("DwarfMapper", "DWARF076")] on the mapper class accepts every same-type method of the class at once. Written on a method that is not a same-type create map - its types differ, or it maps into an existing instance, a span, a stream or a query, none of which DWARF076 ever judges - it accepts nothing and is itself reported (DWARF116).
+States that this mapping method's source and destination are the SAME type on purpose: the method is a clone, and DWARF076 ("source and target are the same type") is not reported for it. The generated method is exactly the one it would be without the attribute - a member-by-member copy, in which a nested object is the SAME instance in both (it is not cloned) while a collection or array member is copied into a new one holding the same elements. It accepts the one method it is written on; [SuppressMessage("DwarfMapper", "DWARF076")] on the mapper class accepts every same-type method of the class at once. Written on a method that is not a same-type create map - its types differ, or it maps into an existing instance, a span, a stream or a query, none of which DWARF076 ever judges - it accepts nothing and is itself reported (DWARF116).
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.MapCloneAttribute` |  |
+_No public settable surface._
 
 ### attribute `MapCollectionKeyAttribute`
 
-On an update-into mapping method (void Map(TSource src, TTarget dest)), merges a List<T> collection member by key instead of replacing it wholesale. The existing list instance is kept and mutated in place: an element whose key matches an existing one updates that slot, an element with a new key is added, and existing elements whose key is absent from the source are left untouched. Without this, update-into replaces the whole collection with a freshly-built one (see DWARF065) — discarding the existing list's identity and any elements the update did not mention. Key-based upsert is the merge semantics an update usually wants. v1 scope: the collection member must be a List<T> whose element type is the same on source and target (the common Entity↔Entity update), and the key must be a readable member of that element type. Anything else reports DWARF074. The key value is compared with the type's default equality (EqualityComparer<TKey>.Default).
+On an update-into mapping method (void Map(TSource src, TTarget dest)), merges a List<T> collection member by key instead of replacing it wholesale. The existing list instance is kept and mutated in place: an element whose key matches an existing one updates that slot, an element with a new key is added, and existing elements whose key is absent from the source are left untouched. Without this, update-into replaces the whole collection with a freshly-built one (see DWARF065) — discarding the existing list's identity and any elements the update did not mention. Key-based upsert is the merge semantics an update usually wants. Scope: the collection member must be a List<T> whose element type is the same on source and target (the common Entity↔Entity update), and the key must be a readable member of that element type. Anything else reports DWARF074. The key value is compared with the type's default equality (EqualityComparer<TKey>.Default).
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `CollectionMember` | `String` | — | The destination collection member to merge by key. |
 | `KeyMember` | `String` | — | The element-type member used as the match key. |
-| `TypeId` | `Object` | — |  |
 
 ### class `MapConfig<TSource, TTarget>`
 
-A compile-time-only configuration surface for the (TSource → TTarget) map. Declare a method on a [DwarfMapper] class taking a single MapConfig`2 parameter and configure members with type-safe selector lambdas; the DwarfMapper generator reads the method's body syntactically and never executes it, so this stays reflection-free and AOT-safe. Method arguments must be member-access selector lambdas (t => t.A.B) or method groups (Convert); inline converter/factory lambda bodies are not supported in this version.
+A compile-time-only configuration surface for the (TSource → TTarget) map. Declare a method on a [DwarfMapper] class taking a single MapConfig parameter and configure members with type-safe selector lambdas; the DwarfMapper generator reads the method's body syntactically and never executes it, so this stays reflection-free and AOT-safe. Method arguments must be member-access selector lambdas (t => t.A.B) or method groups (Convert); inline converter/factory lambda bodies are not supported in this version.
 
 _No public settable surface._
 
 ### attribute `MapConstructorAttribute<TSource, TTarget>`
 
-Overrides how the (TSource → TTarget) destination is constructed from the class: instead of letting the generator pick a constructor, it calls the named factory function on the mapper, then populates the remaining writable members from the source — the compile-time equivalent of AutoMapper's ConstructUsing. Apply it next to a [GenerateMap<TSource, TTarget>]. [GenerateMap<CommandDto, AliasCommand>] [MapConstructor<CommandDto, AliasCommand>(nameof(MakeAlias))] public partial class Mapper { private static AliasCommand MakeAlias(CommandDto s) => new(s.CommandFormat, s.Alias!); } The factory is any method on the mapper taking a value assignable from and returning a value assignable to ; it may invoke any constructor or logic. After it runs, the generator assigns every settable (non-init, non-read-only) destination member from the source, exactly as a normal map would; init-only, required and get-only members are the factory's responsibility and are not reassigned. An invalid factory name/signature is DWARF059; an attribute that matches no mapped pair is DWARF056.
+Overrides how the (TSource → TTarget) destination is constructed from the class: instead of letting the generator pick a constructor, it calls the named factory function on the mapper, then populates the remaining writable members from the source — the compile-time equivalent of AutoMapper's ConstructUsing. Apply it next to a [GenerateMap<TSource, TTarget>]. The factory is any method on the mapper taking a value assignable from TSource and returning a value assignable to TTarget; it may invoke any constructor or logic. After it runs, the generator assigns every settable (non-init, non-read-only) destination member from the source, exactly as a normal map would; init-only, required and get-only members are the factory's responsibility and are not reassigned. An invalid factory name/signature is DWARF059; an attribute that matches no mapped pair is DWARF056.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
-| `Method` | `String` | — | Name of the factory method: takes , returns . |
-| `TypeId` | `Object` | — |  |
+| `Method` | `String` | — | Name of the factory method: takes TSource, returns TTarget. |
 
 ### attribute `MapDenseEnumKeysAttribute`
 
@@ -313,25 +266,21 @@ Maps an enum-keyed dictionary member into a fixed-size inline array, indexing it
 |---|---|---|---|
 | `Member` | `String` | — | Name of the destination inline-array member. |
 | `Offset` | `Int32` | — | The enum value that maps to slot 0. Defaults to 0. An enum whose members start at 1 — the common shape, where 0 is reserved for "unset" — wastes a slot at offset 0 and needs one more than it has members. Offset = 1 makes the first declared member slot 0. The proof is run against the offset actually in force, so an offset that pushes a member out of either end of the array is DWARF105. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapDerivedTypeAttribute`
 
-Non-generic form of MapDerivedTypeAttribute`2.
+Non-generic form of MapDerivedTypeAttribute.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `SourceType` | `Type` | — | The concrete derived source type registered for this dispatch arm. |
 | `TargetType` | `Type` | — | The concrete derived target DTO type registered for this dispatch arm. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapDerivedTypeAttribute<TSource, TTarget>`
 
-Registers a concrete derived source type and its DTO type as a dispatch arm for polymorphic mapping. Apply multiple times on a partial mapping method whose source parameter is a base class or interface. Arms are emitted most-derived-first so that a more-derived type is never shadowed by a base-type arm. Unregistered runtime types throw ArgumentException (loud, never silent).
+Registers a concrete derived source type TSource and its DTO type TTarget as a dispatch arm for polymorphic mapping. Apply multiple times on a partial mapping method whose source parameter is a base class or interface. Arms are emitted most-derived-first so that a more-derived type is never shadowed by a base-type arm. Unregistered runtime types throw ArgumentException (loud, never silent).
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | — |  |
+_No public settable surface._
 
 ### attribute `MapIgnoreAttribute`
 
@@ -340,16 +289,14 @@ Excludes a member from mapping. Two placements: On a mapping method or class (cl
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Target` | `String` | `null` | Name of the destination member to ignore (method/class form); null for the member form. (Was TargetMember before 1.0; renamed for consistency with MapPropertyAttribute.) |
-| `TypeId` | `Object` | `DwarfMapper.MapIgnoreAttribute` |  |
 
 ### attribute `MapIgnoreAttribute<TTarget>`
 
-Ignores a destination member of from the class, for any pair that maps to — the pair-scoped counterpart of the method-level MapIgnoreAttribute. Use it to suppress the completeness error (DWARF001) for a member of a [GenerateMap] or nested pair without writing a partial method. A pair-scoped attribute that matches no mapped pair is DWARF056.
+Ignores a destination member of TTarget from the class, for any pair that maps to TTarget — the pair-scoped counterpart of the method-level MapIgnoreAttribute. Use it to suppress the completeness error (DWARF001) for a member of a [GenerateMap] or nested pair without writing a partial method. A pair-scoped attribute that matches no mapped pair is DWARF056.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Target` | `String` | — | Name of the destination member to leave unmapped. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapIgnoreSourceAttribute`
 
@@ -358,7 +305,6 @@ Excludes a source member from source-coverage checking. Required to silence the 
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Source` | `String` | — | Name of the source member to exclude from coverage checking. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapNullSkipAttribute`
 
@@ -367,7 +313,6 @@ Turns SkipNullSourceMembers on (or off) for one mapping method, overriding the m
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Enabled` | `Boolean` | — | Whether null source members are skipped for this method. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapNullSkipAttribute<TSource, TTarget>`
 
@@ -376,7 +321,6 @@ Turns SkipNullSourceMembers on (or off) for one declared [GenerateMap<TSource, T
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Enabled` | `Boolean` | — | Whether null source members are skipped for this pair. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapPropertyAttribute`
 
@@ -390,13 +334,12 @@ Explicitly maps a source member to a differently-named destination member, overr
 | `Source` | `String` | — | Name of the source member to read from. |
 | `StringFormat` | `String` | — | Optional .NET format string applied when converting the source to a string destination — emitted as source.ToString(format, CultureInfo.InvariantCulture). E.g. "yyyy-MM-dd" for a DateTime, "F2" for a decimal, "N0" for an int. The provider is always InvariantCulture — by design, so the formatted output is stable across deployments and threads rather than shifting with the ambient culture (the same reason every generated Parse/ToString is invariant). Only valid when the destination member is string and the source is IFormattable, and not combinable with Use; otherwise DWARF073. |
 | `Target` | `String` | — | Name of the destination member to assign. |
-| `TypeId` | `Object` | — |  |
 | `Use` | `String` | — | Optional name of a conversion method declared in the mapper class used to transform the source value into the destination type. The method must take the source member type and return the destination member type. |
 | `When` | `String` | — | Optional name of a bool-returning predicate method on the mapper that takes the source; the assignment is emitted only when it returns true (if (Predicate(src)) target.Member = …;), otherwise the destination keeps its default. An invalid predicate is DWARF050. |
 
 ### attribute `MapPropertyAttribute<TSource, TTarget>`
 
-Configures a member mapping for a specific (TSource → TTarget) pair from the class, with no partial method to attach to. This is the pair-scoped counterpart of the method-level MapPropertyAttribute: apply it next to a [GenerateMap<TSource, TTarget>] so a fully-configured mapper can be declared with no methods at all. [DwarfMapper] [GenerateMap<Place, PlaceDto>] [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))] public partial class Mappers { } // no methods; Person -> PersonDto is even mapped as a nested list element The linkage applies wherever the (TSource → TTarget) pair is mapped — a top-level [GenerateMap] pair or an auto-synthesized nested/collection-element pair — unless a declared partial method for that pair overrides it. A pair-scoped attribute that matches no mapped pair is DWARF056.
+Configures a member mapping for a specific (TSource → TTarget) pair from the class, with no partial method to attach to. This is the pair-scoped counterpart of the method-level MapPropertyAttribute: apply it next to a [GenerateMap<TSource, TTarget>] so a fully-configured mapper can be declared with no methods at all. The linkage applies wherever the (TSource → TTarget) pair is mapped — a top-level [GenerateMap] pair or an auto-synthesized nested/collection-element pair — unless a declared partial method for that pair overrides it. A pair-scoped attribute that matches no mapped pair is DWARF056.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
@@ -405,7 +348,6 @@ Configures a member mapping for a specific (TSource → TTarget) pair from the c
 | `NullSubstitute` | `Object` | — | Optional constant coalesced onto a nullable source — emitted as source ?? value. The value must be assignable to the destination type, else DWARF049 (same validation as the method-level twin). |
 | `Source` | `String` | — | Name of the source member to read from. |
 | `Target` | `String` | — | Name of the destination member to assign. |
-| `TypeId` | `Object` | — |  |
 | `Use` | `String` | — | Optional name of a conversion method on the mapper that transforms the source value into the destination type (takes the source member type, returns the destination member type). |
 | `When` | `String` | — | Optional bool-returning predicate method (takes the source) that guards the assignment. An invalid predicate is DWARF050 (same validation as the method-level twin). |
 
@@ -416,7 +358,6 @@ Assigns the named member's source reference to the destination instead of copyin
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Member` | `String` | — | Name of the destination member to share. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapToAttribute`
 
@@ -425,7 +366,6 @@ Declares that the annotated plain type maps to one or more destination types, wi
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Targets` | `Type[]` | — | The destination types this source maps to. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `MapValueAttribute`
 
@@ -434,18 +374,16 @@ Assigns a constant or computed value to a destination member that has no corresp
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Target` | `String` | — | Name of the destination member to assign. |
-| `TypeId` | `Object` | — |  |
 | `Use` | `String` | — | Name of a parameterless method on the mapper that produces the value. |
 | `Value` | `Object` | — | The constant value (when the two-argument constructor is used). |
 
 ### attribute `MapValueAttribute<TTarget>`
 
-Assigns a constant or computed value to a source-less member of from the class — the pair-scoped counterpart of the method-level MapValueAttribute. It counts the member as mapped (suppressing DWARF001), so a [GenerateMap] pair whose target has a member with no source can be completed with no partial method. A pair-scoped attribute that matches no mapped pair is DWARF056. The same value/Use validation as the method-level twin applies: a constant that is not attribute-legal/assignable to the destination is DWARF040, a Use method that is not parameterless or whose return type is not assignable is DWARF041, and an unknown target or a missing value/Use is DWARF042.
+Assigns a constant or computed value to a source-less member of TTarget from the class — the pair-scoped counterpart of the method-level MapValueAttribute. It counts the member as mapped (suppressing DWARF001), so a [GenerateMap] pair whose target has a member with no source can be completed with no partial method. A pair-scoped attribute that matches no mapped pair is DWARF056. The same value/Use validation as the method-level twin applies: a constant that is not attribute-legal/assignable to the destination is DWARF040, a Use method that is not parameterless or whose return type is not assignable is DWARF041, and an unknown target or a missing value/Use is DWARF042.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Target` | `String` | — | Name of the destination member to assign. |
-| `TypeId` | `Object` | — |  |
 | `Use` | `String` | — | Name of a parameterless method on the mapper that produces the value. |
 | `Value` | `Object` | — | The constant value (when the two-argument constructor is used). |
 
@@ -489,9 +427,7 @@ Controls how a reference cycle in the source graph is handled when None is activ
 
 Registers a hand-written mapping method into the ambient registry, so a shape the generator cannot express is still reachable through IDwarfMapper.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.ProvidesMapAttribute` |  |
+_No public settable surface._
 
 ### enum `ReferenceHandlingStrategy`
 
@@ -509,7 +445,6 @@ Forces a reinterpret blit (vectorized memmove) for an unmanaged array→array me
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Member` | `String` | — | Name of the destination array member to blit. |
-| `TypeId` | `Object` | — |  |
 
 ### enum `RequiredMappingStrategy`
 
@@ -527,39 +462,31 @@ Declares that the (TSource → TTarget) pair restates the configuration of the p
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Overrides` | `String[]` | — | Destination member names this pair deliberately configures differently from the base. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `ReverseMapAttribute`
 
 On a forward mapping method T Forward(S s), declares that a separately-declared inverse partial method S Back(T t) should inherit the inverted simple [MapProperty] renames (a rename A → B becomes B → A). Only single-member renames invert automatically; non-invertible forward configuration (Use= converters, dotted paths, NullSubstitute, When) is reported as DWARF051 so you can declare the reverse explicitly. If no inverse partial method exists, the forward method reports DWARF052.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.ReverseMapAttribute` |  |
+_No public settable surface._
 
 ### attribute `RoundTripAttribute`
 
 Marks a forward mapping method as one half of a round-trip pair. The generator finds the inverse mapping method (swapped source/destination types) and emits a VerifyRoundTrip_<method>(seed, iterations) method that fuzz-verifies backward(forward(x)) ≡ x. Requires a reference to the DwarfMapper.Testing package.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | `DwarfMapper.RoundTripAttribute` |  |
+_No public settable surface._
 
 ### attribute `UsesMapAttribute`
 
-Non-generic form of UsesMapAttribute`2.
+Non-generic form of UsesMapAttribute.
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
 | `Destination` | `Type` | — | The consumed map destination type. |
 | `Source` | `Type` | — | The consumed map source type. |
-| `TypeId` | `Object` | — |  |
 
 ### attribute `UsesMapAttribute<TSource, TDestination>`
 
-Explicitly declares that this assembly/type consumes the ambient map -> . Use when the consumption can't be auto-detected from a direct IDwarfMapper call site (e.g. the source is handled as a base type or object). The generator folds these into the DwarfRequiresMapAttribute manifest.
+Explicitly declares that this assembly/type consumes the ambient map TSource -> TDestination. Use when the consumption can't be auto-detected from a direct IDwarfMapper call site (e.g. the source is handled as a base type or object). The generator folds these into the DwarfRequiresMapAttribute manifest.
 
-| Member | Type | Default | Summary |
-|---|---|---|---|
-| `TypeId` | `Object` | — |  |
+_No public settable surface._
 

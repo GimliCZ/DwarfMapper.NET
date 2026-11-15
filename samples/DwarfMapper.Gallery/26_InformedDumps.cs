@@ -8,7 +8,7 @@
 // with expected vs. actual and the replay seed. Not two object dumps for you to eyeball.
 //
 // RoundTrip.Verify is the ad-hoc form; prefer [RoundTrip] (example 25) for the zero-boilerplate path.
-// ObjectFactory.Create<T>(seed) and Fuzzer.Generate<T>(count, seed) build seeded fixtures for your own tests.
+// ObjectFactoryV2.Create<T>(seed) and Fuzzer.Generate<T>(count, seed) build seeded fixtures for your own tests.
 
 using DwarfMapper.Testing;
 
@@ -35,6 +35,16 @@ namespace DwarfMapper.Gallery.Ex26
         [MapIgnore(nameof(Coin.Mint))] // nothing to restore it from — stated, not forgotten
         public partial Coin FromDto(CoinDto d);
     }
+
+    public static class CoinMapperTests
+    {
+        // The ad-hoc form, for a pair without [RoundTrip]: throws RoundTripException naming Coin.Mint.
+        public static void CoinRoundTrips()
+        {
+            var mapper = new Mapper();
+            RoundTrip.Verify<Coin, CoinDto>(mapper.ToDto, mapper.FromDto, seed: 7, iterations: 20);
+        }
+    }
 // </snippet>
 
     [DocExample(26,
@@ -45,11 +55,9 @@ namespace DwarfMapper.Gallery.Ex26
     {
         public static void Run()
         {
-            var mapper = new Mapper();
-
             try
             {
-                RoundTrip.Verify<Coin, CoinDto>(mapper.ToDto, mapper.FromDto, 7, 20);
+                CoinMapperTests.CoinRoundTrips();
                 Console.WriteLine("26 Informed dumps     -> UNEXPECTED: the lossy map round-tripped");
             }
             catch (RoundTripException ex)

@@ -262,7 +262,8 @@ namespace DwarfMapper
         ///     </para>
         ///     <para>
         ///         Hard cap: <c>1000</c>. Values above 1000 are silently clamped to 1000.
-        ///         Default: <c>64</c> (matching System.Text.Json / AutoMapper defaults).
+        ///         Default: <c>64</c>, System.Text.Json's default depth. AutoMapper has no default limit: its
+        ///         <c>MaxDepth</c> is opt-in.
         ///     </para>
         /// </summary>
         public int MaxDepth { get; set; } = 64;
