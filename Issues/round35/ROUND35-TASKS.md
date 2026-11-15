@@ -38,6 +38,8 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
 | T20 | **A hand-written converter, hook or factory that calls the mapper again overflows the stack** (process death) in every mode. Found by probing the 2026-11-13 AutoMapper advisories' shapes. Older than this round. | **done** - a stack check at every declared mapping method of a mapper holding user-written code, see Notes |
 | T21 | A class whose only constructor takes one parameter of its own type is refused (DWARF026). | **not a defect** - a deliberate, tested rule (`AnnotatedConstructorUnusableTests`: "COPY constructor"); see Notes |
 | T22 | **A record carrying `[DwarfMapper]` or `[GenerateMap]` is ignored without a diagnostic.** Met while testing T20. | **done** - DWARF120, see Notes |
+| T23 | **Multi-version generator, and C# 15 union mapping on the Roslyn 5.12 build** (the owner, 2026-11-14: "Prepare multiversion and if detected .net 11 enable Union mapping ... with tests"). Design: `docs/superpowers/specs/2026-11-14-multiversion-generator-union-mapping-design.md`. | **done on its own branch** (`feat/round35-t23`) - see Notes |
+| T24 | **A performance comparison of union mapping** ("After that prepare performance comparison testing"). Same design document. | **done on T23's branch** - `benchmarks/DwarfMapper.UnionBenchmarks`, results in `benchmarks/results/2026-11-14-round35-t24-union-mapping.md`; see Notes |
 
 ## Notes
 
@@ -532,3 +534,76 @@ measured result and, where code changes, a RED -> GREEN test in the same commit.
   - **For the owner:** the branch needs SDK 10.0.404 installed to build on this machine (`global.json` refuses any
     other, by design). I could not install it here (no administrator rights), so every check of this branch ran
     in containers.
+- **T23 (2026-11-14, `feat/round35-t23`, stacked on T8).** Design and plan in `docs/superpowers/`. What landed:
+  - **Two generator builds, one package.** `src/DwarfMapper.Generator.Roslyn512` compiles the 5.0 project's files
+    (minus `*.Floor.cs`) plus its own folder against Roslyn 5.12; the package carries `analyzers/dotnet/roslyn5.0/cs`
+    and `roslyn5.12/cs`, and `scripts/analyzer-selection-check.sh` proves from the packed package that 10.0.101 loads
+    the 5.0 build and 11.0.100 the 5.12 build, one each (RED on the base: the generator came from `analyzers/dotnet/cs`).
+    The golden corpus (1,021 cases) is byte-identical on the 5.12 build (`GoldenNeutralityTests`). Package size 370 ->
+    636 KB, entry by entry in `gate-checks.ps1`.
+  - **Union mapping on the 5.12 build** (C# 15 only): a declared union map, nested members, collection and dictionary
+    elements, `Nullable<T>`, update-into, span and async stream, under None, Preserve and SetNull - 17 endpoint tests,
+    13 route tests, a 105-cell matrix. Strict pairing (explicit arm > same type > one declared method), never by shape
+    or name; the empty union maps to the empty union.
+  - **Found on the way, each with RED -> GREEN:** a Roslyn 5.9+ compiler classifies a union conversion as implicit in
+    C# 14 too, so `Use=`, hooks and direct assignment could write CS9327 into a C# 14 consumer's `.g.cs` (9 of 11 gate
+    tests red on the old code); `[MapTo]` mapped union members as ordinary structs (`Pet` into `object` boxed the
+    wrapper); counting union conversions made a `Pet` hook match every `Cat` map (DWARF109); a `Pet?` member into
+    `PetDto?` was CS0037 in generated code (a bare `null` beside a union value converts to the union).
+  - **The `net11` job now builds the consumers through the 5.12 build** (`-p:DwarfGeneratorFlavor=roslyn5.12`, an
+    evaluation-time swap in `Directory.Build.targets`; 14 projects report it, the job counts them), packs and proves
+    SDK 11 loads `roslyn5.12/cs` alone, and runs `samples/DwarfMapper.Unions` from the package. Rehearsing it found two
+    things: MSBuild refuses `%(Filename)` in an item condition outside a target (MSB4190 - item functions instead), and
+    **.NET 11 adds `string.StartsWith/EndsWith/LastIndexOf(char, StringComparison)`**, so CA1307 fails a char call that
+    is clean on net10.0 - nine in Roslyn512.Tests and the fuzz schemas it links, now span forms (`MemoryExtensions` has
+    no such overloads; the reference pack's XML docs omit the new ones, reflection shows them).
+  - **Known gap, not fixed:** the 5.0 build detects a union by its `[Union]` attribute, and Roslyn does not return the
+    compiler-synthesized attribute for a union declared in source. The 5.0 build meets a source-declared union only on
+    a 5.10/5.11 preview compiler (5.12 loads the other build), where such a member is handled as a struct - for
+    `Pet` into `object`, the old silent boxing. The 5.12 build asks `IsUnion`, which is right for both.
+  - **Calls made in the owner's absence**, listed in the design document: strict pairing; empty maps to empty;
+    `[MapDerivedType]` names union arms (no new attribute); no new diagnostic ids; the package grows ~260 KB.
+- **T24 (2026-11-14).** `benchmarks/DwarfMapper.UnionBenchmarks` (net11.0, outside the solution): a three-case union and
+  the class hierarchy holding the same data, one value from a ring of 512 and a batch of 1,000, payload content from
+  `ObjectFactoryV2`; arms hand-written, a control (hand-written in the generated structure), DwarfMapper, and on the
+  hierarchy Mapperly and Mapster; a value-case union; a `dry` mode comparing every arm with the hand-written one first.
+  Measured on Linux (sdk:11.0.100, twice) and Windows (user-local SDK 11): the generated union map equals the control
+  (8.14 against 8.12 ns, 6.29 against 6.27 ns) and trails the inline switch by 4-11 %, the call per case; a union maps
+  faster than the hierarchy by hand (the hierarchy 9-25 % longer); DwarfMapper ahead of Mapperly on the hierarchy in
+  every run; Mapster about 3x; allocations identical everywhere. Recorded as a loss, not fixed: the span list fill was
+  4-7 % slower than `Add` for a union element. Before measuring, a probe of the competitors (Mapperly 4.3.1 and
+  5.0.0-next.13, Mapster 10.0.8, 10.0.14 and 10.1.0-pre04, AutoMapper 14.0.0) found none maps a union: an empty union
+  with a warning, a throw, or the first case mapped and the rest thrown after a passing configuration validation -
+  now a row in `docs/COMPARISON.md`. Found on the way: Mapster cannot `Include` into an abstract record destination
+  (fixed in its 10.1 prerelease), and the SDK 11.0.100 analyzers' CA1508 misreads a union switch statement.
+- **The NoWarn audit and net11.0-only projects (2026-11-14, found preparing T23's push).** `scripts/nowarn-audit.ps1`
+  builds every project from the repository root, under the pinned SDK 10, which cannot build the two net11.0 projects
+  (NETSDK1045, measured): every code they declare would have read as stale and failed the nightly deep-test.
+  `Get-DeclaredFrameworks` / `Get-FrameworksNewerThanSdk` (gate-checks.ps1, `NoWarnAuditFrameworkTests`) skip and name
+  them there, and the net11 job audits them (`-Framework net11.0`, failing if nothing matched). Run in full locally, the
+  audit then found two more of this branch's own: CA1861 and CA1508 in Roslyn512.Tests, copied from Generator.Tests'
+  list in c1c67c5 for the linked corpus files, fire nowhere there - removed; its three remaining codes all fire. The
+  net11 job's audit, rehearsed, found the third: CA1303 in both net11.0 projects, taken over from the Gallery's list,
+  while they print only interpolated strings - removed.
+- **Two more, from running deep-test's recipe (`housekeeping.ps1 -Nightly`) on the host before the push.**
+  - **The generator's 100.0 % line floor: 99.9 %.** Eleven lines no test reached - ten in the 5.12 build's
+    `MapperExtractor.Unions.cs` (two DWARF035 paths, a member-provider SOURCE union, a guard no caller reaches) and the
+    5.0 build's `UnionMappingAvailable`, which only a Roslyn 5.9+ compiler loading that build reaches. Closed:
+    `HasImplicitOrUnionConversion` is implemented per build (the 5.0 one IS `HasImplicitConversion`), the guard is
+    gone, `AppendDispatchTail` tests two values instead of switching over three, and nine tests on the 5.12 build. The
+    partial branches left are the base's four (measured on 98a2c3b). One measurement limit, recorded: coverage tools do
+    not combine one shared line's branch outcomes across two builds, so a shared line whose union side only the 5.12
+    build takes is covered whole on that build (its non-union side tested there too), not split.
+  - **Both generator builds in one folder.** BenchmarkDotNet's child build passes one global `OutDir` to the whole
+    graph; the package project referenced both generator builds (to pack them), both write `DwarfMapper.Generator.dll`,
+    and the last one written won: the benchmark smoke loaded the Roslyn 5.12 build under SDK 10 - CS9057. The package
+    project now references the analyzer projects only while packing (`_IsPacking`); `PackageProjectAnalyzerReferencesTests`
+    (RED on the old file) holds it. The union benchmark had the same collision, and only worked because the 5.12 build
+    happened to be written last.
+- **The sbom job, from the first dispatch (run 43673564878 on 3e357e5).** CycloneDX (6.2.0, and 6.3.1, the newest)
+  reads project files as XML, names a project by the `<AssemblyName>` written in it, and keys references by that name:
+  two project files writing `DwarfMapper.Generator` stopped it on `DwarfMapper.csproj` ("An item with the same key has
+  already been added"; reproduced in sdk:10.0.101, also with `--exclude-test-projects`). Both builds keep the name -
+  the coverage floors and Codecov merge them under it - so the 5.12 project sets it from `AssemblyIdentity.props`,
+  where CycloneDX does not read; 6.2.0 then completes on the solution (98 components). `ProjectFileAssemblyNameTests`
+  (RED on the old files) reads project files the way CycloneDX does.

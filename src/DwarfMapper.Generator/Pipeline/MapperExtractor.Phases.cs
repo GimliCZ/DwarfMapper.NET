@@ -1558,7 +1558,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // DWARF113 at the endpoint itself: `partial PetDto Map(Pet p)` would otherwise be resolved member by
             // member as an ordinary struct pair (and refused as DWARF025, which names the wrong problem).
-            if (UnionRefusal(sourceType, targetType, method.Name) is { } unionMessage)
+            if (UnionRefusal(sourceType, targetType, method.Name, ctx.SemanticModel.Compilation, false) is { } unionMessage)
             {
                 acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, methodLocation, unionMessage));
                 return;
@@ -1576,6 +1576,18 @@ namespace DwarfMapper.Generator.Pipeline
                 MapEndpointKind.CreateMap,
                 methodLocation,
                 acc.Diagnostics);
+
+            // Round 35 T23: two different C# 15 unions are a case dispatch, which only the Roslyn 5.12 build builds
+            // (UnionSupport.cs; the Roslyn 5.0 build's UnionRefusal refused the pair above).
+            if (TryHandleUnionEndpoint(new DeclaredEndpoint(method, sourceType, targetType, methodLocation, methodDiagStart),
+                    ctx,
+                    decls,
+                    policy,
+                    acc,
+                    ref classIgnoreLivenessBlinded))
+            {
+                return;
+            }
 
             // Phase 5: parameters after the source are extra named value sources, matched to destination
             // members by name (precedence: explicit > extra parameter > by-name). Pre-format their
@@ -1741,48 +1753,12 @@ namespace DwarfMapper.Generator.Pipeline
                         armParamTypes[a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)]))
                     .ToArray();
 
-                // Collect applicable hooks.
-                var derivedBefore = new List<string>();
-                foreach (var h in decls.BeforeHookDefs)
-                    if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
-                    {
-                        derivedBefore.Add(h.Name);
-                    }
-
-                var derivedAfter = new List<HookCall>();
-                foreach (var h in decls.AfterHookDefs)
-                {
-                    bool applies;
-                    bool takesSource;
-                    if (h.P1 is null)
-                    {
-                        applies = HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0);
-                        takesSource = false;
-                    }
-                    else
-                    {
-                        applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0) && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
-                        takesSource = true;
-                    }
-
-                    if (!applies)
-                    {
-                        continue;
-                    }
-
-                    var targetIsRef = h.TargetRefKind == RefKind.Ref;
-                    if (targetType.IsValueType && !targetIsRef)
-                    {
-                        continue;
-                    }
-
-                    if (RefHookTargetMismatches(targetType, h, methodLocation, acc.Diagnostics))
-                    {
-                        continue;
-                    }
-
-                    derivedAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
-                }
+                var (derivedBefore, derivedAfter) = CollectDispatchHooks(ctx.SemanticModel.Compilation,
+                    decls,
+                    sourceType,
+                    targetType,
+                    methodLocation,
+                    acc.Diagnostics);
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
@@ -3066,6 +3042,68 @@ namespace DwarfMapper.Generator.Pipeline
             return null;
         }
 
+        /// <summary>
+        ///     The hooks a dispatch method runs: every <c>[BeforeMap]</c> its source converts to, and every
+        ///     <c>[AfterMap]</c> its pair converts to. An after-hook on a value-type destination applies only by
+        ///     <c>ref</c>, and a <c>ref</c> hook must name the destination exactly (DWARF109).
+        /// </summary>
+        /// <remarks>
+        ///     Extracted from the <c>[MapDerivedType]</c> branch (round 35 T23) so that a C# 15 union dispatch runs its
+        ///     hooks by the same rule, from the same code.
+        /// </remarks>
+        private static (List<string> Before, List<HookCall> After) CollectDispatchHooks(
+            Compilation compilation,
+            MapperDeclarations decls,
+            ITypeSymbol sourceType,
+            ITypeSymbol targetType,
+            LocationInfo? methodLocation,
+            List<DiagnosticInfo> diagnostics)
+        {
+            var before = new List<string>();
+            foreach (var h in decls.BeforeHookDefs)
+                if (HasImplicitConversion(compilation, sourceType, h.ParamType))
+                {
+                    before.Add(h.Name);
+                }
+
+            var after = new List<HookCall>();
+            foreach (var h in decls.AfterHookDefs)
+            {
+                bool applies;
+                bool takesSource;
+                if (h.P1 is null)
+                {
+                    applies = HasImplicitConversion(compilation, targetType, h.P0);
+                    takesSource = false;
+                }
+                else
+                {
+                    applies = HasImplicitConversion(compilation, sourceType, h.P0) && HasImplicitConversion(compilation, targetType, h.P1);
+                    takesSource = true;
+                }
+
+                if (!applies)
+                {
+                    continue;
+                }
+
+                var targetIsRef = h.TargetRefKind == RefKind.Ref;
+                if (targetType.IsValueType && !targetIsRef)
+                {
+                    continue;
+                }
+
+                if (RefHookTargetMismatches(targetType, h, methodLocation, diagnostics))
+                {
+                    continue;
+                }
+
+                after.Add(new HookCall(h.Name, takesSource, targetIsRef));
+            }
+
+            return (before, after);
+        }
+
         // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──
         // Maps element-wise into a caller-provided destination buffer (no allocation). The
         // destination must be a writable Span<D>; a too-small destination throws (never silent
@@ -3865,7 +3903,16 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 ct.ThrowIfCancellationRequested();
 
-                var (nestedSrc, nestedTgt, nestedName, pairAutoNest, nestedOrigin) = acc.NestedRegistry.Dequeue();
+                var pending = acc.NestedRegistry.Dequeue();
+
+                // Round 35 T23: two different C# 15 unions are a case dispatch, which only the Roslyn 5.12 build builds
+                // (UnionSupport.cs). Before anything below reads the pair as an object to construct.
+                if (TryBuildUnionHelper(pending, ctx, decls, policy, acc, pendingNestedModels))
+                {
+                    continue;
+                }
+
+                var (nestedSrc, nestedTgt, nestedName, pairAutoNest, nestedOrigin) = pending;
 
                 // Pair-scoped member config for this acc.Synthesized pair (empty when none declared on the class), so a
                 // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.

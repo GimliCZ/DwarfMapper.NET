@@ -7,7 +7,8 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**11.2 % of `src/` is inside any leg's `mutate` globs** — 4,837 of 43,028 lines.
+**11.8 % of `src/` is inside any leg's `mutate` globs** — 5,738 of 48,817 lines (the table's `all` row, re-measured
+2026-11-14).
 
 > **Corrected 2026-09-07.** This line said 12.0 % while the table below said 11.5 %, and the two are
 > the same measurement — the headline simply stopped being updated when the table was re-measured
@@ -28,13 +29,23 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 80 | 7 | 38,100 | 2,620 | **6.9 %** | 95.7 % |
+| `DwarfMapper.Generator` | 83 | 7 | 39,287 | 2,643 | **6.7 %** | 95.7 % |
+| `DwarfMapper.Generator.Roslyn512` | 2 | **0** | 575 | 0 | **0 %** | — |
 | `DwarfMapper` (runtime) | 47 | 8 | 4,047 | 1,307 | **32.3 %** | 73.9 %† |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,216 | 682 | **56.1 %** | 97.4 % |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,219 | 685 | **56.2 %** | 97.4 % |
 | `DwarfMapper.CodeFixes` | 5 | 4 | 1,359 | 716 | **52.7 %** | 96.8 % |
-| `DwarfMapper.Testing` | 9 | 5 | 2,280 | 387 | **17.0 %** | 96.4 % |
+| `DwarfMapper.Testing` | 9 | 5 | 2,279 | 387 | **17.0 %** | 96.4 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **153** | **29** | **47,053** | **5,712** | **12.1 %** | |
+| **all** | **158** | **29** | **48,817** | **5,738** | **11.8 %** | |
+
+Re-measured 2026-11-14 (round 35 T23, the multi-version generator): the generator gains `Pipeline/UnionSupport.cs`,
+`Pipeline/UnionSupport.Floor.cs` and `Model/UnionEmptyArm.cs` (files 80 -> 83), outside every `mutate` glob like the
+extractor partials and models beside them.
+The new row, `DwarfMapper.Generator.Roslyn512`, counts the files only the Roslyn 5.12 build compiles - the union
+support - which no leg targets: that project has no Stryker config, and its focused pass and the gap it leaves are
+recorded in T23's note in `Issues/round35/ROUND35-TASKS.md`. Every line column was re-measured with the file counts
+(the generator's and DocTooling's had not moved with their growth since round 32; the scan checks files and shares,
+not lines).
 
 Re-measured 2026-10-27 (round 34): `DwarfMapper.Testing` grew by its record-and-report of type-load failures
 (`ObjectFactoryV2`, outside every `mutate` glob) and shrank by fourteen null checks that became

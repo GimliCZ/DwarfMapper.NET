@@ -253,6 +253,11 @@ namespace DwarfMapper.Generator.Model
     ///     converter, a hook or a factory the user wrote can call a mapping method again, and that loop the generator
     ///     never sees.
     /// </param>
+    /// <param name="UnionEmpty">
+    ///     For a dispatch (<see cref="DerivedTypeArms" /> non-empty): <see cref="UnionEmptyArm.NotUnion" /> for a
+    ///     <c>[MapDerivedType]</c> dispatch over a class hierarchy, otherwise how a C# 15 union dispatch ends after its
+    ///     case arms (round 35 T23; built by the Roslyn 5.12 build only).
+    /// </param>
     public sealed record MapMethodModel(
         string MethodName,
         string Accessibility,
@@ -300,7 +305,8 @@ namespace DwarfMapper.Generator.Model
         string ProjectionSourceElementFullName = "",
         string? ProjectionExpressionName = null,
         bool SpanMapWidens = false,
-        bool ChecksStack = false) : IEquatable<MapMethodModel>
+        bool ChecksStack = false,
+        UnionEmptyArm UnionEmpty = UnionEmptyArm.NotUnion) : IEquatable<MapMethodModel>
     {
         /// <summary><see cref="MethodName" /> as it must be written into emitted C#.</summary>
         /// <remarks>

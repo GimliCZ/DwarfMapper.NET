@@ -910,7 +910,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // ── DWARF113: a union on either side of a differing pair, before any path treats it as a struct ──
-            if (UnionRefusal(srcType, tgtType, targetMemberName) is { } unionMessage)
+            if (UnionRefusal(srcType, tgtType, targetMemberName, req.Compilation, true) is { } unionMessage)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnionTypeNotMapped, req.Location, unionMessage));
                 return null;

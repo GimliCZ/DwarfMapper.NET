@@ -73,4 +73,23 @@
         <RuntimeHostConfigurationOption Include="System.Runtime.TieredCompilation.CallCountingDelayMs" Value="0"/>
     </ItemGroup>
 
+    <!-- Round 35 T23: -p:DwarfGeneratorFlavor=roslyn5.12 points every ANALYZER reference to the generator at its Roslyn
+         5.12 build instead of its Roslyn 5.0 build. A consumer of the package on the .NET 11 SDK gets that build - the
+         SDK picks it from analyzers/dotnet/roslyn5.12/cs - while the projects here reference the generator project
+         directly; the net11 job sets this so that the samples and consumer tests it builds under SDK 11 run through
+         the build those consumers would run. References to the generator as a plain assembly (the test projects that
+         drive it in process) are left alone. Each project that swapped says so, which the job counts.
+         Item functions, not a metadata condition: outside a target MSBuild refuses %(Filename) in a condition (MSB4190),
+         and a swap inside a target would come after restore, which would then restore the old reference. The transform
+         keeps the reference's own metadata. -->
+    <ItemGroup Condition="'$(DwarfGeneratorFlavor)' == 'roslyn5.12'">
+        <_DwarfGeneratorAnalyzerReference Include="@(ProjectReference->WithMetadataValue('Filename', 'DwarfMapper.Generator')->WithMetadataValue('OutputItemType', 'Analyzer'))"/>
+        <ProjectReference Remove="@(_DwarfGeneratorAnalyzerReference)"/>
+        <ProjectReference Include="@(_DwarfGeneratorAnalyzerReference->'$(MSBuildThisFileDirectory)src/DwarfMapper.Generator.Roslyn512/DwarfMapper.Generator.Roslyn512.csproj')"/>
+    </ItemGroup>
+    <Target Name="DwarfReportGeneratorFlavor" BeforeTargets="CoreCompile"
+            Condition="'$(DwarfGeneratorFlavor)' == 'roslyn5.12' and '@(_DwarfGeneratorAnalyzerReference)' != ''">
+        <Message Importance="high" Text="DWARF-GENERATOR-FLAVOR roslyn5.12: $(MSBuildProjectName)"/>
+    </Target>
+
 </Project>

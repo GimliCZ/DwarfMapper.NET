@@ -1,0 +1,16 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project>
+    <!--
+      The Roslyn 5.12 build's assembly name, the 5.0 build's on purpose (see the project file), set HERE rather than in
+      the project file. CycloneDX - the sbom job's tool - reads a project file as XML, names the project by the
+      <AssemblyName> written under /Project/PropertyGroup, and keys a project's references by that name without reading
+      imports or conditions; two project files that both write DwarfMapper.Generator stopped it with "An item with the
+      same key has already been added" (6.2.0 and 6.3.1, 2026-11-15). Read from here, MSBuild still builds
+      DwarfMapper.Generator.dll - which the coverage floors and Codecov merge with the 5.0 build's - and CycloneDX names
+      the project by its file, DwarfMapper.Generator.Roslyn512, and completes (6.2.0: 98 components).
+      ProjectFileAssemblyNameTests holds it.
+    -->
+    <PropertyGroup>
+        <AssemblyName>DwarfMapper.Generator</AssemblyName>
+    </PropertyGroup>
+</Project>

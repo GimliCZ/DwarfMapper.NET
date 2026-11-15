@@ -34,6 +34,9 @@ per-library guide assumes you've skimmed it.
 **3. Care about deployment, AOT, trimming, package size, or the GPL obligation?**
 Read [deploy-and-optimize.md](deploy-and-optimize.md) — the deployment-and-efficiency guide.
 
+**4. Mapping C# 15 unions (.NET 11)?** Read [map-unions.md](map-unions.md) — one union into another case by case,
+unions inside other types, the empty union, and what is refused.
+
 ---
 
 ## The five-minute version

@@ -117,8 +117,8 @@ DWARF109 | DwarfMapper | Error | [AfterMap] by-ref target type does not exactly 
 DWARF110 | DwarfMapper | Info | Mapper nested out of reach is left out of the generated extensions, DI registration and ambient registry
 DWARF111 | DwarfMapper | Warning | [ProvidesMap] method is not registered because its pair is already provided
 DWARF112 | DwarfMapper | Info | Projection expression property was not generated
-DWARF113 | DwarfMapper | Error | Union types are not mapped yet
-DWARF114 | DwarfMapper | Error | A closed hierarchy has a direct descendant with no [MapDerivedType] arm
+DWARF113 | DwarfMapper | Error | A union type cannot be mapped here
+DWARF114 | DwarfMapper | Error | A closed set of types has a member with no [MapDerivedType] arm
 DWARF115 | DwarfMapper | Warning | EF Core cannot precompile a query built by a projection method
 DWARF116 | DwarfMapper | Warning | A statement of intent matches nothing
 DWARF117 | DwarfMapper | Error | A scalar map cannot be generated as declared

@@ -1513,9 +1513,64 @@ function Invoke-DecontaminatedMutationLeg {
 #
 # Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (371 KB = 379,904 B) 886 B,
 # DwarfMapper.Testing (58 KB = 59,392 B) 794 B.
+#
+# RE-MEASURED 2026-11-14 (round 35 T23, the multi-version generator): DwarfMapper 370 -> 624, DwarfMapper.Testing 57.
+#
+# The owner asked for it (2026-11-14, "Prepare multiversion and if detected .net 11 enable Union mapping"): the
+# package now carries the generator TWICE, built against Roslyn 5.0 and against Roslyn 5.12, in
+# analyzers/dotnet/roslyn5.0/cs and analyzers/dotnet/roslyn5.12/cs, and the SDK loads one of the two
+# (scripts/analyzer-selection-check.sh proves which). The second build is the whole of the growth.
+#
+#   sdk:10.0.101 container, base 811d735 against the branch, entry by entry, compressed bytes:
+#     analyzers/dotnet/cs/DwarfMapper.Generator.dll         260,020 -> moved, byte-identical, to roslyn5.0/cs
+#     analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll       +259,973   the Roslyn 5.12 build
+#     the rest (CodeFixes, lib dll, zip entropy)                            +9
+#   package-size job rehearsed on the branch: DwarfMapper 639,207 B (floor 624), Testing 58,599 B (floor 57).
+#
+# Intended content; nothing started shipping that should not. Each later generator change now lands TWICE in this
+# number, once per build.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (625 KB = 640,000 B) 793 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 793 B.
+#
+# RE-MEASURED 2026-11-14 (round 35 T23, union mapping and its docs): DwarfMapper 624 -> 636, DwarfMapper.Testing 57.
+#
+#   sdk:10.0.101 container, 14f8e2d (the two-folder package) against the branch, entry by entry, compressed bytes:
+#     analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll   +8,987   union mapping: the endpoint and nested
+#                                                                         dispatch, pairing, DWARF113/114/035 texts
+#     analyzers/dotnet/roslyn5.0/cs/DwarfMapper.Generator.dll    +3,003   the shared half: the seam, the conversion
+#                                                                         gate, the [MapTo] refusal, the typed lift
+#     README.md                                                    +494   the C# 15 unions section (both packages)
+#     the rest (nuspec, CodeFixes, lib dll)                         +10
+#   package-size job rehearsed on the branch: DwarfMapper 651,693 B (floor 636), Testing 59,092 B (floor 57).
+#
+# Intended content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (637 KB = 652,288 B) 595 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 300 B.
+#
+# RE-MEASURED 2026-11-15 (round 35, T6 merged into T23): DwarfMapper 636 -> 637, DwarfMapper.Testing 57.
+#
+# PR #16 (T6, the span map's Vector.Widen loop) landed on feat/round35-t8 and was merged into this branch. On its own
+# branch it cost the one-build package 590 B and fit; here its generator code lands twice, once per build.
+#
+#   sdk:10.0.101 container, 72d85a1 (this branch before the merge) against the merge, entry by entry, compressed bytes:
+#     analyzers/dotnet/roslyn5.0/cs/DwarfMapper.Generator.dll    +449   the widen loop: SpanMapWidens, the decision
+#                                                                       and the emitted loop
+#     analyzers/dotnet/roslyn5.12/cs/DwarfMapper.Generator.dll   +413   the same code in the Roslyn 5.12 build
+#     README.md                                                    +57   the span-map sentence on the seven widenings
+#                                                                       (both packages)
+#     the rest (CodeFixes, lib dll, .rels)                          -2
+#   CI measured 72d85a1 at DwarfMapper 651,572 B and Testing 59,111 B (run 43688254637); the container read 17 B under
+#   both (651,555 / 59,094), so the merge stands at about 652,489 B and 59,162 B on the runner.
+#
+# Intended content; nothing started shipping that should not.
+#
+# Headroom to the first red byte on ubuntu, where the gate runs: DwarfMapper (638 KB = 653,312 B) 823 B,
+# DwarfMapper.Testing (58 KB = 59,392 B) 230 B.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 370
+    'DwarfMapper'         = 637
     'DwarfMapper.Testing' = 57
 }
 
@@ -1752,6 +1807,36 @@ function Get-OwnWarningCodes {
     @([regex]::Matches($BuildOutput, "(?im)\bwarning\s+([A-Z]+[0-9]+):[^\r\n]*\[$mine\]\s*$") |
         ForEach-Object { $_.Groups[1].Value.ToUpperInvariant() } |
         Select-Object -Unique)
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The target frameworks a project file declares (TargetFramework and TargetFrameworks, split on ';'), and the
+# ones among them that an SDK of major version -SdkMajor cannot build, for scripts/nowarn-audit.ps1 (round 35
+# T23). The audit builds every project from the repository root, where global.json pins the SDK; a net11.0
+# project there (samples/DwarfMapper.Unions, benchmarks/DwarfMapper.UnionBenchmarks) fails with NETSDK1045
+# before a single analyzer runs, so every code it declares would read as stale and fail the audit for a reason
+# that has nothing to do with suppressions. The audit skips such a project and the net11 job audits it, with an
+# SDK that builds it. Only a netN.M name can be newer: netstandard2.0, net48 or an inherited (empty) framework
+# never is.
+function Get-DeclaredFrameworks {
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $ProjectText)
+
+    $xml = [xml]$ProjectText
+    @($xml.SelectNodes('//*[local-name()="TargetFramework" or local-name()="TargetFrameworks"]') |
+        ForEach-Object { $_.InnerText -split ';' } |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ } |
+        Select-Object -Unique)
+}
+
+function Get-FrameworksNewerThanSdk {
+    param(
+        # AllowNull as well: a function that returns no frameworks hands its caller $null, not an empty array.
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [string[]] $Frameworks,
+        [Parameter(Mandatory)] [int] $SdkMajor
+    )
+
+    @($Frameworks | Where-Object { $_ -match '^net(\d+)\.\d+$' -and [int]$Matches[1] -gt $SdkMajor })
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────

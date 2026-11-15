@@ -1,0 +1,48 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+      Round 35 T23: C# 15 union mapping, as runnable examples. They need the .NET 11 SDK (C# 15, and the Roslyn 5.12
+      compiler that loads the generator build which maps unions), so this project is NOT in DwarfMapper.NET.sln - the
+      solution builds on the pinned .NET 10 SDK. Run it from this folder, where global.json selects SDK 11:
+
+          cd samples/DwarfMapper.Unions
+          dotnet run
+
+      Two ways to reference DwarfMapper:
+        * by default, the projects in src/ - the attributes, and the generator's Roslyn 5.12 build as an analyzer;
+        * with -p:UsePackedDwarfMapper=true -p:DwarfMapperPackageVersion=<v> -p:DwarfMapperPackageSource=<dir>, the
+          PACKED package, the way a consumer gets it. The net11 job runs it that way: the SDK then picks the generator
+          build from the package's Roslyn-versioned analyzer folders itself, and the examples check their own results.
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net11.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- Built only by SDK 11, in two reference modes, so no lock file: one would hold one mode's graph. -->
+        <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+        <!-- The package mode references the one package under test, at the version it was packed with. -->
+        <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+        <!-- An examples program, as the Gallery: CA1515 for the public types a consumer's DTOs are, CA2227/CA1002 for
+             the settable List<T> members such DTOs have, and CA1815 because a C# 15 union declaration is a struct, which
+             that rule asks for Equals and operators. -->
+        <NoWarn>$(NoWarn);CA1515;CA2227;CA1002;CA1815</NoWarn>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(UsePackedDwarfMapper)' != 'true'">
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator.Roslyn512\DwarfMapper.Generator.Roslyn512.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
+    </ItemGroup>
+    <!-- The pack directory ALONE, into a package folder of this project's own: nuget.org carries a published DwarfMapper
+         of the same version, and a restore that may choose it - or reuse it from the global package folder, which is
+         keyed by id and version only - would test that package instead (measured, both ways: its generator predates
+         this one). With a local folder as the only source there is no vulnerability data to audit against, hence
+         NuGetAudit off for this mode only. -->
+    <PropertyGroup Condition="'$(UsePackedDwarfMapper)' == 'true'">
+        <RestoreSources>$(DwarfMapperPackageSource)</RestoreSources>
+        <RestorePackagesPath>$(MSBuildProjectDirectory)/obj/package-mode-packages</RestorePackagesPath>
+        <NuGetAudit>false</NuGetAudit>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(UsePackedDwarfMapper)' == 'true'">
+        <PackageReference Include="DwarfMapper" Version="$(DwarfMapperPackageVersion)"/>
+    </ItemGroup>
+</Project>

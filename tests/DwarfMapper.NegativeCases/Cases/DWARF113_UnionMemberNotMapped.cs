@@ -9,7 +9,11 @@
 // EXPECT-MESSAGE DWARF113: 'Pet' maps 'Demo.Pet' to 'Demo.PetDto'
 // EXPECT-MESSAGE DWARF113: is a C# 15 union type
 // EXPECT-MESSAGE DWARF113: Convert it yourself with [MapProperty(Use = nameof(...))]
+// EXPECT-MESSAGE DWARF113: Mapping a union needs a C# 15 compiler
 // EXPECT-CS: CS8795
+// NOTE: round 35 T23. This project runs the generator's Roslyn 5.0 build, which maps no union and says that a C# 15
+//       compiler loads the build that does; the Roslyn 5.12 build's own messages are pinned in
+//       tests/DwarfMapper.Generator.Roslyn512.Tests, since no case here can reach that build.
 // NOTE: DWARF078 and CS8795 are the documented refusal cascade: an Error here means the mapper is not generated.
 
 #nullable enable

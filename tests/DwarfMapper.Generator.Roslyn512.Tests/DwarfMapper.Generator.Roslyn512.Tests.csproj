@@ -1,0 +1,56 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+      Round 35 T23: the tests of the generator's ROSLYN 5.12 build (src/DwarfMapper.Generator.Roslyn512).
+
+      Every other test project references the Roslyn 5.0 build and runs Roslyn 5.0.0 in process, so nothing there can
+      parse C# 15 or reach a file only the 5.12 build compiles. This project runs Roslyn 5.12 in process against the 5.12
+      build. Two kinds of test live here: what only the 5.12 build does (union mapping), and the proof that on everything
+      else it emits exactly what the 5.0 build emits (the golden corpus, linked below, against the committed manifest).
+
+      net10.0 like the rest of the suite. The net10 BCL has no UnionAttribute or IUnion, so the harness declares them in
+      the test source when, and only when, the running runtime lacks them (the net11 job runs this suite on .NET 11).
+    -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- CA1707: test methods use underscores. CA1515: xunit needs the test classes public. CA5394 is Generator.Tests'
+             own exemption, for the corpus files linked below: SyntheticSchema draws from a SEEDED Random so that the
+             corpus is fixed (no security in it). -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA5394</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="JunitXml.TestLogger"/>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="5.12.0"/>
+        <!-- The golden compilations offer the DI abstractions, as Generator.Tests' harness does: the generator emits
+             AddDwarfMappers only when IServiceCollection is in reach, so the reference set is part of the output. -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator.Roslyn512\DwarfMapper.Generator.Roslyn512.csproj"/>
+    </ItemGroup>
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
+    <!-- The golden corpus and its fingerprint, LINKED rather than copied: a corpus case added there is a row here. The
+         one piece not linked is the runner, which in Generator.Tests compiles through that project's harness; this
+         project's GeneratorRunner builds the same compilation with Roslyn 5.12. -->
+    <ItemGroup>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Framework\GoldenCase.cs" Link="Linked\GoldenCase.cs"/>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Framework\GoldenCorpus.cs" Link="Linked\GoldenCorpus.cs"/>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Framework\GoldenFingerprint.cs" Link="Linked\GoldenFingerprint.cs"/>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Framework\GeneratorRegistry.cs" Link="Linked\GeneratorRegistry.cs"/>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Framework\GeneratorRun.cs" Link="Linked\GeneratorRun.cs"/>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Fuzzing\CombinatorialSchema.cs" Link="Linked\CombinatorialSchema.cs"/>
+        <Compile Include="..\DwarfMapper.Generator.Tests\Fuzzing\SyntheticSchema.cs" Link="Linked\SyntheticSchema.cs"/>
+    </ItemGroup>
+</Project>

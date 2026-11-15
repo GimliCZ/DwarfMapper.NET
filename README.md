@@ -778,6 +778,31 @@ public partial class Mapper
   way (the re-entrant element/value becomes `null`). Setting `OnCycle = SetNull` together with `Preserve` reports
   `DWARF037` (Preserve reconstructs cycles, so `OnCycle` has no effect).
 
+### C# 15 unions
+
+With the .NET 11 SDK, one union maps into another case by case — a `switch` over the source union's case types,
+each case paired with a target case by an explicit arm, by the same type, or by the one declared method that maps it
+(never by member names):
+
+<!-- snippet: union-map -->
+```csharp
+[DwarfMapper]
+public partial class PetMapper
+{
+    public partial PetDto ToDto(Pet pet); // a switch over Pet's cases
+
+    public partial CatDto ToDto(Cat cat); // pairs the Cat case with CatDto
+
+    public partial DogDto ToDto(Dog dog); // pairs the Dog case with DogDto
+}
+```
+<!-- endsnippet -->
+
+Union members, collections of unions, `Nullable<T>` unions and the empty union are covered in
+[Map C# 15 unions](docs/howto/map-unions.md); the runnable examples are in
+[`samples/DwarfMapper.Unions`](samples/DwarfMapper.Unions). An older compiler refuses every union pair with
+`DWARF113`, naming what is missing.
+
 ---
 
 ## Resilience: the headline feature
@@ -982,13 +1007,14 @@ DwarfMapper ships one **`net10.0`** assembly, which a `net10.0` **or later** pro
 in CI (job `net11`); net8/net9 projects cannot reference it. The one exception is the generator/code-fix assemblies
 (see note below).
 
-**Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+).** The generator is built against
-`Microsoft.CodeAnalysis` 5.0.0 and Roslyn refuses to load an analyzer compiled against a *newer* compiler than
-the host (`CS9057`), so an older SDK cannot run it. Any 10.0.x SDK works, and so does 11.0.100 (the SDK the
-`net11` CI job pins) — the floor is the .NET 10 line itself, not a specific patch, and the CI job
-`toolchain-floor` builds and tests the solution on the newest 10.0.1xx SDK to hold it. (The repo's own
-`global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte; it is not a
-requirement on consumers.)
+**Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+).** Roslyn refuses to load an analyzer compiled
+against a *newer* compiler than the host (`CS9057`), so the package carries the generator twice: built against
+`Microsoft.CodeAnalysis` 5.0.0 in `analyzers/dotnet/roslyn5.0/cs`, which every .NET 10 SDK loads, and against 5.12
+in `analyzers/dotnet/roslyn5.12/cs`, which the .NET 11 SDK loads instead — the build that maps C# 15 unions. The SDK
+picks exactly one; CI proves which from the packed package on each SDK. The floor is the .NET 10 line itself, not a
+specific patch, and the CI job `toolchain-floor` builds and tests the solution on the newest 10.0.1xx SDK to hold
+it. (The repo's own `global.json` pins one exact patch, but that is about reproducing *this* build byte-for-byte;
+it is not a requirement on consumers.)
 
 | Reference                                                   | Purpose                                                                                                                                                                                                                                                                                                                          | TFM       |
 |-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
@@ -1016,13 +1042,15 @@ stored key) — see [`docs/RELEASING.md`](docs/RELEASING.md) to verify.
 DwarfMapper.NET.sln
 src/
   DwarfMapper/               # attributes + abstractions
-  DwarfMapper.Generator/     # incremental source generator + analyzers
+  DwarfMapper.Generator/     # incremental source generator + analyzers (built against Roslyn 5.0)
+  DwarfMapper.Generator.Roslyn512/ # the same generator built against Roslyn 5.12, plus its union support
   DwarfMapper.CodeFixes/     # IDE code fixes, bundled in the package's analyzer slot
   DwarfMapper.DocTooling/    # renders the doc snippets, option tables + generated references
   DwarfMapper.Testing/       # fixtures, fuzzers, round-trip, informed dumps
   Shared/                    # DwarfLimits.cs — recursion bounds compiled into runtime and generator
 tests/
   DwarfMapper.Generator.Tests/   # generator snapshot + behavior tests
+  DwarfMapper.Generator.Roslyn512.Tests/ # the Roslyn 5.12 build: union mapping, and the golden corpus byte-identical
   DwarfMapper.IntegrationTests/  # end-to-end mapping integration tests
   DwarfMapper.Testing.Tests/     # DwarfMapper.Testing library unit tests
   DwarfMapper.CorpusTests/       # real-world mapping parity corpus
@@ -1040,6 +1068,7 @@ samples/
   DwarfMapper.AotBench/      # NativeAOT benchmarking & stability harness
   DwarfMapper.Gallery/       # runnable simple→advanced mapping examples
   DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (78 asserts)
+  DwarfMapper.Unions/        # C# 15 union mapping, runnable (needs the .NET 11 SDK; not in the solution)
 docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
 README.md
 ```

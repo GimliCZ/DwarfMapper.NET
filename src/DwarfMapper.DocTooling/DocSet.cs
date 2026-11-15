@@ -28,6 +28,8 @@ namespace DwarfMapper.DocTooling
             "docs/howto/ambient-cross-assembly-maps.md",
             "docs/howto/common-changes.md",
             "docs/howto/deploy-and-optimize.md",
+            // Round 35 T23: quotes every region of samples/DwarfMapper.Unions, the net11-only examples.
+            "docs/howto/map-unions.md",
             "docs/howto/migrate-from-automapper.md",
             "docs/howto/migrate-from-handwritten.md",
             "docs/howto/migrate-from-mapperly.md",

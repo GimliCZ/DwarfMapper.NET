@@ -1,0 +1,57 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+      Round 35 T23: the SAME generator, compiled against Roslyn 5.12 instead of 5.0.
+
+      A generator only loads in a compiler at least as new as the Roslyn it was built against (CS9057), so the
+      generator in ../DwarfMapper.Generator stays on Roslyn 5.0.0 - the floor README promises (SDK 10.0.100). The
+      compiler's own facts about C# 15 unions (ITypeSymbol.IsUnion, UnionCaseTypes) exist only from Roslyn 5.12. The
+      package therefore carries both builds, in analyzers/dotnet/roslyn5.0/cs and analyzers/dotnet/roslyn5.12/cs, and
+      the SDK loads exactly one: the highest folder not above the compiler's CompilerApiVersion (see
+      scripts/analyzer-selection-check.sh, which proves it from the packed package).
+
+      One source tree. This project compiles every file of ../DwarfMapper.Generator except *.Floor.cs (the parts only
+      the Roslyn 5.0 build has), plus the files in this folder (the parts only this build has). The seam is files, not
+      #if: shared code calls a small surface that each build implements once. ROSLYN5_12_OR_GREATER is defined for a
+      reader's benefit and is not used by any #if.
+
+      Same assembly name as the 5.0 build, on purpose: a consumer sees one generator, called DwarfMapper.Generator,
+      whichever folder it came from (the System.Text.Json and Microsoft.Extensions.Logging generators ship their
+      Roslyn-versioned builds the same way). It is set in AssemblyIdentity.props, which says why not here.
+    -->
+    <Import Project="AssemblyIdentity.props"/>
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <RootNamespace>DwarfMapper.Generator</RootNamespace>
+        <DefineConstants>$(DefineConstants);ROSLYN5_12_OR_GREATER</DefineConstants>
+        <!-- Restore-graph metadata only, as in ../DwarfMapper.Generator: DwarfMapper.csproj references this project,
+             so it sits in the AOT samples' P2P closure and its packages.lock.json needs both RID graphs (NU1004). -->
+        <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+        <IsRoslynComponent>true</IsRoslynComponent>
+        <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <DevelopmentDependency>true</DevelopmentDependency>
+        <IsPackable>false</IsPackable>
+        <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+        <Description>DwarfMapper's source generator built against Roslyn 5.12, for C# 15 compilers. Ships bundled inside the DwarfMapper package beside the Roslyn 5.0 build; the SDK loads one of the two.</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Include="..\DwarfMapper.Generator\**\*.cs"
+                 Exclude="..\DwarfMapper.Generator\bin\**;..\DwarfMapper.Generator\obj\**;..\DwarfMapper.Generator\**\*.Floor.cs"/>
+        <Compile Include="**\*.cs" Exclude="bin\**;obj\**"/>
+        <Compile Include="..\Shared\DwarfLimits.cs" Link="Shared\DwarfLimits.cs"/>
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="5.12.0" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+    <ItemGroup>
+        <AdditionalFiles Include="..\DwarfMapper.Generator\AnalyzerReleases.Shipped.md" Link="AnalyzerReleases.Shipped.md"/>
+        <AdditionalFiles Include="..\DwarfMapper.Generator\AnalyzerReleases.Unshipped.md" Link="AnalyzerReleases.Unshipped.md"/>
+        <AdditionalFiles Include="..\DwarfMapper.Generator\BannedSymbols.txt" Link="BannedSymbols.txt"/>
+    </ItemGroup>
+</Project>

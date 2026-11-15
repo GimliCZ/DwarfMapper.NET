@@ -1149,6 +1149,13 @@ jobs:
         run: |
           . ./scripts/gate-checks.ps1
           Assert-PackageSizeWithinCeiling -PackageDir "$env:RUNNER_TEMP/pack"
+      # Round 35 T23: the package carries the generator twice (analyzers/dotnet/roslyn5.0/cs and roslyn5.12/cs) and
+      # the SDK must load exactly one. No other job consumes the PACKAGE - every project here references the
+      # generator directly - so this restores a throwaway consumer from the pack just made, with the pinned SDK
+      # (10.0.404, whose Roslyn 5.9 is above 5.0 and below 5.12), and requires the roslyn5.0 build, alone, to load and
+      # map. The net11 job asks the same of SDK 11.
+      - name: The pinned SDK loads the Roslyn 5.0 build of the generator, and only that one
+        run: bash scripts/analyzer-selection-check.sh "$RUNNER_TEMP/pack" roslyn5.0
       # Kept on failure only: a ceiling red is a claim about a specific package's bytes, and diagnosing it
       # means opening that package and finding what started shipping.
       - if: failure()
@@ -1406,6 +1413,12 @@ jobs:
         run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
       - name: The suite, rolled forward to the newest runtime
         run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=Perf" --blame-hang --blame-hang-timeout 5m
+      # Round 35 T23: the NoWarn audit for the projects that target net11.0 themselves (samples/DwarfMapper.Unions,
+      # benchmarks/DwarfMapper.UnionBenchmarks). The nightly audit (deep-test, housekeeping -Nightly) runs on the
+      # pinned SDK 10, which cannot build them, so it skips and names them; this SDK can. Before the retargeting
+      # below, so it audits exactly those projects; the script fails if none matched.
+      - name: NoWarn audit of the net11.0 projects
+        run: pwsh scripts/nowarn-audit.ps1 -FailOnStale -Framework net11.0
       - name: Retarget the consumers to net11.0
         run: |
           set -euo pipefail
@@ -1418,10 +1431,20 @@ jobs:
             n=$((n + 1))
           done
           echo "retargeted $n projects"
-          # The vacuity guard: the samples and consumer test projects are fourteen today.
-          [ "$n" -ge 14 ] || { echo "::error::only $n projects retargeted - the consumer shape was not built"; exit 1; }
-      - name: Build the consumers as net11.0, warnings as errors
-        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+          # The vacuity guard: the samples and consumer test projects are sixteen today (round 35 T23 added
+          # tests/DwarfMapper.Generator.Roslyn512.Tests and samples/DwarfMapper.Unions, which is net11.0 already).
+          [ "$n" -ge 16 ] || { echo "::error::only $n projects retargeted - the consumer shape was not built"; exit 1; }
+      # Round 35 T23: through the generator's ROSLYN 5.12 build. A consumer of the package on this SDK gets that build
+      # (the SDK picks analyzers/dotnet/roslyn5.12/cs), while the projects here reference the generator project; the
+      # switch in Directory.Build.targets points their analyzer reference at the 5.12 build, and each one says so.
+      - name: Build the consumers as net11.0 through the Roslyn 5.12 generator build, warnings as errors
+        run: |
+          set -euo pipefail
+          dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false -p:DwarfGeneratorFlavor=roslyn5.12 | tee net11-build.log
+          swapped=$(grep -o 'DWARF-GENERATOR-FLAVOR roslyn5.12: [A-Za-z0-9.]*' net11-build.log | sort -u | wc -l)
+          echo "$swapped projects built through the Roslyn 5.12 generator build"
+          # The vacuity guard: fourteen projects use the generator as an analyzer today.
+          [ "$swapped" -ge 14 ] || { echo "::error::only $swapped projects ran the Roslyn 5.12 build"; exit 1; }
       - name: Run them as net11.0 assemblies
         run: |
           set -euo pipefail
@@ -1432,12 +1455,13 @@ jobs:
           done
           ran=$(grep -c -E '^Passed!.*\(net11\.0\)' net11-test.log || true)
           echo "$ran test assemblies passed as net11.0"
-          # Eight today (every test project but Generator.Tests). Fewer means the retargeting no longer reaches them.
-          [ "$ran" -ge 8 ] || { echo "::error::only $ran test assemblies ran as net11.0"; exit 1; }
+          # Nine today (every test project but Generator.Tests; round 35 T23 added Generator.Roslyn512.Tests). Fewer
+          # means the retargeting no longer reaches them.
+          [ "$ran" -ge 9 ] || { echo "::error::only $ran test assemblies ran as net11.0"; exit 1; }
       - name: NativeAOT as net11.0, published and executed
         run: |
           set -euo pipefail
-          dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -p:RestoreLockedMode=false -warnaserror -o aot-out
+          dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -p:RestoreLockedMode=false -p:DwarfGeneratorFlavor=roslyn5.12 -warnaserror -o aot-out
           if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
             echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT publish." >&2
             exit 1
@@ -1445,6 +1469,26 @@ jobs:
           # The compiler the restore resolved for this publish, read from its assets file.
           grep -q '"runtime.linux-x64.Microsoft.DotNet.ILCompiler/11\.' samples/DwarfMapper.AotSample/obj/project.assets.json || { echo "::error::the publish did not resolve an 11.x ILCompiler"; exit 1; }
           ./aot-out/DwarfMapper.AotSample
+      # Round 35 T23: the PACKAGE, the way a consumer gets it. scripts/analyzer-selection-check.sh restores a throwaway
+      # consumer from the pack and requires SDK 11 to load the Roslyn 5.12 build of the generator, alone; the
+      # package-size job asks the same of the pinned SDK and the Roslyn 5.0 build.
+      - name: Pack, and prove SDK 11 loads the Roslyn 5.12 build of the generator, and only that one
+        run: |
+          set -euo pipefail
+          dotnet pack src/DwarfMapper/DwarfMapper.csproj -c Release -o "$RUNNER_TEMP/pack" -p:RestoreLockedMode=false -p:EnablePackageValidation=false
+          bash scripts/analyzer-selection-check.sh "$RUNNER_TEMP/pack" roslyn5.12
+      # The union examples, from that package: they need C# 15, check their own results, and print one line each.
+      - name: The C# 15 union examples, from the packed package, executed
+        run: |
+          set -euo pipefail
+          pkg=$(find "$RUNNER_TEMP/pack" -maxdepth 1 -name 'DwarfMapper.[0-9]*.nupkg' ! -name '*.symbols.nupkg' | head -n 1)
+          version=$(basename "$pkg" .nupkg); version=${version#DwarfMapper.}
+          cd samples/DwarfMapper.Unions
+          dotnet run -c Release -p:UsePackedDwarfMapper=true -p:DwarfMapperPackageVersion="$version" -p:DwarfMapperPackageSource="$RUNNER_TEMP/pack" | tee union-sample.log
+          ok=$(grep -c '^DWARF-UNION-SAMPLE ok ' union-sample.log || true)
+          echo "$ok union examples passed"
+          # The vacuity guard: five examples today, and the program exits non-zero on a wrong value.
+          [ "$ok" -ge 5 ] || { echo "::error::only $ok union examples passed"; exit 1; }
 
   # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2)────────────────────────────
   # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
