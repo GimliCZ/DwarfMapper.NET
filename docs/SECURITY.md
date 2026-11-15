@@ -1,11 +1,17 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # Security posture & threat model
 
-DwarfMapper is a **compile-time, reflection-free** Roslyn source generator. This document records how it
-handles the security/robustness issues that have affected the runtime-reflection mappers, so we don't
-repeat them. Each row is cross-checked against a real advisory or documented pitfall of the reference
-libraries (AutoMapper / Mapperly / Mapster), studied license-safely (Mapperly/Mapster are MIT; AutoMapper
-referenced as 14.0.0 conceptually only).
+DwarfMapper is a **compile-time, reflection-free** Roslyn source generator; the optional test-only
+`DwarfMapper.Testing` package is the one exception (see [the caveat below](#caveat-dwarfmappertesting)). This
+document records how it handles the security/robustness issues that have affected the runtime-reflection mappers,
+so we don't repeat them. Each row is cross-checked against a real advisory or documented pitfall of the reference
+libraries (AutoMapper / Mapperly / Mapster), studied license-safely: Mapperly and Mapster are MIT, and AutoMapper
+14.0.0 (the last MIT release) is referenced only by three projects that are never shipped, as the comparison or the "before" side.
+
+The supported versions, how to report a vulnerability and the trust model - each guarantee with the test that
+holds it - are in the root [SECURITY.md](../SECURITY.md). The threat model the automated security scanner reads,
+with where untrusted input enters and how to rate a finding, is
+[`.oss-scanner/threat_model.md`](../.oss-scanner/threat_model.md).
 
 ## How DwarfMapper avoids the known mapper failure modes
 
@@ -16,19 +22,14 @@ referenced as 14.0.0 conceptually only).
 | **Silent numeric narrowing / overflow (data-integrity)** | C# default `unchecked` context silently wraps `long→int`, `double→int`, etc. | Every cross-width narrowing emits `T.CreateChecked(...)` → throws **`OverflowException`** (fail-loud), never a silent wrap. Lossless widening is silent; non-lossless conversions also surface `DWARF038`. Verified at runtime (overflow throws inside collections, nested members, ctor params, and dictionary values). |
 | **Culture-sensitive parsing footgun** | `Parse`/`ToString` without an `IFormatProvider` pick up ambient `CurrentCulture` — `"1.234"` parses differently under `de-DE` vs `en-US`, silently changing values per deployment/thread. | All generated `Parse`/`ToString` conversions pass **`CultureInfo.InvariantCulture`** (or a user-specified provider) — the generator emits **zero** `CurrentCulture`/`CurrentUICulture` calls. |
 | **Reflection / dynamic-code / untrusted-type instantiation** | Runtime mappers compile expression trees and walk types reflectively; mapping to `object`/`dynamic`/polymorphic destinations from untrusted input can instantiate attacker-influenced types. | The shipped generator and runtime library are **reflection-free**: generated code instantiates only statically-known destination types. No `Activator.CreateInstance`, `Type.GetType(string)`, `Expression.Compile`, or `MakeGenericType` anywhere in the production path. This eliminates the type-confusion class structurally (and keeps trim/NativeAOT safety — CI AOT gate). |
-| **Vulnerable transitive dependencies** | AutoMapper 14.0.0 carries its CVE in its own engine; supply-chain advisories generally flow through deps. | The runtime library (`DwarfMapper`) has **zero NuGet dependencies**. The generator references only Roslyn (`Microsoft.CodeAnalysis.*`) with `PrivateAssets="all"` — a build-time analyzer, never shipped to consumers. For the shipped projects, `dotnet list package --vulnerable --include-transitive` reports **no vulnerable packages**. Three projects that are never shipped (`IsPackable=false`) — the benchmarks, the differential tests and the consumer tests' clean corpus — reference AutoMapper 14.0.0 (as the comparison or the "before" side); its advisory (GHSA-rvv3-g6hj-g44x) is suppressed in those project files only, each with its reason stated. |
+| **Vulnerable transitive dependencies** | AutoMapper 14.0.0 carries its CVE in its own engine; supply-chain advisories generally flow through deps. | The runtime library (`DwarfMapper`) has **zero NuGet dependencies**. The generator references only Roslyn (`Microsoft.CodeAnalysis.*`) with `PrivateAssets="all"` — a build-time analyzer, never shipped to consumers. For the shipped projects, `dotnet list package --vulnerable --include-transitive` reports **no vulnerable packages**. Three projects that are never shipped (`IsPackable=false`) — the benchmarks, the differential tests and the consumer tests' clean corpus — reference AutoMapper 14.0.0 (as the comparison or the "before" side). Its three advisories are suppressed in those project files only, each with its reason stated: [GHSA-rvv3-g6hj-g44x](https://github.com/advisories/GHSA-rvv3-g6hj-g44x) (CVE-2026-32933, uncontrolled recursion), and [GHSA-6vhm-j9h7-f9gh](https://github.com/advisories/GHSA-6vhm-j9h7-f9gh) and [GHSA-gpwp-5797-mjff](https://github.com/advisories/GHSA-gpwp-5797-mjff), published 2026-11-13 - recursion that AutoMapper's `MaxDepth` does not stop (CVE-2026-128082, through constructor parameters and positional records; CVE-2026-128081, through derived maps, interface-typed members, dictionary sources and recursive converters), fixed only in the RPL-licensed 15.1.4 and 16.3.0. None of the three reaches a shipped package. |
 | **Trim / NativeAOT unsafety** | AutoMapper (reflection) and Mapster (runtime mode) are not cleanly trim/AOT-safe (`IL2026`/`IL3050`). | Reflection-free generated code is trim- and AOT-safe; a `DwarfMapper.AotSample` + CI gate verifies a `PublishAot` build. |
 
 ## Claim register (mechanised)
 
 Every claim in the table above is bound to something that **executes**. `ClaimMechanismScanTests` parses this
-register, reflects over the test assemblies, and fails the build when a claim names a mechanism that no longer
-exists — so a claim cannot outlive the thing that makes it true.
-
-This exists because drift already happened: `AutoValidate` was documented as a fail-fast safety net while the
-generator never read the flag, the "informed dumps" output was described in a shape the differ never produced,
-and `CORRECTNESS.md` asserted CI "runs a behavioural gate over the published native binary" when CI only ever
-*published* it. Prose is not executable; a binding is.
+register, reads the test sources, and fails the build when a claim names a mechanism that no longer exists — so a
+claim cannot outlive the thing that makes it true. Prose is not executable; a binding is.
 
 | Id | Claim | Mechanised by |
 |---|---|---|
@@ -98,6 +99,34 @@ reflection (`Activator.CreateInstance`, `MakeGenericType`) to synthesize random 
 production mapping path, carries no untrusted input, and is not referenced by generated mappers. It is the
 one component that is not trim/AOT-safe, by design (testing code). The core generator + runtime library
 remain fully reflection-free.
+
+## Auditing what the generator actually emits
+
+A source generator writes code into your assembly at compile time. You do not have to take our word for what that
+code is — the compiler will write it to disk for you:
+
+```xml
+<PropertyGroup>
+  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
+</PropertyGroup>
+```
+
+Rebuild, and every file DwarfMapper contributed appears under that path, grouped by generator. It is ordinary,
+readable C#: assignments, null checks, and helper methods. There is no reflection, no runtime emit, no `unsafe`
+code, and nothing that reaches the network or the filesystem. The one byte-level copy, a blit
+(`MemoryMarshal.Cast(...).CopyTo(...)`), appears only where the generator proved the two element types
+layout-identical, or where `[Reinterpret]` asserts it and the byte-width check still passes.
+
+Two things worth knowing when you audit:
+
+- **Output is deterministic.** The same inputs produce byte-identical output, including under member reordering,
+  so you can diff two builds and expect silence. A diff that is not silent is worth reporting.
+- **Generated files are build output, not sources.** Do not add the directory to source control or to the compile
+  item group — it is emitted for reading, and including it produces duplicate definitions.
+
+If the emitted code and the documented behaviour disagree, that is a report we want, whether or not it is
+exploitable.
 
 ## Reporting
 

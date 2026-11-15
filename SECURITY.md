@@ -1,12 +1,17 @@
 # Security Policy
 
 ## Supported versions
-The 1.0 line is in release candidate (`1.0.2-rc.1`); no stable release has been published to nuget.org yet,
-and no release has been tagged. Until one is, the default branch (`master`) is the only supported version and
-is where security fixes land. Once releases begin, this section will name the supported release line.
+DwarfMapper is in release candidate; there is no stable release yet. Two versions are supported:
 
-(If you are reading this from a package you obtained somewhere other than a future official release, treat it
-as unsupported — there is nothing published to compare it against.)
+- the latest prerelease of `DwarfMapper` on nuget.org;
+- the default branch, `master`, where security fixes land first.
+
+A fix ships in the next prerelease. Older prereleases are not patched: upgrade to the latest.
+
+The three release candidates published so far, 1.0.0-rc.1 to 1.0.2-rc.1, were pushed to nuget.org by hand. They
+have no tag, no GitHub Release, no SBOM and no build-provenance attestation, so they cannot be verified against a
+build of this repository. SBOMs and build provenance apply from the first tagged release on (see *Build integrity*).
+A package obtained anywhere other than nuget.org or this repository's GitHub Releases is unsupported.
 
 ## Reporting a vulnerability
 Please report security issues privately by email to **dwarfmapper@seznam.cz**. Do **not** open a public issue
@@ -14,14 +19,34 @@ for an undisclosed vulnerability.
 
 Say which version or commit you found it on. A reproducer helps most, and the most useful form is a failing test.
 
+## Response times
 We aim to acknowledge reports within 72 hours and to provide a remediation
 timeline within 7 days.
 
 ## Scope
-DwarfMapper is a compile-time source generator. It performs no reflection and
-no runtime code generation. Reports of interest include: generated code that
-is not memory-safe, an analyzer that fails to block an unprovable `unsafe`
-blit, or any supply-chain concern in the build/release pipeline.
+DwarfMapper is a compile-time source generator with a small runtime library. The main `DwarfMapper` package performs
+no reflection and no runtime code generation. The optional `DwarfMapper.Testing` package does use reflection, by
+design, to build random test instances; it belongs in test projects only and is not on the mapping path (see
+[docs/SECURITY.md](docs/SECURITY.md#caveat-dwarfmappertesting)).
+
+Reports of interest include: generated code that is not memory-safe, a blit emitted for an element pair the
+generator did not prove layout-identical, or any supply-chain concern in the build/release pipeline.
+
+The *Trust model* below lists what DwarfMapper guarantees and the test that holds each guarantee. The
+mapper failure modes it is designed against, the claim register, over-posting guidance and how to audit the emitted
+code are in [docs/SECURITY.md](docs/SECURITY.md).
+
+## Build integrity
+Releases are built by `.github/workflows/release.yml` from a version tag, with deterministic build settings. From
+the first tagged release on, that workflow:
+
+- attests build provenance for every `.nupkg` and `.snupkg` with a keyless Sigstore signature bound to this
+  repository's GitHub identity - verify a package with
+  `gh attestation verify <package> --repo GimliCZ/DwarfMapper.NET`;
+- attaches a CycloneDX SBOM and a `SHA256SUMS` file to the GitHub Release, next to the packages.
+
+The SBOM and the checksums are Release assets, not files inside the package. The hand-pushed release candidates
+named under *Supported versions* have neither.
 
 ## Trust model
 
@@ -42,8 +67,13 @@ neighbours are the proof obligation, and silencing one removes the check rather 
 ### The shipped runtime has no unsafe surface
 
 `src/DwarfMapper` contains no `unsafe`, `stackalloc`, `fixed`, `MemoryMarshal`, `Unsafe.`, `DllImport`, and no
-dynamic reflection. Every blit lives in **emitted** code in your assembly, which you can read (see *Auditing
-what the generator actually emits*). The library assembly itself offers nothing of that kind to reach.
+dynamic reflection. Every blit lives in **emitted** code in your assembly, which you can read (see
+[Auditing what the generator actually emits](docs/SECURITY.md#auditing-what-the-generator-actually-emits)). The
+library assembly itself offers nothing of that kind to reach.
+
+The emitted blit is a `MemoryMarshal.Cast` block copy: safe C#, no `unsafe` block, so your project needs no
+`AllowUnsafeBlocks`. Every shipped assembly - the runtime, the generator, the code fixes and `DwarfMapper.Testing` -
+bans `System.Runtime.CompilerServices.Unsafe` at build time through its `BannedSymbols.txt`.
 
 It also carries **no trimming or AOT escape hatch** — no `UnconditionalSuppressMessage`,
 `RequiresUnreferencedCode`, or `DynamicallyAccessedMembers`. The registry keeps a flat list of
@@ -130,37 +160,3 @@ different key with nothing thrown at all.
 Nothing here is `unsafe`. `[InlineArray]` is a safe language feature and indexing it stays bounds-safe; the
 proof is what keeps a *provably wrong* mapping from being emitted in the first place.
 *Held by `MapDenseEnumKeysTests` (every refusal) and `MapDenseEnumKeysRuntimeTests` (the undeclared key).*
-
-## Build integrity
-Releases are deterministic, ship a CycloneDX SBOM, and are produced from the
-audited GitHub Actions workflow in `.github/workflows/`.
-
-## Auditing what the generator actually emits
-A source generator writes code into your assembly at compile time. You do not
-have to take our word for what that code is — the compiler will write it to disk
-for you:
-
-```xml
-<PropertyGroup>
-  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-  <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
-</PropertyGroup>
-```
-
-Rebuild, and every file DwarfMapper contributed appears under that path, grouped
-by generator. It is ordinary, readable C#: assignments, null checks, and helper
-methods. There is no reflection, no runtime emit, no `unsafe` block that the
-`[Reinterpret]` analyzer has not proven blittable, and nothing that reaches the
-network or the filesystem.
-
-Two things worth knowing when you audit:
-
-- **Output is deterministic.** The same inputs produce byte-identical output,
-  including under member reordering, so you can diff two builds and expect
-  silence. A diff that is not silent is worth reporting.
-- **Generated files are build output, not sources.** Do not add the directory
-  to source control or to the compile item group — it is emitted for reading,
-  and including it produces duplicate definitions.
-
-If the emitted code and the documented behaviour disagree, that is a report we
-want, whether or not it is exploitable.

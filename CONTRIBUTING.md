@@ -8,8 +8,8 @@ Sign your commits with `git commit -s`.
 
 ## Building & testing
 
-You need **.NET SDK 10.0.404 exactly** — the whole solution targets `net10.0` (an older SDK fails with
-`NETSDK1045`), and `global.json` pins the patch with `rollForward: disable`.
+You need **.NET SDK 10.0.404 exactly** — the whole solution targets `net10.0`, and `global.json` pins the patch
+with `rollForward: disable`, so any other SDK, older or newer, fails at SDK resolution before the build starts.
 
 The pin is deliberate and it is strict: a source generator's output is compiler-version-sensitive, and the
 suite compares generated code byte-for-byte, so "any 10.0.x" would mean contributor and CI can disagree
@@ -31,7 +31,7 @@ ratio tests time code, so they run alone, one project at a time: `dotnet test Dw
 --no-build -m:1 --filter "Category=Perf"`. The complete power set of feature combinations (262,144
 compilations) is housekeeping's stage 2 and CI's `fuzz-exhaustion` job.
 
-**The generator is built twice** (round 35 T23). `src/DwarfMapper.Generator` is compiled against Roslyn 5.0 and
+**The generator is built twice.** `src/DwarfMapper.Generator` is compiled against Roslyn 5.0 and
 `src/DwarfMapper.Generator.Roslyn512` compiles the same files against Roslyn 5.12, plus its own folder; the package
 ships both in Roslyn-versioned analyzer folders and the SDK loads one. A file named `*.Floor.cs` belongs to the 5.0
 build only, a file in the Roslyn512 folder to the 5.12 build only — the seam is files, never `#if`. Everything the
@@ -49,7 +49,19 @@ Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hook
 - **PowerShell 7 (`pwsh`).** `scripts/housekeeping.ps1` and the gate functions in `scripts/gate-checks.ps1` are PowerShell, and the test suite drives those functions through `pwsh`, so a machine without it fails those tests rather than skipping them.
 - **Python 3**, standard library only. `extracted-reach.py`, `seam-reach.py`, `repro-pack-check.py`, `verify-extraction-bodies.py` and `verify-extraction-sites.py` in `scripts/` are called by their PowerShell wrappers, and several CI steps run `python3` inline.
 
-**Running the expensive CI tier on a pull request.** `mutation`, `deep-test`, `perf-tests`, `fuzz-exhaustion`, `isa-matrix`, `reproducible-build`, `cross-platform`, `preview-sdk-canary` and `bench-wall-time-alert` are nightly-only by default and show as *Skipped* on a PR — the mutation matrix alone budgets up to 350 minutes per leg across six legs. **Label the PR `full-ci` to run them all**, which is what a round-closing or release PR wants: the same checks the nightly runs, before the merge rather than the night after it. A label is used rather than `workflow_dispatch` because a dispatch runs against a branch, not against the merge result the reviewer is approving. The label takes effect from the next push: CI runs on a pull request's `opened`, `synchronize` and `reopened` events, not on `labeled`, so `gh pr create --label full-ci`, which adds the label just after opening, runs the cheap tier first.
+**Running the expensive CI tier on a pull request.** `mutation`, `deep-test`, `perf-tests`, `fuzz-exhaustion`, `isa-matrix`, `reproducible-build`, `cross-platform`, `preview-sdk-canary` and `bench-wall-time-alert` are nightly-only by default and show as *Skipped* on a PR — the mutation matrix alone budgets up to 350 minutes per leg across six legs. **Label the PR `full-ci` to run them all**: the label runs the full CI job set on the pull request — the same checks the nightly runs, before the merge rather than the night after it. Use it for a release PR or any change that needs the expensive checks. Adding a label needs triage (or write) access to the repository; if you contribute from a fork without it, ask a maintainer to add the label. A label is used rather than `workflow_dispatch` because a dispatch runs against a branch, not against the merge result the reviewer is approving. The label takes effect from the next push: CI runs on a pull request's `opened`, `synchronize` and `reopened` events, not on `labeled`, so `gh pr create --label full-ci`, which adds the label just after opening, runs the cheap tier first.
+
+## Quality gates
+
+The mutation and coverage badges at the top of the README are published by CI and read live; they are not committed
+numbers. The mutation badge is the Stryker dashboard's aggregate over the six legs of `master` — generator,
+doctooling, runtime, code fixes, pipeline and testing. The nightly `mutation` matrix uploads each leg as its own
+module, and only after that leg's report has passed the vacuity, tree-cleanliness and decontamination checks. Read
+it as one number over six differently scoped populations: each leg covers only part of `src/`. It is also the raw
+score. The dashboard has no notion of a proven-equivalent mutant, so where a leg carries adjudicated equivalent
+mutants, its raw figure sits above the score the project holds itself to. The thresholds that fail a build are in
+the `stryker-config*.json` files. Coverage is Codecov's live figure for `master`; the enforced per-assembly floors
+live in `scripts/housekeeping.ps1`.
 
 ## Ground rules
 - Every source file starts with `// SPDX-License-Identifier: GPL-2.0-only`.
