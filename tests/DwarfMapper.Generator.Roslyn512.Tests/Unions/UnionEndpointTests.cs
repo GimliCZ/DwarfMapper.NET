@@ -534,6 +534,53 @@ namespace DwarfMapper.Generator.Roslyn512.Tests.Unions
             Assert.Contains(Messages(run, "DWARF113"), m => m.Contains("its case type 'int?' can be null", StringComparison.Ordinal));
         }
 
+        [Theory]
+        [InlineData("public union MaybeNumber(System.Nullable<int>, string);")]
+        [InlineData("#nullable disable\npublic union MaybeNumber(int?, string);\n#nullable enable")]
+        public void A_nullable_value_case_spelled_without_an_annotation_is_still_DWARF113(string union)
+        {
+            // Codecov, PR #17: NullableCase's Nullable<T> operand never decided a case - an `int?` case is already
+            // annotated. These are the spellings that could reach it without the annotation.
+            var run = Roslyn512Harness.Run(Pets + union + """
+
+                [System.Runtime.CompilerServices.Union]
+                public sealed class NumberDto : NumberDto.IUnionMembers
+                {
+                    private object? _value;
+                    public interface IUnionMembers
+                    {
+                        public static NumberDto Create(long value) => new NumberDto { _value = value };
+                        public static NumberDto Create(string value) => new NumberDto { _value = value };
+                        public object? Value { get; }
+                    }
+                    object? IUnionMembers.Value => _value;
+                }
+                [DwarfMapper] public partial class M
+                {
+                    [MapDerivedType(typeof(int), typeof(long))]
+                    public partial NumberDto Map(MaybeNumber n);
+                }
+                """);
+
+            Assert.Contains(Messages(run, "DWARF113"), m => m.Contains("its case type 'int?' can be null", StringComparison.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("[DwarfMapper] public partial class M<T> { public partial Opt<T> Map(Opt<T> o); }", "DWARF054")]
+        [InlineData("public class Outer<T> { [DwarfMapper] public partial class M { public partial Opt<T> Map(Opt<T> o); } }", "DWARF054")]
+        [InlineData("[DwarfMapper] public partial class M { public partial Opt<T> Map<T>(Opt<T> o); }", "DWARF053")]
+        public void A_union_whose_case_is_a_type_parameter_is_refused_before_union_mapping(string mapper, string refusal)
+        {
+            // Codecov, PR #17: NullableCase never met a case type that is a type parameter, because no map written where
+            // one is in scope gets that far - a generic mapper class (or one nested in a generic type) is DWARF054, a
+            // generic mapping method DWARF053. That is why NullableCase does not test for one.
+            var run = Roslyn512Harness.Run(Pets + "public record class None;\npublic union Opt<T>(T, None);\n" + mapper);
+
+            Assert.NotEmpty(Messages(run, refusal));
+            Assert.Empty(Messages(run, "DWARF113"));
+            Assert.Empty(Messages(run, "DWARF114"));
+        }
+
         [Fact]
         public void A_value_case_is_tested_before_an_interface_case_it_boxes_to()
         {

@@ -392,8 +392,11 @@ namespace DwarfMapper.Generator.Pipeline
         /// <remarks>
         ///     Read from the union's creation members, not from <c>UnionCaseTypes</c>: Roslyn 5.12 reports a case written
         ///     <c>Cat?</c> as <c>Cat</c> with no annotation there, while the constructor's (or <c>Create</c> factory's)
-        ///     parameter keeps it (measured, 2026-11-14). A <c>Nullable&lt;T&gt;</c> case is nullable as a type, and an
-        ///     unconstrained type parameter may be.
+        ///     parameter keeps it (measured, 2026-11-14). The annotation is the whole test: a <c>Nullable&lt;T&gt;</c> case
+        ///     comes back annotated however it is spelled (<c>int?</c>, <c>System.Nullable&lt;int&gt;</c>, under
+        ///     <c>#nullable disable</c>), and a case type is never a type parameter here, because a map written where one
+        ///     is in scope is refused first (DWARF054 for a generic mapper class or one nested in a generic type, DWARF053
+        ///     for a generic mapping method). Both measured (PR #17's Codecov report).
         /// </remarks>
         private static string? NullableCase(ITypeSymbol union)
         {
@@ -408,8 +411,7 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                if (parameter.NullableAnnotation == NullableAnnotation.Annotated || IsNullableValue(parameter.Type, out _) ||
-                    parameter.Type is ITypeParameterSymbol { HasNotNullConstraint: false, HasValueTypeConstraint: false, HasUnmanagedTypeConstraint: false })
+                if (parameter.NullableAnnotation == NullableAnnotation.Annotated)
                 {
                     return parameter.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat.WithMiscellaneousOptions(
                         SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier | SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
